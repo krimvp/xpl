@@ -16,7 +16,7 @@
       "id": "sym:command.go#Command.execute",
       "kind": "symbol",
       "label": "Command.execute",
-      "summary": "Initializes help and, when configured, version flags. Command execution parses input unless disabled, checks arguments and flag rules, then runs hooks and a handler.",
+      "summary": "Initializes help and, when configured, version flags. It then parses input unless disabled, checks arguments and flag rules, and runs the hooks and the handler.",
       "parent": "sym:command.go#Command",
       "anchors": []
     }
@@ -421,7 +421,7 @@
               "role": "usage"
             }
           ],
-          "note": "### Help requests and non-runnable commands exit\n\nThe runnable check follows the version route. Argument validation comes after both help exits.",
+          "note": "### Help requests and non-runnable commands exit\n\nThe runnable check follows the version route. `ValidateArgs` runs after both help exits.",
           "editor": {
             "primary": "command.go"
           }

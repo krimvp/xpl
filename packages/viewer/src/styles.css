@@ -453,6 +453,17 @@ code {
   position: relative;
 }
 
+/* Present (U5): the author's "Edit" stays out of the room's sight until the mouse moves (PresentMode
+   `data-pointer`), the header is pointed at, or the keyboard reaches it. */
+.header.is-present .edit-menu {
+  transition: opacity 0.15s;
+}
+.app:not(:has(.present[data-pointer]))
+  .header.is-present:not(:hover)
+  .edit-menu:not(:focus-within) {
+  opacity: 0;
+}
+
 .edit-btn {
   display: inline-flex;
   align-items: center;
@@ -1394,11 +1405,18 @@ code {
   stroke-width: 2.2;
 }
 
+/* Solid: a dashed box means "outside this map" (ghost) or "outside this code"; linked is not one of those (R3-12). */
 .lg-box.is-related {
   fill: var(--related-soft);
   stroke: var(--related);
   stroke-width: 2.2;
-  stroke-dasharray: 5 2;
+}
+
+/* the lines between a table's header and its rows (a data map's Key) */
+.lg-rule {
+  fill: none;
+  stroke: var(--node-border);
+  stroke-width: 1;
 }
 
 .lg-box.is-ghost {
@@ -1599,10 +1617,12 @@ code {
 }
 
 /* "Fit all" while part of a big diagram is out of sight (PanZoom): the one fit control, marked. */
+/* "Fit all" while part of the diagram is out of sight: an outlined call to action, not a filled (pressed)
+   button. */
 .pz-toolbar button.pz-fit.is-cue {
   border: 1px solid var(--accent);
-  background: var(--accent-soft);
-  color: var(--fg);
+  background: var(--panel);
+  color: var(--accent);
   font-weight: 650;
 }
 
@@ -1678,8 +1698,9 @@ code {
 .kind-group {
   --k-hue: 18;
 }
+/* not the purple of an author's arrow (--edge-llm), which means "added by the author" (V2-10) */
 .kind-class {
-  --k-hue: 268;
+  --k-hue: 246;
 }
 .kind-interface {
   --k-hue: 305;
@@ -1864,7 +1885,6 @@ code {
   fill: var(--related-soft);
   stroke: var(--related);
   stroke-width: 2.4;
-  stroke-dasharray: 7 3;
 }
 
 .node.is-match > .box,
@@ -2328,7 +2348,6 @@ code {
   fill: var(--related-soft);
   stroke: var(--related);
   stroke-width: 2.4;
-  stroke-dasharray: 7 3;
 }
 
 .lifeline.is-match .head {
@@ -2448,36 +2467,48 @@ code {
   fill: var(--muted);
 }
 
-/* the arms of an alt: a dashed line between two, and each condition a button that selects the arm's steps */
+/* What an alt with arms decides: set apart from the conditions in brackets, which share one tone (R4-17). */
+.frame-label.frame-title {
+  font-style: italic;
+  font-weight: 650;
+  fill: var(--fg);
+}
+
+/* the arms of an alt: a dashed line between two, and each condition a button that selects the arm's steps;
+   a frame's name a button that selects all of its steps */
 .frame .frame-divider {
   stroke: var(--border-strong);
   stroke-width: 1.2;
   stroke-dasharray: 6 4;
 }
-.sequence:not(.is-still) .frame .frame-arm .hit {
+.sequence:not(.is-still) .frame-arm .hit,
+.sequence:not(.is-still) .frame-head .hit {
   pointer-events: all;
   cursor: pointer;
 }
-.frame-arm .hit {
+.frame-arm .hit,
+.frame-head .hit {
   fill: transparent;
 }
-.frame-arm:hover .hit {
+.frame-arm:hover .hit,
+.frame-head:hover .hit {
   fill: var(--hover);
 }
-.frame-arm:focus-visible {
+.frame-arm:focus-visible,
+.frame-head:focus-visible {
   outline: none;
 }
-.frame-arm:focus-visible .hit {
+.frame-arm:focus-visible .hit,
+.frame-head:focus-visible .hit {
   stroke: var(--accent);
   stroke-width: 2;
 }
-.frame-arm .arm-label {
-  fill: var(--fg);
-}
-.frame-arm.is-selected .hit {
+.frame-arm.is-selected .hit,
+.frame-head.is-selected .hit {
   fill: var(--accent-soft);
 }
-.frame-arm.is-selected .arm-label {
+.frame-arm.is-selected .arm-label,
+.frame-head.is-selected .frame-label {
   font-weight: 700;
 }
 .frame-arm.is-match .hit {
@@ -3740,6 +3771,18 @@ code {
   }
 }
 
+/* D7: a slide whose diagram does not read whole at the 12px floor gets the width it asks for
+   (PresentMode `--diagram-need`, the widest its step asked for), up to 65% of the screen; the code gives
+   the room. A diagram still too big then starts on the step's focus, "Fit all" in sight. */
+@media (min-width: 641px) {
+  .present[data-room] {
+    grid-template-columns: minmax(300px, min(65%, max(40%, var(--diagram-need)))) minmax(0, 1fr);
+  }
+  .present[data-room][data-split="wide"][style] {
+    grid-template-columns: minmax(340px, min(65%, max(52%, var(--diagram-need)))) minmax(0, 1fr);
+  }
+}
+
 /* present: the slide takes the keyboard focus when a talk starts; no ring around the whole screen. */
 .present:focus {
   outline: none;
@@ -3797,7 +3840,11 @@ code {
   white-space: nowrap;
 }
 
+/* present: the zoom toolbar sits at the bottom of the diagram, clear of a sequence's participant names at
+   the top (PanZoom keeps a fitted diagram above it). */
 .present .pz-toolbar {
+  top: auto;
+  bottom: 10px;
   opacity: 0;
   transition: opacity 0.15s;
 }
@@ -3814,8 +3861,17 @@ code {
 }
 
 .present:not([data-pointer]) .pz-badge:not(:focus-visible),
-.present:not([data-pointer]) .panzoom:hover .pz-toolbar:not(:focus-within) {
+.present:not([data-pointer]) .panzoom:hover .pz-toolbar:not(:focus-within):not(:has(> .is-cue)) {
   opacity: 0;
+}
+
+/* D7: while part of the diagram is out of sight, "Fit all" stays on the slide, alone (the other buttons
+   come with the mouse): the room sees that there is more, and the presenter needs no hover to show it. */
+.present .pz-toolbar:has(> .pz-fit.is-cue) {
+  opacity: 1;
+}
+.present:not([data-pointer]) .pz-toolbar:has(> .pz-fit.is-cue):not(:focus-within) > :not(.pz-fit) {
+  display: none;
 }
 
 /* present (N10): a lower level names its parent box once ("xpl ›"), not every level above it: the title
@@ -4423,7 +4479,7 @@ code {
 
 .node.role-external,
 .node.role-person {
-  --k-hue: 268;
+  --k-hue: 220;
 }
 
 /* The icon left of a box's label (components/icons.tsx): what the box is, in the colour of its kind. */
@@ -5721,8 +5777,28 @@ code {
   .matrix-row {
     max-width: 128px;
   }
+  /* V4-07: the tools on a row of their own, the key folded behind its button, so the grid's rows show */
+  .matrix-bar {
+    flex-wrap: wrap;
+    padding: 6px 8px;
+  }
+  .matrix-tools {
+    order: -1;
+  }
   .matrix-key {
+    flex-basis: 100%;
     font-size: 12px;
+  }
+  .matrix-key[data-folded] {
+    display: none;
+  }
+  .matrix-scroll {
+    padding: 6px 8px;
+  }
+}
+@media (min-width: 641px) {
+  .matrix-key-button {
+    display: none;
   }
 }
 
@@ -5740,4 +5816,9 @@ code {
 }
 .skip-link:focus {
   top: 8px;
+}
+/* R4-25: the area the skip link moves the focus to takes it without a ring around the whole page (the next
+   Tab goes on from there). */
+.app > main[tabindex="-1"]:focus {
+  outline: none;
 }

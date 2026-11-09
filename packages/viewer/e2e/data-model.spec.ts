@@ -18,7 +18,7 @@ const JOB = "sym:src/queue.ts#Job";
 const DEAD = "sym:src/queue.ts#DeadJob";
 const FIELD = "sym:src/queue.ts#DeadJob.job";
 
-async function openDataView(page: Page): Promise<void> {
+async function openDataView(page: Page, query = "mode=explore"): Promise<void> {
   const { html, bundle } = readEmbeddedBundle();
   (bundle as Loose).explainer.views.push({
     id: "view:data",
@@ -44,7 +44,7 @@ async function openDataView(page: Page): Promise<void> {
   await page.route("http://xpl.test/**", (route) =>
     route.fulfill({ contentType: "text/html", body: withBundle(html, bundle) }),
   );
-  await page.goto("http://xpl.test/?mode=explore&view=view:data");
+  await page.goto(`http://xpl.test/?${query}&view=view:data`);
   await page.waitForFunction(() => window.__xpl !== undefined);
 }
 
@@ -60,6 +60,13 @@ test("a type is drawn as a table: one row per field, with the type its code name
   await expect(table.locator(".node.is-row .row-name")).toHaveText(["job", "error"]);
   await expect(table.locator(".node.is-row .row-type")).toHaveText(["Job", "string"]);
   await expect(byId(page, `edge:references:${FIELD}->${JOB}`)).toHaveCount(1);
+  expect(problems).toEqual([]);
+});
+
+test("the reader's Map tab shows the row types too", async ({ page }) => {
+  const problems = watchProblems(page);
+  await openDataView(page, "perspective=map");
+  await expect(byId(page, DEAD).locator(".node.is-row .row-type")).toHaveText(["Job", "string"]);
   expect(problems).toEqual([]);
 });
 

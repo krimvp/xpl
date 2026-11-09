@@ -3,7 +3,9 @@ import { DiagramText } from "./DiagramText.js";
  * Sequence view: lifelines for the participants (labels from the model), one arrow per step top to
  * bottom (`call` solid, `return` dashed, `async` open arrowhead), self-calls as loops, frames
  * (`loop` / `alt` / `opt` / `par`) as labelled rectangles around their steps; an `alt` with arms has a dashed
- * line between two arms and each arm's condition, a button that selects the arm's steps.
+ * line between two arms and each arm's condition, a button that selects the arm's steps. A frame's name is a
+ * button too: it selects the frame's steps, whose code is the frame's code (a frame has no code link of its own).
+ * Frame names, conditions and steps are drawn (and reached with Tab) in reading order, top to bottom.
  *
  * Steps and lifelines are `<g data-element-id="...">` like graph elements; a step's group carries a
  * transparent hit area covering its label and arrow, so clicking anywhere on the row selects it.
@@ -12,9 +14,12 @@ import type { ExplainerModel, SequenceView as SequenceViewData } from "@xpl/core
 import { useMemo, type KeyboardEvent, type MouseEvent } from "react";
 import {
   ARM_TOP,
+  frameLabelWidth,
   frameTabWidth,
   LABEL_LINE,
   layoutSequence,
+  readingOrder,
+  type ArmBox,
   type FrameBox,
   type Lifeline,
   type Row,
@@ -150,13 +155,11 @@ export function SequenceView({
         {/* Frames over the lifelines (their box is see-through): no dashed line runs through a frame's name. */}
         <g className="frames">
           {layout.frames.map((box) => (
-            <FrameShape key={box.frame.id} box={box} selected={selected} matched={matched} />
+            <FrameBoxShape key={box.frame.id} box={box} />
           ))}
         </g>
         <g className="steps">
-          {layout.rows.map((row) => (
-            <StepShape key={row.step.id} row={row} classes={states(row.step.id)} />
-          ))}
+          <ReadingOrder layout={layout} states={states} selected={selected} matched={matched} />
         </g>
       </g>
     </PanZoom>
@@ -190,13 +193,11 @@ export function SequencePicture({
       </g>
       <g className="frames">
         {layout.frames.map((box) => (
-          <FrameShape key={box.frame.id} box={box} selected={selected} still />
+          <FrameBoxShape key={box.frame.id} box={box} />
         ))}
       </g>
       <g className="steps">
-        {layout.rows.map((row) => (
-          <StepShape key={row.step.id} row={row} classes={states(row.step.id)} still />
-        ))}
+        <ReadingOrder layout={layout} states={states} selected={selected} still />
       </g>
     </g>
   );
@@ -269,7 +270,7 @@ function LifelineShape({
  * on a late call), a copy of the heads stays at the top of the pane, at the diagram's zoom and in line with
  * the lifelines, so you still see who calls whom. Only a picture: the heads in the diagram take the clicks.
  */
-function StickyHeads({
+export function StickyHeads({
   lifelines,
   t,
   paneWidth,
@@ -316,21 +317,57 @@ function plateOf(row: Row) {
   };
 }
 
-function FrameShape({
-  box,
+/** The frames' names, their arms' conditions and the steps, top to bottom (`readingOrder`): the Tab order. */
+function ReadingOrder({
+  layout,
+  states,
   selected,
   matched,
   still = false,
 }: {
-  box: FrameBox;
+  layout: SequenceLayout;
+  states: (id: string) => string;
   selected: ReadonlySet<string>;
   matched?: ReadonlySet<string>;
   still?: boolean;
 }) {
-  const store = useStore();
-  const tab = frameTabWidth(box.frame.kind);
-  // with arms, the label names what the frame decides and each arm has the condition in brackets
-  const arms = box.arms.length > 0;
+  return (
+    <>
+      {readingOrder(layout).map((item) =>
+        item.kind === "step" ? (
+          <StepShape
+            key={item.row.step.id}
+            row={item.row}
+            classes={states(item.row.step.id)}
+            still={still}
+          />
+        ) : item.kind === "frame" ? (
+          <FrameHead
+            key={item.box.frame.id}
+            box={item.box}
+            rows={layout.rows}
+            selected={selected}
+            still={still}
+          />
+        ) : (
+          <ArmShape
+            key={`${item.box.frame.id}:${item.n}`}
+            box={item.box}
+            rows={layout.rows}
+            arm={item.arm}
+            n={item.n}
+            selected={selected}
+            matched={matched}
+            still={still}
+          />
+        ),
+      )}
+    </>
+  );
+}
+
+/** A frame's box, under the steps. */
+function FrameBoxShape({ box }: { box: FrameBox }) {
   return (
     <g className={`frame kind-${box.frame.kind}`} data-frame-id={box.frame.id}>
       <rect
@@ -341,65 +378,146 @@ function FrameShape({
         height={box.height}
         rx={6}
       />
+    </g>
+  );
+}
+
+/** Selects `steps`: the reader's pick, or added to it with Shift. */
+function useSelectSteps(selected: ReadonlySet<string>) {
+  const store = useStore();
+  return (steps: readonly string[], event: MouseEvent | KeyboardEvent) => {
+    event.stopPropagation();
+    if (additive(event)) store.select([...new Set([...selected, ...steps])]);
+    else store.select([...steps]);
+  };
+}
+
+const onEnter =
+  (act: (event: KeyboardEvent) => void) =>
+  (event: KeyboardEvent): void => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      act(event);
+    }
+  };
+
+/** "steps 3 to 5", "step 8": a frame's or an arm's steps by their numbers. */
+function stepNumbers(steps: readonly string[], rows: readonly Row[]): string {
+  const numbers = steps.map((id) => rows.findIndex((row) => row.step.id === id) + 1);
+  if (numbers.length === 0) return "no steps";
+  return numbers.length === 1
+    ? `step ${numbers[0]}`
+    : `steps ${numbers[0]} to ${numbers[numbers.length - 1]}`;
+}
+
+/**
+ * A frame's tab and name: a button that selects the frame's steps (V4-09). With arms, the name says what the
+ * frame decides and is set apart from the conditions (R4-17): no brackets, italic.
+ */
+function FrameHead({
+  box,
+  rows,
+  selected,
+  still,
+}: {
+  box: FrameBox;
+  rows: readonly Row[];
+  selected: ReadonlySet<string>;
+  still: boolean;
+}) {
+  const select = useSelectSteps(selected);
+  const tab = frameTabWidth(box.frame.kind);
+  const arms = box.arms.length > 0;
+  const text = arms ? box.frame.label : `[${box.frame.label}]`;
+  const width = Math.min(box.width - 2, frameLabelWidth(box.frame.kind, box.frame.label));
+  const on = box.steps.length > 0 && box.steps.every((id) => selected.has(id));
+  const act = (event: MouseEvent | KeyboardEvent) => select(box.steps, event);
+  return (
+    <g
+      className={`frame frame-head kind-${box.frame.kind}${on ? " is-selected" : ""}`}
+      data-frame-head={box.frame.id}
+      role={still ? undefined : "button"}
+      tabIndex={still ? undefined : 0}
+      aria-pressed={still ? undefined : on}
+      aria-label={still ? undefined : `${box.frame.kind} ${text}: ${stepNumbers(box.steps, rows)}`}
+      onClick={still ? undefined : act}
+      onKeyDown={still ? undefined : onEnter(act)}
+    >
+      <rect className="hit" x={box.x + 1} y={box.y + 1} width={width} height={20} rx={4} />
       <path className="frame-tab" d={`M${box.x} ${box.y}h${tab}v12l-8 8h-${tab - 8}z`} />
       <text className="frame-kind" x={box.x + 8} y={box.y + 14}>
         {box.frame.kind}
       </text>
-      <text className="frame-label" x={box.x + tab + 8} y={box.y + 14}>
-        {arms ? box.frame.label : `[${box.frame.label}]`}
+      <text
+        className={`frame-label${arms ? " frame-title" : ""}`}
+        x={box.x + tab + 8}
+        y={box.y + 14}
+      >
+        {text}
       </text>
-      {box.arms.map((arm, n) => {
-        const state =
-          (arm.steps.every((id) => selected.has(id)) ? " is-selected" : "") +
-          (arm.steps.some((id) => matched?.has(id)) ? " is-match" : "");
-        const select = (event: MouseEvent | KeyboardEvent) => {
-          event.stopPropagation();
-          if (additive(event)) store.select([...new Set([...selected, ...arm.steps])]);
-          else store.select(arm.steps);
-        };
-        return (
-          <g
-            key={n}
-            className={`frame-arm${state}`}
-            data-arm={still ? undefined : n}
-            role={still ? undefined : "button"}
-            tabIndex={still ? undefined : 0}
-            aria-label={`Branch of ${box.frame.label}: ${arm.label}`}
-            onClick={still ? undefined : select}
-            onKeyDown={
-              still
-                ? undefined
-                : (event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      select(event);
-                    }
-                  }
-            }
-          >
-            {n > 0 && (
-              <line
-                className="frame-divider"
-                x1={box.x}
-                y1={arm.top}
-                x2={box.x + box.width}
-                y2={arm.top}
-              />
-            )}
-            <rect
-              className="hit"
-              x={box.x + 2}
-              y={arm.top + 1}
-              width={box.width - 4}
-              height={ARM_TOP - 2}
-              rx={4}
-            />
-            <text className="frame-label arm-label" x={box.x + 8} y={arm.top + 14}>
-              {`[${arm.label}]`}
-            </text>
-          </g>
-        );
-      })}
+    </g>
+  );
+}
+
+/** An arm of an `alt`: the dashed line above it (not the first) and its condition, which selects its steps. */
+function ArmShape({
+  box,
+  rows,
+  arm,
+  n,
+  selected,
+  matched,
+  still,
+}: {
+  box: FrameBox;
+  rows: readonly Row[];
+  arm: ArmBox;
+  n: number;
+  selected: ReadonlySet<string>;
+  matched?: ReadonlySet<string> | undefined;
+  still: boolean;
+}) {
+  const select = useSelectSteps(selected);
+  const on = arm.steps.every((id) => selected.has(id));
+  const state =
+    (on ? " is-selected" : "") + (arm.steps.some((id) => matched?.has(id)) ? " is-match" : "");
+  const act = (event: MouseEvent | KeyboardEvent) => select(arm.steps, event);
+  return (
+    <g
+      className={`frame frame-arm${state}`}
+      data-arm-of={box.frame.id}
+      data-arm={still ? undefined : n}
+      role={still ? undefined : "button"}
+      tabIndex={still ? undefined : 0}
+      aria-pressed={still ? undefined : on}
+      aria-label={
+        still
+          ? undefined
+          : `${box.frame.label}, arm [${arm.label}]: ${stepNumbers(arm.steps, rows)}`
+      }
+      onClick={still ? undefined : act}
+      onKeyDown={still ? undefined : onEnter(act)}
+    >
+      {n > 0 && (
+        <line
+          className="frame-divider"
+          x1={box.x}
+          y1={arm.top}
+          x2={box.x + box.width}
+          y2={arm.top}
+        />
+      )}
+      <rect
+        className="hit"
+        x={box.x + 2}
+        y={arm.top + 1}
+        width={box.width - 4}
+        height={ARM_TOP - 2}
+        rx={4}
+      />
+      <text className="frame-label arm-label" x={box.x + 8} y={arm.top + 14}>
+        {`[${arm.label}]`}
+      </text>
     </g>
   );
 }

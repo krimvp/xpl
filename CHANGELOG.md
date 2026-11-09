@@ -50,6 +50,9 @@ Guides and the viewer:
 - A large map starts at a readable zoom. "Fit all" then counts the boxes out of sight, and after a fit it
   offers "Readable size". A flow keeps its main path straight down, and sequence frames show their condition.
 - The parts list beside a map says which boxes of the map each box uses and is used by.
+- An `alt` frame in a sequence draws its arms: a dashed line between two choices, each with its condition in
+  brackets. Click a condition to select its steps and their code. `xpl draft path` drafts the arms, and a
+  patch sets them with `arms`.
 
 Indexing:
 

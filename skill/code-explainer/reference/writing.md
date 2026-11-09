@@ -19,7 +19,7 @@ Write every authored text before ready export, including frame labels, transitio
 
 | Field                              | Says                                                                                               | Length                          | Format          |
 | ---------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------- | --------------- |
-| tour `summary`                     | the answer first, then up to four reasons; for a change: the behaviour change, the risk, the tests | 2-5 sentences                   | markdown        |
+| tour `summary`                     | the answer first, then up to four reasons; for a change: the behaviour change, the risk, the tests | SKILL.md budget                 | markdown        |
 | tour `title`                       | the question the tour answers, or what it covers; for a change, the change                         | about 8 words                   | plain           |
 | note heading (`### ...`)           | the point of this step, as a statement                                                             | about 8 words                   | plain           |
 | note body                          | what to notice here and why it matters; what no summary says; a comparison may be a small table    | 1-3 sentences, 50 words at most | markdown        |
@@ -35,6 +35,7 @@ Write every authored text before ready export, including frame labels, transitio
 | arrow label to an outside box      | what passes ("stores orders", "charges cards", "sends receipts")                                   | 1-4 words                       | plain           |
 | frame `label`                      | when the steps inside run ("attempts left", "for each route"); with arms, what the `alt` decides   | a short condition, may be code  | plain           |
 | arm `label` (of an `alt` frame)    | when this arm runs ("retries left", "else")                                                        | a short condition, may be code  | plain           |
+| field row of a data map            | nothing: the row shows the field's declaration; a `summary` is optional                            | none needed                     | inline markdown |
 
 **Formats.** _Markdown_ fields render markdown. Headings and links go only in a note body or a `detail`. _Inline markdown_ fields render code spans and emphasis (`` `Queue.requeue` ``, `**Changed:**`), but no headings or links. _Plain_ fields are shown as written, so `**Changed:**` appears with its asterisks: write no markup there. Backticks around identifiers are fine everywhere. The reply to the user is not a field: SKILL.md, "Workflow", says what it holds.
 
@@ -66,7 +67,7 @@ A summary is concrete and about this code ("requeues with `baseDelay * 2^attempt
 9. **Claims you can prove.** Absolute words, guard conditions, complete lists and folklore follow the rules in SKILL.md, "Accuracy".
 10. **One concrete example** helps more than a general rule: "with the default settings, the three retries wait 500 ms, 1 s and 2 s".
 11. **Talk to the reader** about their own code: "your handler", "your config file". Do not use "we" (`xpl lint`: `we-voice`).
-12. **Plain words for the reader**, not tool words: say box, diagram (or map, flow, sequence), step, arrow and code link. `xpl lint` (`tool-word`) flags evidence, upsert, llm, provenance, stub, ghost, overlay and call-site everywhere, and node, edge and anchor in tours only: a box summary may describe code that has nodes and edges of its own. A word that is in the name of a box of the guide passes, and so does "stub" in a text about tests. Avoid "view" and "group" too.
+12. **Plain words for the reader**, not tool words: say box, diagram (or map, flow, sequence), step, arrow and code link. `xpl lint` (`tool-word`) flags every tool word in tours (node, edge, anchor, evidence, upsert, llm, provenance, stub, ghost, overlay, call-site). In box, arrow and concept text it flags only the tool's own senses (a stub box, a ghost arrow, an authored overlay): a box summary may describe code that has nodes and stubs of its own. A word the guide names its own code with passes (a label, a linked path, the title), and so do quotes and "stub" in a text about tests. Avoid "view" and "group" too.
 13. **Rewrite, do not append.** When the code changes, rewrite the text whole, so the summary still says what the part is for in 1-2 sentences. Put a new case in `detail` or in a step of its own. A summary is never a list of changes.
 14. **Tell the reader what the code does**, not what to do. "Look at", "Notice" and "Compare" are fine. Author steps (reindex, choose an anchor) belong in the skill, not in a guide.
 
@@ -167,12 +168,12 @@ Flow step labels name a stage ("Take the next due job", "No retries left: park i
 
 ## 4. The tour summary
 
-The first thing on the screen, so it leads with the answer. The first sentence states the answer to the tour's question (what this is, what the code does, or what the change does for its users). Then up to four sentences give the reasons, one each: 2-5 sentences in plain words. A reader who stops after the first sentence still has the answer, and the steps show the reasons in the code. Use at most one or two code identifiers. Example input values in backticks (`maxDelayMs: 100`, a sample header) are fine. They are often the clearest way to show a behaviour change.
+The first thing on the screen, so it leads with the answer. The first sentence states the answer to the tour's question (what this is, what the code does, or what the change does for its users). Then the next sentences give the reasons, one each, in plain words. The sentence count of each scope is in SKILL.md's budget table ("Tour summary"). A reader who stops after the first sentence still has the answer, and the steps show the reasons in the code.
 
 - **Whole project:** what the project is (language and kind: "a Python web framework", "a Go command-line tool"), what it is for, and the main path in one sentence. Take what the project is from its README or package metadata (`xpl show file:README.md`, `pyproject.toml#project.description`), and say nothing the README or the code does not say.
   > go-jobrunner is a small Go program that runs background jobs from an in-memory queue. A runner takes each job, runs it on a worker, and retries a failed job with a growing delay. An event bus tells the metrics when a job finishes. This tour shows those parts and follows one job from the queue to the end.
 - **Part of a project:** the answer to the question in the first sentence, then the reasons, and what the tour leaves out.
-- **No code names in the summary** unless the reader must type one (a command, a setting). Say "the payment step", not `chargeCard`.
+- **No code names in the summary**, with two exceptions: a name the reader must type (a command, a setting), and an example input value that shows a behaviour change (`maxDelayMs: 100`, a sample header). Say "the payment step", not `chargeCard`.
   > The runner puts a failed job back on the queue with a growing delay, until the job uses up its retries. After that, the runner parks the job in a dead-letter list. The runner makes each decision, and the queue stores the job again. This tour leaves out the metrics and the worker pool.
 - **A change:** what changes for users (with one example), who is affected, the worst realistic failure (`explain-change.md` section 7), and what the tests cover. Example: `explain-change.md` section 10.
 
@@ -238,7 +239,7 @@ A note is 1-3 short sentences under its title (`xpl lint`: `long-note` over 50 w
 | the inside of a service           | what job does this part do?            | each part's job in everyday words, and what it asks of the others or of an outside system | at most 1 (`code-heavy`) |
 | a flow, a sequence, a map of code | what does this step decide or hand on? | the one decision or hand-off to notice, then the code that makes it                       | at most 3 (`code-heavy`) |
 
-Name each box of a map in some note, by its label in plain words ("the web server" counts for "Web servers"): `tour-covers-map` checks it. Steps, note lengths and boxes per map for each scope: SKILL.md, "The tour".
+Name each box of a map in some note, by its label in plain words ("the web server" counts for "Web servers"): `tour-covers-map` checks it. Steps, note lengths, tour summary sentences and boxes per map for each scope: SKILL.md, "The tour".
 
 Start with the role in the system ("The front door: it turns a web request into an order"). Then give the consequence ("so a failed payment stops before the order is saved"). A comparison to something familiar helps when it is exact: "the queue works like a ticket line: the oldest due job goes first".
 

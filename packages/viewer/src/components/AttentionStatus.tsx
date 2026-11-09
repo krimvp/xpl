@@ -108,7 +108,7 @@ export function AttentionStatus() {
               </ul>
               {g.counts && g.counts.drifted + g.counts.missing === 0 && !g.errors.length && (
                 <p>
-                  No changed or missing evidence. Moved locations can be saved with{" "}
+                  No code link changed or went missing. To save the code links that moved, run{" "}
                   <code>{g.resolveCommand}</code>.
                 </p>
               )}
@@ -121,8 +121,8 @@ export function AttentionStatus() {
                   </p>
                   <pre>{g.revisionCommand}</pre>
                   <p>
-                    This starts the explicit revision workflow. Inspect its diff and decisions.
-                    Accept a proposal separately; no changes are applied here.
+                    This command asks your agent for a revision. Check what it proposes, then accept
+                    it as a separate step. This panel changes nothing.
                   </p>
                 </details>
               )}

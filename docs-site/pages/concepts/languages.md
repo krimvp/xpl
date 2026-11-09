@@ -31,9 +31,9 @@ keep the analysed files, the limits and the failures; an older index loads with 
 | Go                      | `scip-go` 0.2.7; Go 1.25 or a `go` that can download the toolchain        |
 | Java                    | `--scip` with a separately generated, source-checked artifact             |
 | Rust                    | Experimental declarations and bounded bare and receiver calls (heuristic) |
-| Ruby                    | Named classes, modules, methods and constants; no relationship analysis   |
-| PHP                     | Named declarations; no relationship analysis                              |
-| YAML, JSON, TOML        | Keys are symbols; no reference relationships                              |
+| Ruby                    | Named classes, modules, methods and constants; no references              |
+| PHP                     | Named declarations; no references                                         |
+| YAML, JSON, TOML        | Keys are symbols; no references                                           |
 
 `xpl index` tries precise tools by default. Use `--precise off` for heuristic results or `--precise require`
 to fail when a precise tool cannot run. `XPL_SCIP_TIMEOUT_MS` sets the per-tool timeout (default 10 minutes).

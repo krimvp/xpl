@@ -33,7 +33,7 @@ it("reports file anchors, config structure and language relationships independen
     capabilities: ["call", "import", "extends", "implements", "type-ref", "read", "write"],
     status: "unsupported",
     analyzedFiles: [],
-    limitations: ["Relationship analysis is unavailable."],
+    limitations: ["No references are found in these files."],
   });
   const python = index.analysis?.find((r) => r.provider === "python");
   expect(python?.capabilities.call).toBe("partial");

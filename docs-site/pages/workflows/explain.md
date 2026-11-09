@@ -38,6 +38,10 @@ show the types:
   repository, a folder, a file or one type. Click a row to see the field's code; put the cursor in a field and
   its row lights up.
 
+Choose a data map over a class map when the question is about fields, not subtypes. Sometimes no enum names
+the states of an item: its state is the list or table that holds it. Then `draft states` finds nothing. Draft
+the data map of those containers, and let the agent write a flow of the moves between them.
+
 ## Quick maps
 
 `xpl draft map` drafts a map of every code file, one map per folder. It is for code you did not write line by

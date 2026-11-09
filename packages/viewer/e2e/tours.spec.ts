@@ -470,7 +470,7 @@ test.describe("the address bar", () => {
     const target = page.locator('[data-section-id="t2"]');
     await expect(target).toBeInViewport();
     await expect(target.locator("h3")).toBeFocused();
-    await expect(target.getByRole("button", { name: "Present from this step" })).toBeVisible();
+    await expect(target.getByRole("button", { name: /^Present from step 2: / })).toBeVisible();
     const stepLink = target.getByRole("link", { name: /Link to step 2: Where failures go/ });
     const link = new URL((await stepLink.getAttribute("href"))!);
     expect(link.searchParams.get("perspective")).toBe("guide");
@@ -481,7 +481,7 @@ test.describe("the address bar", () => {
     await expect(page.locator(".header .title")).toHaveText("Retry subsystem");
     await expect(target).toBeInViewport();
     await expect(target.locator("h3")).toBeFocused();
-    await target.getByRole("button", { name: "Present from this step" }).click();
+    await target.getByRole("button", { name: /^Present from step 2: / }).click();
     await expect(present(page)).toBeVisible();
     await expect(counter(page)).toHaveText("2 / 2");
   });
@@ -550,7 +550,7 @@ test.describe("the address bar", () => {
     await expect(page).toHaveURL(/step-id=t2/);
     const target = page.locator('[data-section-id="t2"]');
     await expect(target.locator("h3")).toBeFocused();
-    await expect(target.getByRole("button", { name: "Present from this step" })).toBeVisible();
+    await expect(target.getByRole("button", { name: /^Present from step 2: / })).toBeVisible();
   });
 
   test("?mode=present&tour=<id>&step=<n> opens that step; the URL follows the steps and Esc", async ({

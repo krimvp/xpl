@@ -1,6 +1,11 @@
 import { ExplainerModel, type SequenceView } from "@xpl/core";
 import { describe, expect, it } from "vitest";
-import { ARM_TOP, frameLabelWidth, layoutSequence } from "../src/layout/sequenceLayout.js";
+import {
+  ARM_TOP,
+  frameLabelWidth,
+  layoutSequence,
+  readingOrder,
+} from "../src/layout/sequenceLayout.js";
 import { textWidth } from "../src/measure.js";
 import { makeBundle } from "./world.js";
 
@@ -200,6 +205,55 @@ describe("layoutSequence", () => {
     expect(layoutSequence(plain.view, plain.model).height).toBeLessThan(
       layout.height - 3 * ARM_TOP,
     );
+  });
+
+  // V4-10, V4-08, V4-09: Tab went to every arm's condition before step 1, and the text view left the frames out
+  it("reads a frame's name, then each arm's condition before its steps, in the order they are drawn", () => {
+    const { model: m, view } = model((v) => {
+      v.steps = [
+        step("flow:1", RUN, "file:src/b.ts", "pop()"),
+        step("flow:2", RUN, "file:src/b.ts", "ack(job)"),
+        step("flow:3", RUN, "file:src/b.ts", "requeue(job)"),
+      ];
+      v.frames = [
+        {
+          id: "frame:loop",
+          kind: "loop",
+          label: "while running",
+          fromStep: "flow:1",
+          toStep: "flow:3",
+        },
+        {
+          id: "frame:end",
+          kind: "alt",
+          label: "how it ends",
+          fromStep: "flow:2",
+          toStep: "flow:3",
+          arms: [
+            { label: "ok", fromStep: "flow:2", toStep: "flow:2" },
+            { label: "else", fromStep: "flow:3", toStep: "flow:3" },
+          ],
+        },
+      ];
+    });
+    const layout = layoutSequence(view, m);
+    expect(
+      readingOrder(layout).map((item) =>
+        item.kind === "step"
+          ? item.row.step.id
+          : item.kind === "frame"
+            ? `${item.box.frame.id} ${item.box.steps.join(",")}`
+            : `arm ${item.arm.label}`,
+      ),
+    ).toEqual([
+      "frame:loop flow:1,flow:2,flow:3",
+      "flow:1",
+      "frame:end flow:2,flow:3",
+      "arm ok",
+      "flow:2",
+      "arm else",
+      "flow:3",
+    ]);
   });
 
   it("wraps a long message over lines of about 40 characters, and says which rows sit in a frame", () => {

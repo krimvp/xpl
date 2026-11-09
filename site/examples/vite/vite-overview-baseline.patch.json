@@ -244,6 +244,24 @@
           "editor": {
             "primary": "packages/vite/src/node/cli.ts"
           }
+        },
+        {
+          "id": "t6",
+          "view": "view:inside",
+          "focus": [
+            "file:packages/vite/src/node/server/middlewares/transform.ts"
+          ],
+          "code": [
+            {
+              "file": "packages/vite/src/node/server/middlewares/transform.ts",
+              "symbol": "transformMiddleware",
+              "role": "definition"
+            }
+          ],
+          "note": "### Where to go next\n\nThe guide \"How Vite chooses a hot update, reload, or no update\" follows one file change to its outcome. This tour did not open the transform middleware, which answers each module request from the browser.",
+          "editor": {
+            "primary": "packages/vite/src/node/server/middlewares/transform.ts"
+          }
         }
       ]
     }

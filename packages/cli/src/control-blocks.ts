@@ -31,6 +31,8 @@ export interface ControlBlock extends LineRange {
 export interface Arm extends LineRange {
   startCol: number;
   condition: string;
+  /** The code after an `if` that exits early: the `else` the code does not write (`if (ok) { …; continue }`). */
+  implicit?: true;
 }
 
 const LOOP =
@@ -82,6 +84,41 @@ function ifArms(node: SyntaxNode): Arm[] {
   return arms;
 }
 
+/** Statements that leave the block they are in: the code after them in that block does not run. */
+const EXIT = /^(?:continue|return|break|raise|throw)_(?:statement|expression)$/;
+const isComment = (n: SyntaxNode) => /comment/.test(n.type);
+
+/** The named, non-comment children of a block (through Go's `statement_list`). */
+function statementsOf(block: SyntaxNode): SyntaxNode[] {
+  const kids = block.namedChildren.filter((c): c is SyntaxNode => c !== null && !isComment(c));
+  return kids.length === 1 && kids[0]!.type === "statement_list" ? statementsOf(kids[0]!) : kids;
+}
+
+/**
+ * An `if` with no `else` whose body ends by leaving (`continue`, `return`, `break`, `raise`, `throw`) makes the
+ * statements after it in its block an `else`: the arm from the next statement to the block's last one (D8).
+ */
+function implicitElse(node: SyntaxNode, arms: readonly Arm[]): Arm | undefined {
+  if (arms.length !== 1) return undefined;
+  const consequence = node.childForFieldName("consequence");
+  const last = consequence ? statementsOf(consequence).at(-1) : undefined;
+  const exits =
+    last !== undefined &&
+    (EXIT.test(last.type) ||
+      (last.type === "expression_statement" && EXIT.test(last.namedChildren[0]?.type ?? "")));
+  if (!exits || !node.parent) return undefined;
+  const siblings = statementsOf(node.parent);
+  const after = siblings.slice(siblings.findIndex((s) => s.equals(node)) + 1);
+  if (after.length === 0) return undefined;
+  return {
+    start: after[0]!.startPosition.row + 1,
+    startCol: after[0]!.startPosition.column + 1,
+    end: after.at(-1)!.endPosition.row + 1,
+    condition: "else",
+    implicit: true,
+  };
+}
+
 /** The case nodes of a switch, not those of a switch nested in one of them. */
 function caseArms(node: SyntaxNode): Arm[] {
   const arms: Arm[] = [];
@@ -106,7 +143,11 @@ function controlBlocks(root: SyntaxNode, lines: LineRange): ControlBlock[] {
     if (inside && LOOP.test(node.type)) {
       out.push({ kind: "loop", ...at, condition: header(node), arms: [] });
     } else if (inside && IF.test(node.type) && !elseIf) {
-      out.push({ kind: "branch", ...at, condition: header(node), arms: ifArms(node) });
+      const arms = ifArms(node);
+      const rest = implicitElse(node, arms);
+      if (rest) arms.push(rest);
+      const end = Math.min(lines.end, Math.max(at.end, rest?.end ?? at.end));
+      out.push({ kind: "branch", start: at.start, end, condition: header(node), arms });
     } else if (inside && SWITCH.test(node.type)) {
       out.push({ kind: "branch", ...at, condition: header(node), arms: caseArms(node) });
     }

@@ -74,7 +74,7 @@ export function describeAnalysis(index: SymbolIndex): { summary: string; details
     return {
       summary: "Analysis coverage unknown (legacy index).",
       details: [
-        "File anchors are available for indexed files. Symbol and relationship coverage was not recorded; an empty result does not establish complete analysis.",
+        "File anchors are available for indexed files. What the analysis covered was not recorded, so an empty result does not prove there is none.",
       ],
     };
   const issues = index.analysis.flatMap((report) =>

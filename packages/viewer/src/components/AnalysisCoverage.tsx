@@ -85,24 +85,33 @@ export function coverageGap(
   linked: ReadonlySet<FilePath>,
 ): { files: FilePath[]; failed: boolean } {
   const languageOf = new Map(index.files.map((file) => [file.path, file.language]));
-  const files = new Set<FilePath>();
-  let failed = false;
-  for (const report of index.analysis ?? []) {
-    const code = report.files.filter(
-      (path) => linked.has(path) && !DATA_LANGUAGES.has(languageOf.get(path) ?? "text"),
-    );
-    // A report splits its files over several results per kind of relationship (one tool for most, another
-    // for the rest): a file is left out of a kind only when no result that did not fail analysed it.
-    const covered = new Map<string, Set<FilePath>>();
+  const reports = index.analysis ?? [];
+  // The reports split their files over several results per kind of relationship (the tree-sitter pack for
+  // most, a SCIP tool for the rest): a file is left out of a kind when no result of any report that did not
+  // fail analysed it, or when a tool failed on it.
+  const covered = new Map<string, Set<FilePath>>();
+  for (const report of reports)
     for (const result of report.results)
       for (const capability of result.capabilities) {
         const set = covered.get(capability) ?? new Set<FilePath>();
         if (result.status !== "failed") for (const path of result.analyzedFiles) set.add(path);
         covered.set(capability, set);
       }
+  const files = new Set<FilePath>();
+  let failed = false;
+  for (const report of reports) {
+    const code = report.files.filter(
+      (path) => linked.has(path) && !DATA_LANGUAGES.has(languageOf.get(path) ?? "text"),
+    );
     for (const result of report.results)
       for (const capability of result.capabilities) {
-        const missed = code.filter((path) => !covered.get(capability)!.has(path));
+        // (a tool that failed is always reported, even where another one gave hints: those are no match for
+        // what it would have found)
+        const missed = code.filter(
+          (path) =>
+            (result.status === "failed" && !result.analyzedFiles.includes(path)) ||
+            !covered.get(capability)!.has(path),
+        );
         if (missed.length > 0 && result.status === "failed") failed = true;
         for (const path of missed) files.add(path);
       }

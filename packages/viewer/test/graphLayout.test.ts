@@ -1292,6 +1292,45 @@ describe("what a still picture's frame cuts", () => {
   });
 });
 
+// V2-14: "Go" on each of cobra's 7 boxes said nothing a box could tell apart; the map says it once
+describe("a badge every box shares", () => {
+  const go = (id: string): DerivedGraph["nodes"][number] => ({
+    id,
+    label: id,
+    kind: "group",
+    container: false,
+    role: "component",
+    tech: "Go",
+  });
+  it("is drawn on no box, and named once for the map", async () => {
+    const nodes = ["a", "b", "c", "d"].map(go);
+    const layout = await layoutGraph({ nodes, edges: [], stubs: [], ghosts: [] });
+    expect(layout.sharedBadge).toBe("Go");
+    // not drawn, but still the box's name for a screen reader ("a, Go")
+    expect(layout.nodes.map((n) => [n.badge, n.badgeShared])).toEqual(
+      ["a", "b", "c", "d"].map(() => ["Go", true]),
+    );
+  });
+  it("stays on each box when one box differs, or the map has three boxes", async () => {
+    const mixed = [...["a", "b", "c"].map(go), { ...go("d"), tech: "Python" }];
+    const one = await layoutGraph({ nodes: mixed, edges: [], stubs: [], ghosts: [] });
+    expect(one.sharedBadge).toBeUndefined();
+    expect(one.nodes.map((n) => [n.badge, n.badgeShared])).toEqual([
+      ["Go", undefined],
+      ["Go", undefined],
+      ["Go", undefined],
+      ["Python", undefined],
+    ]);
+    const few = await layoutGraph({
+      nodes: ["a", "b", "c"].map(go),
+      edges: [],
+      stubs: [],
+      ghosts: [],
+    });
+    expect(few.sharedBadge).toBeUndefined();
+  });
+});
+
 /** A data-model view (`GraphView.boxText: "members"`): types as tables, fields as rows, arrows from the rows. */
 describe("tables", () => {
   const type = (id: string): DerivedGraph["nodes"][number] => ({
@@ -1338,9 +1377,8 @@ describe("tables", () => {
     ghosts: [],
   };
 
-  it("stacks the rows under the header in code order, as wide as the table, and reads to the right", async () => {
-    const layout = await layoutGraph(graph, { direction: "DOWN" });
-    expect(layout.direction).toBe("RIGHT");
+  it("stacks the rows under the header in code order, as wide as the table", async () => {
+    const layout = await layoutGraph(graph);
     const dead = layout.nodes.find((n) => n.id === "DeadJob")!;
     expect(dead.rows).toBe(true);
     expect(dead.children.map((c) => [c.id, c.row, c.memberType, c.width === dead.width])).toEqual([
@@ -1366,5 +1404,63 @@ describe("tables", () => {
     // the header band: above the first row of Job
     expect(end.y).toBeGreaterThan(job.y);
     expect(end.y).toBeLessThan(boxes.get("Job.id")!.y);
+  });
+
+  // V4-02: a data map laid out to the right is one long row of tall tables; in a tall pane, "Fit all" drew
+  // its text at 5 px. Top to bottom, the arrow still leaves its row: out of the row's side, down beside it.
+  it("lays out top to bottom, each arrow still leaving its row's side and ending on the other table's header", async () => {
+    const chain: DerivedGraph = {
+      ...graph,
+      nodes: [
+        ...graph.nodes,
+        type("Queue"),
+        field("Queue", "dead", 0, "DeadJob[]"),
+        field("Queue", "ready", 1, "Job[]"),
+      ],
+      edges: [
+        ...graph.edges,
+        ...["dead->DeadJob", "ready->Job"].map((pair) => {
+          const [row, to] = pair.split("->") as [string, string];
+          return {
+            ...graph.edges[0]!,
+            id: `edge:references:Queue.${row}->${to}`,
+            from: `Queue.${row}`,
+            to,
+          };
+        }),
+      ],
+    };
+    const layout = await layoutGraph(chain, { direction: "DOWN" });
+    expect(layout.direction).toBe("DOWN");
+    const boxes = absoluteBoxes(layout.nodes);
+    const queue = boxes.get("Queue")!;
+    const job = boxes.get("Job")!;
+    // Queue above DeadJob above Job
+    expect(queue.y + queue.height).toBeLessThan(boxes.get("DeadJob")!.y);
+    expect(boxes.get("DeadJob")!.y + boxes.get("DeadJob")!.height).toBeLessThan(job.y);
+    const lanes = new Set<number>();
+    for (const id of ["edge:references:Queue.ready->Job", "edge:references:Queue.dead->DeadJob"]) {
+      const edge = layout.edges.find((e) => e.id === id)!;
+      const row = boxes.get(edge.from)!;
+      const to = boxes.get(edge.to)!;
+      const [start, turn, down] = edge.points;
+      expect(start).toEqual({ x: row.x + row.width, y: row.y + row.height / 2 });
+      // a short run to the right, into a lane of its own beside the table, then down past it
+      expect(turn!.y).toBe(start!.y);
+      expect(turn!.x).toBeGreaterThan(start!.x);
+      expect(down!.x).toBe(turn!.x);
+      expect(down!.y).toBeGreaterThanOrEqual(queue.y + queue.height);
+      lanes.add(turn!.x);
+      const end = edge.points.at(-1)!;
+      expect(end.y).toBe(to.y);
+      expect(end.x).toBeGreaterThan(to.x);
+      expect(end.x).toBeLessThan(to.x + to.width);
+    }
+    expect(lanes.size).toBe(2);
+  });
+
+  it("is laid out in the direction that draws it larger in the pane", async () => {
+    expect((await layoutGraphFitting(graph, { width: 300, height: 1200 })).direction).toBe("DOWN");
+    expect((await layoutGraphFitting(graph, { width: 1200, height: 300 })).direction).toBe("RIGHT");
   });
 });

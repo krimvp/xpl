@@ -12,9 +12,9 @@ import { EXPLAINER_DIR, EXPLAINER_SUFFIX, readExplainerFile } from "../repo.js";
 
 const PRECISE = ["auto", "off", "require"] as const;
 /** The limits `@xpl/indexer` records for heuristic and for precise relationship results (analysis.ts). */
-const HEURISTIC_LIMIT = "Heuristic relationships are hints";
+const HEURISTIC_LIMIT = "References matched by name are hints";
 const PRECISE_LIMIT =
-  "Precise relationships may be missing; described files and empty results do not establish complete coverage.";
+  "A tool can miss a reference, so an empty result does not prove there is none.";
 
 /**
  * The coverage lines of `describeAnalysis`, easier to scan: one language per line in name order, the provider only
@@ -107,10 +107,11 @@ export const indexCommand: CommandSpec = {
     "`refs: none` (Ruby, PHP, yaml, json, toml, text without an artifact provider), or, when the precise tool",
     "did not describe every file, `refs: precise 64/82 (scip-python@0.6.6), 18 heuristic`: the references of",
     "those 18 files are hints.",
-    "Analysis coverage lists independent source and relationship abilities, analyzed files, limits and failures.",
+    "Analysis coverage lists, per language, what was found (symbols, each kind of reference), the files analyzed,",
+    "the limits and the failures.",
     "Excluded file counts and up to three paths per reason cover enumerated candidates only; git-ignored files",
     "and directories skipped by the fallback walk are not counted.",
-    "Empty relationships do not prove complete coverage. Saved indexes and exported viewers retain this report.",
+    "An empty result does not prove there is no reference. Saved indexes and exported pages keep this report.",
     "--scip imports a generated artifact with embedded source text, or a JSON manifest naming its artifact.",
     "Textless artifacts require artifactSha256 and pre-generation sourceHashes in the manifest.",
     "Unspecified positions require a verified manifest.defaultEncoding. Unknown extensions stay text.",

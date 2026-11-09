@@ -122,8 +122,10 @@ test("a phone reader keeps the theme button in the header, and the Map leads to 
     size.width,
   );
   await page.getByTestId("perspective-map").click();
-  // on a phone the way to Explore sits behind "About this map", with the caption's question and picker
-  await page.getByRole("button", { name: "About this map" }).click();
+  // on a phone the way to Explore sits behind "About this map" with the caption's question, when the map has
+  // one; a map with nothing else to hide shows the link itself (R4-24)
+  const about = page.getByRole("button", { name: "About this map" });
+  if (await about.isVisible()) await about.click();
   await page.getByTestId("explore-link").click();
   await expect.poll(() => stateOf(page).then((s) => s.perspective)).toBe("explore");
 });
@@ -252,12 +254,12 @@ test.describe("Present: a flow step", () => {
       // "Fit all", when it is offered, shows every stage
       const badge = page.getByTestId("pz-fit");
       if ((await badge.getAttribute("class"))?.includes("is-cue")) {
-        // it stays off the picture until the mouse moves (with the rest of the zoom buttons)
-        const opacity = () =>
-          page.locator(".pz-toolbar").evaluate((el) => getComputedStyle(el).opacity);
-        expect(await opacity()).toBe("0");
+        // while part of the flow is out of sight it stays on the slide, alone (D7); the zoom buttons come
+        // with the mouse
+        await expect(badge).toBeVisible();
+        await expect(page.getByRole("button", { name: "Zoom in" })).toBeHidden();
         await page.mouse.move(size.width / 4, size.height / 3);
-        await expect.poll(opacity).toBe("1");
+        await expect(page.getByRole("button", { name: "Zoom in" })).toBeVisible();
         await badge.click();
         await expect
           .poll(() =>

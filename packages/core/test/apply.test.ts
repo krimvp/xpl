@@ -1126,7 +1126,7 @@ describe("applyPatch: includeAdd and includeRemove", () => {
       ["views[0].includeAdd[2]", "view:overview"],
     ]);
     expect(errorsOf(r)[0]!.message).toContain("src/queue.tz");
-    expect(errorsOf(r)[1]!.message).toContain("did you mean file:src/runner.ts?");
+    expect(errorsOf(r)[1]!.message).toContain("Did you mean: file:src/runner.ts?");
     // an id that only the patch's own groups make valid is fine
     const withGroup = apply({
       nodes: [{ id: "grp:new", label: "New", members: [F.metrics] }],

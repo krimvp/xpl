@@ -65,6 +65,8 @@ export interface FrameBox {
   height: number;
   /** An `alt` frame's arms, top to bottom ([] without them): SequenceView draws a line above all but the first. */
   arms: ArmBox[];
+  /** The ids of the steps it holds, top to bottom: a click on its name selects them (their code is its code). */
+  steps: string[];
 }
 
 /** One arm of an `alt` frame: its condition sits at the top left, under the line that starts it. */
@@ -322,6 +324,7 @@ export function layoutSequence(view: SequenceView, model: ExplainerModel): Seque
       ),
       height: maxY + FRAME_BOTTOM - top,
       arms,
+      steps: rows.slice(resolved.from, resolved.to + 1).map((row) => row.step.id),
     });
   }
   const frameRight = Math.max(0, ...[...boxes.values()].map((box) => box.x + box.width));
@@ -344,4 +347,27 @@ export function layoutSequence(view: SequenceView, model: ExplainerModel): Seque
     // Outer frames first, so inner ones are drawn on top of them.
     frames: frames.map((f) => boxes.get(f.frame)!).filter(Boolean),
   };
+}
+
+/** One thing a reader meets going down a sequence: a frame's name, an arm's condition, or a step. */
+export type SequenceItem =
+  | { kind: "frame"; box: FrameBox }
+  | { kind: "arm"; box: FrameBox; arm: ArmBox; n: number }
+  | { kind: "step"; row: Row };
+
+/**
+ * The sequence top to bottom, as it is read: a frame's name before its first arm's condition, before the steps
+ * under them. The order of the Tab key in the diagram and of its text view (V4-10, V4-08).
+ */
+export function readingOrder(layout: Pick<SequenceLayout, "frames" | "rows">): SequenceItem[] {
+  const items: { item: SequenceItem; y: number; rank: number }[] = [];
+  for (const box of layout.frames) {
+    items.push({ item: { kind: "frame", box }, y: box.y, rank: box.depth });
+    box.arms.forEach((arm, n) =>
+      items.push({ item: { kind: "arm", box, arm, n }, y: arm.top, rank: 100 + box.depth }),
+    );
+  }
+  for (const row of layout.rows)
+    items.push({ item: { kind: "step", row }, y: row.bandTop, rank: 200 });
+  return items.sort((a, b) => a.y - b.y || a.rank - b.rank).map(({ item }) => item);
 }

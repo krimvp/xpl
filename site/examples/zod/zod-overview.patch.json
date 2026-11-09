@@ -321,7 +321,7 @@
               "role": "usage"
             }
           ],
-          "note": "### The runtime gathers value and issues\n\nSchema execution carries a value and an issue list through its checks. A nonempty issue list marks invalid input.",
+          "note": "### The runtime gathers value and issues\n\nA schema's `run` method carries a value and an issue list through its checks. A nonempty issue list marks invalid input.",
           "editor": {
             "primary": "packages/zod/src/v4/core/schemas.ts"
           }
@@ -355,6 +355,24 @@
           "note": "### Parsing turns the issue list into an outcome\n\nA valid run returns parsed data. Invalid input becomes a thrown error or a failed result, depending on the method used.",
           "editor": {
             "primary": "packages/zod/src/v4/core/parse.ts"
+          }
+        },
+        {
+          "id": "t6",
+          "view": "view:inside",
+          "focus": [
+            "file:packages/zod/src/v4/classic/parse.ts"
+          ],
+          "code": [
+            {
+              "file": "packages/zod/src/v4/classic/parse.ts",
+              "symbol": "safeParse",
+              "role": "definition"
+            }
+          ],
+          "note": "### Where to go next\n\nThe guide \"How Zod parse and safeParse handle invalid input\" follows a failed parse to the error it builds. This tour did not open the classic parse functions, which build the core ones with Zod's own error class.",
+          "editor": {
+            "primary": "packages/zod/src/v4/classic/parse.ts"
           }
         }
       ]

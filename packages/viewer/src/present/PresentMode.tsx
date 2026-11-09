@@ -17,11 +17,19 @@
  * a detour: the selection follows the click and the header says so; the next arrow key applies the
  * next step again (← and Esc go back to the step that was interrupted).
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import type { TourStep } from "@xpl/core";
 import { CodeArea } from "../components/CodeArea.js";
 import { DiagramPane } from "../components/DiagramPane.js";
-import { Presenting } from "../components/PanZoom.js";
+import { Presenting, PresentRoom } from "../components/PanZoom.js";
 import { useStore, useViewerState } from "../hooks.js";
 import { renderInline, renderMarkdown } from "../markdown.js";
 import { stepNumber } from "../modes.js";
@@ -63,7 +71,9 @@ export function PresentMode() {
   // largest type size that leaves the diagram its room.
   const left = useRef<HTMLElement>(null);
   const measure = useRef<HTMLDivElement>(null);
-  const [fit, setFit] = useState<{ size: number; height: number; cap: number } | undefined>();
+  const [fit, setFit] = useState<
+    { size: number; height: number; cap: number; tour: string | undefined } | undefined
+  >();
   const [width, setWidth] = useState(0);
   const [height, setHeight] = useState(0);
   useLayoutEffect(() => {
@@ -89,8 +99,37 @@ export function PresentMode() {
       for (const copy of copies) tallest = Math.max(tallest, (copy as HTMLElement).offsetHeight);
       return tallest;
     };
-    setFit({ ...captionFit(tallestAt, cap, long), cap });
+    const next = { ...captionFit(tallestAt, cap, long), cap, tour: tour?.id };
+    // A step whose diagram took a wider column (D7) leaves the caption wider, and its text needs less height:
+    // the caption keeps the tallest the tour has needed, so it does not change height from step to step.
+    setFit((known) =>
+      known && known.tour === next.tour && known.cap === next.cap && known.height >= next.height
+        ? known
+        : next,
+    );
   }, [tour, width, state.model, height, long]);
+
+  // D7: a map or a sequence that does not read whole at the 12px floor gets a wider column, up to `--diagram-max`
+  // (styles.css), before it falls back to a frame of the step's focus. The width a step asked for is kept for
+  // the step (going back to it does not jump), and only grows: a map laid out again for the wider pane does
+  // not hand the room back and forth.
+  const [room, setRoom] = useState<ReadonlyMap<string, number>>(new Map());
+  const stepId = step ? `${tour?.id}/${step.id}` : "";
+  // (a flow has its own split and framing, for the whole tour: a flow step asks for no room)
+  const flowStep = store.view()?.type === "flow";
+  const askRoom = useCallback(
+    (extra: number) => {
+      const column = left.current?.offsetWidth ?? 0;
+      if (column === 0 || !stepId || flowStep) return;
+      setRoom((known) => {
+        const want = column + extra;
+        if ((known.get(stepId) ?? 0) >= want) return known;
+        return new Map(known).set(stepId, want);
+      });
+    },
+    [stepId, flowStep],
+  );
+  const need = room.get(stepId);
 
   // Keyboard focus: on the slide when the talk starts, back on the Present button when it ends.
   const slide = useRef<HTMLElement>(null);
@@ -184,13 +223,23 @@ export function PresentMode() {
       data-step-id={step.id}
       data-view-type={store.view()?.type}
       data-split={wide ? "wide" : undefined}
-      style={columns > 0 ? ({ "--code-columns": columns } as CSSProperties) : undefined}
+      style={
+        {
+          ...(columns > 0 ? { "--code-columns": columns } : {}),
+          ...(need !== undefined
+            ? { "--diagram-need": Number.isFinite(need) ? `${need}px` : "100%" }
+            : {}),
+        } as CSSProperties
+      }
+      data-room={need !== undefined ? "wide" : undefined}
       data-pointer={pointer ? "moved" : undefined}
     >
       <section className="present-left" aria-label="Diagram and caption" ref={left}>
         {/* (the zoom toolbar is out of sight on a slide: the first view takes the whole pane, PanZoom) */}
         <Presenting.Provider value={true}>
-          <DiagramPane />
+          <PresentRoom.Provider value={askRoom}>
+            <DiagramPane />
+          </PresentRoom.Provider>
         </Presenting.Provider>
         <footer
           className="tour-caption"

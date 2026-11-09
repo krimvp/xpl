@@ -63,7 +63,8 @@ export function Guide({
   const active =
     state.applied && state.applied.tourId === tour?.id ? state.applied.stepId : undefined;
 
-  // The section being read: the last one whose top has passed a third of the way down the scroller.
+  // The section being read: the last one whose top has passed the middle of the scroller (R4-5: a step whose
+  // heading and picture fill the lower half is the one read, not the one above it).
   const [reading, setReading] = useState<string | undefined>(undefined);
   useEffect(() => {
     const element = body.current;
@@ -74,7 +75,7 @@ export function Guide({
         : element.closest<HTMLElement>(".workspace-columns");
     if (!scroller) return;
     const update = () => {
-      const line = scroller.getBoundingClientRect().top + scroller.clientHeight / 3;
+      const line = scroller.getBoundingClientRect().top + scroller.clientHeight / 2;
       let current: string | undefined;
       for (const section of element.querySelectorAll<HTMLElement>("[data-section-id]")) {
         if (section.getBoundingClientRect().top <= line) current = section.dataset.sectionId;
@@ -92,6 +93,14 @@ export function Guide({
   }, [tour?.id]);
   const current = reading ?? active;
   useEffect(() => onReading?.(reading), [reading, onReading]);
+  // The step on screen, for the reading tabs (R4-5): Map, Flow or Code clicked while another step than the
+  // applied one is on screen opens on that step (WorkspaceTabs).
+  useEffect(() => {
+    readingStep.current = reading && tour ? { tourId: tour.id, stepId: reading } : undefined;
+    return () => {
+      readingStep.current = undefined;
+    };
+  }, [reading, tour]);
 
   useEffect(() => {
     if (
@@ -417,16 +426,6 @@ function GuideSection({
       ) : (
         <h3 tabIndex={-1}>{title}</h3>
       )}
-      <div className="guide-section-actions">
-        <a className="btn" href={link.href} aria-label={`Link to ${where}`}>
-          Link to this step
-        </a>
-        {presentable && (
-          <button type="button" className="btn" onClick={() => store.present(tourId, index)}>
-            Present from this step
-          </button>
-        )}
-      </div>
       <div className="guide-explanation">
         <div className="guide-prose">
           {body && (
@@ -526,9 +525,7 @@ function GuideSection({
         const fresh = members.filter((member) => !callEnds.has(member));
         return fresh.length > 0 && !onlyTests ? (
           <figure className="guide-mini" key={id}>
-            <figcaption>
-              {element?.type === "concept" ? "Where this applies" : "In the code"}
-            </figcaption>
+            <figcaption>In the code</figcaption>
             <div className="guide-mini-row">
               {fresh.map((member) => (
                 <button
@@ -602,14 +599,37 @@ function GuideSection({
           </ul>
         </section>
       )}
+      {/* The step's tools come after its text and its code (R3-8): the title leads straight into the text. */}
       <div className="section-actions">
-        <button className="btn" aria-label={`Show code, ${where}`} onClick={() => show("code")}>
+        <button
+          className="btn section-show-code"
+          aria-label={`Show code, ${where}`}
+          onClick={() => show("code")}
+        >
           Show code
         </button>
+        <a className="btn" href={link.href} aria-label={`Link to ${where}`}>
+          Link to this step
+        </a>
+        {presentable && (
+          <button
+            type="button"
+            className="btn"
+            aria-label={`Present from ${where}`}
+            onClick={() => store.present(tourId, index)}
+          >
+            Present from this step
+          </button>
+        )}
       </div>
     </section>
   );
 }
+
+/** The Tour's step on screen while the Tour is open (set by `Guide`, read by the reading tabs). */
+export const readingStep: { current: { tourId: string; stepId: string } | undefined } = {
+  current: undefined,
+};
 
 /** The summary of a node, concept, edge or sequence step (what stands in for a missing note). */
 function summaryOf(id: string, model: ExplainerModel): string | undefined {

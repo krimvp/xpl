@@ -149,15 +149,15 @@ describe("process flow of another view (Read > Flow, the topic select)", () => {
 });
 
 describe("plain words for readers", () => {
-  it("map sources name the trust label and what it means, and an author's note on top", () => {
+  it("map sources name the trust label and what it means, then that the author labelled the arrow", () => {
     expect(mapEdgeSource({ stored: false, resolution: "heuristic" })).toBe(
       "heuristic: matched by name",
     );
     expect(mapEdgeSource({ stored: true, resolution: "precise" })).toBe(
-      "author's note · precise: checked by a language tool",
+      "precise: checked by a language tool; the label is the author's",
     );
     expect(mapEdgeSource({ stored: true, resolution: "mixed" })).toBe(
-      "author's note · partly matched by name",
+      "partly matched by name; the label is the author's",
     );
     expect(mapEdgeSource({ stored: true, resolution: "llm" })).toBe("added by the author");
     expect(mapEdgeSource({ stored: true, resolution: "static" })).toBe("from the code");

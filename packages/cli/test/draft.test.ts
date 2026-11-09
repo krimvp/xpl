@@ -107,7 +107,9 @@ function checkShape(patch: ExplainerPatch): void {
     expect((step.code ?? []).length).toBeLessThanOrEqual(DRAFT_LIMITS.codeRanges);
     expect((step.code ?? []).length).toBeGreaterThan(0);
   }
-  for (const step of tour.steps!) expect(step.focus.length).toBeGreaterThan(0);
+  // (the closing step may focus nothing: it names what the tour skipped, not a box it showed)
+  for (const step of closing ? tour.steps!.slice(0, -1) : tour.steps!)
+    expect(step.focus.length).toBeGreaterThan(0);
   for (const view of patch.views ?? []) {
     if (view.type === "graph") {
       expect(view.stubs).toEqual({ mode: "none" });
@@ -209,8 +211,9 @@ describe.each(Object.keys(ENTRIES))("xpl draft on %s", (fixture) => {
     for (const step of tour.slice(2, -1)) {
       expect(steps.map((s) => s.id)).toContain(step.focus[0]);
     }
-    // and last, where to go next
+    // and last, where to go next: on the map, with no box focused (structure R4-07)
     expect(tour.at(-1)!.note).toContain("Where to go next");
+    expect(tour.at(-1)!.focus).toEqual([]);
   });
 });
 

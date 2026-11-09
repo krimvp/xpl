@@ -93,8 +93,9 @@ export function GuideSource({
             <code>{file}</code>
             {base && " (before the change)"} · {start === end ? "line" : "lines"} {start}
             {start !== end && `–${end}`}
+            {/* (N12: "(of 44–80)" read as a second range: say how much of the code link this is) */}
             {(start !== range.startLine || end < range.endLine) &&
-              ` (of ${range.startLine}–${range.endLine})`}
+              ` (${end - start + 1} of its ${range.endLine - range.startLine + 1} lines)`}
             {total > 1 && ` · code link ${position} of ${total}`}
           </p>
           <pre tabIndex={0} aria-label={`Source lines ${start} to ${end}`}>

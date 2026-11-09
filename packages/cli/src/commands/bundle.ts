@@ -96,12 +96,12 @@ function describeChange(
 }
 
 /**
- * `index 0.3 MB (1.3 MB as plain JSON, pruned from 9.4 MB)`: the size in the page (packed), then unpacked; without
+ * `index 1.3 MB as JSON (0.3 MB packed), pruned from 9.4 MB`: the size as JSON, then packed in the page; without
  * `pruned from` when the whole index is embedded.
  */
 function describeIndex(e: EmbeddedIndex): string {
-  const plain = `${formatBytes(e.bytes)} as plain JSON`;
-  return `index ${formatBytes(e.packedBytes)} (${e.pruned ? `${plain}, pruned from ${formatBytes(e.fullBytes)}` : plain})`;
+  const pruned = e.pruned ? `, pruned from ${formatBytes(e.fullBytes)}` : "";
+  return `index ${formatBytes(e.bytes)} as JSON (${formatBytes(e.packedBytes)} packed)${pruned}`;
 }
 
 export const bundleCommand: CommandSpec = {
@@ -158,24 +158,6 @@ export const bundleCommand: CommandSpec = {
     "Omit the explainer when the repository has exactly one; otherwise supply its name.",
   ],
   options: {
-    "include-guides": {
-      type: "string",
-      arg: "<id,id>",
-      desc: "Embed up to 8 additional checked guides (20 MiB limit) for offline switching",
-    },
-    draft: {
-      type: "boolean",
-      desc: "Write an explicitly labelled draft preview, even with readiness errors",
-    },
-    "require-review": {
-      type: "boolean",
-      desc: "Team policy: require a current author review of all stored content",
-    },
-    note: {
-      type: "string",
-      arg: "<reason>",
-      desc: "Record an author decision about warnings or omissions",
-    },
     out: { type: "string", short: "o", arg: "<out.html>", desc: "Output file (required)" },
     mode: { type: "string", arg: "explore|present", desc: "Initial mode (default explore)" },
     tour: {
@@ -193,14 +175,32 @@ export const bundleCommand: CommandSpec = {
       arg: "<n>",
       desc: `With --files boundary: add at most n files (default ${BOUNDARY_MAX})`,
     },
-    "allow-drift": {
-      type: "boolean",
-      desc: "Legacy draft preview for drifted/missing anchors; output is labelled draft",
-    },
     "embed-index": {
       type: "string",
       arg: "full|pruned",
       desc: "Index to embed: pruned (default; what the embedded files and the views can show) or full",
+    },
+    "include-guides": {
+      type: "string",
+      arg: "<id,id>",
+      desc: "Embed up to 8 additional checked guides (20 MiB limit) for offline switching",
+    },
+    draft: {
+      type: "boolean",
+      desc: "Write an explicitly labelled draft preview, even with readiness errors",
+    },
+    note: {
+      type: "string",
+      arg: "<reason>",
+      desc: "Record an author decision about warnings or omissions",
+    },
+    "require-review": {
+      type: "boolean",
+      desc: "Team policy: require a current author review of all stored content",
+    },
+    "allow-drift": {
+      type: "boolean",
+      desc: "Legacy draft preview for drifted/missing anchors; output is labelled draft",
     },
   },
   positionals: [{ name: "explainer", required: false }],

@@ -523,7 +523,7 @@ describe("4. Queue.ack and its call are deleted", () => {
     const message = lenient.json.issues.find((i: any) => i.code === "anchor-missing").message;
     // (candidates are spelled as ids and as anchor fields; the test double comes last)
     expect(message).toBe(
-      "anchor src/queue.ts#Queue.ack is missing: symbol Queue.ack is not in src/queue.ts; did you mean " +
+      "anchor src/queue.ts#Queue.ack is missing: symbol Queue.ack is not in src/queue.ts. Did you mean: " +
         'sym:src/queue.ts#Queue.acked (anchor: file: "src/queue.ts", symbol: "Queue.acked"), ' +
         'sym:test/retry.test.ts#RecordingQueue.ack (anchor: file: "test/retry.test.ts", symbol: "RecordingQueue.ack")? ' +
         "Re-anchor it to where the code went, or drop it (resend the element without this anchor, or remove the element).",
@@ -674,7 +674,7 @@ describe("other edits", () => {
     ]);
     for (const m of missing) {
       expect(m.reason, m.elementId).toBe(
-        "file src/queue.ts is not in the index; did you mean src/jobs/queue.ts?",
+        "file src/queue.ts is not in the index. Did you mean: src/jobs/queue.ts?",
       );
     }
     expect(r.resolve.counts).toEqual({ ok: 13, moved: 0, drifted: 0, missing: 3 });
@@ -1220,7 +1220,7 @@ describe("all five edits in one second commit", () => {
     const missing = errors[1].message as string;
     expect(missing).toContain("anchor src/queue.ts#Queue.ack is missing");
     expect(missing).toContain("symbol Queue.ack is not in src/queue.ts");
-    expect(missing).toMatch(/did you mean /);
+    expect(missing).toMatch(/Did you mean: /);
     expect(missing).toContain("Re-anchor it to where the code went, or drop it");
     // the drifted anchor of a user-owned concept: an llm cannot repair it, and the message says so
     const drifted = errors[0].message as string;

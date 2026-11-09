@@ -1,5 +1,6 @@
 import { useStore, useViewerState } from "../hooks.js";
 import type { Perspective } from "../store.js";
+import { readingStep } from "./Guide.js";
 
 /** The reading tabs: short plain names, so all four fit beside the title on a 1280px screen. */
 export const PERSPECTIVES: { id: Perspective; label: string; hint: string }[] = [
@@ -22,7 +23,23 @@ export function WorkspaceTabs() {
           aria-current={state.perspective === id ? "page" : undefined}
           data-testid={`perspective-${id}`}
           title={hint}
-          onClick={() => store.setPerspective(id)}
+          onClick={() => {
+            // Leaving the Tour while another step than the applied one is on screen: that step is the one
+            // being read, so the tab opens on its diagram and title (R4-5).
+            const on = readingStep.current;
+            const applied = state.applied;
+            if (
+              state.perspective === "guide" &&
+              id !== "guide" &&
+              on &&
+              on.stepId !== applied?.stepId
+            ) {
+              const index =
+                state.model.tour(on.tourId)?.steps.findIndex((step) => step.id === on.stepId) ?? -1;
+              if (index >= 0) store.previewStep(on.tourId, index);
+            }
+            store.setPerspective(id);
+          }}
         >
           {label}
         </button>

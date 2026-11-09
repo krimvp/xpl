@@ -228,8 +228,8 @@ test("sequence diagrams: call, return and async arrows, self-calls, nested frame
   for (const id of ["dispatch:3", "dispatch:4", "dispatch:5"])
     expect(contains(inner, await box(id))).toBe(true);
   expect(contains(inner, await box("dispatch:6"))).toBe(false);
-  await expect(page.locator('[data-frame-id="frame:inner"]')).toContainText("alt");
-  await expect(page.locator('[data-frame-id="frame:inner"]')).toContainText("[handler ok]");
+  await expect(page.locator('[data-frame-head="frame:inner"]')).toContainText("alt");
+  await expect(page.locator('[data-frame-head="frame:inner"]')).toContainText("[handler ok]");
   // Frames never swallow clicks meant for the steps under them.
   await byId(page, "dispatch:4").click();
   expect((await stateOf(page)).selection).toEqual(["dispatch:4"]);

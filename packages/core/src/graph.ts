@@ -84,6 +84,7 @@ export interface DerivedEdge {
   from: ElementId;
   to: ElementId;
   kind: Edge["kind"];
+  /** The stored edge's label; "holds" for a field's arrow on a `boxText: "members"` view (from a row). */
   label?: string;
   summary?: string;
   /** Number of index references aggregated (1 for a stored edge). */
@@ -766,6 +767,10 @@ export function deriveGraph(
   const outEdges = [...edges.values()]
     .filter((e) => !hidden.has(e.id) && !hidden.has(e.from) && !hidden.has(e.to))
     .sort((a, b) => cmp(a.id, b.id));
+  // a row's arrow: the field holds a value of that type ("Queue.ready holds Job")
+  for (const edge of outEdges)
+    if (edge.kind === "references" && rowOf.has(edge.from) && edge.label === undefined)
+      edge.label = "holds";
   const { stubs, ghosts } = planStubs([...stubAggs.values()], {
     model,
     policy,

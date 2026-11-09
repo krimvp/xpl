@@ -25,11 +25,11 @@ import {
   type ChangeMarks,
   type GraphLayout,
 } from "../layout/graphLayout.js";
-import { layoutSequence } from "../layout/sequenceLayout.js";
-import { SNAPSHOT_WHOLE, type Box } from "../viewport.js";
+import { frameLabelWidth, layoutSequence } from "../layout/sequenceLayout.js";
+import { SNAPSHOT_WHOLE, unionBox, type Box } from "../viewport.js";
 import { FlowDiagram } from "./FlowDiagram.js";
 import { GraphPicture, useGraphChanges } from "./GraphView.js";
-import { SequencePicture } from "./SequenceView.js";
+import { SequencePicture, StickyHeads } from "./SequenceView.js";
 import { SNAPSHOT_HEIGHT, SNAPSHOT_TALL_HEIGHT, SnapshotFrame } from "./SnapshotFrame.js";
 
 /** Graph layouts by view, for the page's life: a guide shows the same view in many sections. */
@@ -150,8 +150,13 @@ function GraphSnapshot({
 }) {
   const state = useViewerState();
   const files = state.files;
+  // A still picture draws no dashed boxes for code outside the map (R3-N4): they can not be opened here, and
+  // in a small picture they read as parts of the map. The live Map shows them.
   const graph = useMemo(
-    () => deriveGraph(view, state.model, { text: (file) => files[file] }),
+    () =>
+      deriveGraph({ ...view, stubs: { mode: "none" } }, state.model, {
+        text: (file) => files[file],
+      }),
     [view, state.model, files],
   );
   const changes = useGraphChanges(graph);
@@ -228,38 +233,59 @@ function SequenceSnapshot({ view, focus }: { view: SequenceView; focus: readonly
   const layout = useMemo(() => layoutSequence(view, state.model), [view, state.model]);
   const selected = new Set(focus);
   const boxes: Box[] = [];
-  const heads: Box[] = [];
-  // The names at the top of the lifelines a step joins come with it when there is room: an arrow means
-  // little without its ends.
-  const ends = new Set<string>();
+  const near: Box[] = [];
+  const lanes = new Map(layout.lifelines.map((lifeline) => [lifeline.id, lifeline]));
   for (const row of layout.rows) {
-    if (selected.has(row.step.id)) {
-      boxes.push({
-        x: row.bandLeft,
-        y: row.bandTop,
-        width: row.bandRight - row.bandLeft,
-        height: row.bandBottom - row.bandTop,
+    if (!selected.has(row.step.id)) continue;
+    const band = {
+      x: row.bandLeft,
+      y: row.bandTop,
+      width: row.bandRight - row.bandLeft,
+      height: row.bandBottom - row.bandTop,
+    };
+    // An arrow means little without its ends (R4-3): both lifelines are in the picture with it, and their
+    // names stay at its top (`StickyHeads`) when the picture starts lower down.
+    const ends = [row.step.from, row.step.to].flatMap((id) => {
+      const lifeline = id === undefined ? undefined : lanes.get(id);
+      return lifeline
+        ? [
+            {
+              x: lifeline.x - lifeline.headWidth / 2,
+              y: band.y,
+              width: lifeline.headWidth,
+              height: band.height,
+            },
+          ]
+        : [];
+    });
+    boxes.push(unionBox([band, ...ends])!);
+    // ... and the frames around it start in the picture when there is room: a frame's name is not cut mid-word.
+    for (const box of layout.frames) {
+      if (!box.steps.includes(row.step.id)) continue;
+      near.push({
+        x: box.x,
+        y: band.y,
+        width: Math.min(box.width, frameLabelWidth(box.frame.kind, box.frame.label)),
+        height: band.height,
       });
-      ends.add(row.step.from);
-      ends.add(row.step.to);
     }
   }
   for (const lifeline of layout.lifelines) {
-    const head = {
+    if (!selected.has(lifeline.id)) continue;
+    boxes.push({
       x: lifeline.x - lifeline.headWidth / 2,
       y: lifeline.headTop,
       width: lifeline.headWidth,
       height: lifeline.headHeight,
-    };
-    if (selected.has(lifeline.id)) boxes.push(head);
-    else if (ends.has(lifeline.id)) heads.push(head);
+    });
   }
   return (
     <SnapshotFrame
       width={layout.width}
       height={layout.height}
-      focus={boxes.length > 0 ? { boxes, neighbours: heads } : undefined}
+      focus={boxes.length > 0 ? { boxes, neighbours: near } : undefined}
       where="Flow"
+      overlay={(t, width) => <StickyHeads lifelines={layout.lifelines} t={t} paneWidth={width} />}
     >
       <SequencePicture layout={layout} selection={focus} />
     </SnapshotFrame>

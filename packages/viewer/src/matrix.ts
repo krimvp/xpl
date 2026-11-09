@@ -9,6 +9,9 @@ import { drawnEdges } from "./drawnEdges.js";
  * The order (`boxOrder`, shared with the parts list): a box comes before the boxes it uses, so the arrows of
  * a map without cycles all lie above the diagonal. Only an arrow of a real cycle lies below it, and then
  * the cycle's other arrows lie above.
+ *
+ * A data map (`GraphView.boxText: "members"`) folds each table's rows into the table: one row and column per
+ * type, and a cell names the fields whose arrows it holds ("holds (ready, inflight)").
  */
 export interface MatrixBox {
   id: string;
@@ -60,19 +63,28 @@ export function buildMatrix(graph: DerivedGraph, include: readonly string[] = []
   const labels = new Map(graph.nodes.map((node) => [node.id, node.label]));
   const ends = new Set(graph.edges.flatMap((edge) => [edge.from, edge.to]));
   const byId = new Map(graph.nodes.map((node) => [node.id, node]));
-  // A container is a frame on the map; it gets a row only when an arrow ends on it.
-  const ids = boxOrder(graph, include).filter((id) => !byId.get(id)!.container || ends.has(id));
+  // a row of a table counts as its table
+  const fold = new Map<string, string>();
+  for (const node of graph.nodes)
+    if (node.row !== undefined && node.parent !== undefined && byId.get(node.parent)?.rows)
+      fold.set(node.id, node.parent);
+  const end = (id: string) => fold.get(id) ?? id;
+  for (const edge of graph.edges) ends.add(end(edge.from)).add(end(edge.to));
+  // A container is a frame on the map; it gets a row only when an arrow ends on it. A table always does.
+  const ids = boxOrder(graph, include).filter(
+    (id) => !fold.has(id) && (!byId.get(id)!.container || byId.get(id)!.rows || ends.has(id)),
+  );
   const boxes = ids.map((id): MatrixBox => {
     const parent = byId.get(id)!.parent;
     const group = parent === undefined ? undefined : labels.get(parent);
-    return { id, label: labels.get(id)!, ...(group !== undefined ? { group } : {}) };
+    return { id, label: shortTodo(labels.get(id)!), ...(group !== undefined ? { group } : {}) };
   });
 
   const at = new Map(ids.map((id, i) => [id, i]));
   const cells: (MatrixCell | undefined)[][] = ids.map(() => ids.map(() => undefined));
   const cellOf = (edge: DerivedEdge): MatrixCell | undefined => {
-    const r = at.get(edge.from);
-    const c = at.get(edge.to);
+    const r = at.get(end(edge.from));
+    const c = at.get(end(edge.to));
     if (r === undefined || c === undefined || r === c) return undefined;
     return (cells[r]![c] ??= {
       select: [],
@@ -86,6 +98,7 @@ export function buildMatrix(graph: DerivedGraph, include: readonly string[] = []
     });
   };
   // the drawn arrows first: they set the cell's trust label
+  const held = new Map<MatrixCell, string[]>();
   for (const edge of drawnEdges(graph.edges)) {
     const cell = cellOf(edge);
     if (!cell) continue;
@@ -93,8 +106,19 @@ export function buildMatrix(graph: DerivedGraph, include: readonly string[] = []
     cell.select.push(edge.id);
     cell.count += edge.count;
     cell.authored &&= AUTHORED.has(edge.resolution);
+    if (fold.has(edge.from) && edge.label === "holds") {
+      // a field's arrow, folded into its table's row: the cell names the fields
+      const fields = held.get(cell) ?? [];
+      if (fields.length === 0) held.set(cell, fields);
+      fields.push(labels.get(edge.from)!);
+      continue;
+    }
     const text = edge.label ?? `${edge.kind} ×${edge.count}`;
     cell.text = cell.text ? `${cell.text}; ${text}` : text;
+  }
+  for (const [cell, fields] of held) {
+    const text = `holds (${fields.join(", ")})`;
+    cell.text = cell.text ? `${text}; ${cell.text}` : text;
   }
   // then every arrow of the pair, those the map leaves out for an authored arrow included
   for (const edge of graph.edges) {
@@ -107,7 +131,7 @@ export function buildMatrix(graph: DerivedGraph, include: readonly string[] = []
   const out: (MatrixOutside | undefined)[] = ids.map(() => undefined);
   const into: (MatrixOutside | undefined)[] = ids.map(() => undefined);
   for (const stub of graph.stubs) {
-    const i = at.get(stub.inside);
+    const i = at.get(end(stub.inside));
     if (i === undefined) continue;
     const side = stub.direction === "out" ? out : into;
     const sum = (side[i] ??= { select: [], count: 0, kinds: [], text: "" });
@@ -117,6 +141,15 @@ export function buildMatrix(graph: DerivedGraph, include: readonly string[] = []
     sum.text = `${sum.kinds.join(" & ")} ×${sum.count}`;
   }
   return { boxes, cells, out, in: into };
+}
+
+/**
+ * A draft's label "TODO: 2-5 plain words for this file (now: anchors.ts)" as "anchors.ts (TODO)": the rows of a
+ * draft would all read the same where the header cuts them (V3-16).
+ */
+function shortTodo(label: string): string {
+  const now = /^TODO\b.*\(now: ([^)]+)\)\s*$/.exec(label);
+  return now ? `${now[1]} (TODO)` : label;
 }
 
 /** Trust labels of arrows the author added: the cell shows a mark, not a count of references. */
@@ -183,6 +216,12 @@ export function boxOrder(graph: DerivedGraph, include: readonly string[] = []): 
 
   const out: string[] = [];
   const walk = (parent: string | undefined) => {
+    if (parent !== undefined && byId.get(parent)?.rows) {
+      // a table's rows: in the order the code declares them
+      const rows = [...(children.get(parent) ?? [])];
+      out.push(...rows.sort((a, b) => (byId.get(a)!.row ?? 0) - (byId.get(b)!.row ?? 0)));
+      return;
+    }
     const level = [...(children.get(parent) ?? [])].sort(before);
     const uses = new Map<string, Set<string>>(level.map((id) => [id, new Set()]));
     for (const edge of graph.edges) {

@@ -115,6 +115,13 @@ describe('boxText: "members"', () => {
     );
   });
 
+  // V4-03/V4-05: "references ×1" on every arrow of a data map said nothing; the arrow means the row's field
+  // holds a value of the type it points at.
+  it('names an arrow from a row "holds", and leaves the arrows of an ordinary map as they are', () => {
+    expect(derive(TS_INCLUDE, "members").edges.map((e) => e.label)).toEqual(["holds", "holds"]);
+    expect(derive(TS_INCLUDE).edges.every((e) => e.label === undefined)).toBe(true);
+  });
+
   it("makes each type with rows a table, rows in code order, each with the type its line names", () => {
     const nodes = derive(TS_INCLUDE, "members").nodes;
     expect(nodes.filter((n) => n.rows).map((n) => n.id)).toEqual(

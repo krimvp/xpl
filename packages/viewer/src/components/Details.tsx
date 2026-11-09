@@ -135,8 +135,8 @@ export function Details({
         <textarea
           className="feedback"
           data-testid="feedback"
-          aria-label="What should your agent change?"
-          placeholder="What should your agent change? Empty: explain this in more depth."
+          aria-label="Your question or request about this"
+          placeholder="What is unclear or wrong here? Leave it empty to ask for more detail."
           rows={2}
           value={feedback.id === info.id ? feedback.text : ""}
           onChange={(event) => setFeedback({ id: info.id, text: event.target.value })}

@@ -421,6 +421,24 @@
           "editor": {
             "primary": "cobra.go"
           }
+        },
+        {
+          "id": "t7",
+          "view": "view:overview",
+          "focus": [
+            "file:command.go"
+          ],
+          "code": [
+            {
+              "file": "command.go",
+              "symbol": "Command.execute",
+              "role": "definition"
+            }
+          ],
+          "note": "### Where to go next\n\nThe guide \"How Cobra selects and runs a command\" follows `Command.execute` from the help checks to the post-run hooks. This tour did not open how completion finds candidates, or the doc generators for formats other than Markdown.",
+          "editor": {
+            "primary": "command.go"
+          }
         }
       ]
     }

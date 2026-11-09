@@ -117,18 +117,16 @@ export function ExplanationInfo() {
       {review && (
         <>
           <p>
-            {review.reviewer} (self-reported), reviewed {review.reviewedAt}. Content:{" "}
-            {review.scope.content === "all"
-              ? "all stored explanation content"
-              : review.scope.content.join(", ")}
-            . Evidence:{" "}
+            {review.reviewer} (self-reported), reviewed {review.reviewedAt}. Text checked:{" "}
+            {review.scope.content === "all" ? "all of the guide" : review.scope.content.join(", ")}.
+            Code checked against:{" "}
             {review.scope.source === "repository"
-              ? "all indexed repository files and attached anchors"
-              : "attached anchors"}
-            {review.scope.files?.length ? ` plus ${review.scope.files.join(", ")}` : ""}.{" "}
+              ? "the whole repository and the code links"
+              : "the code links"}
+            {review.scope.files?.length ? ` and ${review.scope.files.join(", ")}` : ""}.{" "}
             {review.omissions.length
-              ? `Named omissions: ${review.omissions.join("; ")}`
-              : "No omissions named."}{" "}
+              ? `Not checked: ${review.omissions.join("; ")}.`
+              : "Nothing left out."}{" "}
             {status === "out-of-date" &&
               "The reviewed text or its code changed, or the code is not in this page."}
           </p>

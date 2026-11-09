@@ -92,7 +92,7 @@ export const newCommand: CommandSpec = {
       [
         `created ${rel} (title "${title}", index ${ws.indexRel}, commit ${ws.index.commit})`,
         `repo: ${repo.name} (${repo.source})${url !== undefined ? `, ${url}` : ""}`,
-        `next: write a patch and run \`xpl apply ${name} patch.json\``,
+        `next: \`xpl draft path|repo|map|data|... ${name} -o <file>\` drafts the structure; write its TODOs, then \`xpl apply ${name} <file>\``,
       ].join("\n"),
     );
     return 0;

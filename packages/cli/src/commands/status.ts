@@ -438,7 +438,8 @@ function viewEdgeLines(edges: ViewEdges): string[] {
 export const statusCommand: CommandSpec = {
   name: "status",
   usage: "xpl status [explainer] [--view <id>] [--all]",
-  summary: "To-do list: unexplained elements, drifted, missing, queued requests, ghosts, tours",
+  summary:
+    "To-do list: boxes with no text, changed or missing code links, reader requests, tour problems",
   details: [
     "--all resolves every .explainer/*.explainer.json guide against the current index and reports moved,",
     "drifted and missing anchors, including user-owned anchors and unreadable guides. No prose is written.",

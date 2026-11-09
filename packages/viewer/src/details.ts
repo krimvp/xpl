@@ -247,15 +247,23 @@ function buildInfo(id: ElementId, model: ExplainerModel, vd: ViewDerived): Eleme
     }
     case "derived-edge": {
       const derived = vd.edgeMap.get(id);
+      // a field's arrow on a data map (core labels it "holds"): "ready holds Job"
+      const holds = derived?.label === "holds";
       const info: ElementInfo = {
         id,
         type: "derived-edge",
-        title: derived ? (derived.label ?? `${derived.kind} ×${derived.count}`) : ref.kind,
+        title: holds
+          ? `${model.label(ref.from)} holds ${model.label(ref.to)}`
+          : derived
+            ? (derived.label ?? `${derived.kind} ×${derived.count}`)
+            : ref.kind,
         kind: ref.kind,
         where: `${model.label(ref.from)} → ${model.label(ref.to)}`,
-        summary: derived
-          ? `${plural(derived.count, "reference")} from ${model.label(ref.from)} to ${model.label(ref.to)}, found in the code${trustWords(derived.resolution) ? ` (${trustWords(derived.resolution)})` : ""}.`
-          : `An arrow found in the code (${ref.kind}).`,
+        summary: holds
+          ? `The field ${model.label(ref.from)} holds a value of type ${model.label(ref.to)}, found in the code${trustWords(derived!.resolution) ? ` (${trustWords(derived!.resolution)})` : ""}.`
+          : derived
+            ? `${plural(derived.count, "reference")} from ${model.label(ref.from)} to ${model.label(ref.to)}, found in the code${trustWords(derived.resolution) ? ` (${trustWords(derived.resolution)})` : ""}.`
+            : `An arrow found in the code (${ref.kind}).`,
         facts: [
           { label: "From", value: model.label(ref.from) },
           { label: "To", value: model.label(ref.to) },

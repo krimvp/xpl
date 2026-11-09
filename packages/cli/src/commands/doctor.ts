@@ -111,7 +111,7 @@ export const doctorCommand: CommandSpec = {
       "Reinstall the local xpl tarball. For source development, run npm run build.",
       () => {
         const data = verifyArtifact();
-        return `${data.version}: ${Object.keys(data.files).length} files verified in ${artifactDir}`;
+        return `${data.version}, ${Object.keys(data.files).length} files verified in ${artifactDir}`;
       },
     );
     await check(
@@ -128,7 +128,8 @@ export const doctorCommand: CommandSpec = {
       ctx.cwd,
       args.str("skill-dir") ?? defaultSkillDir(ctx.env, selectedAgent, ctx.root),
     );
-    const installCommand = `xpl skill install --agent ${selectedAgent} --dir ${JSON.stringify(skill)}`;
+    // (Claude Code is the default agent: with none given, the command does not name it)
+    const installCommand = `xpl skill install${agent === "none" ? "" : ` --agent ${selectedAgent}`} --dir ${JSON.stringify(skill)}`;
     await check(
       "skill",
       agent !== "none",
@@ -254,8 +255,11 @@ export const doctorCommand: CommandSpec = {
       }
     }
     const ok = !checks.some((item) => item.required && item.status !== "ok");
-    const network =
-      "Local reading, --precise off indexing and HTML export use bundled assets. Doctor alone checks the npm registry for updates unless XPL_NO_UPDATE_CHECK=1. Precise bootstrap/dependencies and selected agent provider access can need network separately.";
+    const networkLines = [
+      "Reading, `xpl index --precise off` and HTML export need no network. Only doctor's update check reaches the",
+      "npm registry (XPL_NO_UPDATE_CHECK=1 turns it off). Precise indexing and your agent's sign-in may need the network.",
+    ];
+    const network = networkLines.join(" ");
     if (ctx.json)
       ctx.out(
         JSON.stringify(
@@ -266,15 +270,19 @@ export const doctorCommand: CommandSpec = {
       );
     else {
       ctx.out(
-        `setup: ${ok ? "ready" : "needs repair"} (${process.platform} ${process.arch}; agent ${agent})`,
+        `setup: ${ok ? "ready" : "needs repair"} (${process.platform} ${process.arch}; ${agent === "none" ? "no agent given: the skill check uses Claude Code's folder" : `agent ${agent}`})`,
       );
       for (const item of checks) {
         ctx.out(
           `${item.status} ${item.required ? "required" : "optional"} ${item.id}: ${item.detail}`,
         );
-        if (item.status !== "ok") ctx.out(`  recovery: ${item.recovery}`);
+        // (a hint after a colon starts in lower case, as lint's and ready's do)
+        if (item.status !== "ok")
+          ctx.out(
+            `  recovery: ${item.recovery.replace(/^[A-Z](?=[a-z ])/, (c) => c.toLowerCase())}`,
+          );
       }
-      ctx.out(network);
+      ctx.out(networkLines.join("\n"));
     }
     return ok ? 0 : 1;
   },

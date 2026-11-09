@@ -22,8 +22,29 @@ export type Target =
 
 export const REPO_TARGET: Target = { type: "repo", id: REPO_ID };
 
-export function resolveTarget(model: IndexModel, input: string): Target {
+/**
+ * `kinds`: the symbol kinds the command takes. A suggestion of another kind (an interface for a command that needs an
+ * enum) is dropped, so the next run is not refused for it; with none left, `kindHint` says how to find one.
+ */
+export function resolveTarget(
+  model: IndexModel,
+  input: string,
+  kinds?: { kinds: ReadonlySet<IndexedSymbol["kind"]>; kindHint: string },
+): Target {
   const normalized = normalizeElementId(input, model);
+  if (!normalized.ok && kinds && normalized.candidates && normalized.candidates.length > 0) {
+    const kept = normalized.candidates.filter((id) => {
+      const parsed = parseId(id);
+      const sym = parsed.type === "symbol" ? model.symbol(parsed.symbolId) : undefined;
+      return sym !== undefined && kinds.kinds.has(sym.kind);
+    });
+    const base = normalized.error.replace(/\.? Did you mean: .*\?$/, "");
+    throw new CliError(
+      kept.length > 0 ? `${base}. Did you mean: ${kept.join(", ")}?` : `${base}. ${kinds.kindHint}`,
+      1,
+      kept.length > 0 ? { candidates: kept } : {},
+    );
+  }
   if (!normalized.ok) {
     // nothing close to suggest: say how to find an id
     const word =

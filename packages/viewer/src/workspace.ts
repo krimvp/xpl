@@ -157,7 +157,8 @@ export function workspaceMap(state: ViewerState) {
         provenance: { origin: "static" },
         stubs: { mode: "none" },
       };
-  const graph = deriveGraph(view, state.model);
+  // (the text names the type of each row of a data-model view)
+  const graph = deriveGraph(view, state.model, { text: (file) => state.files[file] });
   const included = new Set(view.include);
   const related = new Set<ElementId>();
   for (const id of topicElements(state.selection, state.model)) {

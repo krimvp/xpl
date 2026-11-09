@@ -52,6 +52,10 @@ Each scope starts its tour on a map and ends on the step in the last column.
 | "map every file"               | `explain map`: `draft map <name>`                      | what the project is                      | where a newcomer starts reading              |
 | a PR, a branch, a commit range | `explain change <base>..<head>`: `draft change <name>` | what changes for users                   | risks and open questions                     |
 
+**A data map** (`draft data`) shows what each record holds: a table per type and a row per field. An arrow goes from a field to the type it holds. Choose it over a class map (`draft class`) when the question is about fields and what holds what, not about subtypes. A field row needs no summary: it shows its declaration.
+
+**State with no enum.** Often the state of an item is where it sits: which list, map or table holds it, or a timestamp. `draft states` then finds no type. Draft the data map of the containers, then write a flow by hand (`patch-format.md` 3.7). Give it one `stage` per container and one `decision` per guard that moves the item. Take the steps from the functions that move items between containers, and anchor each at its line. The flow's first step says that no status field exists.
+
 For a GitHub PR handoff (`handoff.json`), follow `reference/create.md`, "Author through the installed commands".
 
 **Sketch first.** The user may want the big picture before the code ("roughly how would this work"). Then start with a sketch view of 3-7 boxes, and say that it is a sketch (`patch-format.md` 3.12).
@@ -87,15 +91,16 @@ Every tour follows this spine. A change and a presentation end on their own poin
 
 Length budgets (the other files and the drafts follow this table):
 
-| Scope                   | Steps                 | Note body (aim) | Tour summary  | Diagrams a tour uses           | Boxes per map          | Concepts |
-| ----------------------- | --------------------- | --------------- | ------------- | ------------------------------ | ---------------------- | -------- |
-| question, class, states | 5-8                   | 25-40 words     | 2-4 sentences | 1 map, 1 flow or sequence      | 3-6                    | 0-2      |
-| repo                    | 6-9                   | 25-40 words     | 3-5 sentences | system map, inside map, 1 path | 3-7 system, 4-8 inside | 0-3      |
-| change                  | 6-12                  | 25-45 words     | 3-5 sentences | the change map, 1-2 flows      | 4-8                    | 0-2      |
-| map                     | 1 + top folders, ≤ 12 | 15-30 words     | 2-3 sentences | the folder maps                | one box per entry      | 0        |
-| presentation            | 5-9                   | ≤ 280 chars     | 2-3 sentences | existing views                 | ≤ 8                    | 0-1      |
+| Scope            | Steps                 | Note body (aim) | Tour summary  | Diagrams a tour uses           | Boxes per map          | Concepts |
+| ---------------- | --------------------- | --------------- | ------------- | ------------------------------ | ---------------------- | -------- |
+| question, states | 5-8                   | 25-40 words     | 2-4 sentences | 1 map, 1 flow or sequence      | 3-6                    | 0-2      |
+| class, data      | 5-8                   | 25-40 words     | 2-4 sentences | 1 map, 1 flow if items move    | 3-6, 8 with a note     | 0-2      |
+| repo             | 6-9                   | 25-40 words     | 3-5 sentences | system map, inside map, 1 path | 3-7 system, 4-8 inside | 0-3      |
+| change           | 6-12                  | 25-45 words     | 3-5 sentences | the change map, 1-2 flows      | 4-8                    | 0-2      |
+| map              | 1 + top folders, ≤ 12 | 15-30 words     | 2-3 sentences | the folder maps                | one box per entry      | 0        |
+| presentation     | 5-9                   | ≤ 280 chars     | 2-3 sentences | existing views                 | ≤ 8                    | 0-1      |
 
-A sequence has 3-6 participants in every scope. Hard limits for every scope: a note body has 50 words at most (`long-note`). A box, concept or step `summary` has 2 sentences and 45 words at most, and says what the thing is for (`long-summary`). A `detail` paragraph has 80 words at most (`long-detail`).
+A sequence has 3-6 participants in every scope. A class map or a data map may hold 8 boxes when each one answers the question; a step then names the types left off. The drafts stop at 8 boxes and at 8 rows a table. The "Tour summary" column is the one limit, and the other files point here. `tour-summary` flags only more than 5 sentences, so keep to the column yourself. Hard limits for every scope: a note body has 50 words at most (`long-note`). A box, concept or step `summary` has 2 sentences and 45 words at most, and says what the thing is for (`long-summary`). A `detail` paragraph has 80 words at most (`long-detail`).
 
 - **One focus.** Each step focuses one main element, plus at most one concept that explains it.
 - **Cut to the budget.** A draft can hold more steps than the budget. Merge steps that make the same point. Drop a call that does not change the answer, from the sequence and from the tour. Gaps in step ids are fine (`t1`, `t2`, `t5`).
@@ -116,7 +121,7 @@ Some calls do not show in `refs`: through an interface, a variable, a base class
 1. **Entry point:** `search -i` the nouns and verbs of the question, and `outline --depth 2`. Pick the function where the flow starts or the decision happens. A question with two halves takes two entries.
 2. **A choice inside one function** (which item, which branch): draft from its caller, and add a **flow** of that function (`patch-format.md` 3.7). A sequence shows only calls, so it cannot show a guard or a comparison.
 3. **Trace:** `show <entry> --refs`, then the callees that matter. Note every guard on the path (`if`, early `return`, type checks).
-4. **Shape:** keep a frame on each loop and branch, and label it; give each `alt` one labelled arm per alternative (`patch-format.md` 3.8). Add a flow when the point is a decision. Anchor the target, its direct callers, the callees that change the answer, and the tests that pin it.
+4. **Shape:** keep a frame on each loop and branch, and label it; give each `alt` one labelled arm per alternative (`patch-format.md` 3.8). An `if` that ends in `continue`, `return`, `break` or `raise` is an `alt`, not an `opt`: the code after it is its `else` arm. Add a flow when the point is a decision. Anchor the target, its direct callers, the callees that change the answer, and the tests that pin it.
 
 ## explain repo: the whole project
 
@@ -128,7 +133,7 @@ Three levels, each a zoom (`opens`) into a box of the level above:
 
 Then:
 
-1. **Draft:** `xpl draft repo` gives the system map, a map of each service's inside, and a tour. Its relationships and outside systems are leads: check each by `patch-format.md` 3.10, "Check the draft".
+1. **Draft:** `xpl draft repo` gives the system map, a map of each service's inside, and a tour. Its arrows and outside systems are leads: check each by `patch-format.md` 3.10, "Check the draft".
 2. **Main path:** run `xpl draft path` on an obvious entry point (`main`, `cmd/`, a server). Let its part `opens` the sequence, and copy the steps you keep.
 3. **Tour:** the first step on the inside names the files left off the map, in one sentence. Offer 2-3 expansions in the reply.
 

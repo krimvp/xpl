@@ -410,7 +410,7 @@ describe("a renamed symbol: Runner.dispatch becomes Runner.run", () => {
       'sym:src/runner.ts#Runner.run (anchor: file: "src/runner.ts", symbol: "Runner.run"';
     // the anchor of the overlay is a whole symbol: found by its size
     const resolve = await xpl(dir, "resolve", "demo");
-    expect(resolve.out).toContain(`did you mean ${both})`);
+    expect(resolve.out).toContain(`Did you mean: ${both})`);
     // the anchors that were spans: found by their text, with the offsets they have in Runner.run
     expect(resolve.out).toContain(
       `the anchored lines now sit in ${both}, span: {from: 34, to: 36})`,

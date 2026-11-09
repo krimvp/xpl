@@ -18,7 +18,7 @@ it("labels analysis sources when a file-only fallback and an artifact report dif
           status: "unsupported",
           analyzedFiles: [],
           limitations: [
-            "Only file anchors are available; named symbols and relationships are unavailable.",
+            "Only file anchors are available; named symbols and references are unavailable.",
           ],
         },
       ],
@@ -38,7 +38,7 @@ it("labels analysis sources when a file-only fallback and an artifact report dif
     },
   ];
   expect(describeAnalysis(index).details).toEqual([
-    "text (text): named symbols unsupported (0/1 files analyzed). Only file anchors are available; named symbols and relationships are unavailable.",
+    "text (text): named symbols unsupported (0/1 files analyzed). Only file anchors are available; named symbols and references are unavailable.",
     "text (scip-artifact): named symbols partial (1/1 files analyzed). Identifier-only declarations are omitted.",
   ]);
 });

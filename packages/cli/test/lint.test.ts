@@ -1114,6 +1114,18 @@ describe("order checks", () => {
     );
     expect(found[0]!.hint).toContain("where next");
     expect(ends(orderTour(steps("view:map")))).toEqual([]);
+    // language L4-5: other plain ways to say where next pass; "next" inside an ordinary sentence does not count
+    const endsWith = (note: string) => {
+      const t = orderTour(steps("view:map"));
+      const last = (t.tours![0]!.steps as { note: string }[]).at(-1)!;
+      last.note = note;
+      return ends(t).length;
+    };
+    expect(endsWith("### Read more\n\nThe worker file shows how a job runs.")).toBe(0);
+    expect(endsWith("### Beyond this tour\n\nOpen the CLI box for the commands.")).toBe(0);
+    expect(endsWith("### Other parts\n\nThe metrics are not on this tour.")).toBe(0);
+    expect(endsWith("### The worker loop\n\nThe next job starts when the last one ends.")).toBe(1);
+    expect(endsWith("### Summary\n\nThe runner keeps going.")).toBe(1);
     expect(ends(orderTour(steps("view:flow").slice(1)))).toEqual([]);
     expect(ends(orderTour(steps("view:flow"), { title: "Demo: how a job runs" }))).toEqual([]);
     expect(
@@ -1425,7 +1437,7 @@ describe("lintExplainer: concrete text passes", () => {
       "grp:waits",
       "sym:tree.go#nodes.findEdge",
     ]);
-    expect(only(missed.findings, "tour-covers-map")[0]!.hint).toContain("in plain words");
+    expect(only(missed.findings, "tour-covers-map")[0]!.hint).toContain("A plain-word name counts");
   });
 
   it("long-sentence in a full summary: shorten it, do not split it (tour-summary caps the sentences)", () => {
@@ -2206,6 +2218,14 @@ describe("lintExplainer: words and voice on real code English", () => {
       "Dependency injection wires the services.",
     ]);
     expect(ids(mechanisms, "abstract-subject")).toEqual([]);
+    // language L4-1: the whole name of a mechanism passes, not every phrase with its head noun
+    const hidden = concepts([
+      "Job scheduling picks the next job.",
+      "Config loading reads the file.",
+      "Retry handling waits a second.",
+      "Request routing sends each call to a handler.",
+    ]);
+    expect(ids(hidden, "abstract-subject")).toEqual([1, 2, 3, 4].map((i) => `concept:c${i}`));
     // "Retry policy" is not a mechanism word, but a concept of the guide is called so
     const named = lintExplainer(
       explainer({
@@ -2268,13 +2288,33 @@ describe("lintExplainer: words and voice on real code English", () => {
       "The runner applies the patches in order to a fresh copy.",
       "The test harness starts a fake server.",
       "The supervisor terminates the child process after 5 s.",
+      "Recovery terminates the old group and waits.",
       // the same words as filler
       "The new API has first-class support for retries.",
       "The landscape of job queues is wide.",
       "The runner retries in order to recover.",
       "The tool can harness the queue.",
     ]);
-    expect(ids(found, "filler-word")).toEqual([8, 9, 10, 11].map((i) => `concept:c${i}`));
+    expect(ids(found, "filler-word")).toEqual([9, 10, 11, 12].map((i) => `concept:c${i}`));
+  });
+
+  // language L4-3: a quote of one word after an article or a verb is a scare quote, the writer's own word
+  it("filler-word checks a scare quote of one word, and skips a one-word message the code prints", () => {
+    const found = concepts([
+      'The pool "manages" its connections.',
+      "A “seamless” handoff passes the job on.",
+      'The CLI prints "simply" when asked.',
+    ]);
+    expect(ids(found, "filler-word")).toEqual(["concept:c1", "concept:c2"]);
+  });
+
+  // language L4-6: a tool word with the map's words around it means xpl's part, even with no noun after it
+  it("tool-word: xpl's sense outside tours counts when the sentence talks about the map", () => {
+    const found = concepts([
+      "Lists the boxes; the stubs show code outside this map.",
+      "The gRPC stub sends the request.",
+    ]);
+    expect(ids(found, "tool-word")).toEqual(["concept:c1"]);
   });
 
   it('we-voice: "us" after a number is microseconds', () => {
@@ -2468,7 +2508,7 @@ describe("xpl lint", () => {
         elementId: "view:system",
         field: "include",
         message: expect.stringContaining("System map"),
-        hint: expect.stringContaining("source-backed relationships"),
+        hint: expect.stringContaining("arrows the code shows"),
       },
     ]);
     const ready = await xplJson<{
@@ -2480,7 +2520,7 @@ describe("xpl lint", () => {
       elementId: "view:system",
       field: "include",
       message: expect.stringContaining("System map"),
-      hint: expect.stringContaining("source-backed relationships"),
+      hint: expect.stringContaining("arrows the code shows"),
     });
 
     setMap(["grp:one", "grp:two"], [], "component");

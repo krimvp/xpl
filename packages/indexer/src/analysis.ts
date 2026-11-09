@@ -67,7 +67,7 @@ export function extractionReports(
           capability,
           "unsupported",
           [],
-          ["Relationship analysis is unavailable."],
+          ["No references are found in these files."],
         );
         continue;
       }
@@ -79,7 +79,7 @@ export function extractionReports(
           ...new Set(matching.flatMap((file) => outcomes.get(file)!.limitations)),
         ];
         if (relationship)
-          limitations.push("Heuristic relationships are hints; unresolved targets may be missing.");
+          limitations.push("References matched by name are hints; some can be missing.");
         if (capability === "declarationRanges" && ability === "partial")
           limitations.push("Some declaration ranges omit leading syntax.");
         const observed =
@@ -121,7 +121,7 @@ export function extractionReports(
           status: "unsupported",
           analyzedFiles: [],
           limitations: [
-            "Only file anchors are available; named symbols and relationships are unavailable.",
+            "Only file anchors are available; named symbols and references are unavailable.",
           ],
         },
       ],
@@ -187,7 +187,9 @@ export function relationshipReport(
         kind,
         "unsupported",
         [],
-        ["This relationship kind is unavailable in precise analysis; heuristic hints may remain."],
+        [
+          "The precise tool does not find this kind of reference; references matched by name may remain.",
+        ],
       );
     } else {
       const observation = output.coverage?.[kind];
@@ -208,7 +210,7 @@ export function relationshipReport(
       const limitations = [...(observation?.limitations ?? [])];
       if (status === "partial")
         limitations.push(
-          "Precise relationships may be missing; described files and empty results do not establish complete coverage.",
+          "A tool can miss a reference, so an empty result does not prove there is none.",
         );
       if (status !== "unsupported" && analyzedFiles.length < files.length)
         limitations.push("Files outside this analysis keep heuristic hints.");

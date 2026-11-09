@@ -96,6 +96,20 @@ describe("mapKeyShows", () => {
     expect(shows.icons!.map((icon) => icon.name)).toEqual(["file", "function"]);
   });
 
+  // V2-15: "Your repository (git)" and "Browser (HTML page)" got the globe of an outside system
+  it("keys a box by the icon its technology picks before its role's", () => {
+    const shows = mapKeyShows(
+      [
+        node("grp:repo", { role: "external", badge: "git" }),
+        node("grp:web", { role: "external", badge: "HTML page" }),
+        node("grp:api", { role: "external", badge: "REST API" }),
+      ],
+      [],
+      boxes(),
+    );
+    expect(shows.icons!.map((icon) => icon.name)).toEqual(["repo", "browser", "external"]);
+  });
+
   it("a box whose inside cannot be opened shows no corner button row", () => {
     const shows = mapKeyShows([node("grp:ky", { opens: "view:inside" })], [], boxes());
     expect(shows.zoom).toBe(false);
@@ -109,5 +123,27 @@ describe("mapKeyShows", () => {
     );
     expect(shows.outside).toBe(true);
     expect(shows.icons!.map((icon) => icon.name)).toEqual(["group"]);
+  });
+
+  // V4-15: the Key of a data map explained boxes as files and functions, rows as "a variable", and its one
+  // kind of arrow as "uses a type", while the map labels it "holds"
+  it("a data map: tables, the arrow a row holds, and no row icons or code-box row", () => {
+    const row = node("sym:q#Queue.ready", { kindClass: "variable", badge: "variable", row: true });
+    const shows = mapKeyShows(
+      [node("sym:q#Queue", { kindClass: "class", badge: "class", rows: true, children: [row] })],
+      [
+        edge("e1", { kind: "references", title: "holds", from: row.id, to: "sym:j#Job" }),
+        edge("e2", {
+          kind: "implements",
+          title: "implements ×1",
+          counted: true,
+          label: { text: "implements ×1", x: 0, y: 0, width: 80, height: 16 },
+        }),
+      ],
+      boxes(),
+    );
+    expect(shows).toMatchObject({ tables: true, code: false, kinds: ["implements", "holds"] });
+    expect(shows.countKind).toBe("implements");
+    expect(shows.icons!.map((icon) => icon.name)).toEqual(["class"]);
   });
 });

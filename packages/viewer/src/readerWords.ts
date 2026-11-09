@@ -7,14 +7,13 @@ import type { AnchorRole, DerivedEdge } from "@xpl/core";
 
 /**
  * Where a map arrow comes from, in plain words. The trust labels `precise` and `heuristic` stay visible (a
- * reader must be able to tell them apart), each with what it means; an author's note on an arrow found in
- * the code says so first.
+ * reader must be able to tell them apart), each with what it means; an arrow found in the code that the author
+ * labelled says so after it (R3-10: "author's note · heuristic" read as "added" and "guessed" at once).
  */
 export function mapEdgeSource(edge: Pick<DerivedEdge, "resolution" | "stored">): string {
   const { resolution, stored } = edge;
-  const note = stored ? "author's note · " : "";
   const trust = trustWords(resolution);
-  if (trust) return `${note}${trust}`;
+  if (trust) return stored ? `${trust}; the label is the author's` : trust;
   return resolution === "static" ? "from the code" : "added by the author";
 }
 

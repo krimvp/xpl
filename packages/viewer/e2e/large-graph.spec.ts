@@ -243,7 +243,9 @@ test.describe("what a big diagram starts on", () => {
     expect(await inPane(page, FIRST)).toBe(true);
     expect(await inPane(page, LAST)).toBe(false);
 
-    // A detour (the user moves the diagram, then a step comes again) starts the step over.
+    // A detour (the user moves the diagram, then a step comes again) starts the step over. (The zoom buttons
+    // come with the mouse.)
+    await page.mouse.move(200, 300);
     await page.getByRole("button", { name: "Zoom out" }).click();
     expect(await zoomOf(page)).toBeLessThan(0.9);
     await page.keyboard.press("ArrowLeft");

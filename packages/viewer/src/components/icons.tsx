@@ -66,6 +66,12 @@ const SHAPES: Record<string, ReactNode> = {
       <path d="M1.5 8h13" />
     </>
   ),
+  browser: (
+    <>
+      <rect x={1.5} y={2.5} width={13} height={11} rx={2} />
+      <path d="M1.5 6h13M4 4.25h.01M6 4.25h.01" />
+    </>
+  ),
   // ── levels of code ──
   repo: <path d="M3 2.5h9.5v11h-8A1.5 1.5 0 0 1 3 12zM3 12a1.5 1.5 0 0 1 1.5-1.5h8" />,
   dir: (
@@ -77,10 +83,7 @@ const SHAPES: Record<string, ReactNode> = {
   ),
 };
 
-/** The name of the icon a box shows: its role, else the kind of code it is. */
-export function iconName(box: { role?: string | undefined; kindClass: string }): string {
-  return box.role ?? box.kindClass;
-}
+export { iconName } from "../keyMarks.js";
 
 /** The icon, with its top-left corner at (x, y). */
 export function BoxIcon({ name, x, y }: { name: string; x: number; y: number }) {

@@ -408,16 +408,8 @@
   outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
-.guide-section-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin: 0 0 18px;
-  font-size: 13px;
-}
-/* "Link to this step" is a link, drawn like the button beside it. */
-.guide-section-actions a.btn {
+/* "Link to this step" is a link, drawn like the buttons beside it. */
+.section-actions a.btn {
   color: var(--fg);
   text-decoration: none;
 }
@@ -922,6 +914,14 @@
   font-size: 11px;
   overflow-wrap: anywhere;
 }
+/* R4-4: the Tour keeps its right column for every step of a tour that has related files: one quiet line
+   where a step has none. */
+.related-none {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .resource-set {
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1480,7 +1480,7 @@
 }
 
 /* A step whose excerpt has its own "Show code" does not get a second one 20px under it (GuideSource). */
-.guide-section:has(.guide-source .btn) > .section-actions {
+.guide-section:has(.guide-source .btn) > .section-actions > .section-show-code {
   display: none;
 }
 
@@ -1503,14 +1503,34 @@
   .workspace-caption {
     padding: 12px 16px;
   }
-  .caption-about {
-    display: inline-block;
+  /* R4-21: a chevron says whether the details are open (aria-expanded says it to a screen reader). The
+     disclosure shows only when it hides more than "Explore all diagrams" (R4-24); the diagram picker
+     always stays in sight, under the title, as wide as the caption (R4-22, R4-23). */
+  .workspace-caption.has-about .caption-about {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     margin-top: 6px;
     font-size: 13px;
   }
-  .workspace-caption:not(.is-about-open)
-    :is(.view-question, .caption-insides, .caption-actions select, .explore-link) {
+  .caption-about-chevron::before {
+    content: "▸";
+    display: inline-block;
+    transition: transform 0.15s;
+  }
+  .caption-about[aria-expanded="true"] .caption-about-chevron::before {
+    transform: rotate(90deg);
+  }
+  .workspace-caption.has-about:not(.is-about-open)
+    :is(.view-question, .caption-insides, .explore-link) {
     display: none;
+  }
+  .workspace-caption .caption-actions {
+    justify-content: flex-start;
+  }
+  .workspace-caption .caption-actions select {
+    flex: 1 1 160px;
+    min-width: 0;
   }
   .workspace .key-line {
     display: none;

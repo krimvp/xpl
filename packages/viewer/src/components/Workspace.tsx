@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
 import { derivedEdgeMap, processFlow, type SequenceView as SequenceViewData } from "@xpl/core";
 import { viewReverseIndex } from "../derive.js";
 import { sharedActor } from "../layout/flowLayout.js";
@@ -24,7 +24,7 @@ import { FoldBackAction } from "./FoldBackAction.js";
 import { GraphView } from "./GraphView.js";
 import { Guide } from "./Guide.js";
 import { PartsPanel } from "./PartsPanel.js";
-import { RelatedFiles } from "./RelatedFiles.js";
+import { RelatedFiles, tourHasCards } from "./RelatedFiles.js";
 import { SequenceView } from "./SequenceView.js";
 import { Splitter } from "./Splitter.js";
 import { ZoomTrail } from "./ZoomTrail.js";
@@ -39,6 +39,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
   const [reading, setReading] = useState<string | undefined>(undefined);
   /** On a phone the caption's question, links and picker sit behind "About this map" (R3-2). */
   const [aboutOpen, setAboutOpen] = useState(false);
+  const captionId = useId();
   const columns = useRef<HTMLDivElement>(null);
   const map = useMemo(
     () => workspaceMap(state),
@@ -60,6 +61,11 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
   const active = state.selection[state.selection.length - 1];
   const info = active ? describeElement(active, state.model, derived.view) : undefined;
   const tour = store.currentTour() ?? state.model.tours[0];
+  // The Tour decides once per tour whether it has a right column (R4-4).
+  const keepRail = useMemo(
+    () => state.perspective === "guide" && !!tour && tourHasCards(tour, state.model),
+    [state.perspective, tour, state.model],
+  );
   // While a guide section (a tour step) is on screen, "you are here" is that section, by its title.
   const appliedStep = state.applied
     ? state.model.tour(state.applied.tourId)?.steps.find((s) => s.id === state.applied!.stepId)
@@ -250,7 +256,15 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                 <Guide onReading={setReading} returningFromPresent={startWithSource} />
               ) : (
                 <>
-                  <div className={`workspace-caption${aboutOpen ? " is-about-open" : ""}`}>
+                  <div
+                    id={captionId}
+                    className={
+                      "workspace-caption" +
+                      (aboutOpen ? " is-about-open" : "") +
+                      // (the disclosure only when it hides something besides "Explore all diagrams", R4-24)
+                      (viewQuestion || insides.length > 0 ? " has-about" : "")
+                    }
+                  >
                     <div>
                       <p className="eyebrow">{state.perspective === "map" ? "Map" : "Flow"}</p>
                       <ZoomTrail
@@ -266,8 +280,10 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                         type="button"
                         className="link caption-about"
                         aria-expanded={aboutOpen}
+                        aria-controls={captionId}
                         onClick={() => setAboutOpen((open) => !open)}
                       >
+                        <span className="caption-about-chevron" aria-hidden="true" />
                         About this {diagramWord}
                       </button>
                       {viewQuestion && <p className="view-question">{viewQuestion}</p>}
@@ -502,6 +518,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
           )}
           {!active && state.perspective === "flow" && flow && <PartsPanel view={flow} />}
           <RelatedFiles
+            keepPlace={keepRail}
             onOpen={() => setSourceOpen(true)}
             reading={tour && scrolledAway ? { tourId: tour.id, step: scrolledAway } : undefined}
           />

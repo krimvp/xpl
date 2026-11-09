@@ -395,8 +395,8 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
     <div className={`flow-diagram${outline ? " is-outline" : ""}`} data-testid="process-flow">
       {flow.projected && (
         <p className="flow-projection" role="note">
-          Read from top to bottom. Each box is one call. The arrows show the order, not every
-          possible path. A purple label above a box says when it, and the boxes after it, run.
+          Read from top to bottom. Each step is one call in the code. The arrows show the order, not
+          every possible path. A purple label above a step says when it and the steps after it run.
         </p>
       )}
       <PanZoom

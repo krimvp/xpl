@@ -337,7 +337,7 @@ describe("Python read references: heuristic resolution", () => {
     ]);
   });
 
-  it("instance attributes assigned only in methods are not symbols: reading them links nothing", async () => {
+  it("instance attributes `__init__` sets are fields that reads link to; ones set only in other methods are not symbols and link nothing", async () => {
     expect(
       await refs({
         "a.py": src(
@@ -345,11 +345,13 @@ describe("Python read references: heuristic resolution", () => {
           "    declared: int = 0",
           "    def __init__(self):",
           "        self.dynamic = 1",
+          "    def later(self):",
+          "        self.late = 2",
           "    def m(self):",
-          "        return self.dynamic + self.declared",
+          "        return self.dynamic + self.declared + self.late",
         ),
       }),
-    ).toEqual(["a.py#A.m -> a.py#A.declared (read)"]);
+    ).toEqual(["a.py#A.m -> a.py#A.dynamic (read)", "a.py#A.m -> a.py#A.declared (read)"]);
   });
 
   it("function and method values are reads; classes remain type references", async () => {

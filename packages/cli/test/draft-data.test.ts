@@ -24,7 +24,7 @@ const types = (view: GraphView) =>
   view.include.filter((id) => !view.include.includes(id.slice(0, id.lastIndexOf("."))));
 
 describe("xpl draft data", () => {
-  it("maps the types of a TypeScript repo from the most used one, a row per field, and applies as it is", async () => {
+  it("maps the types of a TypeScript repo from the one that holds the most, a row per field, and applies as it is", async () => {
     const { dir, out, r, patch, view } = await draft("ts-jobrunner");
     expect([view.id, view.boxText, view.edgeKinds, view.stubs]).toEqual([
       "view:data",
@@ -32,54 +32,83 @@ describe("xpl draft data", () => {
       ["references", "extends", "implements"],
       { mode: "none" },
     ]);
-    // Job is the most used; DeadJob (it links to Job and to Queue) joins before Runner (one link)
+    // Runner reaches the most types through its fields; then what a box holds, the most used first (Job before
+    // WorkerPool), at most 6 boxes. Handler (a function type) holds no fields: no table, a note.
     expect(types(view)).toEqual([
-      "sym:src/queue.ts#Job",
-      "sym:src/queue.ts#Queue",
-      "sym:src/queue.ts#DeadJob",
       "sym:src/runner.ts#Runner",
+      "sym:src/queue.ts#Queue",
+      "sym:src/queue.ts#Job",
       "sym:src/worker.ts#WorkerPool",
       "sym:src/worker.ts#Worker",
       "sym:src/bus.ts#EventBus",
-      "sym:src/worker.ts#Handler",
     ]);
     // a table's rows follow it, in the order the code declares them
-    const dead = view.include.indexOf("sym:src/queue.ts#DeadJob");
-    expect(view.include.slice(dead, dead + 4)).toEqual([
-      "sym:src/queue.ts#DeadJob",
-      "sym:src/queue.ts#DeadJob.job",
-      "sym:src/queue.ts#DeadJob.error",
-      "sym:src/queue.ts#DeadJob.deadAt",
+    const pool = view.include.indexOf("sym:src/worker.ts#WorkerPool");
+    expect(view.include.slice(pool, pool + 3)).toEqual([
+      "sym:src/worker.ts#WorkerPool",
+      "sym:src/worker.ts#WorkerPool.idle",
+      "sym:src/worker.ts#WorkerPool.waiting",
     ]);
-    expect(patch.nodes?.find((n) => n.id === "sym:src/queue.ts#DeadJob")?.summary).toBe(
-      "TODO: one plain sentence: what it holds and what for (interface, 3 fields; holds `Job`; held by `Queue`).",
+    expect(patch.nodes?.find((n) => n.id === "sym:src/queue.ts#Queue")?.summary).toBe(
+      "TODO: one plain sentence: what it holds and what for (class, 6 fields; holds `Job`; held by `Runner`).",
     );
-    // the tour: the first type, the next three as they joined (with the field that links them), then the rest
+    // field rows get no text to write (D8): only the types have nodes
+    expect(patch.nodes?.map((n) => n.id)).toEqual(types(view));
+    // the tour: the first type, the next three as they joined (with the field that links them), the rest, then
+    // where to go next with the types left off
     const steps = patch.tours?.[0]?.steps ?? [];
     expect(steps.map((s) => s.focus)).toEqual([
-      ["sym:src/queue.ts#Job"],
-      ["sym:src/queue.ts#Queue"],
-      ["sym:src/queue.ts#DeadJob"],
       ["sym:src/runner.ts#Runner"],
-      [
-        "sym:src/worker.ts#WorkerPool",
-        "sym:src/worker.ts#Worker",
-        "sym:src/bus.ts#EventBus",
-        "sym:src/worker.ts#Handler",
-      ],
+      ["sym:src/queue.ts#Queue"],
+      ["sym:src/queue.ts#Job"],
+      ["sym:src/worker.ts#WorkerPool"],
+      ["sym:src/worker.ts#Worker", "sym:src/bus.ts#EventBus"],
+      [],
     ]);
     expect(steps[2]?.code).toEqual([
       // the type down to its last row (its closing brace is left out), and the field of Queue that holds it
-      { file: "src/queue.ts", symbol: "DeadJob", span: { from: 0, to: 3 }, role: "definition" },
-      { file: "src/queue.ts", symbol: "DeadJob.job", role: "usage" },
+      { file: "src/queue.ts", symbol: "Job", span: { from: 0, to: 10 }, role: "definition" },
+      { file: "src/queue.ts", symbol: "Queue.ready", role: "usage" },
     ]);
-    expect(r.out).toContain("draft data for jobrunner: a data map of 8 types with 30 field rows,");
-    expect(r.out).toMatch(/note: 6 more linked types left off the map \(at most 8 boxes\)/);
+    expect(steps.at(-1)?.note).toMatch(
+      /^### Where to go next\n\nTODO: the types left off the map .* Left off: Config, /,
+    );
+    expect(r.out).toContain(
+      "draft data for jobrunner: a data map of 6 types (a table each) with 27 field rows (a row needs no text),",
+    );
+    expect(r.out).toContain("note: 5 more linked types left off the map (at most 6 boxes): ");
+    expect(r.out).toContain(
+      "note: Listener, Logger, Handler: no fields, so they are not on the map (a type alias or a function type holds no fields)",
+    );
+    expect(r.out).not.toContain("Python");
 
     const applied = await xpl(dir, "apply", "jobrunner", out);
     expect(applied.code, applied.out).toBe(0);
     const lint = await xplJson<{ counts: Record<string, number> }>(dir, "lint", "jobrunner");
     expect(lint.json.counts).toEqual({ "todo-left": expect.any(Number) });
+  });
+
+  // R4-S1 / V4-04: the attributes `__init__` sets are fields, so the classes that keep the state are tables
+  it("maps a Python repo with the classes whose `__init__` sets their fields: Queue holds Job, Runner holds Queue", async () => {
+    const { patch, view, r } = await draft("py-jobrunner");
+    expect(types(view)).toEqual(
+      expect.arrayContaining([
+        "sym:jobrunner/runner.py#Runner",
+        "sym:jobrunner/queue.py#Queue",
+        "sym:jobrunner/queue.py#Job",
+        "sym:jobrunner/worker.py#Worker",
+      ]),
+    );
+    expect(view.include).toEqual(
+      expect.arrayContaining([
+        "sym:jobrunner/queue.py#Queue._ready",
+        "sym:jobrunner/queue.py#Queue._inflight",
+        "sym:jobrunner/runner.py#Runner._queue",
+      ]),
+    );
+    const steps = patch.tours?.[0]?.steps ?? [];
+    expect(steps.map((s) => s.note).join("\n")).toContain("(Runner holds it in `_queue`)");
+    expect(r.out).not.toContain("no fields the index knows");
   });
 
   it("keeps to a Python file given as the scope", async () => {
@@ -98,8 +127,8 @@ describe("xpl draft data", () => {
     );
   });
 
-  it("starts at a Go type entry and takes the types two links from it", async () => {
-    const { view, r } = await draft("go-jobrunner", "sym:internal/queue/queue.go#Queue");
+  it("starts at a Go type entry, takes the types two links from it, and says struct and why an interface has no rows", async () => {
+    const { view, r, patch } = await draft("go-jobrunner", "sym:internal/queue/queue.go#Queue");
     expect(view.id).toBe("view:queue-data");
     expect(types(view)).toEqual([
       "sym:internal/queue/queue.go#Queue",
@@ -108,8 +137,73 @@ describe("xpl draft data", () => {
       "sym:internal/runner/runner.go#JobQueue",
       "sym:internal/runner/runner.go#Runner",
     ]);
-    // an interface has no fields: its box has no rows, and the notes say so
-    expect(r.out).toContain("note: JobQueue: no fields the index knows, so its box has no rows");
+    // an interface has no fields: its box has no rows, and the notes say why, in Go's words
+    expect(r.out).toContain(
+      "note: JobQueue: no fields the index knows, so its box has no rows (an interface has methods, not fields)",
+    );
+    expect(r.out).not.toContain("Python");
+    // a function type a box holds is named (Runner's `Logf`); those only types off the map hold are not
+    expect(r.out).toContain("note: Logf: no fields, so it is not on the map");
+    expect(r.out).not.toContain("Handler");
+    const summary = (id: string) => patch.nodes?.find((n) => n.id === id)?.summary;
+    expect(summary("sym:internal/queue/queue.go#Job")).toMatch(/\(struct, \d+ fields; /);
+    expect(summary("sym:internal/runner/runner.go#JobQueue")).toMatch(
+      /^TODO: one plain sentence: what it promises \(its methods\) and what for \(interface; .*implemented by `Queue`/,
+    );
+  });
+
+  // D8: two types of one name are told apart by their package
+  it("qualifies a Go type name that another type the draft names shares, in its label and the hints", async () => {
+    const { patch } = await draft("go-jobrunner");
+    const node = (id: string) => patch.nodes?.find((n) => n.id === id);
+    expect(node("sym:internal/runner/runner.go#Config")?.label).toBe("runner.Config");
+    expect(node("sym:internal/runner/runner.go#Runner")?.summary).toContain("`runner.Config`");
+    expect(node("sym:internal/runner/runner.go#Runner")?.label).toBeUndefined();
+  });
+
+  it("gives a second group of types not linked to the first its own boxes, a step, and says so", async () => {
+    const dir = makeTempDir("xpl-data-groups-");
+    writeFile(
+      dir,
+      "models.ts",
+      [
+        "export interface Job {",
+        "  id: string;",
+        "}",
+        "export class Queue {",
+        "  ready: Job[] = [];",
+        "}",
+        "export class Store {",
+        "  queue: Queue = new Queue();",
+        "}",
+        "export interface Retry {",
+        "  max: number;",
+        "}",
+        "export interface Config {",
+        "  retry: Retry;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    expect((await xpl(dir, "index", "--precise", "off")).code).toBe(0);
+    expect((await xpl(dir, "new", "jobrunner")).code).toBe(0);
+    const out = join(makeTempDir("xpl-data-out-"), "data.json");
+    const r = await xpl(dir, "draft", "data", "jobrunner", "-o", out);
+    expect(r.code, r.err + r.out).toBe(0);
+    const patch = JSON.parse(readFileSync(out, "utf8")) as ExplainerPatch;
+    expect(types(patch.views![0] as GraphView)).toEqual([
+      "sym:models.ts#Store",
+      "sym:models.ts#Queue",
+      "sym:models.ts#Job",
+      "sym:models.ts#Config",
+      "sym:models.ts#Retry",
+    ]);
+    const steps = patch.tours![0]!.steps!;
+    const config = steps.find((s) => s.focus?.[0] === "sym:models.ts#Config");
+    expect(config?.note).toContain(
+      "(a separate group: no field or hierarchy links it to the types before it)",
+    );
+    expect(r.out).not.toContain("left off");
   });
 
   it("a field of a type's own type draws no arrow, so the type's summary TODO names it", async () => {

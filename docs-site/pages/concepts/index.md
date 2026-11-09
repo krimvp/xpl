@@ -24,8 +24,8 @@ A guide holds diagrams and tours. A diagram is one of three kinds:
   map of four or more boxes (**Diagram** goes back); a guide can also open a dense map this way. The order
   puts a box before the boxes it uses, so only an arrow of a cycle has a flagged cell below the diagonal; its
   mirror cell above is the other half of the cycle. A last row and column, "Outside this map", count the
-  arrows to code the map does not draw. Select a cell to select its arrow and show its code. The cells of the
-  code under the cursor light up, as on the map.
+  arrows to and from code the map does not draw. Select a cell to select its arrow and show its code. The
+  cells of the code under the cursor light up, as on the map.
 
 - A **flow** follows the steps and decisions of a process.
 - A **sequence** shows who calls whom, in order.

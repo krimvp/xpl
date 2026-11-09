@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { RelatedFileSet, TourStep } from "@xpl/core";
+import type { ExplainerModel, RelatedFileSet, Tour, TourStep } from "@xpl/core";
 import { stepSelection } from "../derive.js";
 import { useDerived, useStore, useViewerState } from "../hooks.js";
 import { holdsCode, mergeSameCards, readerCards, repeatsShownCode } from "../relatedCards.js";
@@ -17,15 +17,33 @@ const LABELS: Record<RelatedFileSet["kind"], string> = {
 const CARDS_SHOWN = 2;
 
 /**
+ * True when some step of the tour lists related files in the Tour (the cards `RelatedFiles` shows for it).
+ * The Tour then keeps its right column for every step, so the text does not change width while the reader
+ * scrolls (R4-4); otherwise it has no right column at all.
+ */
+export function tourHasCards(tour: Tour, model: ExplainerModel): boolean {
+  return tour.steps.some((step) => {
+    const focus = stepSelection(step, tour.id, model).focus;
+    const selection = step.focus.filter((id) => model.hasElement(id));
+    return readerCards(selection, model, focus).some(
+      (link) => link.kind !== "test" && !repeatsShownCode(link, focus),
+    );
+  });
+}
+
+/**
  * `reading`: the tour step scrolled to in the Tour, when it is not the step last applied. The cards then
  * follow the step on screen, not the one clicked before the scroll.
  */
 export function RelatedFiles({
   onOpen,
   reading,
+  keepPlace = false,
 }: {
   onOpen: () => void;
   reading?: { tourId: string; step: TourStep };
+  /** Say so when the step has none (the Tour keeps its right column for the whole tour, R4-4). */
+  keepPlace?: boolean;
 }) {
   const store = useStore();
   const [all, setAll] = useState<unknown>(undefined);
@@ -72,8 +90,16 @@ export function RelatedFiles({
     // (`anchors` follows `selection`, `step` and the applied step)
     [selection, state.model, focus, guide, step, state.applied],
   );
-  // Nothing to list: no panel at all (an empty one only says that there is nothing).
-  if (links.length === 0) return null;
+  // Nothing to list: no panel at all (an empty one only says that there is nothing), unless the column
+  // stays for the tour: then one line says that this step has none.
+  if (links.length === 0)
+    return keepPlace ? (
+      <section className="related-files is-empty" aria-label="Related files">
+        <p className="related-none" data-testid="related-none">
+          No related files for this step.
+        </p>
+      </section>
+    ) : null;
   // "Show N more" holds for this selection only.
   const shown = all === selection ? links : links.slice(0, CARDS_SHOWN);
   return (

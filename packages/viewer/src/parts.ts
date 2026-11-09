@@ -98,15 +98,20 @@ export function mapParts(graph: DerivedGraph, view: GraphView, model: ExplainerM
       // (a file is said by the box's own badge; a group says how many files it holds)
       const badge = readerBadge(node.symbolKind ?? node.kind);
       const kind =
-        node.role !== undefined
-          ? (node.tech ?? ROLE_WORDS[node.role])
-          : node.kind === "group"
-            ? inside > 0
-              ? `group of ${inside}`
-              : undefined
-            : badge === "file"
-              ? undefined
-              : badge;
+        node.row !== undefined
+          ? // a row of a table (data map): a field, with the type it holds (R4-3)
+            node.memberType
+            ? `field · ${node.memberType}`
+            : "field"
+          : node.role !== undefined
+            ? (node.tech ?? ROLE_WORDS[node.role])
+            : node.kind === "group"
+              ? inside > 0
+                ? `group of ${inside}`
+                : undefined
+              : badge === "file"
+                ? undefined
+                : badge;
       const summary = firstSentence(node.summary ?? model.node(node.id)?.summary);
       boxes.push({
         id: node.id,

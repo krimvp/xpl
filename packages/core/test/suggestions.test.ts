@@ -206,7 +206,7 @@ describe("a stored anchor whose symbol was renamed", () => {
     const r = resolveAnchor(stored, after.index, after.getText);
     expect(r.status).toBe("missing");
     expect(r.reason).toMatch(
-      /^symbol Runner\.dispatch is not in src\/runner\.ts; did you mean sym:src\/runner\.ts#Runner\.run \(anchor: file: "src\/runner\.ts", symbol: "Runner\.run"\)/,
+      /^symbol Runner\.dispatch is not in src\/runner\.ts\. Did you mean: sym:src\/runner\.ts#Runner\.run \(anchor: file: "src\/runner\.ts", symbol: "Runner\.run"\)/,
     );
   });
 
@@ -589,7 +589,7 @@ describe("an unknown id in an explainer says what was probably meant", () => {
 
   it("a text that is not an id at all: the id it looks like", () => {
     expect(messages(relatedOf("retry-policy"))).toEqual([
-      'related: "retry-policy" is not an element id; did you mean concept:retry-policy?',
+      'related: "retry-policy" is not an element id. Did you mean: concept:retry-policy?',
     ]);
     expect(messages(relatedOf("zzz"))[0]).toContain('"zzz" is not an element id (expected');
   });

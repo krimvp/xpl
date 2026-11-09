@@ -23,7 +23,7 @@ import {
 } from "../draft.js";
 import { MAP_LIMITS, draftMap } from "../draft-map.js";
 import { CLASS_ENTRY_KINDS, CLASS_LIMITS, draftClass } from "../draft-class.js";
-import { STATES_LIMITS, draftStates } from "../draft-states.js";
+import { STATES_LIMITS, draftStates, statesHint } from "../draft-states.js";
 import { DATA_LIMITS, draftData } from "../draft-data.js";
 import { CliError, UsageError, errorMessage } from "../errors.js";
 import { resolveCommit } from "../git.js";
@@ -118,7 +118,7 @@ function summaryLine(kind: DraftKind, name: string, counts: DraftCounts): string
             : `a sequence of ${plural(counts.sequenceSteps, "call")} between ${plural(counts.participants, "participant")}`) +
           (counts.maps > 0 ? ` after a map of the ${plural(counts.boxes, "file")} it crosses` : "")
         : kind === "data"
-          ? `a data map of ${plural(counts.boxes - counts.rows, "type")} with ${plural(counts.rows, "field row")}`
+          ? `a data map of ${plural(counts.boxes - counts.rows, "type")} (a table each) with ${plural(counts.rows, "field row")} (a row needs no text)`
           : counts.maps > 1
             ? `${counts.maps} maps of ${plural(counts.boxes, "box", "boxes")} in all`
             : `a map of ${plural(counts.boxes, "box", "boxes")}`;
@@ -163,7 +163,7 @@ export const draftCommand: CommandSpec = {
   usage:
     "xpl draft change|repo|path|map|class|states|data [explainer] [<entry id> ...] [--audience <reader>] [--question <question>] [-o <file>]",
   summary:
-    "Print a patch skeleton for a change, a repo, a path, a map, a class, the states of a type or a data model; you write the TODO text",
+    "Print a patch skeleton for a change, a repo, a path, a map, a class, the states of a type or a data map; you write the TODO text",
   details: [
     "Builds a provisional patch from indexed references and the change record, with",
     "`TODO: <what to write>` in every text a person must write. `xpl apply` accepts it as it is; `xpl lint` reports",
@@ -230,11 +230,14 @@ export const draftCommand: CommandSpec = {
     '                            "members"`): a table per type (class, interface, type, enum) with a row per field and',
     "                            the type its line names, arrows from a field to the type it holds and from a type to",
     "                            what it extends or implements. The scope is the repo (the default), a folder or a file",
-    "                            (tests, examples and fixtures left out), or one type to start at. It starts at the",
-    "                            most used type that holds or is held by another, then adds the type with the most links",
-    `                            to the boxes so far (at most ${DATA_LIMITS.boxes} boxes, ${DATA_LIMITS.rows} rows a box; the fields that link come`,
-    "                            first). Each box gets a summary TODO with its fields and links; a tour of at most",
-    `                            ${DATA_LIMITS.steps} steps: the first type, the next ones in the order they joined, the rest of the map.`,
+    "                            (tests, examples, docs and fixtures left out), or one type to start at. A type with",
+    "                            no fields (a function type) is a box only in a hierarchy. Each group of linked types",
+    "                            starts at the type that reaches the most others through its fields, then adds what",
+    `                            the boxes hold, the most used first (at most ${DATA_LIMITS.boxes} boxes in all, ${DATA_LIMITS.rows} rows a box; a later`,
+    "                            group keeps 2). Each box gets a summary TODO with its fields and links; rows get none.",
+    "                            Two types of one name are qualified (`runner.Config`). The notes say what is left",
+    `                            off and why. A tour of at most ${DATA_LIMITS.steps} steps: the types in the order they joined, the`,
+    "                            rest of the map, and where to go next (the types left off).",
     'Change, repo and path maps get `stubs: {mode: "none"}` (a folder map keeps its stubs: what uses it and what it uses);',
     "tour steps hold at most 2 code ranges. Ids already in the explainer are not reused (`view:change-map-2`; a map",
     "keeps its own view ids and updates them), and nodes it already explains get no new summary.",
@@ -356,7 +359,12 @@ export const draftCommand: CommandSpec = {
     }
     let statesEntry: IndexedSymbol | undefined;
     if (kind === "states") {
-      const target = resolveTarget(ws.model, entryArg!);
+      const hash = entryArg!.indexOf("#");
+      const file = hash > 0 ? entryArg!.slice(0, hash).replace(/^sym:/, "") : "";
+      const target = resolveTarget(ws.model, entryArg!, {
+        kinds: new Set(["enum", "type", "class"]),
+        kindHint: statesHint(ws.model.file(file)?.language),
+      });
       if (target.type !== "symbol") {
         throw new CliError(
           `the entry must be a type that enumerates states, not ${target.id}: \`xpl outline --kind enum,type,class\` lists them`,
@@ -447,7 +455,7 @@ export const draftCommand: CommandSpec = {
         path: loaded.rel,
         ...(outPath ? { out: displayPath(ctx.cwd, outPath) } : {}),
         counts,
-        notes: draft.notes,
+        notes: draft.notes.map((n) => n.replaceAll("<explainer>", loaded.name)),
         ...(warnings.length > 0 ? { applyWarnings: warnings } : {}),
         patch: draft.patch,
       });
@@ -456,7 +464,7 @@ export const draftCommand: CommandSpec = {
     const target = outOption ?? "<file>";
     const lines = [
       summaryLine(kind, loaded.name, counts),
-      ...draft.notes.map((n) => `note: ${n}`),
+      ...draft.notes.map((n) => `note: ${n.replaceAll("<explainer>", loaded.name)}`),
       ...warnings.map((w) => `apply warning: ${w}`),
       `next: ${outOption ? "" : "save the patch to a file outside the repo (or use -o), "}write each TODO, then ` +
         `\`xpl lint ${loaded.name} --patch ${target}\` and \`xpl apply ${loaded.name} ${target}\``,

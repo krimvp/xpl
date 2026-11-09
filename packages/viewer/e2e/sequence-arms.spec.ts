@@ -62,22 +62,41 @@ async function openOutcome(page: Page, size?: { width: number; height: number })
   await page.evaluate(() => window.__xpl!.setView("view:dispatch"));
 }
 
+/** The frame's box (under the steps), its name, and its arms, which are drawn in reading order with the steps. */
 const frame = (page: Page) => page.locator('[data-frame-id="frame:outcome"]');
-const arm = (page: Page, n: number) => frame(page).locator(`.frame-arm[data-arm="${n}"]`);
+const head = (page: Page) => page.locator('[data-frame-head="frame:outcome"]');
+const arms = (page: Page) => page.locator('[data-arm-of="frame:outcome"]');
+const arm = (page: Page, n: number) =>
+  page.locator(`[data-arm-of="frame:outcome"][data-arm="${n}"]`);
 
 test("an alt frame draws a line between two arms and each arm's condition", async ({ page }) => {
   const problems = watchProblems(page);
   await openOutcome(page);
-  await expect(frame(page).locator(".frame-arm")).toHaveCount(3);
-  await expect(frame(page).locator(".arm-label")).toHaveText([
+  await expect(arms(page)).toHaveCount(3);
+  await expect(arms(page).locator(".arm-label")).toHaveText([
     "[result.ok]",
     "[retries left]",
     "[else]",
   ]);
-  // the frame's own label names the decision, without brackets
-  await expect(frame(page).locator(".frame-label").first()).toHaveText("how the attempt ends");
+  // the frame's own label names the decision, without brackets, set apart from the conditions (R4-17)
+  const title = head(page).locator(".frame-label");
+  await expect(title).toHaveText("how the attempt ends");
+  const style = (el: Element) => {
+    const css = getComputedStyle(el);
+    return [css.fill, css.fontStyle];
+  };
+  const [titleFill, titleStyle] = await title.evaluate(style);
+  const [armFill, armStyle] = await arm(page, 0).locator(".arm-label").evaluate(style);
+  expect(titleStyle).toBe("italic");
+  expect(armStyle).toBe("normal");
+  expect(titleFill).not.toBe(armFill);
+  // every condition in brackets has one tone: the arms' as the loop's
+  const loopFill = await page
+    .locator('[data-frame-head="frame:loop"] .frame-label')
+    .evaluate((el) => getComputedStyle(el).fill);
+  expect(armFill).toBe(loopFill);
   // two dashed lines, each between the arm above and the arm below
-  const lines = frame(page).locator(".frame-divider");
+  const lines = arms(page).locator(".frame-divider");
   await expect(lines).toHaveCount(2);
   expect(await lines.first().evaluate((el) => getComputedStyle(el).strokeDasharray)).not.toBe(
     "none",
@@ -134,10 +153,60 @@ test("at phone width the arms and their conditions stay inside the frame", async
   await openOutcome(page, { width: 390, height: 844 });
   await page.getByRole("button", { name: "Fit all" }).click();
   const outer = (await frame(page).locator(".frame-box").boundingBox())!;
-  for (const label of await frame(page).locator(".arm-label").all()) {
+  for (const label of await arms(page).locator(".arm-label").all()) {
     const box = (await label.boundingBox())!;
     expect(box.x).toBeGreaterThanOrEqual(outer.x);
     expect(box.x + box.width).toBeLessThanOrEqual(outer.x + outer.width);
   }
   await page.screenshot({ path: screenshotPath("sequence-arms-390") });
+});
+
+// V4-10: Tab went to every condition before step 1; V4-09: a frame's name did nothing
+test("Tab reads the frames, the conditions and the steps top to bottom; a frame's name selects its steps", async ({
+  page,
+}) => {
+  await openOutcome(page);
+  const order = await page
+    .locator('.sequence .steps > [tabindex="0"]')
+    .evaluateAll((els) =>
+      els.map(
+        (el) =>
+          el.getAttribute("data-element-id") ??
+          el.getAttribute("data-frame-head") ??
+          `arm ${el.getAttribute("data-arm")}`,
+      ),
+    );
+  expect(order.indexOf("frame:outcome")).toBe(order.indexOf("arm 0") - 1);
+  expect(order.indexOf("arm 0")).toBe(order.indexOf("dispatch:4") - 1);
+  expect(order.indexOf("arm 1")).toBe(order.indexOf("dispatch:3") - 1);
+  expect(order.indexOf("arm 2")).toBe(order.indexOf("dispatch:5") - 1);
+  await expect(arm(page, 1)).toHaveAttribute(
+    "aria-label",
+    /how the attempt ends, arm \[retries left\]/,
+  );
+  // a click on the frame's name selects all of its steps (their code is the frame's code)
+  await head(page).locator(".hit").click();
+  await expect
+    .poll(async () => (await stateOf(page)).selection)
+    .toEqual(["dispatch:4", "dispatch:3", "dispatch:5"]);
+  await expect(head(page)).toHaveClass(/is-selected/);
+  await expect(head(page)).toHaveAttribute("aria-pressed", "true");
+});
+
+// V4-08: the text view was a straight run of calls, with no frames or arms
+test("the text view lists the frames and the arms in reading order, with the step numbers", async ({
+  page,
+}) => {
+  await openOutcome(page);
+  await page.getByRole("button", { name: "Text view" }).click();
+  const items = page.getByRole("list", { name: "Steps" }).getByRole("button");
+  await expect(items.first()).toHaveText("loop [while the runner runs]: steps 1 to 5");
+  const texts = await items.allTextContents();
+  const at = (pattern: RegExp) => texts.findIndex((text) => pattern.test(text));
+  expect(at(/^alt how the attempt ends/)).toBeGreaterThan(-1);
+  expect(at(/^\[result\.ok\]/)).toBe(at(/^alt how the attempt ends/) + 1);
+  expect(at(/^\[retries left\]/)).toBeLessThan(at(/^\[else\]/));
+  expect(texts.filter((text) => /^\d+\. /.test(text)).length).toBeGreaterThan(3);
+  await items.nth(at(/^\[else\]/)).click();
+  await expect.poll(async () => (await stateOf(page)).selection).toEqual(["dispatch:5"]);
 });

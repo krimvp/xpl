@@ -18,8 +18,8 @@ import {
 describe("xpl index: coverage lines", () => {
   // the lines `describeAnalysis` gives for go-jobrunner indexed with scip-go (10 files, all described)
   const details = [
-    "go (go): calls, imports, inheritance, implementations, type references, reads, writes partial (10/10 files analyzed). Heuristic relationships are hints; unresolved targets may be missing.",
-    "go (scip-go): calls, imports, inheritance, implementations, type references, reads, writes partial (10/10 files analyzed). Precise relationships may be missing; described files and empty results do not establish complete coverage.",
+    "go (go): calls, imports, inheritance, implementations, type references, reads, writes partial (10/10 files analyzed). References matched by name are hints; some can be missing.",
+    "go (scip-go): calls, imports, inheritance, implementations, type references, reads, writes partial (10/10 files analyzed). A tool can miss a reference, so an empty result does not prove there is none.",
   ];
   const go = (info: object) => ({ go: { files: 10, symbols: 158, ...info } }) as never;
 
@@ -70,7 +70,7 @@ describe("xpl index", () => {
       .slice(1);
     expect(coverage[0]).toBe("all 12 files: file anchors supported (12/12 files analyzed).");
     expect(coverage).toContain(
-      "text: named symbols, full declaration ranges, nesting, calls, imports, inheritance, implementations, type references, reads, writes unsupported (0/1 files analyzed). Only file anchors are available; named symbols and relationships are unavailable.",
+      "text: named symbols, full declaration ranges, nesting, calls, imports, inheritance, implementations, type references, reads, writes unsupported (0/1 files analyzed). Only file anchors are available; named symbols and references are unavailable.",
     );
     const order = coverage.slice(1).map((line) => line.split(":")[0]);
     expect(order).toEqual([...order].sort());

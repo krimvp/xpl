@@ -183,7 +183,7 @@ describe("resolveAnchor: whole symbols and files", () => {
       { id: "src/a.ts#Other.run", start: 4, end: 12 },
     ]);
     expect(resolveAnchor(a, moved.index, moved.getText).reason).toContain(
-      'did you mean sym:src/a.ts#Other.run (anchor: file: "src/a.ts", symbol: "Other.run")',
+      'Did you mean: sym:src/a.ts#Other.run (anchor: file: "src/a.ts", symbol: "Other.run")',
     );
   });
 

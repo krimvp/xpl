@@ -38,7 +38,7 @@ test("Read shows a bounded first source excerpt and opens its exact range by key
   await expect(excerpt).toContainText("const job = await this.queue.pop()");
   await expect(excerpt.locator(".guide-source-line")).toHaveCount(12);
   await expect(excerpt.locator(".guide-source-caption")).toHaveText(
-    "src/runner.ts · lines 44–55 (of 44–80) · code link 1 of 2",
+    "src/runner.ts · lines 44–55 (12 of its 37 lines) · code link 1 of 2",
   );
   const action = excerpt.getByRole("button", { name: "Show code" });
   await action.focus();
@@ -162,13 +162,18 @@ test("Read excerpts work in an offline bundle and fit a narrow screen", async ({
 test("each tour picture is as tall as its frame", async ({ page }) => {
   for (const bundle of [TS_BUNDLE, CHANGE_BUNDLE]) {
     await page.goto(bundle.href);
-    const frame = page.locator(".snapshot-frame").first();
-    await expect(frame.locator("svg")).toBeVisible();
-    const [frameHeight, svgHeight] = await frame.evaluate((el) => [
-      el.getBoundingClientRect().height,
-      el.querySelector("svg")!.getBoundingClientRect().height,
-    ]);
-    expect(frameHeight).toBeGreaterThan(150);
-    expect(Math.abs(svgHeight - frameHeight)).toBeLessThan(2);
+    // (a short map picture is shorter than 150px: every picture fills its frame, and none is cut to a strip)
+    await expect(page.locator(".snapshot-frame svg").first()).toBeVisible();
+    const heights = await page
+      .locator(".snapshot-frame:has(svg)")
+      .evaluateAll((frames) =>
+        frames.map((el) => [
+          el.getBoundingClientRect().height,
+          el.querySelector("svg")!.getBoundingClientRect().height,
+        ]),
+      );
+    expect(Math.min(...heights.map(([frame]) => frame!))).toBeGreaterThan(60);
+    for (const [frameHeight, svgHeight] of heights)
+      expect(Math.abs(svgHeight! - frameHeight!)).toBeLessThan(2);
   }
 });

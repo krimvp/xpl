@@ -229,6 +229,57 @@ describe("buildMatrix", () => {
   });
 });
 
+// V3-16: a draft's TODO labels made every row read "TODO: 2-5 plain words for t…"
+it("names a box whose label is still a draft's TODO by its file, which differs from row to row", () => {
+  const todo = (file: string) =>
+    box(`file:src/${file}`, { label: `TODO: 2-5 plain words for this file (now: ${file})` });
+  const m = buildMatrix(graph([todo("anchors.ts"), todo("bundle.ts")], []));
+  expect(m.boxes.map((b) => b.label)).toEqual(["anchors.ts (TODO)", "bundle.ts (TODO)"]);
+});
+
+describe("the matrix of a data map", () => {
+  // V4-12: one row and column per field gave a 38 x 38 grid with 11 filled cells, each table's own row at the
+  // end of the band of the table before it
+  it("has one row and column per table, a cell naming the fields that hold the other type", () => {
+    const table = (id: string) =>
+      box(id, { label: id, kind: "symbol", container: true, rows: true });
+    const field = (parent: string, name: string, row: number) =>
+      box(`${parent}.${name}`, { label: name, kind: "symbol", parent, row });
+    const holds = (from: string, to: string) => arrow("references", from, to, { label: "holds" });
+    const g = graph(
+      [
+        table("Job"),
+        field("Job", "id", 0),
+        table("Queue"),
+        field("Queue", "ready", 0),
+        field("Queue", "inflight", 1),
+        field("Queue", "dead", 2),
+        table("DeadJob"),
+        field("DeadJob", "job", 0),
+      ],
+      [
+        holds("Queue.ready", "Job"),
+        holds("Queue.inflight", "Job"),
+        holds("Queue.dead", "DeadJob"),
+        holds("DeadJob.job", "Job"),
+      ],
+    );
+    const m = buildMatrix(g);
+    expect(m.boxes).toEqual([
+      { id: "Queue", label: "Queue" },
+      { id: "DeadJob", label: "DeadJob" },
+      { id: "Job", label: "Job" },
+    ]);
+    expect(picture(g)).toEqual(["Queue: . 1 2", "DeadJob: . . 1", "Job: . . ."]);
+    const cell = m.cells[0]![2]!;
+    expect(cell.text).toBe("holds (ready, inflight)");
+    expect(cell.select).toEqual([
+      "edge:references:Queue.ready->Job",
+      "edge:references:Queue.inflight->Job",
+    ]);
+  });
+});
+
 describe("one order for the parts list and the matrix", () => {
   it("lists a map's boxes in the matrix's order, a group's boxes under it", () => {
     // the names sort against the arrows: astore.ts and list.ts are used, so they come after their users
@@ -251,5 +302,34 @@ describe("one order for the parts list and the matrix", () => {
     const parts = mapParts(g, view, model).boxes.map((b) => b.label);
     expect(parts).toEqual(["Commands", "run.ts", "list.ts", "astore.ts"]);
     expect(buildMatrix(g).boxes.map((b) => b.label)).toEqual(["run.ts", "list.ts", "astore.ts"]);
+  });
+
+  // V4-14, R4-12: a table's fields came sorted by name; the code's order is the one the table draws
+  it("lists a table's fields in the order the code declares them, under the table", () => {
+    const g = graph(
+      [
+        box("Queue", { label: "Queue", kind: "symbol", container: true, rows: true }),
+        box("Queue.acked", { label: "acked", kind: "symbol", parent: "Queue", row: 2 }),
+        box("Queue.dead", { label: "dead", kind: "symbol", parent: "Queue", row: 1 }),
+        box("Queue.ready", {
+          label: "ready",
+          kind: "symbol",
+          parent: "Queue",
+          row: 0,
+          memberType: "Job[]",
+        }),
+      ],
+      [],
+    );
+    const view = { id: "view:d", type: "graph", title: "d", include: [] } as unknown as Parameters<
+      typeof mapParts
+    >[1];
+    const model = { node: () => undefined } as unknown as Parameters<typeof mapParts>[2];
+    expect(mapParts(g, view, model).boxes.map((b) => [b.label, b.depth, b.kind])).toEqual([
+      ["Queue", 0, undefined],
+      ["ready", 1, "field · Job[]"],
+      ["dead", 1, "field"],
+      ["acked", 1, "field"],
+    ]);
   });
 });

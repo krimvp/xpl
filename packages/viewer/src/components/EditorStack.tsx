@@ -434,7 +434,13 @@ const EditorPane = memo(function EditorPane({
       diff?.removed
         ?.filter((block) => block.place === "before" && block.at === first)
         .reduce((sum, block) => sum + (block.text ? block.count : 1), 0) ?? 0;
-    const margin = (wantLines !== undefined ? 22 : 44) + above * editor.defaultLineHeight;
+    // A talk (`wantLines`) shows one whole line above the focus, never a sliver of one (U5): the margin is
+    // that line's height, wrapped or not.
+    const lineAbove =
+      first !== undefined && first > 1 && first <= editor.state.doc.lines
+        ? editor.lineBlockAt(editor.state.doc.line(first - 1).from).height
+        : 0;
+    const margin = (wantLines !== undefined ? lineAbove : 44) + above * editor.defaultLineHeight;
     // A change guide: when the range runs on past the screen before its first change (a whole file), the
     // pane opens on that change, not on the imports at the top.
     const range = pane.ranges.find((r) => r.range.startLine <= first! && r.range.endLine >= first!);

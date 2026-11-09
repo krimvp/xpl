@@ -422,7 +422,7 @@ describe("xpl anchors after the code changed", () => {
     const overlay = out.slice(out.indexOf(`${DISPATCH}  (node`));
     expect(overlay).toContain("missing  last known lines 42-88");
     expect(overlay).toContain(
-      'did you mean sym:src/runner.ts#Runner.run (anchor: file: "src/runner.ts", symbol: "Runner.run")',
+      'Did you mean: sym:src/runner.ts#Runner.run (anchor: file: "src/runner.ts", symbol: "Runner.run")',
     );
   });
 

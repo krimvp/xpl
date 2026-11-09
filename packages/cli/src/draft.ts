@@ -2622,6 +2622,12 @@ function pathSequence(
   return { entry, entryId, view, participants, calls: steps, notes };
 }
 
+/**
+ * The arm of a drafted `alt` that holds the code after an `if` that leaves early: that code is the path itself, so
+ * its calls are not part of the branch's tour step.
+ */
+const implicitArms = new WeakMap<SequenceFrame, SequenceArm>();
+
 /** Frames of a drafted sequence, at most this many (the outermost first). */
 const MAX_FRAMES = 5;
 
@@ -2661,19 +2667,27 @@ function pathFrames(
       const withCalls = block.arms
         .map((arm) => ({ arm, calls: within(arm) }))
         .filter((a) => a.calls.length > 0);
-      if (withCalls.length === 0) continue;
+      // a guard that leaves with no drawn call (`if err != nil { return err }`) frames nothing: the code after it is
+      // the path itself
+      if (withCalls.length === 0 || (withCalls.length === 1 && withCalls[0]!.arm.implicit))
+        continue;
       inFrame = withCalls.flatMap((a) => a.calls);
       kind = withCalls.length >= 2 ? "alt" : "opt";
+      // the frame names the decision; each arm quotes the code that picks it (so no code is quoted twice)
       label =
         kind === "alt"
-          ? todo(`what this branch decides, in a few words (the code: ${code})`)
+          ? todo("what is decided, in 2-4 words (the decision; each arm says its condition)")
           : todo(`when these calls run, in a few words (the code: ${code})`);
       // each arm runs from its first call to the call before the next arm (a call in an `else if` condition
       // stays with the arm above it): the arms split the frame's steps, as validation wants
       if (kind === "alt") {
         const order = steps.map((s) => s.step.id);
         arms = withCalls.map((a, n) => ({
-          label: todo(`when this arm runs, in a few words (the code: ${tick(a.arm.condition)})`),
+          label: a.arm.implicit
+            ? todo(`otherwise, in a few words (the code after ${code}, which leaves early)`)
+            : a.arm.condition === "else"
+              ? todo("otherwise, in a few words")
+              : todo(`the condition, in a few words (the code: ${tick(a.arm.condition)})`),
           fromStep: a.calls[0]!.step.id,
           toStep:
             n + 1 < withCalls.length
@@ -2683,14 +2697,17 @@ function pathFrames(
       }
     }
     if (inFrame.length === 0) continue;
-    frames.push({
+    const frame: SequenceFrame = {
       id: ids.get("frame", `${slug}-${kind}`),
       kind,
       label,
       fromStep: inFrame[0]!.step.id,
       toStep: inFrame.at(-1)!.step.id,
       ...(arms ? { arms } : {}),
-    });
+    };
+    const implicit = arms?.at(-1);
+    if (implicit && block.arms.at(-1)?.implicit) implicitArms.set(frame, implicit);
+    frames.push(frame);
   }
   return frames;
 }
@@ -2742,13 +2759,15 @@ export function draftPath(input: DraftInput, entries: readonly PathEntry[]): Dra
     }
     // a branch (an alt or opt frame, the outermost one) is one tour step: its calls together, how it decides
     const order = seq.calls.map((c) => c.step.id);
+    const holds = (r: { fromStep: string; toStep: string }, stepId: string) =>
+      order.indexOf(r.fromStep) <= order.indexOf(stepId) &&
+      order.indexOf(stepId) <= order.indexOf(r.toStep);
+    // (a step in the arm after an early exit is on the main path, not in that branch)
     const branchOf = (stepId: string) =>
-      (seq.view.frames ?? []).find(
-        (f) =>
-          f.kind !== "loop" &&
-          order.indexOf(f.fromStep) <= order.indexOf(stepId) &&
-          order.indexOf(stepId) <= order.indexOf(f.toStep),
-      );
+      (seq.view.frames ?? []).find((f) => {
+        const rest = implicitArms.get(f);
+        return f.kind !== "loop" && holds(f, stepId) && !(rest && holds(rest, stepId));
+      });
     type Group = { calls: typeof seq.calls; frame?: SequenceFrame };
     const groups: Group[] = [];
     for (const call of seq.calls) {
@@ -2758,8 +2777,10 @@ export function draftPath(input: DraftInput, entries: readonly PathEntry[]): Dra
       else groups.push({ calls: [call], ...(frame ? { frame } : {}) });
     }
     // a branch with two outcomes says how the path ends: it keeps its step before any single call
+    // (an opt is one of the outcomes too: the success path keeps its step before a log line)
     const weight = (g: Group) =>
-      Math.max(...g.calls.map((c) => c.call.score)) + (g.frame?.kind === "alt" ? 1000 : 0);
+      Math.max(...g.calls.map((c) => c.call.score)) +
+      (g.frame?.kind === "alt" ? 1000 : g.frame?.kind === "opt" ? 500 : 0);
     let main = groups;
     const quiet: Call[] = [];
     while (main.length > perSequence) {
@@ -2771,8 +2792,8 @@ export function draftPath(input: DraftInput, entries: readonly PathEntry[]): Dra
     }
     if (quiet.length > 0) {
       notes.push(
-        `${sequences.length > 1 ? `${tick(seq.view.id)}: ` : ""}calls without a tour step of their own (at most ${perSequence} steps): ` +
-          quiet.map((c) => `sym:${c.callee.id}`).join(", "),
+        `${sequences.length > 1 ? `${tick(seq.view.id)}: ` : ""}calls without a tour step of their own (at most ${plural(perSequence, "call step")}): ` +
+          quiet.map((c) => c.callee.path).join(", "),
       );
     }
     const quietNames = quiet.map((c) => c.callee.path);
@@ -2888,7 +2909,8 @@ export function draftPath(input: DraftInput, entries: readonly PathEntry[]): Dra
       model,
       "t-next",
       mapId ?? first.view.id,
-      mapId ? fileIds : [first.entryId],
+      // no focus: the step points away from the map, at what the tour skipped
+      [],
       note(
         "Where to go next",
         todo(

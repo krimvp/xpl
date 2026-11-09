@@ -6,6 +6,7 @@
  */
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { headOf, type LegendShows } from "../keyMarks.js";
+import { readerBadge } from "../readerWords.js";
 import { BoxIcon } from "./icons.js";
 
 /** What each icon stands for, in plain words. */
@@ -19,6 +20,7 @@ const ICON_WORDS: Record<string, string> = {
   queue: "a queue",
   storage: "stored files",
   external: "outside this code",
+  browser: "a browser",
   repo: "the repository",
   dir: "a folder",
   file: "a file",
@@ -36,6 +38,12 @@ const ICON_WORDS: Record<string, string> = {
 export function Legend({ shows }: { shows: LegendShows }) {
   return (
     <KeyButton foot="Click a box or an arrow to see its code.">
+      {shows.tables && (
+        <Row label="A table: a type. Each row is one of its fields, with the type it holds on the right">
+          <rect className="lg-box" x="1" y="1" width="30" height="20" rx="3" />
+          <path className="lg-rule" d="M1 8 H31 M1 14.5 H31" />
+        </Row>
+      )}
       {shows.code !== false && (
         <Row label="A part of the code: a file, a function, a group of files">
           <rect className="lg-box" x="1" y="3" width="30" height="16" rx="4" />
@@ -113,7 +121,14 @@ export function Legend({ shows }: { shows: LegendShows }) {
         </Row>
       ))}
       {shows.counts && (
-        <Row label="calls ×3: the code calls it from 3 places" text="×3">
+        <Row
+          label={
+            shows.countKind && shows.countKind !== "calls"
+              ? `${shows.countKind} ×3: found in 3 places in the code`
+              : "calls ×3: the code calls it from 3 places"
+          }
+          text="×3"
+        >
           <Arrow className="lg-edge" />
         </Row>
       )}
@@ -139,7 +154,7 @@ export function Legend({ shows }: { shows: LegendShows }) {
       )}
       {shows.outside && (
         <>
-          <Row label="Dashed box: code outside this map. Pick it to add it; its number says how often it is used">
+          <Row label="Dashed box: code outside this map. Click it to add it; its number says how often it is used">
             <rect className="lg-box is-ghost" x="1" y="3" width="30" height="16" rx="4" />
           </Row>
           <Row label="Dotted: an arrow to or from code outside this map (shown for the selected box)">
@@ -164,6 +179,7 @@ const KIND_WORDS: Record<string, string> = {
   extends: "Extends (hollow head): points at the parent class or type",
   implements: "Implements (hollow head): points at the interface it fulfils",
   references: "Uses a type (open head): points at the type it names",
+  holds: "Holds (open head): the field in that row holds a value of the type it points at",
   reads: "Reads: points at the data it reads",
   writes: "Writes: points at the data it changes",
   requests: "Requests: a web call, pointing at the code that answers it",
@@ -176,6 +192,7 @@ const KIND_SHORT: Record<string, string> = {
   extends: "extends",
   implements: "implements",
   references: "uses a type",
+  holds: "a field holds this type",
   reads: "reads",
   writes: "writes",
   requests: "web request",
@@ -187,8 +204,23 @@ const KIND_SHORT: Record<string, string> = {
  * map's. `stubLines`: lines to code outside the map are on screen (else only their dashed boxes are). Nothing
  * when every arrow is the plain kind.
  */
-export function KeyLine({ shows, stubLines = false }: { shows: LegendShows; stubLines?: boolean }) {
+export function KeyLine({
+  shows,
+  stubLines = false,
+  sharedBadge,
+}: {
+  shows: LegendShows;
+  stubLines?: boolean;
+  /** The technology or role every box shares, drawn on none of them (graphLayout `sharedBadge`). */
+  sharedBadge?: string | undefined;
+}) {
   const items: { key: string; swatch: ReactNode; words: string }[] = [];
+  if (sharedBadge)
+    items.push({
+      key: "shared",
+      swatch: null,
+      words: `every box: ${readerBadge(sharedBadge) ?? sharedBadge}`,
+    });
   const line = (className: string, head: Head = "filled") => (
     <svg className="key-swatch" width="26" height="12" viewBox="0 0 32 22" aria-hidden="true">
       <Arrow className={className} head={head} />
@@ -268,7 +300,7 @@ export interface FlowKeyShows {
 export function FlowKey({ shows }: { shows: FlowKeyShows }) {
   return (
     <KeyButton foot="Click a step to see its code.">
-      <Row label="One step: what runs, and the code that runs it under it">
+      <Row label="One step: what runs, with the name of its code under it">
         <g className="flow-stage">
           <rect x="1" y="3" width="30" height="16" rx="5" />
         </g>
@@ -292,7 +324,7 @@ export function FlowKey({ shows }: { shows: FlowKeyShows }) {
           <rect x="2" y="4" width="28" height="14" rx="5" />
         </g>
       </Row>
-      <Row label="A step in the code you picked">
+      <Row label="Linked to the code you selected">
         <g className="flow-stage is-related">
           <rect x="2" y="4" width="28" height="14" rx="5" />
         </g>
@@ -311,7 +343,7 @@ export function FlowKey({ shows }: { shows: FlowKeyShows }) {
         </Row>
       )}
       {shows.frames && (
-        <Row label="When it runs: the purple words above a box hold for it and the boxes after it">
+        <Row label="A condition: the purple words above a box say when it and the boxes after it run">
           <text className="lg-frame" x="16" y="15">
             if…
           </text>
@@ -363,7 +395,7 @@ export function SequenceKey({ shows }: { shows: SequenceKeyShows }) {
         </Row>
       )}
       {shows.frames && (
-        <Row label="A box around steps: they repeat (loop), or run only sometimes (alt, opt)">
+        <Row label="A box around steps: they repeat (loop), run only when a condition holds (opt), or one of its arms runs (alt)">
           <g className="frame">
             <rect className="frame-box" x="1" y="2" width="30" height="18" rx="2" />
             <path className="frame-tab" d="M1 2 h12 v5 l-3 3 h-9 z" />
@@ -371,7 +403,7 @@ export function SequenceKey({ shows }: { shows: SequenceKeyShows }) {
         </Row>
       )}
       {shows.arms && (
-        <Row label="A dashed line in an alt box: one choice above it, another below. Click a [condition] to see its code.">
+        <Row label="A dashed line in an alt box splits its arms. Click an arm's condition to see its steps and their code">
           <g className="frame">
             <rect className="frame-box" x="1" y="2" width="30" height="18" rx="2" />
             <line className="frame-divider" x1="1" y1="11" x2="31" y2="11" />

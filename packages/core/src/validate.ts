@@ -519,10 +519,10 @@ class Validator {
   private describeNotAnId(id: string): string {
     const loose = normalizeElementId(id, this.index);
     if (loose.ok && loose.id !== id) {
-      return `"${id}" is not an element id; did you mean ${loose.id}?`;
+      return `"${id}" is not an element id. Did you mean: ${loose.id}?`;
     }
     const near = suggestIds(id, this.known().all);
-    if (near.length > 0) return `"${id}" is not an element id; did you mean ${near.join(", ")}?`;
+    if (near.length > 0) return `"${id}" is not an element id. Did you mean: ${near.join(", ")}?`;
     return `"${id}" is not an element id (expected repo, dir:<path>, file:<path>, sym:<file>#<symbol> or grp:<slug>)`;
   }
 
@@ -1208,13 +1208,13 @@ class Validator {
     }
   }
 
-  /** `; did you mean src/a.ts#Class.run?` for an entry point whose file exists but whose symbol does not. */
+  /** `. Did you mean: src/a.ts#Class.run?` for an entry point whose file exists but whose symbol does not. */
   private entryPointHint(entry: unknown): string {
     if (typeof entry !== "string") return "";
     const { file, path } = splitSymbolId(entry, (candidate) => this.index.hasFile(candidate));
     if (!this.index.hasFile(file) || path === "") return "";
     const found = this.index.suggestSymbols(file, path, 3, this.hintFor(file, path) ?? {});
-    return found.length > 0 ? `; did you mean ${found.map((sym) => sym.id).join(", ")}?` : "";
+    return found.length > 0 ? `. Did you mean: ${found.map((sym) => sym.id).join(", ")}?` : "";
   }
 
   private checkGraphView(view: Record<string, unknown>, path: string, id: string): void {

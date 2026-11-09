@@ -37,6 +37,10 @@ export interface LegendShows {
   expandHere?: boolean;
   /** Lines labelled with a count the viewer made up ("calls ×3"). */
   counts?: boolean;
+  /** The kind of the first such line, for the Key's example ("implements ×3" on a map with no calls). */
+  countKind?: string;
+  /** Tables (`GraphView.boxText: "members"`): a type, one row per field. */
+  tables?: boolean;
   /** Lines found in the code (not drawn by the author, not out of the map). */
   found?: boolean;
 }
@@ -55,6 +59,7 @@ export const KIND_ORDER = [
   "extends",
   "implements",
   "references",
+  "holds",
   "reads",
   "writes",
   "requests",
@@ -63,8 +68,30 @@ export const KIND_ORDER = [
 /** The head an arrow of a kind ends in: a class hierarchy and an import do not read as calls (GraphView). */
 export function headOf(kind: string): "filled" | "hollow" | "open" {
   if (kind === "extends" || kind === "implements") return "hollow";
-  if (kind === "imports" || kind === "references") return "open";
+  if (kind === "imports" || kind === "references" || kind === "holds") return "open";
   return "filled";
+}
+
+/**
+ * Technologies whose icon says more than their role's (V2-15): a git repository is not "outside" the way a
+ * web service is, a browser is a window, a settings file is a file.
+ */
+const TECH_ICONS: [RegExp, string][] = [
+  [/\bgit\b|repositor/i, "repo"],
+  [/browser|\bhtml\b|web page/i, "browser"],
+  [/\b(yaml|json|toml|ini|markdown|csv)\b|\bfiles?\b/i, "file"],
+];
+
+/** The name of the icon a box shows: what its technology is, else its role, else the kind of code it is. */
+export function iconName(box: {
+  role?: string | undefined;
+  kindClass: string;
+  badge?: string | undefined;
+}): string {
+  // (only where the role's own icon would mislead: the globe of an outside system, a person)
+  if ((box.role === "external" || box.role === "person") && box.badge)
+    for (const [pattern, icon] of TECH_ICONS) if (pattern.test(box.badge)) return icon;
+  return box.role ?? box.kindClass;
 }
 
 const OUTSIDE_ROLES = new Set(["external", "person"]);
@@ -99,6 +126,8 @@ export function mapKeyShows(
     zoom: false,
     expandHere: false,
     counts: false,
+    countKind: "",
+    tables: false,
     found: false,
   };
   const icons = new Map<string, KeyIcon>();
@@ -111,13 +140,17 @@ export function mapKeyShows(
         shows.outside = true;
         continue;
       }
+      // a row of a table is a field: no icon, and not a box of its own in the Key
+      if (node.row) continue;
       const role = node.role;
-      if (node.sketch) shows.sketches = true;
+      if (node.rows)
+        shows.tables = true; // keyed as a table, not as a box of code
+      else if (node.sketch) shows.sketches = true;
       else if (!role || role === "service" || role === "component") shows.code = true;
       else if (OUTSIDE_ROLES.has(role)) shows.outsideSystems = true;
       else if (role === "system") shows.systems = true;
       else if (STORE_ROLES.has(role)) shows.stores = true;
-      const name = node.role ?? node.kindClass; // icons.tsx iconName
+      const name = iconName(node);
       if (!icons.has(name)) icons.set(name, { name, kindClass: node.kindClass, role });
       if (node.opens !== undefined && boxes.canZoomInto(node.id)) shows.zoom = true;
       if (node.expandable && node.children.length === 0 && boxes.canExpandInPlace(node.id)) {
@@ -133,8 +166,13 @@ export function mapKeyShows(
     else if (edge.resolution !== "heuristic" && edge.resolution !== "mixed") shows.found = true;
     if (edge.resolution === "heuristic") shows.heuristic = true;
     if (edge.resolution === "mixed") shows.mixed = true;
-    if (!edge.stub) kinds.add(edge.kind);
-    if (edge.counted && edge.label) shows.counts = true;
+    // a field's arrow on a data map (core names it "holds"), keyed apart from a type named in code
+    if (!edge.stub)
+      kinds.add(edge.kind === "references" && edge.title === "holds" ? "holds" : edge.kind);
+    if (edge.counted && edge.label && !shows.counts) {
+      shows.counts = true;
+      shows.countKind = edge.kind;
+    }
   }
   shows.icons = [...icons.values()];
   shows.kinds = KIND_ORDER.filter((kind) => kinds.has(kind));

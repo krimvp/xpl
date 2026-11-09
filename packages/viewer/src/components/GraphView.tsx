@@ -385,15 +385,16 @@ export function GraphView({
   const focus = useMemo(() => {
     const found = layout ? startFocus(layout, selection, order) : undefined;
     if (!found || !layout) return undefined;
-    // the boxes without boxes inside them: a frame cuts as few of them as it can
+    // the boxes without boxes inside them, a table as one (its rows are not boxes): a frame cuts as few of
+    // them as it can, and "Fit all (N out of sight)" counts them (V4-02)
     const leaves: Box[] = [];
     const walk = (list: readonly LayoutNode[], x: number, y: number) => {
       for (const node of list) {
-        if (node.children.length === 0)
+        if (node.children.length === 0 || node.rows)
           leaves.push(
             shift({ x: x + node.x, y: y + node.y, width: node.width, height: node.height }),
           );
-        walk(node.children, x + node.x, y + node.y);
+        if (!node.rows) walk(node.children, x + node.x, y + node.y);
       }
     };
     walk(layout.nodes, 0, 0);
@@ -511,14 +512,19 @@ export function GraphView({
 
   // Boxes and arrows, or the same as a matrix: the view's `render` says which it opens as, the reader's choice
   // holds until the diagram starts over (another view, another tour step). A matrix of three boxes says
-  // nothing the map does not, and Present shows the author's picture: there the switch is offered only when
-  // the view opens as a matrix.
+  // nothing the map does not, nor does one whose arrows the author drew (each cell a "•"), and Present shows
+  // the author's picture: there the switch is offered only when the view opens as a matrix (V3-13). A table
+  // counts as one box (the matrix folds its rows into it).
   const stored = state.model.view(viewId);
   const opensAsMatrix = stored?.type === "graph" && stored.render === "matrix";
   const [choice, setChoice] = useState<{ key: string; matrix: boolean }>();
   const matrix = choice?.key === resetKey ? choice.matrix : opensAsMatrix;
   const offersMatrix =
-    opensAsMatrix || (!present && graph.nodes.filter((node) => !node.container).length >= 4);
+    opensAsMatrix ||
+    (!present &&
+      graph.nodes.filter((node) => node.rows || (!node.container && node.row === undefined))
+        .length >= 4 &&
+      graph.edges.some((edge) => FOUND_IN_CODE.has(edge.resolution)));
   const matrixToggle = offersMatrix ? (
     <button
       type="button"
@@ -558,7 +564,7 @@ export function GraphView({
   } else {
     body = (
       <PanZoom
-        textView={<DiagramText graph={graph} />}
+        textView={<DiagramText graph={graph} order={order} />}
         width={canvas!.width}
         height={canvas!.height}
         resetKey={resetKey}
@@ -640,6 +646,7 @@ export function GraphView({
                     {keyShows && layout && !present && !matrix && (
                       <KeyLine
                         shows={keyShows}
+                        sharedBadge={layout.sharedBadge}
                         stubLines={allEdgesOf(layout).some((edge) => edge.stub && !quietStub(edge))}
                       />
                     )}
@@ -746,6 +753,9 @@ const NodeShape = memo(function NodeShape({ node, marks }: { node: LayoutNode; m
   );
 });
 
+/** Arrows found in the code, not drawn by the author: a matrix of them counts something. */
+const FOUND_IN_CODE = new Set<string>(["precise", "heuristic", "mixed"]);
+
 /**
  * A row of a table (`GraphView.boxText: "members"`): a field, with the type its code names. It is a box of its
  * own: a click shows its code, the caret in its code lights it, and its arrows start at its side.
@@ -796,8 +806,11 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
   const container = node.children.length > 0;
   const still = useContext(Still);
   const select = (event: MouseEvent | KeyboardEvent) => store.click(node.id, additive(event));
-  const badgeText = reader || node.role ? readerBadge(node.badge) : node.badge;
+  const fullBadge = reader || node.role ? readerBadge(node.badge) : node.badge;
+  // a badge every box shares is said once by the key line, not drawn on each box
+  const badgeText = node.badgeShared ? undefined : fullBadge;
   const badge = badgeWidth(badgeText ?? "");
+  const named = node.badge ? `${node.label} (${node.badge})` : node.label;
   // A box that opens a more detailed view zooms into it; while presenting, the tour decides what is shown.
   const zoomable = node.opens !== undefined && !still && store.canZoomInto(node.id);
   // opened in place: the boxes of the map it opens are drawn inside it, until the reader folds it back
@@ -813,7 +826,7 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
   const selected = marks.selected.has(node.id);
   const name = boxName(
     node.label,
-    badgeText ?? (node.badge || undefined),
+    fullBadge ?? (node.badge || undefined),
     node.change && changeText(node.change),
   );
   // left to right, the order Tab takes them in
@@ -874,10 +887,10 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
     >
       <title>
         {zoomable
-          ? `${node.label} (${node.badge}): double-click to see what is inside`
+          ? `${named}: double-click to see what is inside`
           : !readOnly && store.canDrillIn(node.id)
-            ? `${node.label} (${node.badge}): double-click to open what it contains`
-            : `${node.label} (${node.badge})`}
+            ? `${named}: double-click to open what it contains`
+            : named}
       </title>
       <Frame node={node}>
         {container && (
@@ -1330,7 +1343,7 @@ function GhostShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
     else if (node.ghostTarget !== undefined) store.expandStub({ ghost: node.ghostTarget });
   };
   const label = readOnly
-    ? `${node.label} (not in this view)`
+    ? `${node.label} (outside this map)`
     : fold
       ? `${node.label}: choose what to add to the view`
       : `Add ${node.label} to the view`;
@@ -1339,8 +1352,9 @@ function GhostShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
       className={`node ghost${fold ? " is-fold" : ""}${open ? " is-open" : ""}${stateClasses(node.id, marks)}`}
       data-element-id={still ? undefined : node.id}
       transform={`translate(${node.x} ${node.y})`}
-      role={still ? undefined : "button"}
-      tabIndex={still ? undefined : 0}
+      // (read-only, a reader's map or a slide: the dashed box does nothing, so it is no Tab stop, D5)
+      role={still || readOnly ? undefined : "button"}
+      tabIndex={still || readOnly ? undefined : 0}
       aria-label={still ? undefined : label}
       aria-haspopup={fold && !readOnly ? "menu" : undefined}
       aria-expanded={fold && !readOnly ? open : undefined}
@@ -1358,7 +1372,7 @@ function GhostShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
     >
       <title>
         {readOnly
-          ? `${node.label} is not in this view`
+          ? `${node.label} is outside this map`
           : fold
             ? `${node.label}: ${node.hint ?? ""} reach ${fold.kind === "more" ? "places" : "symbols"} that are not in this view. Click to choose what to add.`
             : node.hint

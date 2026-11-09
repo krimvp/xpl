@@ -61,6 +61,8 @@ export interface LayoutNode {
   label: string;
   /** Text of the kind badge (`file`, `class`, `method`, `group`, ...). Ghosts: empty. */
   badge: string;
+  /** Every box of the map has this badge (`GraphLayout.sharedBadge`): not drawn, still in the box's name. */
+  badgeShared?: boolean;
   /** CSS class suffix: the node kind, or the symbol kind for symbols; `ghost` for ghost boxes. */
   kindClass: string;
   ghost: boolean;
@@ -152,6 +154,8 @@ export interface GraphLayout {
   /** True when the layered layout failed and the grid fallback was used. */
   fallback: boolean;
   direction: Direction;
+  /** The badge every box of the map had ("Go"): drawn on none of them, said once by the key line (V2-14). */
+  sharedBadge?: string;
 }
 
 // ─── Sizes ──────────────────────────────────────────────────────────────────────────────────────
@@ -376,6 +380,7 @@ function labelBox(text: string): { text: string; width: number; height: number }
 interface ModelNode {
   label: string;
   badge: string;
+  badgeShared?: boolean;
   kindClass: string;
   ghostTarget?: string;
   ghostFold?: LayoutNode["ghostFold"];
@@ -396,6 +401,8 @@ interface ModelNode {
 }
 
 interface Model {
+  /** See `GraphLayout.sharedBadge`. */
+  sharedBadge?: string;
   roots: string[];
   children: Map<string, string[]>;
   /** Render parent (container) of every non-top-level node. */
@@ -436,6 +443,19 @@ function buildModel(graph: DerivedGraph, changes: ChangeMarks | undefined): Mode
       ...(node.row !== undefined ? { row: node.row } : {}),
       ...(node.memberType !== undefined ? { memberType: node.memberType } : {}),
     });
+  }
+  // a technology or role every box of an architecture map shares ("Go" x 7) tells no box apart: it is drawn
+  // on none (at least 4 boxes); a box of code keeps its kind
+  const leaves = graph.nodes.filter((node) => !node.container && node.row === undefined);
+  const shared = nodes.get(leaves[0]?.id ?? "")?.badge;
+  let sharedBadge: string | undefined;
+  if (
+    shared &&
+    leaves.length >= 4 &&
+    leaves.every((node) => node.role !== undefined && nodes.get(node.id)!.badge === shared)
+  ) {
+    sharedBadge = shared;
+    for (const node of leaves) nodes.get(node.id)!.badgeShared = true;
   }
   for (const node of graph.nodes) {
     if (node.parent !== undefined && known.has(node.parent)) {
@@ -526,7 +546,7 @@ function buildModel(graph: DerivedGraph, changes: ChangeMarks | undefined): Mode
       kind: stub.kinds[0] ?? "calls",
     });
   }
-  return { roots, children, parent, nodes, edges };
+  return { roots, children, parent, nodes, edges, ...(sharedBadge ? { sharedBadge } : {}) };
 }
 
 /** `rest:file:<path>` -> `file:<path>`. */
@@ -543,7 +563,7 @@ function leafSize(model: Model, id: string): { width: number; height: number } {
   if (isGhost(node)) {
     return { width: ghostWidth(node.label, node.detail ?? ""), height: GHOST_HEIGHT };
   }
-  const width = leafWidth(node.label, node.badge, node.change, node);
+  const width = leafWidth(node.label, node.badgeShared ? "" : node.badge, node.change, node);
   if (node.summary === undefined) return { width, height: leafHeight(node.role) };
   const wide = Math.max(width, SUMMARY_BOX_WIDTH);
   // the text starts after the icon, like the label
@@ -563,6 +583,7 @@ function makeNode(
     id,
     label: node.label,
     badge: node.badge,
+    ...(node.badgeShared ? { badgeShared: true } : {}),
     kindClass: node.kindClass,
     ghost: isGhost(node),
     ...box,
@@ -638,6 +659,8 @@ function enclose(node: LayoutNode): void {
 
 /** Spacing. Tight on purpose: a layout is fitted into its pane, so every pixel of air between boxes shrinks the text. */
 const SPACING = { nodeGap: 24, layerGap: 48, edgeGap: 10 };
+/** DOWN: the gap between the lanes a table's row arrows run in beside it. */
+const LANE = 8;
 const CANVAS_PAD = 24;
 const CONTAINER_PADDING = {
   top: HEADER_HEIGHT + 8,
@@ -1083,6 +1106,11 @@ function layeredLayout(
   /** Where an edge crosses a container's border: on which side, and where along it (container coordinates). */
   const entries = new Map<string, Map<string, { side: Side; cross: number }>>();
   const levels: Level[] = [];
+  // The inner part of an edge that crosses a container's border, from the border to the box inside
+  // (`${container}\0${edge id}`, container coordinates): routed per level below, laid by hand in a table.
+  const inner = new Map<string, Point[]>();
+  // DOWN: room beside a table for the lanes its rows' arrows run down (or up) in, left and right of it.
+  const laneRoom = new Map<string, { left: number; right: number }>();
 
   const level = (
     ids: readonly string[],
@@ -1090,7 +1118,12 @@ function layeredLayout(
     pad: LayeredOptions["pad"],
   ): { nodes: LayoutNode[]; result: LayeredResult } => {
     const nodes = ids.map(build);
-    const boxes = nodes.map((n) => ({ id: n.id, width: n.width, height: n.height }));
+    const room = (id: string) => laneRoom.get(id) ?? { left: 0, right: 0 };
+    const boxes = nodes.map((n) => ({
+      id: n.id,
+      width: n.width + room(n.id).left + room(n.id).right,
+      height: n.height,
+    }));
     const edges: LayeredEdge[] = (held.get(holder) ?? []).map((edge) => ({
       id: edge.id,
       from: liftTo(model, edge.from, holder),
@@ -1138,7 +1171,7 @@ function layeredLayout(
     for (const node of nodes) {
       const box = result.boxes.get(node.id)!;
       const pin = pins?.[node.id];
-      node.x = pin?.x ?? box.x - (node.frame?.x ?? 0);
+      node.x = pin?.x ?? box.x + room(node.id).left - (node.frame?.x ?? 0);
       node.y = pin?.y ?? box.y - (node.frame?.y ?? 0);
     }
     // Unpinned siblings keep dagre's order, but yield space when a pin occupies their old position.
@@ -1221,14 +1254,34 @@ function layeredLayout(
     const height = HEADER_HEIGHT + rows.length * ROW_HEIGHT + TABLE_FOOT;
     const node = makeNode(model, id, { x: 0, y: 0, width, height }, rows);
     // RIGHT: an arrow into the table enters on the left, one out of it leaves on the right (a turned one the
-    // other way round), at the height of its row
+    // other way round), at the height of its row. DOWN: it still leaves its row on the right (enters on the
+    // left), in a lane of its own beside the table, and crosses the table's bottom (top) line in that lane.
     const own = new Map<string, { side: Side; cross: number }>();
+    const lanes = { left: 0, right: 0 };
     for (const { edge, end } of crossing.get(id) ?? []) {
       const row = rows.find((r) => r.id === liftTo(model, edge[end], id));
       if (!row) continue;
       const atStart = (end === "to") !== turned.has(`${id}\0${edge.id}`);
-      own.set(edge.id, { side: atStart ? "start" : "end", cross: row.y + ROW_HEIGHT / 2 });
+      const side: Side = atStart ? "start" : "end";
+      const y = row.y + ROW_HEIGHT / 2;
+      if (direction === "RIGHT") {
+        own.set(edge.id, { side, cross: y });
+        continue;
+      }
+      const out = end === "from";
+      const lane = out ? width + LANE * ++lanes.right : -LANE * ++lanes.left;
+      const border = side === "start" ? 0 : height;
+      const lead = [
+        { x: out ? width : 0, y },
+        { x: lane, y },
+        { x: lane, y: border },
+      ];
+      own.set(edge.id, { side, cross: lane });
+      // stored in the arrow's direction: from the row out, or from the border in
+      inner.set(`${id}\0${edge.id}`, out ? lead : lead.reverse());
     }
+    if (lanes.left || lanes.right)
+      laneRoom.set(id, { left: lanes.left * LANE, right: lanes.right * LANE });
     entries.set(id, own);
     return node;
   }
@@ -1268,7 +1321,6 @@ function layeredLayout(
   // Route every level: the edges it holds (from border to border where an end lies deeper) and, in a
   // container, the inner part of each edge that crosses its border (from the border to the box inside).
   const outer = new Map<string, { points: Point[]; level: Level }>();
-  const inner = new Map<string, Point[]>(); // `${container}\0${edge id}`, container coordinates
   for (const lvl of levels) {
     const holder = lvl.node;
     interface End {
@@ -1961,21 +2013,19 @@ export async function layoutGraph(
   changes?: ChangeMarks,
 ): Promise<GraphLayout> {
   const model = buildModel(graph, changes);
+  const shared = (layout: GraphLayout): GraphLayout =>
+    model.sharedBadge ? { ...layout, sharedBadge: model.sharedBadge } : layout;
   try {
-    // a table's arrows leave from the side of their row: tables read left to right
-    const direction = hasTables(graph) ? "RIGHT" : (options.direction ?? "RIGHT");
+    const direction = options.direction ?? "RIGHT";
     // A second pass when an edge leaves (or enters) a group on the side away from its other end.
     const away = new Set<string>();
     const first = layeredLayout(model, direction, options.pins, undefined, away);
-    return away.size === 0 ? first : layeredLayout(model, direction, options.pins, away);
+    return shared(away.size === 0 ? first : layeredLayout(model, direction, options.pins, away));
   } catch (error) {
     console.warn("xpl: layout failed, using a grid", error);
-    return fallbackLayout(model, options.pins);
+    return shared(fallbackLayout(model, options.pins));
   }
 }
-
-/** Some box is a table (`GraphView.boxText: "members"`): the layout is always laid out to the right. */
-const hasTables = (graph: DerivedGraph): boolean => graph.nodes.some((node) => node.rows);
 
 /** The grid that stands in when the layered layout fails: every box, every edge straight between centres. */
 export function gridLayoutOf(graph: DerivedGraph, changes?: ChangeMarks): GraphLayout {
@@ -2152,7 +2202,7 @@ export async function layoutGraphFitting(
   changes?: ChangeMarks,
   pins?: GraphView["layout"],
 ): Promise<GraphLayout> {
-  if (!viewport || viewport.width <= 0 || viewport.height <= 0 || hasTables(graph))
+  if (!viewport || viewport.width <= 0 || viewport.height <= 0)
     return layoutGraph(graph, { pins }, changes);
   const suggested: Direction = viewport.width / viewport.height < 1 ? "DOWN" : "RIGHT";
   const other: Direction = suggested === "RIGHT" ? "DOWN" : "RIGHT";

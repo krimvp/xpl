@@ -235,7 +235,7 @@ test("managed attention distinguishes moved, drifted and missing evidence and of
   await expect(panel).toContainText(
     "xpl revise '.explainer/jobrunner.explainer.json' --select '<request-id>'",
   );
-  await expect(panel).toContainText("Accept a proposal separately");
+  await expect(panel).toContainText("accept it as a separate step");
   expect(recorded.posts).toEqual([]);
   expect(recorded.puts).toEqual([]);
   expect(recorded.watchActions).toEqual([]);

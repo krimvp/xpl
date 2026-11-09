@@ -226,7 +226,7 @@ export function resolveWith(
     const hint = index.suggestFiles(anchor.file, 3);
     return missing(
       `file ${anchor.file} is not in the index` +
-        (hint.length ? `; did you mean ${hint.join(", ")}?` : ""),
+        (hint.length ? `. Did you mean: ${hint.join(", ")}?` : ""),
     );
   }
   let symbol: IndexedSymbol | undefined;
@@ -486,7 +486,7 @@ function describeVanished(
     .filter((sym) => sym.id !== moved?.id)
     .slice(0, 3);
   if (candidates.length > 0) {
-    text += `; ${moved ? "or" : "did you mean"} ${candidates
+    text += `${moved ? "; or" : ". Did you mean:"} ${candidates
       .map((sym) => describeSymbolCandidate(sym, { anchor: true }))
       .join(", ")}?`;
   }

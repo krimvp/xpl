@@ -198,3 +198,40 @@ test("on a phone the map's zoom toolbar, Matrix included, is one row inside the 
   expect(bar!.height, "one row").toBeLessThan(40);
   expect(button!.x + button!.width).toBeLessThanOrEqual(390);
 });
+
+// V4-07: at 390 px the key's words filled the matrix's frame beside its tools, and no row showed
+test("on a phone the key folds behind its button and at least five rows are in sight", async ({
+  page,
+}) => {
+  await openVariant(
+    page,
+    (bundle) => {
+      const view = bundle.explainer.views.find((v: Loose) => v.id === "view:overview");
+      view.render = "matrix";
+      view.include.push("file:src/bus.ts", "file:src/main.ts", "file:src/queue.ts");
+    },
+    "?mode=explore",
+    { width: 390, height: 844 },
+  );
+  await page.evaluate(() => window.__xpl!.setView("view:overview"));
+  const grid = page.getByRole("grid");
+  await expect(grid).toBeVisible();
+  const key = page.locator(".matrix-key");
+  await expect(key).toBeHidden();
+  const frame = (await page.locator(".matrix-scroll").boundingBox())!;
+  const inSight = async () => {
+    let n = 0;
+    for (const header of await page.getByRole("rowheader").all()) {
+      const box = (await header.boundingBox())!;
+      if (box.y >= frame.y && box.y + box.height <= frame.y + frame.height + 1) n += 1;
+    }
+    return n;
+  };
+  expect(await page.getByRole("rowheader").count()).toBeGreaterThanOrEqual(5);
+  expect(await inSight()).toBeGreaterThanOrEqual(5);
+  // the key is one press away
+  const button = page.locator(".matrix-key-button");
+  await button.click();
+  await expect(key).toBeVisible();
+  await expect(button).toHaveAttribute("aria-expanded", "true");
+});

@@ -37,7 +37,7 @@ describe("xpl new", () => {
     expect(code).toBe(0);
     expect(out).toContain("created .explainer/job-runner.explainer.json");
     expect(out).toContain('title "Job runner"');
-    expect(out).toContain("xpl apply job-runner patch.json");
+    expect(out).toContain("next: `xpl draft path|repo|map|data|... job-runner -o <file>`");
     const explainer = readJson(dir, ".explainer/job-runner.explainer.json");
     expect(explainer).toMatchObject({
       schema: "code-explainer@0",

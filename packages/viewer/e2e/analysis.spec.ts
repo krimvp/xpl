@@ -15,11 +15,9 @@ test("analysis coverage is in About this guide; a bar only when linked code was 
   );
   await notice.locator("summary").click();
   await expect(notice).toContainText(
-    "Only file anchors are available; named symbols and relationships are unavailable.",
+    "Only file anchors are available; named symbols and references are unavailable.",
   );
-  await expect(notice).toContainText(
-    "Heuristic relationships are hints; unresolved targets may be missing.",
-  );
+  await expect(notice).toContainText("References matched by name are hints; some can be missing.");
   await expect(notice).toContainText("typescript (typescript):");
   // a file the guide does not link to, left out of the analysis: no bar either
   await openVariant(page, (bundle) => {
@@ -45,7 +43,7 @@ test("legacy coverage stays unknown and failed analysis is visible", async ({ pa
   const details = page.getByTestId("analysis-details");
   await expect(details.locator("summary")).toHaveText("Analysis coverage unknown (legacy index).");
   await details.locator("summary").click();
-  await expect(details).toContainText("an empty result does not establish complete analysis");
+  await expect(details).toContainText("an empty result does not prove there is none");
   const notice = page.getByTestId("analysis-coverage");
   await openVariant(page, (bundle) => {
     bundle.index.analysis.push({

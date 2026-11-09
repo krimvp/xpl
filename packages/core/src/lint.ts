@@ -26,7 +26,7 @@
  * Reader checks look at what the viewer will show: a step it has to title itself (`untitled-step`), changed files
  * no step shows the code of (`change-not-shown`), more far-apart places of a step in one file than a slide has panes for (`far-ranges`), a talk note set in
  * small type (`long-talk-note`), maps too big or too crowded for a picture (`big-map`, `crowded-map`), and a
- * system map with no visible relationships (`system-map-no-edges`). Map counts need the index: pass an
+ * system map with no visible arrows (`system-map-no-edges`). Map counts need the index: pass an
  * `ExplainerModel` to get them (`xpl lint` does when there is an index).
  *
  * The rules are meant not to fight: example values in code spans are not code names, an absolute word next to its
@@ -130,7 +130,7 @@ export const LINT_RULES: Record<LintRule, string> = {
   "long-talk-note": "talk note set in small type",
   "big-map": "map with too many boxes for a tour",
   "crowded-map": "map with too many arrows",
-  "system-map-no-edges": "system map with no visible relationships",
+  "system-map-no-edges": "system map with no visible arrows",
 };
 
 export type LintElementKind =
@@ -375,9 +375,9 @@ const FILLER_UNLESS_BEFORE: Readonly<Record<string, RegExp>> = {
     /^\s+(?:a|an|the|each|its|their|this|these|that|those|every|one|your)(?![\p{L}\p{N}_'-])/iu,
   "first-class": /^[\s-]+(?:functions?|citizens?|values?|objects?|types?)(?![\p{L}\p{N}_'-])/iu,
   terminate:
-    /^\s+(?:[\p{L}'-]+\s+)?(?:process(?:es)?|subprocess(?:es)?|threads?|workers?|child(?:ren)?|connections?|sessions?|programs?|pods?|containers?|jobs?|tasks?|requests?)(?![\p{L}\p{N}_'-])/iu,
+    /^\s+(?:[\p{L}'-]+\s+){0,2}(?:process(?:es)?|subprocess(?:es)?|groups?|threads?|workers?|child(?:ren)?|connections?|sessions?|programs?|pods?|containers?|jobs?|tasks?|requests?)(?![\p{L}\p{N}_'-])/iu,
   terminates:
-    /^\s+(?:[\p{L}'-]+\s+)?(?:process(?:es)?|subprocess(?:es)?|threads?|workers?|child(?:ren)?|connections?|sessions?|programs?|pods?|containers?|jobs?|tasks?|requests?)(?![\p{L}\p{N}_'-])/iu,
+    /^\s+(?:[\p{L}'-]+\s+){0,2}(?:process(?:es)?|subprocess(?:es)?|groups?|threads?|workers?|child(?:ren)?|connections?|sessions?|programs?|pods?|containers?|jobs?|tasks?|requests?)(?![\p{L}\p{N}_'-])/iu,
 };
 /** Fillers only before these words: "harness the queue" (a verb) is filler, "the test harness starts" is not. */
 const FILLER_ONLY_BEFORE: Readonly<Record<string, RegExp>> = {
@@ -991,12 +991,28 @@ const CONCRETE_NOUNS = new Set(
     "payment component department instance sentence reference sequence preference difference presence " +
     "distance balance interface evidence audience licence license fence " +
     "string thing ring ping king wing sibling ceiling padding heading building binding mapping setting " +
-    "listing spring morning evening nothing something everything anything during ending meaning " +
-    // names of mechanisms: "Rate limiting applies per user" names the thing, not an action that hides the code
-    "limiting balancing injection rendering loading negotiation handling caching batching pooling routing " +
-    "logging tracing scheduling streaming"
+    "listing spring morning evening nothing something everything anything during ending meaning"
   ).split(" "),
 );
+/**
+ * Whole names of mechanisms: "Rate limiting applies per user" names the thing, not an action that hides the code.
+ * Only the two words together pass: "Job scheduling picks" or "Config loading reads" still hide the function.
+ */
+const MECHANISM_NAMES = new Set([
+  "rate limiting",
+  "load balancing",
+  "dependency injection",
+  "lazy loading",
+  "error handling",
+  "garbage collection",
+  "connection pooling",
+  "content negotiation",
+  "server rendering",
+  "code splitting",
+  "tree shaking",
+  "hot reloading",
+  "change detection",
+]);
 /** First words that do not make a subject of the next: articles, owners, prepositions. */
 const NOT_SUBJECT_START = new Set(
   (
@@ -1027,7 +1043,13 @@ function abstractSubject(masked: string): string | undefined {
   const first = (two ?? one)?.[1];
   if (first === undefined || NOT_SUBJECT_START.has(first.toLowerCase())) return undefined;
   if (verbInS(first.toLowerCase()) || /(?:ly|es)$/.test(first)) return undefined; // "Adds", "Finally"
-  if (two && actionNoun(two[2]!) && verbInS(two[3]!)) return `${two[1]} ${two[2]}`;
+  if (
+    two &&
+    actionNoun(two[2]!) &&
+    verbInS(two[3]!) &&
+    !MECHANISM_NAMES.has(`${two[1]} ${two[2]}`.toLowerCase())
+  )
+    return `${two[1]} ${two[2]}`;
   if (one && ACTION_NOUNS.has(one[1]!.toLowerCase()) && verbInS(one[2]!)) return one[1];
   return undefined;
 }
@@ -1052,9 +1074,19 @@ const DASH = /—|\s[–-]{1,2}\s/g;
 const WE_WORDS =
   /(?<![\p{L}\p{N}_'’-])(?:we|we're|we've|we'll|we'd|our|ours|ourselves|us|let's|let’s)(?![\p{L}\p{N}_'’-])/giu;
 
-/** Quoted text (a comment, an error message) is the code's words, not the explainer's. */
+/** Words before a quote that report what the code says: the quote is the code's words. */
+const REPORTED =
+  /(?:prints|logs|says|shows|returns|reads|writes|throws|raises|error|message|label|title|text|named|called|as)\s*$/i;
+
+/**
+ * Quoted text (a comment, an error message) is the code's words, not the explainer's: a quote of two words or more,
+ * or one after a word that reports it (`prints "done"`). A one-word quote anywhere else is a scare quote, the writer's
+ * own word (`The pool "manages" its connections`), and stays checked.
+ */
 function withoutQuotes(text: string): string {
-  return text.replace(/"[^"\n]*"|“[^”\n]*”/g, (q) => " ".repeat(q.length));
+  return text.replace(/"[^"\n]*"|“[^”\n]*”/g, (q, at: number) =>
+    /\s/.test(q.slice(1, -1).trim()) || REPORTED.test(text.slice(0, at)) ? " ".repeat(q.length) : q,
+  );
 }
 
 /**
@@ -1094,6 +1126,14 @@ const XPL_SENSE: Readonly<Record<string, { before?: RegExp; after?: RegExp }>> =
   evidence: { before: /\b(?:source|anchor|code-link|answer)[\s-]+$/i },
 };
 const xplSense = (word: string) => XPL_SENSE[word.replace(/s$/, "")];
+/** Words of a diagram: a sentence with one of them talks about the guide's map. */
+const MAP_WORDS = /\b(?:box|boxes|arrows?|maps?|diagrams?)\b/i;
+/** The sentence of `text` that holds `index`. */
+function plainSentenceAt(text: string, index: number): string {
+  const start = Math.max(text.lastIndexOf(". ", index), text.lastIndexOf("\n", index)) + 1;
+  const stop = text.slice(index).search(/\.(?:\s|$)|\n/);
+  return text.slice(start, stop < 0 ? text.length : index + stop);
+}
 /** A test double is a stub too: "stub" passes in a text about tests. */
 const TEST_CONTEXT = /\b(?:tests?|testing|mocks?|fakes?|fixtures?|spy|spies)\b/i;
 
@@ -1441,7 +1481,9 @@ class Linter {
         if (
           sense &&
           !(sense.before?.test(plain.slice(0, m.index)) ?? false) &&
-          !(sense.after?.test(plain.slice(m.index + m[0].length)) ?? false)
+          !(sense.after?.test(plain.slice(m.index + m[0].length)) ?? false) &&
+          // "the stubs show code outside this map": the sentence is about the map, so it means xpl's part
+          !(sense.after && MAP_WORDS.test(plainSentenceAt(plain, m.index)))
         )
           continue;
         if (word.startsWith("edge")) {
@@ -1491,7 +1533,8 @@ class Linter {
   title(where: Where, title: unknown, evidence?: Evidence): void {
     if (typeof title !== "string" || title.trim() === "") return;
     this.checked++;
-    const why = codeLikeTitle(title);
+    // a draft's TODO names the code it asks about (todo-left reports it): judged once it is written
+    const why = /\bTODO\b/.test(title) ? undefined : codeLikeTitle(title);
     if (why !== undefined) {
       this.add(
         where,
@@ -1978,9 +2021,13 @@ function firstSentence(note: unknown): string {
   return /^[^\n]*?[.!?](?:\s|$)|^[^\n]*/.exec(body)?.[0] ?? "";
 }
 
-/** Words of a last step that points on: where next, what to read next, what the tour left out. */
+/**
+ * Words of a last step that points on: where next, what to read next, what the tour left out. "Next" alone counts in
+ * the title only ("Read next"); in the first sentence it must point on ("read ... next"), not order ("the next job").
+ */
 const WHERE_NEXT =
-  /\b(?:next|further|see also|other guides?|where to go|what to read|read on|left out|not cover(?:s|ed)?|did not (?:open|show|cover)|from here)\b/i;
+  /\b(?:further|see also|other guides?|where to go|what to read|read on|read more|more to read|beyond (?:this|the) (?:tour|guide)|not on (?:this|the) tour|elsewhere|left out|not cover(?:s|ed)?|did not (?:open|show|cover)|from here|(?:read|open|see|look at|try)\b[^.]{0,40}\bnext)\b/i;
+const NEXT_WORD = /\bnext\b/i;
 
 /** `tour-first-step`, `tour-length`, `tour-ends` and `tour-covers-map` for one tour (see `LINT_RULES`). */
 function orderChecks(
@@ -2039,7 +2086,7 @@ function orderChecks(
     const onMap = view?.type === "graph";
     // its title or first sentence says so: "Where to go next", "Read next: ...", "What this tour left out"
     const start = `${noteTitle(last.note)} ${firstSentence(last.note)}`;
-    if (!onMap || !WHERE_NEXT.test(start)) {
+    if (!onMap || !(WHERE_NEXT.test(start) || NEXT_WORD.test(noteTitle(last.note)))) {
       lint.add(
         where,
         "tour-ends",
@@ -2047,7 +2094,7 @@ function orderChecks(
         onMap
           ? `the last step (${str(last.id) ?? "?"}) is on the map, but its title and first sentence do not say where to go next`
           : `the last step (${str(last.id) ?? "?"}) is ${view ? `on the ${String(view.type)} ${str(view.id)}` : "on no diagram"}, not on the map`,
-        "end on the map with where next: the boxes the tour did not open, or the next guide to read",
+        'end on the map with where next: title the last step "Where to go next" (or start it with "Read next:"), and name the boxes the tour did not open or the next guide to read',
       );
     }
   }
@@ -2088,7 +2135,7 @@ function orderChecks(
       message:
         `${plural(missed.length, "box", "boxes")} of the map ${str(view!.id)} (${boxes.length} boxes) ` +
         `never ${missed.length === 1 ? "comes" : "come"} up: no step focuses ${missed.length === 1 ? "it" : "them"}, no note names ${missed.length === 1 ? "it" : "them"}`,
-      hint: 'give each a step, or name it in a note by its label in plain words ("web server" counts for "Web servers"; no backticks needed, and code names count toward code-heavy) and say why the tour skips it, or take it off the map',
+      hint: 'give each box a step, name it in a note and say why the tour skips it, or take it off the map. A plain-word name counts ("web server" for "Web servers")',
       ids: missed,
     });
   }
@@ -2416,8 +2463,8 @@ function mapChecks(
         where,
         "system-map-no-edges",
         excerpt(str(view.title) ?? viewId),
-        `system map ${str(view.title) ?? viewId} has ${plural(graph.nodes.length, "box")} and no visible relationships`,
-        "check whether the map is missing source-backed relationships; add only relationships supported by the code",
+        `system map ${str(view.title) ?? viewId} has ${plural(graph.nodes.length, "box")} and no arrows`,
+        "check whether the map misses arrows the code shows; add only arrows a code link backs",
       );
     }
   }
@@ -2805,7 +2852,12 @@ export function lintExplainer(explainer: Explainer, model?: ExplainerModel): Lin
         field,
       });
       const label = str(step.label);
-      if (view.type === "flow" && label !== undefined && label.trim() !== "") {
+      if (
+        view.type === "flow" &&
+        label !== undefined &&
+        label.trim() !== "" &&
+        !/\bTODO\b/.test(label)
+      ) {
         const why = codeLikeTitle(label);
         if (why !== undefined) {
           lint.add(

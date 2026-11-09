@@ -101,6 +101,10 @@ export function MatrixView({
   const [pos, setPos] = useState<Pos>(() => firstCell(cells));
   const [hot, setHot] = useState<Pos>();
   const [textMode, setTextMode] = useState(false);
+  // On a phone the key's words fold behind a "Key" button, so the grid gets the frame (V4-07); wider, they
+  // always show and the button is not drawn (styles.css).
+  const [keyOpen, setKeyOpen] = useState(false);
+  const keyId = useId();
   const [saving, setSaving] = useState(false);
   const textId = useId();
   const at = { r: Math.min(pos.r, lastR), c: Math.min(pos.c, lastC) };
@@ -109,6 +113,8 @@ export function MatrixView({
   if (outCol || inRow) used.add("outside");
   const key = KEY.filter((item) => item.res.some((res) => used.has(res)));
   const anyBack = filled.some((cell) => cell.back);
+  // a data map: its rows are tables, its numbers fields (matrix.ts folds the fields into their tables)
+  const tables = graph.nodes.some((node) => node.rows);
   const anyAuthored = filled.some((cell) => cell.authored);
   // the kinds by their heads, keyed only when the grid holds more than one head
   const heads = new Map<string, string[]>();
@@ -234,9 +240,11 @@ export function MatrixView({
   return (
     <div className="matrix" data-testid="matrix">
       <div className="matrix-bar">
-        <p className="matrix-key">
-          Read across: a row&rsquo;s arrows go to the numbered columns. A number counts the code
-          links
+        <p id={keyId} className="matrix-key" data-folded={keyOpen ? undefined : ""}>
+          Read across: a row&rsquo;s arrows go to the numbered columns.{" "}
+          {tables
+            ? "A number counts the fields that hold the column's type"
+            : "A number counts the code links"}
           {anyAuthored ? "; • marks an arrow the author added" : ""}. The grey diagonal is each box
           against itself.{" "}
           {anyBack && (
@@ -269,6 +277,16 @@ export function MatrixView({
           {toggle}
           <button
             type="button"
+            className="matrix-key-button"
+            aria-expanded={keyOpen}
+            aria-controls={keyId}
+            title="How to read the matrix"
+            onClick={() => setKeyOpen((open) => !open)}
+          >
+            Key
+          </button>
+          <button
+            type="button"
             title="Save the whole matrix as a PNG image"
             onClick={() => setSaving(true)}
           >
@@ -291,7 +309,7 @@ export function MatrixView({
           role="region"
           aria-label="Diagram as text"
         >
-          <DiagramText graph={graph} />
+          <DiagramText graph={graph} order={order} />
         </div>
       ) : (
         <div className="matrix-scroll" onMouseLeave={() => setHot(undefined)}>

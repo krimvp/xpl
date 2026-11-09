@@ -33,7 +33,7 @@ export const CLASS_LIMITS = {
   /** Levels below the entry. */
   downDepth: 2,
   /** Boxes on the map in all. */
-  boxes: 14,
+  boxes: 8,
   /** Tour steps. */
   steps: 8,
   /** Names in a hint. */

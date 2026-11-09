@@ -504,7 +504,8 @@ export function ⟦fact⟧(n: number): number {
   });
 
   it("does not attribute definitions nested in another symbol to that symbol (Python-style instance attributes)", async () => {
-    // `self.count = 0` in __init__ defines the attribute `Counter#count.`; the index has no symbol for it
+    // `self.count = 0` in __init__ defines the attribute `Counter#count.`; the index has it as a field of
+    // the class (`Counter.count`, over the assignment's line), not as part of `__init__`
     const py = marked(`class ⟦Counter⟧:
     def ⟦__init__⟧(self):
         self.⟦count⟧ = 0
@@ -537,7 +538,7 @@ export function ⟦fact⟧(n: number): number {
       ["python"],
     );
     // `count` is defined inside `Counter.__init__`, but it is not that method: no `write` to `__init__`
-    expect(triples(refs)).toEqual([]);
+    expect(triples(refs)).toEqual(["write pkg/a.py#Counter.bump -> pkg/a.py#Counter.count"]);
   });
 
   it("Python: a call `x.Name()` whose target is named otherwise is left to the heuristic resolver; of a symbol defined twice, the one nested around the call, else the one at its own path", async () => {

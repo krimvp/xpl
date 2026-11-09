@@ -52,54 +52,39 @@ preview as old. See the [CLI reference](../reference/index.md).
 
 ## Set up CI previews (optional)
 
-A CI workflow can write, stage and link a preview for each PR. You need it only to automate the steps above.
-The xpl repository has `.github/workflows/pr-preview.yml` and `scripts/pr-preview.mjs`; copy both into your
-xpl source checkout to use them elsewhere. It runs only by manual dispatch from the default
-branch, after the repository variable `XPL_CI_PREVIEWS` is set to `true`. It builds that trusted branch;
-it does not execute a workflow, package install or tests from the target PR.
+A CI workflow can do the steps above for each PR. The xpl repository has
+`.github/workflows/pr-preview.yml` and `scripts/pr-preview.mjs`; copy both to use them elsewhere. The
+workflow runs only when you dispatch **Publish PR preview** by hand from the default branch, with the
+repository variable `XPL_CI_PREVIEWS` set to `true`. It never runs a workflow, an install or tests from the
+PR.
 
-Create a protected Actions environment named `xpl-previews`, restrict it to the default branch and require
-review before dispatching secrets. Provision a dedicated ephemeral Linux runner with the `xpl-previews`
-label, Node, git, gh and a trusted authoring executable. Configure these environment values:
+Set it up as follows:
 
-| Setting                    | Value                                                                                           |
-| -------------------------- | ----------------------------------------------------------------------------------------------- |
-| Variable `XPL_AUTHOR`      | Absolute path to the runner's trusted authoring executable.                                     |
-| Secret `XPL_AUTHOR_TOKEN`  | Credential consumed by that executable for its authoring provider.                              |
-| Secret `XPL_READ_TOKEN`    | GitHub token with read access to this repository and PR source.                                 |
-| Secret `XPL_PUBLISH_TOKEN` | GitHub token with PR comment write access, owned by a repository owner, member or collaborator. |
-| Variable `XPL_PREVIEW_DIR` | Absolute path to this repository's dedicated, mounted destination folder.                       |
-| Variable `XPL_PREVIEW_URL` | HTTP(S) base URL serving that folder, without credentials, query or fragment.                   |
+1. Create a protected Actions environment `xpl-previews`. Restrict it to the default branch, and require a
+   review before it releases secrets.
+2. Start a dedicated, ephemeral Linux runner with the label `xpl-previews`, Node, git, gh and your author
+   executable. Give it no other credentials or work: PR code is data, and the runner does not sandbox it.
+3. Set these values on the environment:
 
-The destination uses the runner's filesystem identity and a preauthenticated mount, provisioned by the
-runner operator. No destination credential is inferred from the PR or passed as a command argument.
-The host must enforce team access. The workflow always records visibility as `team`; that label does not
-implement authentication. It creates `pr-<number>` under the configured folder and URL. Preserve the
-folder between runs so the staged versions and the `current` symlink stay available. The host must serve
-symlinks, and its storage must support the atomic rename and locking used by `xpl stage`.
+| Setting                    | Value                                                                                 |
+| -------------------------- | ------------------------------------------------------------------------------------- |
+| Variable `XPL_AUTHOR`      | Absolute path of the author executable on the runner.                                 |
+| Secret `XPL_AUTHOR_TOKEN`  | The credential that executable uses for its agent.                                    |
+| Secret `XPL_READ_TOKEN`    | A GitHub token that can read the repository and the PR.                               |
+| Secret `XPL_PUBLISH_TOKEN` | A GitHub token that can write PR comments, owned by an owner, member or collaborator. |
+| Variable `XPL_PREVIEW_DIR` | Absolute path of the mounted folder that your host serves.                            |
+| Variable `XPL_PREVIEW_URL` | The HTTP(S) URL of that folder, with no credentials, query or fragment.               |
 
-The author executable receives exactly one argument: an absolute `handoff.json` path. It reads the
-`invocation`, invokes the installed skill with its chosen harness, writes and applies patches using the
-handoff's `command` prefix, completes its accuracy pass, and exits zero when authoring is complete.
-The runner script owns `finish`, staging and linking. The wrapper must tell its agent to stop before
-the handoff prompt's manual `finish` instruction, and wait for all of its child processes before exiting.
-Configure the executable itself with the intended
-provider/model and noninteractive approval policy; it must accept `XPL_AUTHOR_TOKEN` and a fresh `HOME`.
-The workflow does not guess a provider or install an agent. Author execution is limited to 20 minutes.
+The author executable gets one argument, the absolute path of a `handoff.json`. It runs the installed skill
+with the handoff's `command` prefix, makes its accuracy pass, and exits 0 when the guide is written. It
+stops before the prompt's `finish` step: the script runs `finish`, `stage` and `pr link`. The executable
+gets only its own token and a fresh `HOME`, and has 20 minutes.
 
-The author process receives an allowlisted environment with its author credential and a temporary home;
-it does not inherit the source or publishing tokens or unrelated Actions secrets. This is not an OS
-sandbox. The author executable and its policy remain trusted, and the runner can access the mounted
-preview directory. Treat PR source as data and reject instructions embedded in source. Use an ephemeral
-runner without other credentials or workloads; environment filtering alone cannot isolate hostile code.
+Your host controls who can open a preview; the `team` label in the comment does not. Keep the preview folder
+between runs, serve symlinks, and use storage that supports atomic renames and locks.
 
-Dispatch **Publish PR preview** with the PR number. Runs for the same PR are serialized. The script
-prepares the current API base/head, authors a guide, finishes it, stages the ready result, then updates
-one PR comment. Both commits are rechecked by the existing commands. If either moves, the run fails and
-attempts `check-link` so the prior comment is marked outdated. A move after a successful run still needs
-the usual `check-link` workflow on new commits. Keep that workflow's writers serialized too.
-
-Child output is suppressed because it can contain source or credentials. A failure reports its phase;
-inspect retained inputs and results under `$RUNNER_TEMP/xpl-pr-inputs` before disposing of the runner.
-Nothing is uploaded as an Actions artifact. A failed author or readiness check cannot publish a draft.
-Network failures can prevent updating a stale comment; rerun `xpl pr check-link` when access returns.
+If the PR moves during a run, the run fails and marks the old comment as old. A run hides the output of the
+commands it starts, because it can hold source or credentials. A failure names its phase, and the inputs
+stay under `$RUNNER_TEMP/xpl-pr-inputs` until you dispose of the runner. The
+[architecture notes](https://github.com/krimvp/xpl/blob/main/docs/ARCHITECTURE.md) ("Optional CI preview
+authoring") have the full design.

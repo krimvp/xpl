@@ -67,7 +67,7 @@ describe("--files boundary", () => {
     expect(err).toContain("Not ready");
     expect(code).toBe(0);
     expect(out).toMatch(
-      /^wrote b\.html \([\d.]+ KB\): \.explainer\/metrics\.explainer\.json, 4 of 12 files embedded \(referenced 1, boundary \+3: callers 1, callees 1, tests 1; [\d.]+ KB of source; --files all adds 8 files, [\d.]+ KB\), index [\d.]+ KB \([\d.]+ KB as plain JSON, pruned from [\d.]+ KB\), mode explore, draft preview$/,
+      /^wrote b\.html \([\d.]+ KB\): \.explainer\/metrics\.explainer\.json, 4 of 12 files embedded \(referenced 1, boundary \+3: callers 1, callees 1, tests 1; [\d.]+ KB of source; --files all adds 8 files, [\d.]+ KB\), index [\d.]+ KB as JSON \([\d.]+ KB packed\), pruned from [\d.]+ KB, mode explore, draft preview$/,
     );
     const data = bundleOf(readFile(OUT, "b.html"));
     expect(Object.keys(data.files).sort()).toEqual([

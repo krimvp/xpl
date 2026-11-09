@@ -325,6 +325,8 @@ Keep a graph view readable: `"none"` for no stubs at all (every graph view a tou
 }
 ```
 
+**Edits made in the viewer.** Explore's **Edit map** makes groups (`members` and `include`) and hides or shows boxes and arrows (`hidden`). Its move handle pins a box: `layout` holds the box's `{x, y}`, relative to its container or, for a top-level box, to the canvas. A container keeps its origin and grows around a child at a negative position. These edits are the user's: they share the undo history of the text edits, and an `llm` patch does not overwrite them. Ungroup keeps the stored group, because anchors, arrows, maps and tours can still name it. When you regenerate a view, keep the user's groups, `members`, `hidden` and `layout`; `includeAdd` still works. Send `layout: null` only when the user asks to reset the placement. Each map keeps its own pins, also when it opens inside another map. Pan, zoom and opening a level change nothing in the file.
+
 ### 3.7 Flow view (stages, decisions, branches)
 
 Use `type: "flow"` when the point is what the code decides: stages, conditions, and where each path ends. It takes the same fields as a sequence view (3.8): `title`, `participants`, `steps`, `scope`, anchors. Each step may add `shape` (`"stage"`, `"decision"` or `"terminal"`) and `next: [{"step": "<id>", "label": "<when>"}]`. Without `next`, a step goes on to the next step in the list, unless it is a `terminal`; `next: []` ends a path. Every `next` target must be a step of the same view (only a `return` link may have none, see Recursion). Model each branch and loop explicitly, and anchor the condition that decides it. A stage or decision inside one function uses that function's participant as both `from` and `to`, with `kind: "call"`; the box shows the label, not the two ends. `shape` and `next` are also accepted by `stepsUpdate` (`null` clears them).
@@ -337,16 +339,140 @@ The box shows the `label` in large type, so a flow label names a stage (`writing
 
 **Recursion.** A `next` link may say how it changes the level of a recursive function. `{"step": "match:2", "kind": "recurse", "label": "the child"}` means: the function calls itself, and the steps from `match:2` run again, one level down; point it at an earlier step, the first one the call runs (a later one warns). It does not end the step: a step whose `next` has only recurse links still goes on to the next step in the list. `{"step": "match:17", "kind": "return", "label": "found"}` means: the call returns, back up one level, to `match:17`. In a recursive function the caller differs by level (the step that recursed, or at the top the code that first called the function), so a return that is not to one step leaves `step` out: `{"kind": "return", "label": "found"}` goes back to whoever made the call, drawn as an arrow out of the step and up. A `terminal` may have return links (and no others). Both kinds are drawn dashed, with "one level down" or "up one level" after their label. A link from a step to itself (the next item of a loop) is drawn as a loop on the box.
 
-**Viewer graph edits.** Explore's **Edit map** creates groups through `members` and `include`, and hides or
-restores individual IDs through `hidden`. These actions share text/evidence undo and user protection.
-Ungroup keeps the stored group for existing anchors, arrows, maps and tour references. Regeneration must
-keep user-owned groups and membership/visibility fields; additive `includeAdd` remains available.
-`GraphView.layout` pins drawn boxes at finite `{x, y}` coordinates relative to their rendered container
-(or the canvas for root boxes). A container keeps that origin while its frame expands around negative
-child positions. Explore offers a move handle and placement reset, both through the same author history.
-Pins travel in live saves and offline exports. Leave user-owned `layout` unchanged during regeneration;
-`layout: null` resets placement only when the user explicitly asks for it. Opening another level, pan and
-zoom remain navigation. Each map uses its own pins, including when another map is opened inside it.
+**A loop over items.** Draw a loop as a link back: the last step of one round has a `next` to the step where the next round starts. The check that ends the loop is a `decision`, with one branch out of the loop. In the TypeScript job runner, `Runner.dispatch` takes jobs while the runner runs, and waits a tick when the queue is empty:
+
+```json patch
+{
+  "views": [
+    {
+      "id": "view:dispatch-loop",
+      "type": "flow",
+      "title": "How the runner takes one job after another",
+      "scope": {
+        "root": "repo",
+        "depth": 3,
+        "question": "What does the dispatch loop do with each job, and when does it stop?",
+        "entryPoints": ["src/runner.ts#Runner.dispatch"]
+      },
+      "participants": ["sym:src/runner.ts#Runner.dispatch"],
+      "steps": [
+        {
+          "id": "dispatch-loop:1",
+          "from": "sym:src/runner.ts#Runner.dispatch",
+          "to": "sym:src/runner.ts#Runner.dispatch",
+          "label": "Is the runner still running?",
+          "kind": "call",
+          "shape": "decision",
+          "summary": "The loop runs while `running` is true; `Runner.stop` sets it to false.",
+          "next": [
+            { "step": "dispatch-loop:2", "label": "yes" },
+            { "step": "dispatch-loop:6", "label": "no" }
+          ],
+          "anchors": [
+            {
+              "file": "src/runner.ts",
+              "symbol": "Runner.dispatch",
+              "find": "while (this.running) {",
+              "role": "call-site"
+            }
+          ]
+        },
+        {
+          "id": "dispatch-loop:2",
+          "from": "sym:src/runner.ts#Runner.dispatch",
+          "to": "sym:src/runner.ts#Runner.dispatch",
+          "label": "Take the next due job",
+          "kind": "call",
+          "shape": "stage",
+          "summary": "`Queue.pop` gives the highest-priority, oldest due job, or nothing.",
+          "anchors": [
+            {
+              "file": "src/runner.ts",
+              "symbol": "Runner.dispatch",
+              "find": "const job = await this.queue.pop();",
+              "role": "call-site"
+            }
+          ]
+        },
+        {
+          "id": "dispatch-loop:3",
+          "from": "sym:src/runner.ts#Runner.dispatch",
+          "to": "sym:src/runner.ts#Runner.dispatch",
+          "label": "Is the queue empty?",
+          "kind": "call",
+          "shape": "decision",
+          "summary": "No job means no job is due yet.",
+          "next": [
+            { "step": "dispatch-loop:4", "label": "yes" },
+            { "step": "dispatch-loop:5", "label": "no" }
+          ],
+          "anchors": [
+            {
+              "file": "src/runner.ts",
+              "symbol": "Runner.dispatch",
+              "find": "if (!job) {",
+              "role": "call-site"
+            }
+          ]
+        },
+        {
+          "id": "dispatch-loop:4",
+          "from": "sym:src/runner.ts#Runner.dispatch",
+          "to": "sym:src/runner.ts#Runner.dispatch",
+          "label": "Wait a tick",
+          "kind": "call",
+          "shape": "stage",
+          "summary": "The loop sleeps for `idleDelayMs`, then checks again.",
+          "next": [{ "step": "dispatch-loop:1", "label": "check again" }],
+          "anchors": [
+            {
+              "file": "src/runner.ts",
+              "symbol": "Runner.dispatch",
+              "find": "await sleep(this.config.idleDelayMs);",
+              "role": "call-site"
+            }
+          ]
+        },
+        {
+          "id": "dispatch-loop:5",
+          "from": "sym:src/runner.ts#Runner.dispatch",
+          "to": "sym:src/runner.ts#Runner.dispatch",
+          "label": "Run the job on a leased worker",
+          "kind": "call",
+          "shape": "stage",
+          "summary": "The runner leases a worker, runs one attempt and gives the worker back.",
+          "next": [{ "step": "dispatch-loop:1", "label": "next job" }],
+          "anchors": [
+            {
+              "file": "src/runner.ts",
+              "symbol": "Runner.dispatch",
+              "find": "const worker = await this.pool.lease();",
+              "role": "call-site"
+            }
+          ]
+        },
+        {
+          "id": "dispatch-loop:6",
+          "from": "sym:src/runner.ts#Runner.dispatch",
+          "to": "sym:src/runner.ts#Runner.dispatch",
+          "label": "The loop ends",
+          "kind": "call",
+          "shape": "terminal",
+          "summary": "`dispatch` returns, and the promise of `Runner.start` settles.",
+          "anchors": [
+            {
+              "file": "src/runner.ts",
+              "symbol": "Runner.dispatch",
+              "find": "while (this.running) {",
+              "role": "call-site"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
 
 **Code first.** In Read and Explore, some flows open code first: the code is the main pane, and a narrow outline of the steps follows the caret. A flow does this when it has at least three steps, and all their current-code anchors are in one file. `"layout": "diagram"` keeps the diagram as the main pane; `"layout": "code-first"` requests code first for any flow; `null` restores the default.
 
@@ -612,7 +738,20 @@ Required: `type: "sequence"`, `title`, `participants` (lifelines, left to right)
 }
 ```
 
-**When to draw a frame.** Mark each loop and each branch on the path. Without frames, the reader sees the steps as one straight run. A `loop` wraps the steps that a `while` or `for` repeats. An `alt` wraps the steps of a branch that has other arms (an `if` with an `else`, a `switch`). An `opt` wraps the steps of an `if` with no `else`. A `par` wraps steps that run at the same time. `xpl draft path` adds these frames from the code, each with a `TODO` label that quotes the condition. Give an `alt` its `arms`: one per alternative, top to bottom, each with a short condition (`label`: "retries left", "else") and its steps (`fromStep`..`toStep`). The arms split the frame's steps with no gap and no overlap, and there are two or more. The diagram draws a dashed line between two arms and each condition in brackets. The frame's `label` then says what it decides ("the job failed"). Without `arms`, an `alt` has one label and no lines, and its steps read as one run. An arm has no anchors: a click on its condition selects its steps, and their code. Another frame inside an `alt` stays inside one arm. `xpl draft path` drafts the arms of each `alt` from the code. When the choice itself is the point, draw a flow (3.7), with one branch per exit.
+**When to draw a frame.** Mark each loop and each branch on the path. Without frames, the reader sees the steps as one straight run. A `loop` wraps the steps that a `while` or `for` repeats. An `alt` wraps the steps of a branch that has other arms (an `if` with an `else`, a `switch`). An `opt` wraps the steps of an `if` with no `else`, when the code after the `if` runs in both cases. A `par` wraps steps that run at the same time. `xpl draft path` adds these frames from the code, each with a `TODO` label that quotes the condition. Give an `alt` its `arms`: one per alternative, top to bottom, each with a short condition (`label`: "retries left", "else") and its steps (`fromStep`..`toStep`). The arms split the frame's steps with no gap and no overlap, and there are two or more. The diagram draws a dashed line between two arms and each condition in brackets. The frame's `label` then says what it decides ("the job failed"). Without `arms`, an `alt` has one label and no lines, and its steps read as one run. An arm has no anchors: a click on its condition selects its steps, and their code. Another frame inside an `alt` stays inside one arm. `xpl draft path` drafts the arms of each `alt` from the code. When the choice itself is the point, draw a flow (3.7), with one branch per exit.
+
+**An early exit is an `alt`.** An `if` whose body ends in `continue`, `return`, `break`, `raise` or `throw` makes the rest of the loop body or function its `else`. Draw one `alt` with two arms: the `if`, and `else` for the steps after it, to the end of the loop body or function. Do not draw an `opt` there. An `opt` reads as "maybe this, then the rest", but the rest runs only when the `if` did not. In the Go job runner, `Runner.Dispatch` acks a job that succeeded and goes on to the next job:
+
+```go
+if result.OK() {
+	if err := r.queue.Ack(job); err != nil { ... }
+	continue
+}
+attempts := job.Attempts + 1
+if attempts <= r.cfg.Retry.MaxRetries { /* Requeue */ } else { /* DeadLetter */ }
+```
+
+Its sequence has `Ack`, `Requeue` and `DeadLetter` as steps 7, 8 and 9. Draw an `alt` "the attempt's outcome" over steps 7-9, with the arms `result.OK()` (step 7) and `else` (steps 8-9). Inside the `else` arm, a second `alt` "retry or give up" has the arms "retries left" (step 8) and `else` (step 9). An arm needs one step at least. When the code after the `if` has no call, keep an `opt`. Its label then says what happens instead ("ok: ack, then the next job"). `xpl draft path` can still draft an early exit as an `opt`: change it by hand.
 
 **Editing one step** (sequence and flow views). To fix a step's summary or anchors, do not resend all the steps: `stepsUpdate` is a list of `{id, ...fields}` merged into the existing steps with those ids. The fields are those of a step (`from`, `to`, `label`, `kind`, `summary`, `anchors`, `edge`, and for a flow `shape`, `next`): `anchors` replace that step's anchors wholesale, `null` clears `summary`, `edge`, `shape` or `next`. The other steps, the frames and the tours that point at them stay as they are, and `changed` lists the view and the ids of the steps it updated. It applies after `steps` when both are sent, only to a view that exists (a new view sends `steps`), and an unknown step id is an error that names the view's steps. Like `steps`, it is skipped with a `protected` warning when the user edited the view's steps.
 
