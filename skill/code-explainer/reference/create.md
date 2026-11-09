@@ -139,6 +139,6 @@ input. Give it a `--cache-dir` outside the repo, and `--skill-dir` for a skill i
 
 Never recover by deleting `.explainer/`, rewriting an explainer JSON file, clearing user ownership or inventing
 anchor hashes. Keep unfinished scratch files, so a later run can resume. Reading, export and
-`index --precise off` use only the installed files, with no hosted xpl service. Agent authoring needs its own
-provider access. The skill runs only when the user invokes it; it starts no background service and publishes
-nothing.
+`index --precise off` use only the installed files, with no hosted xpl service. To write the guide, the agent
+needs its own sign-in to its model provider. The skill runs only when the user starts it. It starts no
+background service and publishes nothing.

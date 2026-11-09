@@ -132,7 +132,7 @@ Three levels, each a zoom (`opens`) into a box of the level above:
 Then:
 
 1. **Draft:** `xpl draft repo` gives the system map, a map of each service's inside, and a tour. Its arrows and outside systems are leads: check each by `patch-format.md` 3.10, "Check the draft".
-2. **Main path:** the `draft repo` tour leaves room for 3 steps: the main path, the risks and where next. Run `xpl draft path` on an obvious entry point (`main`, `cmd/`, a server). Copy the steps you keep into the tour, with ids it does not use yet. Set `opens` on the box that holds the entry point to the sequence's view id.
+2. **Main path:** the `draft repo` tour has at most 7 steps, where next included, and leaves room for 2 steps: the main path and its risks. Run `xpl draft path` on the entry point it names (`main`, `cmd/`, a server). Its steps get ids the guide does not use yet, so copy the ones you keep into the tour as they are. Set `opens` on the box that holds the entry point to the sequence's view id.
 3. **Tour:** the first step on the inside names the files left off the map, in one sentence. Offer 2-3 expansions in the reply.
 
 ## explain map: every file, in plain words

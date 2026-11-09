@@ -71,6 +71,17 @@ Guides and the viewer:
   box.
 - In a change guide a flow step whose code the change added or edits carries a "New" or "Changed" pill, as
   a map box does. A group whose code the change added in full (a box of new tests) is "New".
+- Until you first select something, Concepts and Details fold to one line under the diagram, so a tall
+  sequence or flow opens whole. Present keeps the lifelines that send a sequence's drawn arrows in frame.
+- Folding a table of a data map keeps its arrows, which then start at the folded table, and keeps every other
+  box where it was.
+- A guide with no map of its own gets a Map tab only when its flow has 3 parts or more. The tab is named
+  "Parts of" the flow, and its boxes are not drawn larger than normal size.
+- Two arrow labels on one line, in opposite directions, sit on either side of the line, so they no longer
+  read as one label.
+- An `implements` arrow lifted to a file or a folder reads "implements an interface in". A value declared
+  `const` is a "constant". A tour step on a group lists only the tests among its members that are test code.
+- On a phone, the Map and Flow tabs open on the diagram, not on the code a Tour step opened.
 
 Indexing:
 
@@ -79,6 +90,7 @@ Indexing:
   as `requests` arrows. They are always heuristic. (#238)
 - A request path built from a file's string constant reads the constant's value. `xpl draft map` leaves out
   code files that define and use nothing. (#240)
+- Names that a function takes from `await import()` or `require()` resolve, so their calls are arrows.
 
 Drafts and lint:
 
@@ -95,6 +107,12 @@ Drafts and lint:
 - `xpl change` finds the tests of a changed symbol through its callers too, and `xpl draft change` gives
   the changed code its "before" links. `xpl lint` flags a sequence with more than 6 lifelines
   (`many-participants`).
+- The `xpl draft repo` tour has at most 7 steps, "where next" included, and leaves 2 for the main path and its
+  risks. The note names the `xpl draft path` command to run. Its parts steps point at the code that other
+  files call most. Without a read call, a settings file that the code names by a literal path becomes the
+  settings box. A draft numbers its new tour steps after the ids the guide already uses.
+- `xpl draft path` draws an `opt` over the rest of a loop body when a guard with no drawn call skips it with
+  `continue` or `break`.
 - `-o /dev/null` no longer replaces `/dev/null` with a regular file: xpl writes to a device in place.
 - The skill puts its hard rules first, starts every guide from its purpose, and gives each scope a tour shape
   and a length budget. Its writing guide follows Orwell's rules and ASD-STE100 Simplified Technical English.
@@ -105,6 +123,8 @@ Command-line messages:
   `Did you mean: --depth?`. `xpl ready` prints each finding as the problem, then "fix:" and the fix.
   Errors use the right article ("an interface", "an enum"). The `xpl draft states` error names the command
   that lists candidates.
+- Each command's `--help` is shorter: usage, a few lines, the options and a link to the docs.
+- `xpl resolve` and `xpl change` take the only guide when you leave out its name.
 
 Docs:
 

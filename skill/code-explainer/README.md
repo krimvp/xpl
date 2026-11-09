@@ -42,8 +42,8 @@ The agent indexes the repo and starts from a draft that `xpl draft` builds from 
 The index gets precise references from SCIP indexers when they can run: `npx` for TypeScript and Python, the Go toolchain for Go. Without them it falls back to heuristic references and says so.
 
 `xpl index --precise off`, local viewing and the HTML file need no hosted xpl service after setup. Precise
-tools, toolchains and dependencies may need network access. Agent authoring needs the agent's own sign-in
-and provider access. The skill runs only when you invoke it, with the token from
+tools, toolchains and dependencies may need network access. To write a guide, your agent needs its own
+sign-in to its model provider. The skill runs only when you start it, with the token from
 [Create a guide](reference/create.md).
 
 ## Contents
