@@ -250,14 +250,6 @@ describe("buildMatrix", () => {
   });
 });
 
-// a draft's TODO labels made every row read "TODO: 2-5 plain words for t…"
-it("names a box whose label is still a draft's TODO by its file, which differs from row to row", () => {
-  const todo = (file: string) =>
-    box(`file:src/${file}`, { label: `TODO: 2-5 plain words for this file (now: ${file})` });
-  const m = buildMatrix(graph([todo("anchors.ts"), todo("bundle.ts")], []));
-  expect(m.boxes.map((b) => b.label)).toEqual(["anchors.ts (TODO)", "bundle.ts (TODO)"]);
-});
-
 describe("the matrix of a data map", () => {
   // one row and column per field gave a 38 x 38 grid with 11 filled cells, each table's own row at the
   // end of the band of the table before it

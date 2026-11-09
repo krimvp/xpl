@@ -5,6 +5,7 @@
  */
 import {
   processFlow,
+  shortText,
   type DerivedGraph,
   type ElementId,
   type ExplainerModel,
@@ -215,9 +216,9 @@ function part(
   return {
     id: step.id,
     number: index + 1,
-    label: step.label,
+    label: shortText(step.label),
     ...(summary ? { summary } : {}),
-    ...(ends && step.from ? { from: model.label(step.from) } : {}),
-    ...(ends && step.to ? { to: model.label(step.to) } : {}),
+    ...(ends && step.from ? { from: shortText(model.label(step.from)) } : {}),
+    ...(ends && step.to ? { to: shortText(model.label(step.to)) } : {}),
   };
 }

@@ -43,6 +43,7 @@ import {
   type TourStep,
   type View,
 } from "@xpl/core";
+import { shortGraph } from "./shortLabels.js";
 import { drawnEdges } from "./drawnEdges.js";
 import type { Cursor, ViewerState } from "./store.js";
 
@@ -148,8 +149,8 @@ function deriveView(
   if (view?.type === "graph") {
     // boxes the reader opened in place show the boxes of the view they open, inside them
     const drawn = expandInPlace(view, model, expanded);
-    // (the text names the type of each row of a data-model view)
-    graph = deriveGraph(drawn, model, files ? { text: (file) => files[file] } : {});
+    // (the text names the type of each row of a data-model view; a draft's TODO shows short, as drawn)
+    graph = shortGraph(deriveGraph(drawn, model, files ? { text: (file) => files[file] } : {}));
     include = new Set(
       (Array.isArray(drawn.include) ? drawn.include : []).filter((id) => model.hasNode(id)),
     );

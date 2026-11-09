@@ -25,7 +25,7 @@ import { codeFirstView } from "./workspace.js";
 import { isFormField, ownsKeys, tourKeyAction } from "./present/keys.js";
 import { PresentMode } from "./present/PresentMode.js";
 import type { ViewerStore } from "./store.js";
-import type { ReadinessReport } from "@xpl/core";
+import { shortText, type ReadinessReport } from "@xpl/core";
 
 export function App({ store }: { store: ViewerStore }) {
   return (
@@ -69,7 +69,7 @@ function Shell() {
     state.mode === "present" || state.perspective === "guide"
       ? (store.currentTour() ?? (state.perspective === "guide" ? state.model.tours[0] : undefined))
       : undefined;
-  const pageTitle = tour?.title.trim() || title;
+  const pageTitle = shortText(tour?.title.trim() || title);
   // Back from a talk to the reading screens: the code that was on the slide stays on screen.
   const previousMode = useRef(state.mode);
   const fromPresent = previousMode.current === "present" && state.mode !== "present";

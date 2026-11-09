@@ -6,7 +6,7 @@
  * new view into sight. Next to the strip, a "Views" menu lists every view under its full title and jumps to
  * the one you pick.
  */
-import type { View } from "@xpl/core";
+import { shortText, type View } from "@xpl/core";
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { useStore, useViewerState } from "../hooks.js";
@@ -163,7 +163,7 @@ export function ViewTabs({ onMenuOpen }: { onMenuOpen?: () => void }) {
                 onClick={() => store.setView(v.id)}
               >
                 <span className={`tab-icon is-${v.type}`} aria-hidden="true" />
-                <span className="tab-title">{v.title}</span>
+                <span className="tab-title">{shortText(v.title)}</span>
               </button>
             );
           })}
@@ -320,7 +320,7 @@ function ViewsMenu({
               }}
             >
               <span className={`tab-icon is-${v.type}`} aria-hidden="true" />
-              <span className="views-item-title">{v.title}</span>
+              <span className="views-item-title">{shortText(v.title)}</span>
             </button>
           ))}
         </div>

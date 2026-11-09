@@ -1287,6 +1287,11 @@ A box of that map, as drafted (the TODO says what the index knows about the file
 }
 ```
 
+In the viewer (`xpl view`, `xpl bundle --draft`) a draft reads by what the index found: on the diagrams and in the
+lists, menus, breadcrumbs and the page title, this box shows as `queue.ts (TODO)`, and a text with no `(now: …)`
+name (an arrow's label, a step title) as `TODO`. The whole instruction shows where you write: the details of the
+selected element, the edit forms and the draft banner's list.
+
 A step of the path sequence and its tour step:
 
 ```json

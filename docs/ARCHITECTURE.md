@@ -1965,7 +1965,8 @@ it to a file; `--json` adds the counts and what was left out.
   there. When only that arm draws calls, a guard that returns, raises or throws (`if err != nil { return }`)
   has no frame; one that leaves with `continue` or `break` (TS `if (!job) { sleep(); continue }`, a library
   call) makes the rest an `opt` whose label says the guard skips it, and the rest's calls stay single tour
-  steps. A frame's label is a TODO for the decision; an `opt`'s quotes the deciding code, and an `alt` gets
+  steps. A frame's label is a TODO for the decision; a `loop`'s and an `opt`'s quote the deciding code (as
+  `(now: <code>)`, which the viewer shows, §6; a guard's `opt` says the guard skips it), and an `alt` gets
   `arms`, one per arm of the branch that has calls, each with a TODO label that quotes its condition
   (`ControlBlock.arms[].condition`; "otherwise" for an `else`). An arm runs from its first call to the call
   before the next arm, so the arms split the frame's steps. An arm starts at the column of its body, so a call
@@ -2025,7 +2026,8 @@ it to a file; `--json` adds the counts and what was left out.
   also sets a state, with no transition out, gets a note naming that function. One `flow` view
   (`view:<type>-states`, `layout: "diagram"`): a stage per state (anchored at its declaration, then its first
   sets and tests, at most 4 anchors) whose `next` lists its transitions, and a stage per transition, drawn
-  from the function that makes it and anchored at the test and the set, whose `next` is the new state. At most
+  from the function that makes it and anchored at the test and the set, whose `next` is the new state. Their
+  label TODOs end in `(now: <state>)` and `(now: <state> to <state>)`, which the viewer shows (§6). At most
   16 states and 16 transitions. A flow rather than a graph: TypeScript enum members and literals are not index
   symbols, so they cannot be boxes, and a flow stage takes free text and anchors. The participants are the
   type (its file, for Go constants outside it) and each function with a transition, each with a summary TODO.
@@ -2802,6 +2804,19 @@ details share it. Element and step summaries are rendered as inline markdown (`r
 spans, bold, emphasis); titles and labels are plain text. The page title is "<tour title> · xpl" while a tour
 is open (the Guide, Present), else "<explainer title> · xpl".
 
+**A draft's placeholders.** A text that still holds a `TODO` (core's `shortText`, the same test as the lint
+rule `todo-left`: the word outside code spans) is an instruction to the author. Where room is short it shows
+what is known, marked by the word, not by colour: the `(now: …)` name a draft puts in it, then "(TODO)"
+(`TODO: 1-3 plain words for this part (now: worker)` as "worker (TODO)"), words written before it and "TODO"
+("Where to go next: TODO"), else "TODO" alone, never the instruction or its example. That covers the boxes,
+arrows, ghosts, flow and sequence steps, frames and arms (`shortLabels.ts`: `shortGraph` in `deriveView`,
+the Snapshot and the generated map; `shortFlow` in `FlowDiagram` and `SequenceView`), the parts list, the
+Guide's chips and call cards, the step lists (`stepTitle`), the breadcrumb, the zoom trail, the view tabs and
+menus, the tour menu and the page title. The whole instruction stays where the author writes and reads it
+whole: the details of the selected element (read from the model), the edit forms, the draft banner's list,
+the diagram's own heading, the Guide's tour title, step headings and notes, and the Present caption. A text
+without a `TODO` is returned as it is, so a finished guide draws exactly as before.
+
 **Search and guides** (`components/SearchLibrary.tsx`): one header entry opens an accessible dialog. A
 150 ms debounce sends literal, case-insensitive queries to an inline Web Worker; both index construction
 and scanning run off the UI thread. The worker calls core's pure `query` using supplied text only. Results
@@ -3170,8 +3185,8 @@ Go's embedded types as "embeds". On a data map a row's type names the table it h
 its arrows at least 16 px apart on a side (`spreadPorts` `roomy`), a selected table lists its rows' arrows
 under "Arrows on this map" ("To Job holds (field job)") and the tables it holds or is held by are marked
 linked (`heldTables`); a selected row lists its own arrow ("To WorkerPool holds") and marks the table it holds
-linked the same way. A draft's "TODO: … (now: anchors.ts)" label shows as "anchors.ts (TODO)", so the rows
-differ where the header cuts them.
+linked the same way. A draft's "TODO: … (now: anchors.ts)" label shows as "anchors.ts (TODO)" (the graph's
+labels are short, see "A draft's placeholders"), so the rows differ where the header cuts them.
 
 The order (`boxOrder`, shared with the parts list and the text view; a table's rows in code order): level by
 level of the container tree, a box comes before

@@ -16,6 +16,7 @@ import {
   type SequenceView,
   type View,
 } from "@xpl/core";
+import { shortGraph } from "../shortLabels.js";
 import { useViewerState } from "../hooks.js";
 import {
   absoluteBoxes,
@@ -190,9 +191,11 @@ function GraphSnapshot({
   // in a small picture they read as parts of the map. The live Map shows them.
   const graph = useMemo(
     () =>
-      deriveGraph({ ...view, stubs: { mode: "none" } }, state.model, {
-        text: (file) => files[file],
-      }),
+      shortGraph(
+        deriveGraph({ ...view, stubs: { mode: "none" } }, state.model, {
+          text: (file) => files[file],
+        }),
+      ),
     [view, state.model, files],
   );
   const changes = useGraphChanges(graph);

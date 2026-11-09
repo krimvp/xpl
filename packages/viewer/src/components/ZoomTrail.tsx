@@ -2,7 +2,7 @@
  * The way back up from a view that a box opened (`Node.opens`): "System map › API service › Orders". Each
  * level above the current one is a link; nothing is shown for a view no box opens.
  */
-import { zoomTrail } from "@xpl/core";
+import { shortText, zoomTrail } from "@xpl/core";
 import { useStore, useViewerState } from "../hooks.js";
 
 export function ZoomTrail({ viewId }: { viewId: string }) {
@@ -12,9 +12,9 @@ export function ZoomTrail({ viewId }: { viewId: string }) {
   if (trail.length === 0) return null;
   // The top view by its title, then each box that leads one level down, the last one being this view.
   const steps = [
-    { label: trail[0]!.view.title, viewId: trail[0]!.view.id },
+    { label: shortText(trail[0]!.view.title), viewId: trail[0]!.view.id },
     ...trail.map((level, i) => ({
-      label: state.model.node(level.box)?.label ?? level.box,
+      label: shortText(state.model.node(level.box)?.label ?? level.box),
       viewId: trail[i + 1]?.view.id ?? viewId,
     })),
   ];

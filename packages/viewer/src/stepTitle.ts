@@ -10,9 +10,11 @@
  *   "…" (`shortTitle`), and the body is the whole note; a step without a note is "Step N". Never the label of
  *   what the step focuses: that is often code (`codeFocus([id], model)`), and several steps share a focus.
  *
- * Either way the title is not printed again in the body: each thing is said once.
+ * Either way the title is not printed again in the body: each thing is said once. Where a step is named
+ * in a list, a menu or a breadcrumb (`stepTitle`), a draft's `TODO: …` title shows short (`shortText`:
+ * "TODO"); its own section heading and the Present caption (`stepText`) show the whole instruction.
  */
-import type { ExplainerModel, TourStep } from "@xpl/core";
+import { shortText, type ExplainerModel, type TourStep } from "@xpl/core";
 
 /** A first sentence longer than this does not make a title. */
 export const MAX_SENTENCE_TITLE = 80;
@@ -140,7 +142,7 @@ function numbered(step: TourStep, model: Names): string {
 
 /** The title of `step` (see the file comment). */
 export function stepTitle(step: TourStep, model: Names): string {
-  return noteTitle(step) ?? shortTitle(step.note) ?? numbered(step, model);
+  return shortText(noteTitle(step) ?? shortTitle(step.note) ?? numbered(step, model));
 }
 
 /**
