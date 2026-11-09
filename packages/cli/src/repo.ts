@@ -28,7 +28,6 @@ import {
   detectGit,
   discoverFiles,
   isWorkTreeClean,
-  readSource,
   resolveCommitId,
   shortHead,
   captureIndexInputs,
@@ -82,20 +81,10 @@ export class WorkingTree {
     return (this.hashes ??= (async () => {
       const git = await this.git();
       const { files } = await discoverFiles(this.root, { git });
-      const out = new Map<string, string>();
-      const BATCH = 32;
-      for (let i = 0; i < files.length; i += BATCH) {
-        await Promise.all(
-          files.slice(i, i + BATCH).map(async (file) => {
-            try {
-              out.set(file.path, new FileHasher(splitLines(await readSource(file))).hashFile());
-            } catch {
-              // vanished while listing: not part of the tree
-            }
-          }),
-        );
-      }
-      return out;
+      // discovery read every file's text already
+      return new Map(
+        files.map((file) => [file.path, new FileHasher(splitLines(file.text!)).hashFile()]),
+      );
     })());
   }
 }
@@ -293,7 +282,6 @@ export async function stalenessOf(
       };
     }
   }
-  const current = await tree.commit();
   // A commit label is not evidence of identical source or line positions (including legacy indexes).
   const hashes = await tree.fileHashes();
   const changed: string[] = [];
@@ -308,6 +296,8 @@ export async function stalenessOf(
   const added = [...hashes.keys()].filter((path) => !known.has(path)).sort();
   if (changed.length + removed.length + added.length === 0) return undefined;
 
+  // only the message names the tree's commit id (a git status: not worth it on a matching index)
+  const current = await tree.commit();
   const parts: string[] = [];
   if (changed.length > 0) parts.push(`${changed.length} changed (${listText(changed)})`);
   if (added.length > 0) parts.push(`${added.length} new (${listText(added)})`);
