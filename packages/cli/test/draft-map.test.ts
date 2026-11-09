@@ -407,3 +407,28 @@ describe("xpl draft map on a crowded folder", () => {
     expect(patch.remove).toEqual(["file:src/a16.ts"]);
   });
 });
+
+describe("xpl draft map: a folder too dense for boxes and arrows", () => {
+  it("opens a map of more than 12 boxes as a dependency matrix, and says so; 12 stay boxes", async () => {
+    const dir = makeTempDir("xpl-map-matrix-");
+    writeFile(dir, "package.json", '{ "name": "dense" }\n');
+    for (let i = 1; i <= 13; i++) {
+      writeFile(dir, `src/big/f${i}.ts`, `export function f${i}(): number {\n  return ${i};\n}\n`);
+    }
+    for (let i = 1; i <= 12; i++) {
+      writeFile(
+        dir,
+        `src/small/g${i}.ts`,
+        `export function g${i}(): number {\n  return ${i};\n}\n`,
+      );
+    }
+    expect((await xpl(dir, "index", "--precise", "off")).code).toBe(0);
+    expect((await xpl(dir, "new", "dense")).code).toBe(0);
+    const { patch, notes } = await draft(dir, "dense");
+    const render = (folder: string) =>
+      (patch.views!.find((v) => v.scope?.root === `dir:${folder}`) as GraphView).render;
+    expect(render("src/big")).toBe("matrix");
+    expect(render("src/small")).toBeUndefined();
+    expect(notes.join("\n")).toContain('open as a dependency matrix (`render: "matrix"`');
+  });
+});

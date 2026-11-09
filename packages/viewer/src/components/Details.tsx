@@ -353,7 +353,7 @@ function statusHelp(status: AnchorRow["status"]): string {
     case "moved":
       return "Found at a new place, text unchanged";
     case "drifted":
-      return "Found, but the text changed: the explanation may be stale";
+      return "Found, but the code changed: this text may be out of date";
     case "missing":
       return "The code is gone: fix or remove this code link";
     case "unresolved":
@@ -521,16 +521,21 @@ function MapConnections({ id, graph }: { id: string; graph: DerivedGraph }) {
           source: mapEdgeSource(edge),
         };
       }),
+    // a dashed box links to several boxes: its "×13 in all" is the sum, this row says its own part of it
     ...graph.stubs
       .filter((stub) => stub.inside === id)
-      .map((stub) => ({
-        id: stub.id,
-        direction: stub.direction === "out" ? "To" : "From",
-        other: stub.ghostLabel,
-        relationship: stub.kinds.join(", "),
-        count: stub.count,
-        source: "outside this map",
-      })),
+      .map((stub) => {
+        const total = graph.ghosts.find((ghost) => ghost.key === stub.ghost)?.count ?? stub.count;
+        return {
+          id: stub.id,
+          direction: stub.direction === "out" ? "To" : "From",
+          other: stub.ghostLabel,
+          relationship: stub.kinds.join(" & "),
+          count: stub.count,
+          ...(total > stub.count ? { total } : {}),
+          source: "outside this map",
+        };
+      }),
   ];
   if (arrows.length === 0) return null;
   const shown = all ? arrows : arrows.slice(0, 6);
@@ -551,7 +556,8 @@ function MapConnections({ id, graph }: { id: string; graph: DerivedGraph }) {
               </span>
               <span className="map-connection-relation">
                 {arrow.relationship}
-                {arrow.count > 1 ? ` ×${arrow.count}` : ""} · {arrow.source}
+                {arrow.count > 1 ? ` ×${arrow.count}` : ""}
+                {"total" in arrow ? ` (of ${arrow.total} in all)` : ""} · {arrow.source}
               </span>
             </button>
           </li>

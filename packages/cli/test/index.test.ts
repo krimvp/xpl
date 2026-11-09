@@ -2,6 +2,7 @@ import { chmodSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { run } from "../src/cli.js";
+import { coverageDetails } from "../src/commands/build-index.js";
 import { INDEX_SCHEMA } from "@xpl/core";
 import {
   copyFixture,
@@ -13,6 +14,27 @@ import {
   xpl,
   xplJson,
 } from "./helpers.js";
+
+describe("xpl index: coverage lines", () => {
+  // the lines `describeAnalysis` gives for go-jobrunner indexed with scip-go (10 files, all described)
+  const details = [
+    "go (go): calls, imports, inheritance, implementations, type references, reads, writes partial (10/10 files analyzed). Heuristic relationships are hints; unresolved targets may be missing.",
+    "go (scip-go): calls, imports, inheritance, implementations, type references, reads, writes partial (10/10 files analyzed). Precise relationships may be missing; described files and empty results do not establish complete coverage.",
+  ];
+  const go = (info: object) => ({ go: { files: 10, symbols: 158, ...info } }) as never;
+
+  it("a language a precise tool analyzed in full reads as precise, without the heuristic line it replaced", () => {
+    expect(coverageDetails(details, 13, go({ refs: "precise", tool: "scip-go@0.2.7" }))).toEqual([
+      "go (scip-go): calls, imports, inheritance, implementations, type references, reads, writes precise (10/10 files analyzed). The tool does not report what it may have missed.",
+    ]);
+  });
+
+  it("keeps both lines, and partial, when the tool left files to the heuristic", () => {
+    const some = details.map((line) => line.replace("partial (10/10", "partial (7/10"));
+    const info = go({ refs: "precise", tool: "scip-go@0.2.7", heuristicFiles: 3 });
+    expect(coverageDetails(some, 13, info)).toEqual(some.map((l) => l.replace("go (go)", "go")));
+  });
+});
 
 describe("xpl index", () => {
   it("qualifies text's absent references in help because an artifact can provide them", async () => {
@@ -254,7 +276,10 @@ setInterval(() => {}, 1000);
       expect(await running).toBe(130);
       expect(Date.now() - cancelledAt).toBeLessThan(1500);
       expect(err.join("\n")).toContain("Indexing cancelled");
-      expect(err.some((text) => text.startsWith("index: "))).toBe(false);
+      // stderr is not a terminal: no progress, but one line says a SCIP tool runs (it can take a minute)
+      expect(err.filter((text) => text.startsWith("index: "))).toEqual([
+        "index: running scip-typescript for precise references (it can take a minute; `--precise off` skips it)",
+      ]);
       expect(existsSync(join(dir, ".explainer/index-cancelled.json"))).toBe(false);
     },
   );

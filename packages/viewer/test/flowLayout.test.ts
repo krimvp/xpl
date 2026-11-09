@@ -145,6 +145,70 @@ describe("a flow laid out for reading", () => {
     expect(routesClearBoxes(layout)).toBe(true);
   });
 
+  it("never puts one box on another when it straightens a main path", async () => {
+    // zod's "outcome" flow: two choices side by side, each with two ends; moving one end aside put it on
+    // the other choice's end ("Construct and throw error" under "Return successful result")
+    const layout = await layoutFlow(
+      flowOf([
+        {
+          label: "Choose parse or safeParse",
+          shape: "decision",
+          next: [
+            { step: "f:2", label: "parse" },
+            { step: "f:6", label: "safeParse" },
+          ],
+        },
+        { label: "parse runs the schema", shape: "stage" },
+        {
+          label: "parse found issues?",
+          shape: "decision",
+          next: [
+            { step: "f:5", label: "yes" },
+            { step: "f:4", label: "no" },
+          ],
+        },
+        { label: "Return parsed value", shape: "terminal" },
+        { label: "Construct and throw error", shape: "terminal" },
+        { label: "safeParse runs the schema", shape: "stage" },
+        {
+          label: "safeParse found issues?",
+          shape: "decision",
+          next: [
+            { step: "f:9", label: "yes" },
+            { step: "f:8", label: "no" },
+          ],
+        },
+        { label: "Return successful result", shape: "terminal" },
+        { label: "Return failed result", shape: "stage" },
+        {
+          label: "Does caller read error?",
+          shape: "decision",
+          next: [
+            { step: "f:11", label: "yes" },
+            { step: "f:12", label: "no" },
+          ],
+        },
+        { label: "Build and cache error", shape: "terminal" },
+        { label: "Keep failed result", shape: "terminal" },
+      ]),
+    );
+    const boxes = layout.children;
+    const overlaps = boxes.flatMap((a, i) =>
+      boxes
+        .slice(i + 1)
+        .filter(
+          (b) =>
+            a.x < b.x + b.width &&
+            b.x < a.x + a.width &&
+            a.y < b.y + b.height &&
+            b.y < a.y + a.height,
+        )
+        .map((b) => `${a.id} on ${b.id}`),
+    );
+    expect(overlaps).toEqual([]);
+    expect(routesClearBoxes(layout)).toBe(true);
+  });
+
   it("makes a box with a one-line label shorter than one with three lines", async () => {
     const layout = await layoutFlow(
       flowOf([

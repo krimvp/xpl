@@ -371,3 +371,34 @@ describe("xpl outline: recursion", () => {
     ]);
   });
 });
+
+describe("xpl outline and show on Go code", () => {
+  it("say struct and field, as Go does; --json and --kind keep the stored kinds", async () => {
+    const go = makeTempDir("xpl-outline-go-");
+    writeFile(go, "go.mod", "module example.com/q\n\ngo 1.22\n");
+    writeFile(
+      go,
+      "q.go",
+      "package q\n\ntype Job struct {\n\tID string\n}\n\nvar Default = Job{}\n",
+    );
+    expect((await xpl(go, "index", "--precise", "off")).code).toBe(0);
+    const { out } = await xpl(go, "outline", "--under", "file:q.go");
+    expect(out).toContain("sym:q.go#Job  struct  3-5");
+    expect(out).toContain("sym:q.go#Job.ID  field  4-4");
+    // a package-level variable is still a variable
+    expect(out).toContain("sym:q.go#Default  variable");
+    expect((await xpl(go, "show", "sym:q.go#Job")).out.split("\n")[0]).toMatch(
+      /^sym:q\.go#Job \(struct\) q\.go:3-5 /,
+    );
+    const json = await xplJson<{ tree: Node }>(
+      go,
+      "outline",
+      "--under",
+      "file:q.go",
+      "--kind",
+      "struct",
+    );
+    expect(find(json.json.tree, "sym:q.go#Job")?.kind).toBe("class");
+    expect(find(json.json.tree, "sym:q.go#Default")).toBeUndefined();
+  });
+});

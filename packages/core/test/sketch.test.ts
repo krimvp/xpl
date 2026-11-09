@@ -99,6 +99,6 @@ describe("sketch boxes", () => {
     });
     expect(
       r.issues.filter((i) => i.severity === "error").map((i) => [i.code, i.message.split(" (")[0]]),
-    ).toEqual([["evidence", "llm edge edge:uses needs at least one anchor inside its to"]]);
+    ).toEqual([["evidence", "llm edge edge:uses needs an anchor at its end"]]);
   });
 });

@@ -134,6 +134,12 @@ describe.each([
   // WCAG 1.4.11: a line or a border that a reader must see to read a diagram needs 3:1 on the canvas. A
   // box's fill is close to the canvas, so its border is its only edge; a heuristic arrow is told apart by
   // its dash, not by fading it.
+  it("an arrow's words while the arrow steps back: 3:1 on the canvas, quieter than muted text", () => {
+    const dim = contrast(v("--edge-label-dim"), v("--canvas"));
+    expect(dim).toBeGreaterThanOrEqual(3);
+    expect(dim).toBeLessThan(contrast(v("--muted"), v("--canvas")));
+  });
+
   it("diagram lines and box borders on the canvas", () => {
     const canvas = v("--canvas");
     const low = ["--edge", "--edge-heuristic", "--edge-stub", "--ghost-border", "--node-border"]
@@ -141,5 +147,18 @@ describe.each([
       .filter(([, ratio]) => ratio < 3)
       .map(([k, ratio]) => `${k} ${ratio.toFixed(2)}`);
     expect(low).toEqual([]);
+  });
+
+  // The dependency matrix (MatrixView) tells a cell's trust by its stripes and marks the diagonal and an
+  // arrow back up the order: each of these marks needs 3:1 on the panel the grid is drawn on (D5).
+  it("matrix stripes, diagonal and back-arrow flag on the panel", () => {
+    const panel = v("--panel");
+    const low = ["--matrix-mark", "--warn"]
+      .map((k) => [k, contrast(v(k), panel)] as const)
+      .filter(([, ratio]) => ratio < 3)
+      .map(([k, ratio]) => `${k} ${ratio.toFixed(2)}`);
+    expect(low).toEqual([]);
+    // the numbers stay readable where a stripe runs under them
+    expect(contrast(v("--fg"), v("--matrix-mark"))).toBeGreaterThanOrEqual(3);
   });
 });

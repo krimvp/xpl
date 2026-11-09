@@ -1,4 +1,10 @@
-import type { ElementId, ExplainerModel, FocusRange, RelatedFileSet } from "@xpl/core";
+import {
+  relatedFiles,
+  type ElementId,
+  type ExplainerModel,
+  type FocusRange,
+  type RelatedFileSet,
+} from "@xpl/core";
 
 /**
  * A card made from the step's own setting or test anchor in a file whose code the step already shows (an
@@ -35,28 +41,37 @@ export function mergeSameCards(links: readonly RelatedFileSet[]): RelatedFileSet
   return [...byKey.values()];
 }
 
+/** A box that holds other code: a system, a service, a group, a folder. */
+export function holdsCode(id: ElementId, model: ExplainerModel): boolean {
+  const node = model.node(id);
+  return !!node && (node.kind === "group" || node.kind === "dir" || node.kind === "repo");
+}
+
 /**
- * A box that holds other code (a system, a service, a group, a folder) keeps only the cards about the box
- * itself: arrows drawn from or to it, and setting and test cards for files that its own code links (or its
- * step's) name. A file read, or a setting linked, somewhere
- * inside it is a fact about that code, not about the whole box; on the box it reads as a claim about the
- * system. A selection with any box of code (a file, a symbol, an arrow, a concept) keeps every card.
+ * The cards for what is selected, and for the step's own code (`focus`, the code shown). A box that holds
+ * other code (a system, a service, a group, a folder) adds only the arrows drawn from or to it (R3-7): a file
+ * read, a setting or a test linked somewhere inside it, or by its own code links, is a fact about that code,
+ * not about the whole box, and on the box it reads as a claim about the system ("Its settings are in
+ * build.ts"). The rest of the selection (a file, a symbol, an arrow, a concept) and the step's own code links
+ * keep every card.
  */
-export function ownCards(
-  links: readonly RelatedFileSet[],
+export function readerCards(
   ids: readonly ElementId[],
   model: ExplainerModel,
-  ownFiles: ReadonlySet<string> = new Set(),
+  focus: readonly FocusRange[],
 ): RelatedFileSet[] {
-  const holds = (id: ElementId) => {
-    const node = model.node(id);
-    return !!node && (node.kind === "group" || node.kind === "dir" || node.kind === "repo");
-  };
-  if (ids.length === 0 || !ids.every(holds)) return [...links];
-  const selected = new Set(ids);
-  return links.filter((link) => {
-    if (link.id.startsWith("anchor:")) return link.files.every((file) => ownFiles.has(file));
+  const boxes = new Set(ids.filter((id) => holdsCode(id, model)));
+  const rest = ids.filter((id) => !boxes.has(id));
+  const restFocus = focus.filter((range) => !boxes.has(range.elementId));
+  const cards = rest.length > 0 || restFocus.length > 0 ? relatedFiles(rest, model, restFocus) : [];
+  if (boxes.size === 0) return cards;
+  const arrows = relatedFiles([...boxes], model).filter((link) => {
     const edge = model.edge(link.id);
-    return !!edge && (selected.has(edge.from) || selected.has(edge.to));
+    return (
+      !!edge &&
+      (boxes.has(edge.from) || boxes.has(edge.to)) &&
+      !cards.some((card) => card.id === link.id)
+    );
   });
+  return [...cards, ...arrows];
 }

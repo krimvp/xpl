@@ -1725,6 +1725,10 @@ export function draftRepo(input: DraftInput): Draft {
   const settingsFiles = [...new Set(loads.flatMap((l) => l.files))].sort();
   const settingsId = loads.length > 0 ? reuse("grp", "settings") : undefined;
   if (settingsId && !stored.has(settingsId)) {
+    // the box anchors a file of each unit that reads settings, so that each arrow has code at its end
+    const anchored = [
+      ...new Set([...loads.map((l) => [...l.files].sort()[0]!), ...settingsFiles]),
+    ].slice(0, Math.max(L.codeRanges, loads.length));
     const kinds = [
       ...new Set(settingsFiles.map((f) => (model.file(f)?.language ?? "text").toUpperCase())),
     ].filter((k) => k !== "TEXT");
@@ -1737,19 +1741,18 @@ export function draftRepo(input: DraftInput): Draft {
       summary: todo(
         `one line: what the settings decide, in plain words (found: ${nameList(settingsFiles, 3)}).`,
       ),
-      anchors: [
-        ...settingsFiles.slice(0, L.codeRanges).map((file) => ({ file, role: "config" as const })),
-        loads[0]!.anchor,
-      ],
+      anchors: [...anchored.map((file) => ({ file, role: "config" as const })), loads[0]!.anchor],
     });
-    for (const { unit, anchor } of loads) {
+    for (const { unit, anchor, files } of loads) {
+      // evidence at both ends: where the unit reads, and the file it reads (the box anchors it)
+      const read = [...files].sort()[0]!;
       edges.push({
         id: ids.get("edge", `${slugOf(unit.path)}-settings`),
         from: unit.id,
         to: settingsId,
         kind: "custom",
         label: todo("1-4 words: what it reads (for example: reads the settings)"),
-        anchors: [anchor],
+        anchors: [anchor, { file: read, role: "config" }],
       });
     }
     notes.push(
@@ -2769,14 +2772,17 @@ export function draftPath(input: DraftInput, entries: readonly PathEntry[]): Dra
             ? todo("the answer to the question, as a plain statement")
             : todo(`the next part of the answer, from ${tick(start)}, as a plain statement`),
           todo("where this path starts, what it ends with, and which call decides the outcome."),
-          "Draft scope: selected direct call sites in source order, framed where the code loops or branches. Review conditions, repeated calls and omitted branches before publishing.",
+          // author instructions are TODOs, so that `todo-left` stops them from reaching a reader
+          todo(
+            "check the conditions, repeated calls and left-out branches in the code, then delete this line.",
+          ),
           ...seq.notes
             .filter((text) => /called more than once|calls left out of the sequence/.test(text))
             .map((text) => {
               const targets = (text.match(/sym:[^\s,)]+/g) ?? []).map(tick).join(", ");
               return text.startsWith("called more than once")
-                ? `Repeated targets: ${targets}. The sequence draws the first call site.`
-                : `Omitted targets: ${targets}. The draft reached its call or participant limit.`;
+                ? todo(`say if these repeated calls matter, or delete this line: ${targets}.`)
+                : todo(`say what these left-out calls do, or delete this line: ${targets}.`);
             }),
           quietNames.length > 0
             ? `Calls without a step of their own: ${nameList(quietNames)}. ${todo("say what they do in one sentence, or drop this one.")}`
@@ -2839,6 +2845,8 @@ export function draftPath(input: DraftInput, entries: readonly PathEntry[]): Dra
       ),
       scope: { root: "repo", depth: Math.max(...files.map((f) => f.split("/").length)) },
       include: fileIds,
+      // the path is calls: what implements or extends what is another question (and points the other way)
+      edgeKinds: ["calls"],
       stubs: { mode: "none" },
     });
     tourSteps.unshift(

@@ -48,6 +48,8 @@ import { plural } from "./format.js";
 export const MAP_LIMITS = {
   /** A folder map with more boxes than this gets a note: group them, or split the folder. */
   boxes: 30,
+  /** A new folder map with more boxes than this opens as a dependency matrix (the reader can switch). */
+  matrixBoxes: 12,
   /** Names in a TODO hint (definitions, users, used files). */
   hints: 4,
   /** Top-level folders the start tour visits. */
@@ -246,6 +248,7 @@ export function draftMap(input: DraftInput): Draft {
   const computed = new Set<string>();
   const crowded: string[] = [];
   const grouping: string[] = [];
+  const matrices: string[] = [];
 
   /**
    * Groups of the files of one folder that use each other: pairs joined by the most references first, a group at
@@ -414,7 +417,9 @@ export function draftMap(input: DraftInput): Draft {
         ...(hasRequests ? { edgeKinds: [...DEFAULT_EDGE_KINDS, "requests" as const] } : {}),
         excludeFiles: [...OVERVIEW_EXCLUDE],
         boxText: "summary",
+        ...(include.length > MAP_LIMITS.matrixBoxes ? { render: "matrix" as const } : {}),
       });
+      if (include.length > MAP_LIMITS.matrixBoxes) matrices.push(path === root ? "the top" : path);
     }
     for (const dir of folder.dirs) {
       const inner = folderOf(dir);
@@ -681,6 +686,11 @@ export function draftMap(input: DraftInput): Draft {
   if (crowded.length > 0) {
     notes.push(
       `maps with more than ${MAP_LIMITS.boxes} boxes: ${crowded.join(", ")}. Consider grp boxes for the files that work together`,
+    );
+  }
+  if (matrices.length > 0) {
+    notes.push(
+      `maps with more than ${MAP_LIMITS.matrixBoxes} boxes open as a dependency matrix (\`render: "matrix"\`; the reader can switch to boxes): ${matrices.join(", ")}. Remove the field to open one as boxes and arrows`,
     );
   }
 

@@ -34,8 +34,8 @@ export function DiagramText(props: Props) {
         select: stub.id,
         label:
           stub.direction === "out"
-            ? `${names.get(stub.inside)} to ${stub.ghostLabel} (outside this map): ${stub.kinds.join(", ")} ×${stub.count}`
-            : `${stub.ghostLabel} (outside this map) to ${names.get(stub.inside)}: ${stub.kinds.join(", ")} ×${stub.count}`,
+            ? `${names.get(stub.inside)} to ${stub.ghostLabel} (outside this map): ${stub.kinds.join(" & ")} ×${stub.count}`
+            : `${stub.ghostLabel} (outside this map) to ${names.get(stub.inside)}: ${stub.kinds.join(" & ")} ×${stub.count}`,
         trust: "outside this map",
       })),
     );

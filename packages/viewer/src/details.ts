@@ -18,6 +18,7 @@ import {
   type Stub,
 } from "@xpl/core";
 import type { ViewDerived } from "./derive.js";
+import { trustWords } from "./readerWords.js";
 
 export interface AnchorRow {
   role: AnchorRole;
@@ -144,7 +145,7 @@ function buildInfo(id: ElementId, model: ExplainerModel, vd: ViewDerived): Eleme
     return {
       id,
       type: "stub",
-      title: `${stub.kinds.join(", ")} ×${stub.count}`,
+      title: `${stub.kinds.join(" & ")} ×${stub.count}`,
       kind: "stub",
       where: `${stub.direction === "out" ? "leaves" : "enters"} the view here`,
       summary: folded
@@ -253,8 +254,8 @@ function buildInfo(id: ElementId, model: ExplainerModel, vd: ViewDerived): Eleme
         kind: ref.kind,
         where: `${model.label(ref.from)} → ${model.label(ref.to)}`,
         summary: derived
-          ? `${plural(derived.count, "reference")} from ${model.label(ref.from)} to ${model.label(ref.to)}, found by static analysis${derived.resolution === "heuristic" ? " (heuristic resolution: treat as a hint)" : derived.resolution === "mixed" ? " (mixed precise and heuristic resolution: some references are hints)" : ""}.`
-          : `Static ${ref.kind} edge.`,
+          ? `${plural(derived.count, "reference")} from ${model.label(ref.from)} to ${model.label(ref.to)}, found in the code${trustWords(derived.resolution) ? ` (${trustWords(derived.resolution)})` : ""}.`
+          : `An arrow found in the code (${ref.kind}).`,
         facts: [
           { label: "From", value: model.label(ref.from) },
           { label: "To", value: model.label(ref.to) },

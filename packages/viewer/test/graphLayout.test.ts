@@ -291,7 +291,7 @@ describe("layoutGraph", () => {
     const b = layout.nodes.find((n) => n.id === "file:src/b.ts")!;
     expect(a.x + a.width).toBeLessThanOrEqual(b.x);
     const [edge] = layout.edges;
-    expect(edge!.title).toBe("calls ×2 (mixed confidence)");
+    expect(edge!.title).toBe("calls ×2 (partly matched by name)");
     expect(edge!.resolution).toBe("mixed");
     expect(edge!.kind).toBe("calls");
     expect(edge!.stub).toBe(false);
@@ -1248,6 +1248,19 @@ describe("labels and routes a reader can follow (round 2)", () => {
         );
       };
       expect([direction, half(there), half(back)]).toEqual([direction, true, true]);
+      // each label points the way its own arrow goes (R3-18): on one line, two labels must not read alike
+      const way = (edge: LayoutEdge) => {
+        const [a, b] = [edge.points[0]!, edge.points.at(-1)!];
+        return Math.abs(b.x - a.x) >= Math.abs(b.y - a.y)
+          ? b.x > a.x
+            ? "→"
+            : "←"
+          : b.y > a.y
+            ? "↓"
+            : "↑";
+      };
+      for (const edge of [there, back]) expect(edge.label!.text).toContain(way(edge));
+      expect(way(there)).not.toBe(way(back));
     }
   });
 });

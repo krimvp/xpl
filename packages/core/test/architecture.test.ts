@@ -176,7 +176,7 @@ describe("role, tech and opens", () => {
     );
     expect(r.ok).toBe(false);
     expect(r.issues.map((i) => i.message).join("\n")).toContain(
-      "needs at least one anchor inside its from",
+      "needs an anchor at its start (from:",
     );
   });
 });

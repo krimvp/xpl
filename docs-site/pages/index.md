@@ -9,8 +9,8 @@ guide shows how a system fits together; a change guide follows a diff and the co
 xpl checks that every code link points at indexed code and reports the links whose code changed. This
 checks where a guide points, not whether its text is right. A person reviews the text.
 
-![The Runner.dispatch box is selected in the diagram, and the dispatch function in runner.ts is highlighted beside it](../../site/images/jobrunner-light.png#only-light)
-![The Runner.dispatch box is selected in the diagram, and the dispatch function in runner.ts is highlighted beside it](../../site/images/jobrunner-dark.png#only-dark)
+![A sequence of how a job is dispatched. The Runner.dispatch lifeline is selected, and its code in runner.ts is highlighted beside it.](../../site/images/jobrunner-light.png#only-light)
+![A sequence of how a job is dispatched. The Runner.dispatch lifeline is selected, and its code in runner.ts is highlighted beside it.](../../site/images/jobrunner-dark.png#only-dark)
 
 [Open this example](https://krimvp.github.io/xpl/demo/) in your browser. It is a real guide to a small
 job runner, in one HTML file.

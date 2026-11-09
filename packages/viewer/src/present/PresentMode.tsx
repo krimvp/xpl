@@ -21,6 +21,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperti
 import type { TourStep } from "@xpl/core";
 import { CodeArea } from "../components/CodeArea.js";
 import { DiagramPane } from "../components/DiagramPane.js";
+import { Presenting } from "../components/PanZoom.js";
 import { useStore, useViewerState } from "../hooks.js";
 import { renderInline, renderMarkdown } from "../markdown.js";
 import { stepNumber } from "../modes.js";
@@ -187,7 +188,10 @@ export function PresentMode() {
       data-pointer={pointer ? "moved" : undefined}
     >
       <section className="present-left" aria-label="Diagram and caption" ref={left}>
-        <DiagramPane />
+        {/* (the zoom toolbar is out of sight on a slide: the first view takes the whole pane, PanZoom) */}
+        <Presenting.Provider value={true}>
+          <DiagramPane />
+        </Presenting.Provider>
         <footer
           className="tour-caption"
           aria-label="Caption"

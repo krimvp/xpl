@@ -237,10 +237,47 @@ describe("xpl draft repo: a program without a web or command-line framework", ()
         "file:src/main.ts -> grp:settings",
       ]),
     );
+    // code at both ends: where it is read, and the file read
     expect(patch.edges!.find((e) => e.to === "grp:settings")?.anchors).toEqual([
       { file: "src/main.ts", span: { from: 39, to: 39 }, role: "usage" },
+      { file: "config/default.yaml", role: "config" },
     ]);
     expect(notes.join("\n")).toContain("config/default.yaml");
+  });
+
+  it("two parts that each load their own settings file: each arrow ends on a file the box anchors", async () => {
+    const dir = makeTempDir("xpl-arch-settings-");
+    writeFile(
+      dir,
+      "package.json",
+      '{"name":"root","private":true,"workspaces":["api","worker"]}\n',
+    );
+    for (const app of ["api", "worker"]) {
+      writeFile(dir, `${app}/package.json`, `{"name":"${app}"}\n`);
+      writeFile(dir, `${app}/config/${app}.yaml`, "port: 1\n");
+      writeFile(
+        dir,
+        `${app}/src/main.ts`,
+        [
+          'import { readFileSync } from "node:fs";',
+          "",
+          "export function main(): void {",
+          `  const text = readFileSync(new URL("../config/${app}.yaml", import.meta.url), "utf8");`,
+          "  console.log(text);",
+          "}",
+          "",
+          "main();",
+          "",
+        ].join("\n"),
+      );
+    }
+    // `drafted` applies and validates the draft: before, the second arrow had code only at its start
+    const { patch } = await drafted(dir);
+    const settings = patch.edges!.filter((e) => e.to === "grp:settings");
+    expect(settings.map((e) => e.anchors!.map((a) => a.file))).toEqual([
+      ["api/src/main.ts", "api/config/api.yaml"],
+      ["worker/src/main.ts", "worker/config/worker.yaml"],
+    ]);
   });
 });
 

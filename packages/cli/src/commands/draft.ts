@@ -115,7 +115,12 @@ function summaryLine(kind: DraftKind, name: string, counts: DraftCounts): string
   return (
     `draft ${kind} for ${name}: ${picture}, ${plural(counts.overlays, "summary", "summaries")}` +
     (counts.groups > 0 ? `, ${plural(counts.groups, "group")}` : "") +
-    `, a tour of ${plural(counts.tourSteps, "step")}, ${plural(counts.anchors, "anchor")}, ` +
+    `, a tour of ${plural(counts.tourSteps, "step")}` +
+    // the step budgets are ceilings: a small type or a quick map takes fewer steps
+    (counts.tourSteps > 0 && counts.tourSteps < 5
+      ? " (short is right for a small subject: do not pad it)"
+      : "") +
+    `, ${plural(counts.anchors, "anchor")}, ` +
     `${plural(counts.todos, "TODO")} to write`
   );
 }
@@ -179,11 +184,12 @@ export const draftCommand: CommandSpec = {
     "                            or branches around them. A tour of at most " +
       DRAFT_LIMITS.pathSteps +
       " steps: a map of the files the path",
-    "                            crosses (when it crosses two or more), the big picture, one step per main call (a",
-    "                            branch with two outcomes is one step), and where to go next. Calls to helpers of the",
-    "                            entry's own class get a lifeline of their own; recursion is a call to itself;",
-    "                            one-line helpers, type conversions and data built from a type are left out (the notes",
-    "                            list them), and so are the calls that reach the least code when there are too many.",
+    "                            crosses (when it crosses two or more; its calls only, those through an interface",
+    "                            too), the big picture, one step per main call (a branch with two outcomes is one",
+    "                            step), and where to go next. Calls to helpers of the entry's own class get a",
+    "                            lifeline of their own; recursion is a call to itself; one-line helpers, type",
+    "                            conversions and data built from a type are left out (the notes list them), and so",
+    "                            are the calls that reach the least code when there are too many.",
     "                            Several entries: one sequence each, in one tour (a question with two halves). A",
     "                            method a class inherits (`sym:a.py#Child.run`) starts at the base that defines it,",
     "                            and self calls go where the class's method order finds them.",
@@ -193,7 +199,8 @@ export const draftCommand: CommandSpec = {
     "                            and with a change recorded a tour of the changed files (how each serves the request).",
     `                            Run again after the code changed: only new files are drafted, boxes of files that`,
     `                            are gone are removed, written text stays (a moved file keeps its own), and the map's`,
-    `                            tours drop what is gone. Maps over ${MAP_LIMITS.boxes} boxes get a note.`,
+    `                            tours drop what is gone. Maps over ${MAP_LIMITS.boxes} boxes get a note; a new map over`,
+    `                            ${MAP_LIMITS.matrixBoxes} boxes opens as a dependency matrix (render: "matrix").`,
     "  class <explainer> <entry>",
     "                            the type hierarchy around a class or interface: what it extends and implements (all",
     "                            the way up) and what extends or implements it (two levels down), on one map of",

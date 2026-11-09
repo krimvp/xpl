@@ -908,12 +908,12 @@ describe("validateExplainer: llm edge evidence", () => {
       ["evidence", "edges[0].anchors", "edge:x"],
       ["evidence", "edges[0].anchors", "edge:x"],
     ]);
-    expect(none[0]!.message).toContain("inside its from (file:src/worker.ts)");
-    expect(none[1]!.message).toContain("inside its to (file:src/metrics.ts)");
+    expect(none[0]!.message).toContain("at its start (from: file:src/worker.ts)");
+    expect(none[1]!.message).toContain("at its end (to: file:src/metrics.ts)");
     const onlyFrom = withEdge(llmEdge(F.worker, F.metrics, [A.emit]));
-    expect(only(onlyFrom).message).toContain("inside its to");
+    expect(only(onlyFrom).message).toContain("at its end (to:");
     const onlyTo = withEdge(llmEdge(F.worker, F.metrics, [A.handler]));
-    expect(only(onlyTo).message).toContain("inside its from");
+    expect(only(onlyTo).message).toContain("at its start (from:");
   });
 
   it("is not required of user or static edges", () => {

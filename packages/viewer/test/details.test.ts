@@ -108,7 +108,7 @@ describe("details of a drawn aggregate", () => {
     expect(info.title).toBe("calls ×1 · references ×1");
     expect(info.facts).toContainEqual({ label: "References", value: "2" });
     expect(info.facts).toContainEqual({ label: "Resolution", value: "mixed" });
-    expect(info.summary).toContain("some references are hints");
+    expect(info.summary).toContain("found in the code (partly matched by name)");
     expect(
       info.anchors
         .filter((a) => a.role === "call-site" || a.role === "usage")

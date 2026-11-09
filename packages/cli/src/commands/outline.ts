@@ -24,7 +24,8 @@ export const outlineCommand: CommandSpec = {
     "in/out count the references into / out of the element's subtree (calls, imports, type uses, ...),",
     "not counting references that stay inside it, so a symbol's calls of itself are not counted: `recursive`",
     "after the counts marks a symbol that calls itself. [+n] marks n children below the depth limit.",
-    "Config keys (yaml/json/toml) are hidden unless --keys is given.",
+    "Config keys (yaml/json/toml) are hidden unless --keys is given. Go code says `struct` and `field` where the",
+    "index stores `class` and `variable` (`--json` keeps the stored kind; `--kind struct,field` works too).",
     `--kind method,function,class lists only symbols of those kinds (${SYMBOL_KINDS.join(", ")}); the dirs, files`,
     "and parent symbols that contain a match are listed too, so each keeps its place. The repo line carries the",
     "name `xpl new` gives the repository (package.json, go.mod, pyproject.toml, git remote), not the directory's.",
@@ -115,7 +116,10 @@ function parseKinds(values: readonly string[]): Set<string> | undefined {
   if (values.length === 0) return undefined;
   const out = new Set<string>();
   for (const raw of values) {
-    const kind = raw.toLowerCase();
+    // Go's words for what the index stores as a class and a variable (`kindWord`)
+    const kind =
+      ({ struct: "class", field: "variable" } as Record<string, string>)[raw.toLowerCase()] ??
+      raw.toLowerCase();
     if (!SYMBOL_KINDS.includes(kind)) {
       throw new UsageError(`unknown symbol kind "${raw}" (expected: ${SYMBOL_KINDS.join(", ")})`);
     }

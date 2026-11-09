@@ -57,7 +57,7 @@
                 src="images/jobrunner-light.png"
                 width="1440"
                 height="900"
-                alt="The Runner.dispatch box is selected in the diagram. The dispatch function in runner.ts is highlighted beside it, with the rest of the file dimmed."
+                alt="A sequence of how a job is dispatched. The Runner.dispatch lifeline is selected, and its code in runner.ts is highlighted beside it."
                 fetchpriority="high"
               />
             </picture>
@@ -225,7 +225,14 @@ xpl skill install</code></pre>
           <p>
             Other agents (Codex, Pi, Factory Droid, Devin) and the install from a source checkout
             are in the <a href="docs/skill/create/#install">install options</a>.
+            <code>/code-explainer</code> is a chat command for your agent, not a shell command.
           </p>
+          <p>No agent? Draft a guide with the CLI alone, then write its text yourself:</p>
+          <pre><code>xpl index
+xpl outline    # find the id of the function where the answer starts
+xpl start my-guide --question "How does a failed job get retried?" \
+  --entry &lt;id&gt; --audience maintainers
+xpl view my-guide</code></pre>
           <p class="aside">
             The skill indexes your project, writes the guide and checks it before it opens.
           </p>

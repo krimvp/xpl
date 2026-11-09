@@ -483,6 +483,38 @@ describe("lintExplainer", () => {
     );
   });
 
+  it("absolute-word passes a short method the step focuses, in backticks, and an example input", () => {
+    const pop = "sym:internal/queue/queue.go#Queue.Pop";
+    const steps = [
+      "### Pick\n\n`Pop` looks at every waiting job.",
+      "### Retry\n\nA job that fails every attempt goes to the dead letters. A job that never succeeds stays there.",
+      // the claims stay findings: no backticks, and a function is code, not an example input
+      "### Pick\n\nPop looks at every waiting job.",
+      "### Loop\n\nA function that never returns blocks the worker.",
+    ];
+    const { findings } = lintExplainer(
+      explainer({
+        tours: [
+          {
+            id: "tour:t",
+            title: "How a job is picked",
+            summary: "The queue picks the job. It skips jobs that wait.",
+            steps: steps.map((note, i) => ({
+              id: `t${i + 1}`,
+              view: "view:v",
+              focus: [pop],
+              note,
+            })),
+          },
+        ],
+      }),
+    );
+    expect(only(findings, "absolute-word").map((f) => f.elementId)).toEqual([
+      "tour:t/t3",
+      "tour:t/t4",
+    ]);
+  });
+
   it('"all" after a list of named cases is evidence; "all three" and "each x and each y all" are not', () => {
     const named = [
       "Now `URL`, `TrustedHostMiddleware` and `Host.matches` all call `parse_host_header`.",
@@ -1833,6 +1865,11 @@ describe("lintExplainer: length, voice and words", () => {
           conceptWith("concept:one", "The CLI reports it. The file is written once."),
           conceptWith("concept:adjective", "The id is based on the path. The run is done."),
           conceptWith("concept:code", "The `is written` flag and the `are skipped` list stay."),
+          // a gerund after "from" names its subject; "malformed" is an adjective
+          conceptWith(
+            "concept:gerund",
+            "Keeps the window from being resized. The file is malformed without a header.",
+          ),
           conceptWith(
             "concept:active",
             "The CLI writes the accepted changes. It skips protected ones.",
@@ -1914,15 +1951,15 @@ describe("lintExplainer: length, voice and words", () => {
     expect(only(tree.findings, "tool-word")).toEqual([]);
   });
 
-  it("tool-word: box, arrow and concept texts too (stub, ghost, overlay, call-site, evidence); not node, edge or anchor there", () => {
+  it("tool-word outside tours: only xpl's senses of a word (a stub box, authored overlays, anchor evidence)", () => {
     const { findings } = lintExplainer(
       explainer({
         nodes: [
           {
             id: "file:src/graph.ts",
             label: "Graph",
-            summary: "Adds the overlays an author drew to the derived arrows.",
-            detail: "Each stub stands for code outside the map; a ghost box marks a removed file.",
+            summary: "Adds the authored overlays to the derived arrows.",
+            detail: "Each stub box stands for code outside the map; a ghost arrow leads to it.",
             anchors: [],
           },
         ],
@@ -1932,7 +1969,7 @@ describe("lintExplainer: length, voice and words", () => {
             from: "file:src/graph.ts",
             to: "file:src/graph.ts",
             kind: "call",
-            summary: "The call-site passes the evidence on.",
+            summary: "The resolver passes the anchor evidence on.",
             anchors: [],
           },
         ],
@@ -1942,24 +1979,86 @@ describe("lintExplainer: length, voice and words", () => {
     expect(only(findings, "tool-word").map((f) => [f.elementId, f.field, f.message])).toEqual([
       ["file:src/graph.ts", "summary", '"overlays": a word of the tool, not of the code'],
       ["file:src/graph.ts", "detail", '"stub", "ghost": words of the tool, not of the code'],
-      ["edge:a", "summary", '"call-site", "evidence": words of the tool, not of the code'],
+      ["edge:a", "summary", '"evidence": a word of the tool, not of the code'],
     ]);
-    expect(only(findings, "tool-word")[2]!.hint).toContain(
-      '"call-site": write "the code that calls it"',
+    // the code's own senses of the same words pass in a box summary (gRPC, SQL, Vite, npm, editors, compilers)
+    const code = [
+      "The client stub sends the call over gRPC.",
+      "The repository upserts the row.",
+      "The error overlay shows the stack trace.",
+      "npm checks the package provenance.",
+      "The editor shows ghost text.",
+      "Copies the body to each call-site.",
+      "Stores the evidence for each case.",
+      "Wraps the llm client.",
+    ];
+    const plain = lintExplainer(
+      explainer({
+        nodes: code.map((summary, i) => ({
+          id: `file:src/f${i}.ts`,
+          label: `Part ${i}`,
+          summary,
+          anchors: [],
+        })),
+      }),
     );
+    expect(only(plain.findings, "tool-word")).toEqual([]);
     // a guide whose boxes are named after the word explains that word: it is the code's word there
     const own = lintExplainer(
       explainer({
         nodes: [{ id: "file:test/stubs.ts", label: "Test stubs", anchors: [] }],
-        concepts: [conceptWith("concept:s", "Each stub returns a fixed answer.")],
+        concepts: [conceptWith("concept:s", "Each stub box returns a fixed answer.")],
       }),
     );
     expect(only(own.findings, "tool-word")).toEqual([]);
     // a test double is a stub too
     const tests = lintExplainer(
-      explainer({ concepts: [conceptWith("concept:t", "The test uses a stub for the clock.")] }),
+      explainer({
+        concepts: [conceptWith("concept:t", "The test uses a stub box for the clock.")],
+      }),
     );
     expect(only(tests.findings, "tool-word")).toEqual([]);
+  });
+
+  it("tool-word in a tour: every tool word, unless the guide's title, a question or a linked file uses it", () => {
+    const tourOf = (note: string, over: Record<string, unknown> = {}) =>
+      lintExplainer(
+        explainer({
+          ...over,
+          tours: [
+            {
+              id: "tour:t",
+              title: "T",
+              summary: "The overlay shows errors.",
+              steps: [{ id: "t1", view: "view:v", focus: [], note }],
+            },
+          ],
+        }),
+      );
+    const flagged = tourOf("### Errors\n\nThe error overlay shows the stack trace.");
+    expect(only(flagged.findings, "tool-word").map((f) => f.field)).toEqual(["summary", "note"]);
+    // the question the guide answers names it: the reader's own word
+    const asked = tourOf("### Errors\n\nThe error overlay shows the stack trace.", {
+      title: "How does the error overlay work?",
+    });
+    expect(only(asked.findings, "tool-word")).toEqual([]);
+  });
+
+  it("filler-word and tool-word skip quoted text: an error message is the code's words", () => {
+    const { findings } = lintExplainer(
+      explainer({
+        nodes: [
+          {
+            id: "file:src/cli.ts",
+            label: "CLI",
+            summary: 'Prints the error "simply retry later, the stub failed" and exits.',
+            anchors: [],
+          },
+        ],
+      }),
+    );
+    expect(only(findings, "filler-word")).toEqual([]);
+    expect(only(findings, "tool-word")).toEqual([]);
   });
 
   it("filler-word: wordy phrases, weak intensifiers, stale metaphors and long words for short ones", () => {
@@ -2091,11 +2190,53 @@ describe("lintExplainer: words and voice on real code English", () => {
       message: '"Symbol assembly" names an action, not the code that does it',
     });
     expect(only(found, "abstract-subject")[0]!.hint).toContain("make the code the subject");
-    // a note has no label next to it to start from: lint leaves its subjects to the writer
+    // a note hides the code the same way; its hint has no box summary to start with a verb
     const note = lintExplainer(
       explainer({ tours: [tour(["### Arrows\n\nGraph derivation combines the references."])] }),
     );
-    expect(ids(note.findings, "abstract-subject")).toEqual([]);
+    expect(ids(note.findings, "abstract-subject")).toEqual(["tour:t/t1"]);
+    expect(only(note.findings, "abstract-subject")[0]!.hint).not.toContain("box summary");
+  });
+
+  it("abstract-subject passes the name of a mechanism, and a text that starts with a label of the guide", () => {
+    const mechanisms = concepts([
+      "Rate limiting applies per user and per route.",
+      "Load balancing spreads requests over the pods.",
+      "Lazy loading defers the chart code.",
+      "Dependency injection wires the services.",
+    ]);
+    expect(ids(mechanisms, "abstract-subject")).toEqual([]);
+    // "Retry policy" is not a mechanism word, but a concept of the guide is called so
+    const named = lintExplainer(
+      explainer({
+        nodes: [
+          {
+            id: "file:src/limiter.ts",
+            label: "Rate limiter",
+            summary: "Token bucket.",
+            anchors: [],
+          },
+        ],
+        concepts: [
+          {
+            id: "concept:policy",
+            label: "Queue assignment",
+            summary: "Queue assignment picks a worker per job.",
+            anchors: [],
+          },
+          {
+            id: "concept:other",
+            label: "Other",
+            summary: "Queue assignment picks a worker. Load derivation uses the queue length.",
+            anchors: [],
+          },
+        ],
+      }),
+    );
+    // the second sentence of concept:other names no label: still a finding
+    expect(only(named.findings, "abstract-subject").map((f) => [f.elementId, f.message])).toEqual([
+      ["concept:other", '"Load derivation" names an action, not the code that does it'],
+    ]);
   });
 
   it("filler-word: the vague verbs and connectors of writing.md 2b; code verbs pass", () => {

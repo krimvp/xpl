@@ -11,20 +11,38 @@ import { displayPath, toPosix } from "../fsutil.js";
 import { EXPLAINER_DIR, EXPLAINER_SUFFIX, readExplainerFile } from "../repo.js";
 
 const PRECISE = ["auto", "off", "require"] as const;
+/** The limits `@xpl/indexer` records for heuristic and for precise relationship results (analysis.ts). */
+const HEURISTIC_LIMIT = "Heuristic relationships are hints";
+const PRECISE_LIMIT =
+  "Precise relationships may be missing; described files and empty results do not establish complete coverage.";
 
 /**
  * The coverage lines of `describeAnalysis`, easier to scan: one language per line in name order, the provider only
  * when it is not the language itself (`typescript`, not `typescript (typescript)`), and the file-anchor line of
  * every file first, as `all 13 files`.
  */
-function coverageDetails(details: readonly string[], files: number): string[] {
-  const parsed = details.map((line) => {
+export function coverageDetails(
+  details: readonly string[],
+  files: number,
+  languages: Readonly<Record<string, LanguageInfo>>,
+): string[] {
+  /** A language whose every file a precise tool analyzed: its heuristic hints are not what it uses. */
+  const precise = (language: string) =>
+    languages[language]?.refs === "precise" && (languages[language]?.heuristicFiles ?? 0) === 0;
+  const parsed = details.flatMap((line) => {
     const m = /^(\S+) \(([^)]+)\): (.*)$/.exec(line);
-    if (!m) return { key: "~", line };
-    const [, languages, provider, rest] = m as unknown as [string, string, string, string];
-    if (provider === "files") return { key: "", line: `all ${plural(files, "file")}: ${rest}` };
-    const head = provider === languages ? languages : `${languages} (${provider})`;
-    return { key: languages, line: `${head}: ${rest}` };
+    if (!m) return [{ key: "~", line }];
+    const [, langs, provider, rest] = m as unknown as [string, string, string, string];
+    if (provider === "files") return [{ key: "", line: `all ${plural(files, "file")}: ${rest}` }];
+    if (provider === langs && precise(langs) && rest.includes(HEURISTIC_LIMIT)) return [];
+    // a tool that analyzed every file but does not report what it may miss: "partial" reads as broken
+    const all = /^(.*) partial \((\d+)\/\2 files analyzed\)\. (.*)$/.exec(rest);
+    const text =
+      provider !== langs && all && all[3] === PRECISE_LIMIT
+        ? `${all[1]} precise (${all[2]}/${all[2]} files analyzed). The tool does not report what it may have missed.`
+        : rest;
+    const head = provider === langs ? langs : `${langs} (${provider})`;
+    return [{ key: langs, line: `${head}: ${text}` }];
   });
   // stable: a language's lines keep their order (symbols, then relationships)
   return parsed
@@ -74,9 +92,9 @@ export const indexCommand: CommandSpec = {
   summary: "Build and write the symbol index; print languages and excluded source candidates",
   details: [
     "Indexes every text file under --root (git-aware) and writes .explainer/index-<commit>.json.",
-    "Interactive stderr shows phases and file counts; redirected stderr and --json omit progress.",
-    "Ctrl+C cancels between files/phases, stops SCIP tools and exits 130. Before publication, the previous complete",
-    "index is retained (or no index is created); extraction cache entries may remain.",
+    "Interactive stderr shows phases and file counts. Redirected stderr gets one line before each SCIP tool runs;",
+    "--json gets none. Ctrl+C cancels between files/phases, stops SCIP tools and exits 130. Until the new index is",
+    "complete, the old one stays (or there is none); extraction cache entries may stay.",
     "Reuses file-local tree-sitter, Rust, Ruby and PHP tags facts from .explainer/cache by default.",
     "Directory aliases into the repository (including symlinks and bind mounts) bypass cache reads and writes.",
     "--no-cache neither reads nor writes that cache. Source discovery, hashes, heuristic resolution and semantic tools",
@@ -130,7 +148,16 @@ export const indexCommand: CommandSpec = {
     let lastPhase = "";
     let lastUpdate = 0;
     const progress = (event: import("@xpl/indexer").IndexProgress) => {
-      if (ctx.json || !ctx.io.isTTY) return;
+      if (ctx.json) return;
+      // a SCIP tool can run for a minute: say so even when stderr is not a terminal (an agent's shell)
+      const tool = event.phase === "Provider" ? event.provider : undefined;
+      if (tool?.startsWith("scip-") && tool !== "scip-artifact") {
+        ctx.io.err(
+          `index: running ${tool} for precise references (it can take a minute; \`--precise off\` skips it)`,
+        );
+        return;
+      }
+      if (!ctx.io.isTTY) return;
       const phase = event.provider ? `${event.phase} ${event.provider}` : event.phase;
       const now = Date.now();
       if (phase === lastPhase && now - lastUpdate < 1000 && event.completed !== event.total) return;
@@ -213,7 +240,11 @@ export const indexCommand: CommandSpec = {
       `Fresh work: heuristic resolution ${work.heuristicResolutionMs.toFixed(1)} ms wall; semantic providers ${work.semanticRuns} runs, ${work.semanticMs.toFixed(1)} ms wall.`,
     );
     const coverage = describeAnalysis(index);
-    lines.push("", coverage.summary, ...coverageDetails(coverage.details, index.files.length));
+    lines.push(
+      "",
+      coverage.summary,
+      ...coverageDetails(coverage.details, index.files.length, index.languages),
+    );
     const { exclusions } = result;
     const excluded = exclusions.reasons.map(
       ({ reason, count, examples }) =>

@@ -245,6 +245,26 @@ describe("ready export rules", () => {
     });
   });
 
+  it("says what to write in the words of what is empty: a tour summary is not an element", () => {
+    const { world, explainer } = example();
+    explainer.tours = [
+      {
+        id: "tour:intro",
+        title: "Intro",
+        steps: [
+          { id: "t1", view: "view:values", focus: ["file:a.ts"], note: "### Values\n\nThe start." },
+        ],
+        provenance: LLM,
+      },
+    ];
+    const hints = checkReadiness(explainer, world.index, world.getText, {
+      scope: "embedded-snapshot",
+    })
+      .findings.filter((f) => f.code === "required-content")
+      .map((f) => [f.elementId, f.hint]);
+    expect(hints).toEqual([["tour:intro", "write the tour summary with `xpl apply`"]]);
+  });
+
   it("does not accept cached evidence when embedded source is missing", () => {
     const { world, explainer } = example();
     expect(

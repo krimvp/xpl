@@ -17,6 +17,8 @@
   --fg: #1c2127;
   --muted: #55616f;
   --faint: #5e6876;
+  /* an arrow's words while the arrow steps back (`.edge.is-dim`): 3:1 or more on the canvas (R3-5) */
+  --edge-label-dim: #7d8591;
   --border: #dbe0e7;
   --border-strong: #bcc5d0;
   --hover: rgba(28, 33, 39, 0.06);
@@ -50,6 +52,8 @@
   --edge-llm: #8b4fdc;
   --edge-user: #16994a;
   --edge-stub: #7b8794;
+  /* The dependency matrix's marks (stripes, the diagonal): 3:1 on the panel, and the numbers 3:1 on them. */
+  --matrix-mark: #7b8794;
   /* Trust is never shown by colour alone (D5): one dash pattern per kind of line, the same in both themes,
      on the map, the key line and the Key. Heuristic: dashed; mixed: dash-dot; outside the map: dotted. */
   --dash-heuristic: 6 4;
@@ -128,6 +132,7 @@
   --fg: #e6e9ee;
   --muted: #a0abb8;
   --faint: #8994a2;
+  --edge-label-dim: #66707d;
   --border: #2a313b;
   --border-strong: #3d4653;
   --hover: rgba(255, 255, 255, 0.07);
@@ -161,6 +166,7 @@
   --edge-llm: #b58cff;
   --edge-user: #4ade80;
   --edge-stub: #75818f;
+  --matrix-mark: #6f7b8a;
   --ghost-border: #66727f;
   --frame-bg: rgba(160, 175, 200, 0.06);
 
@@ -1600,9 +1606,11 @@ code {
   font-weight: 650;
 }
 
-/* (a phone keeps the toolbar on one row: the count is in the button's title) */
+/* (a phone keeps the toolbar on one row: the count is in the button's title; "+N more" goes too, R3-23:
+   "Fit all" is the one way to see the rest) */
 @media (max-width: 640px) {
-  .pz-fit-count {
+  .pz-fit-count,
+  .pz-more {
     display: none;
   }
 }
@@ -2224,6 +2232,14 @@ code {
 /* With something selected, the arrows that do not touch it step back (V2-05): its own arrows read on a busy map. */
 .edge.is-dim {
   opacity: 0.22;
+}
+/* ... but their words stay readable (R3-5): the label is not faded, it turns grey (3:1 or more). */
+.edge-labels > .edge.is-dim {
+  opacity: 1;
+}
+.edge-labels > .edge.is-dim .edge-label text {
+  fill: var(--edge-label-dim);
+  font-weight: 500;
 }
 
 /* Sequence diagrams */
@@ -3733,6 +3749,34 @@ code {
   opacity: 0;
 }
 
+/* present (N10): a lower level names its parent box once ("xpl ›"), not every level above it: the title
+   is the one thing the room reads. */
+.present .diagram-caption .zoom-trail > span:not(:last-child) {
+  display: none;
+}
+.present .diagram-caption .zoom-trail {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+.present .diagram-caption .zoom-trail > span:last-child::after {
+  content: " ›";
+}
+
+/* present on a phone or a touch screen (R3-25): no pointer to reveal the toolbar, so "Fit all" shows, alone
+   (the other buttons would cover the slide); the title bar is the title, without the question. */
+@media (max-width: 640px), (hover: none) {
+  .present .pz-toolbar,
+  .present:not([data-pointer]) .panzoom:hover .pz-toolbar:not(:focus-within) {
+    opacity: 1;
+  }
+  .present .pz-toolbar > :not(.pz-fit) {
+    display: none;
+  }
+  .present .diagram-caption .caption-question {
+    display: none;
+  }
+}
+
 /* present: on a short screen the diagram's title bar keeps to one line. */
 @media (max-height: 560px) {
   .present .caption-question {
@@ -5196,6 +5240,10 @@ code {
 .parts-summary {
   color: var(--fg);
 }
+/* the Selected heading of an arrow: "CLI → Indexer · heuristic: matched by name" above its label */
+.topic-summary .topic-ends {
+  margin: 2px 0 -4px;
+}
 .parts-number {
   grid-row: 1 / span 3;
   display: inline-grid;
@@ -5222,8 +5270,10 @@ code {
 }
 
 /* A map as a dependency matrix (MatrixView.tsx): a row and a numbered column per box, the arrows in the cells.
-   The cell colours are the arrows' trust colours on the map: solid for precise, striped for heuristic, an outline
-   for an authored arrow. The table scrolls in its own frame; the headers stay in sight. */
+   Trust by fill, never by colour alone (D5): solid where the code was found, stripes where it was matched by
+   name, long stripes where partly, an outline for the author's arrow, a dotted outline outside the map. The
+   stripes and the diagonal use --matrix-mark (3:1 on the panel, contrast.test.ts). The table scrolls in its
+   own frame; the headers stay in sight and are opaque, so cells never show through them. */
 .matrix {
   /* inside the graph host's box, however wide the table: the table scrolls, not the page */
   position: absolute;
@@ -5236,7 +5286,7 @@ code {
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  padding: 8px 10px;
+  padding: 8px 16px;
   border-bottom: 1px solid var(--border);
 }
 .matrix-key {
@@ -5247,10 +5297,11 @@ code {
   color: var(--muted);
 }
 .matrix-key-back {
-  border-bottom: 2px solid var(--warn);
+  display: inline;
 }
 .matrix-tools {
   display: flex;
+  flex-shrink: 0;
   gap: 4px;
   padding: 3px;
   border: 1px solid var(--border);
@@ -5265,27 +5316,52 @@ code {
   border-radius: 5px;
   background: transparent;
   color: var(--muted);
+  white-space: nowrap;
   cursor: pointer;
 }
-.matrix-toggle[aria-pressed="true"] {
+.matrix-tools button:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+.matrix-tools button[aria-pressed="true"] {
   background: var(--accent-soft);
   color: var(--fg);
 }
 .matrix-scroll {
   flex: 1;
   min-height: 0;
+  padding: 12px 16px;
   overflow: auto;
   overscroll-behavior: contain;
 }
+.matrix-text {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.matrix-picture {
+  position: absolute;
+  overflow: hidden;
+}
+/* Cells grow on a small map (size-l, size-m) and keep a 30px floor on a big one; wide counts widen them. */
 .matrix-grid {
+  --matrix-cell: 30px;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 12.5px;
   font-variant-numeric: tabular-nums;
 }
+.matrix-grid.size-m {
+  --matrix-cell: 38px;
+  font-size: 14px;
+}
+.matrix-grid.size-l {
+  --matrix-cell: 48px;
+  font-size: 15px;
+}
 .matrix-grid th,
 .matrix-grid td {
-  height: 28px;
+  height: var(--matrix-cell);
   padding: 0;
   border-right: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
@@ -5296,7 +5372,7 @@ code {
   position: sticky;
   top: 0;
   z-index: 2;
-  min-width: 30px;
+  min-width: max(var(--matrix-cell), calc(var(--matrix-digits, 2) * 1ch + 14px));
   background: var(--panel);
   color: var(--muted);
   font-weight: 600;
@@ -5323,6 +5399,33 @@ code {
   text-overflow: ellipsis;
   cursor: pointer;
 }
+/* a container's boxes: a bar down their row headers, under the container's band */
+.matrix-row.in-group {
+  padding-left: 14px !important;
+  box-shadow: inset 3px 0 0 var(--border-strong);
+}
+.matrix-grid .is-outside-head {
+  color: var(--muted);
+  font-style: italic;
+  cursor: default;
+}
+/* A container's boxes under one band with its name, as the parts list indents them under it. */
+.matrix-group th {
+  height: auto;
+  padding: 6px 0 2px !important;
+  border-right: 0;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-align: left;
+  text-transform: uppercase;
+}
+.matrix-group th span {
+  position: sticky;
+  left: 6px;
+}
 .matrix-num {
   display: inline-block;
   min-width: 2.2ch;
@@ -5333,23 +5436,25 @@ code {
   text-align: right;
 }
 .matrix-cell {
-  min-width: 30px;
+  min-width: max(var(--matrix-cell), calc(var(--matrix-digits, 2) * 1ch + 14px));
   text-align: center;
 }
 .matrix-cell.is-below {
-  background: var(--canvas);
+  background: color-mix(in srgb, var(--warn) 5%, var(--panel));
 }
 .matrix-cell.is-diagonal {
-  background: var(--border);
+  background: var(--matrix-mark);
 }
 .matrix-cell.has-arrow {
   position: relative;
   color: var(--fg);
   font-weight: 650;
+  /* a halo in the panel colour keeps the number clear of the stripes under it */
+  text-shadow:
+    0 0 2px var(--panel),
+    0 0 3px var(--panel);
   cursor: pointer;
 }
-/* Trust by fill, not by colour alone (D5): solid where the code was found, stripes where it was matched by name
-   (the map's dash), long stripes where partly, an outline for the author's arrow, the same on the swatches. */
 .matrix-cell.res-precise,
 .matrix-cell.res-static,
 .matrix-swatch.res-precise {
@@ -5357,18 +5462,15 @@ code {
 }
 .matrix-cell.res-heuristic,
 .matrix-swatch.res-heuristic {
-  background: repeating-linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--edge-heuristic) 40%, var(--panel)) 0 4px,
-    var(--panel) 4px 7px
-  );
+  background: repeating-linear-gradient(135deg, var(--matrix-mark) 0 1.5px, var(--panel) 1.5px 5px);
 }
 .matrix-cell.res-mixed,
 .matrix-swatch.res-mixed {
   background: repeating-linear-gradient(
     135deg,
-    color-mix(in srgb, var(--edge-heuristic) 40%, var(--panel)) 0 9px,
-    var(--panel) 9px 12px
+    var(--matrix-mark) 0 1.5px,
+    var(--panel) 1.5px 5px,
+    color-mix(in srgb, var(--edge) 24%, var(--panel)) 5px 12px
   );
 }
 .matrix-cell.res-llm,
@@ -5378,6 +5480,35 @@ code {
 .matrix-cell.res-user,
 .matrix-swatch.res-user {
   box-shadow: inset 0 0 0 2px var(--edge-user);
+}
+.matrix-cell.res-outside {
+  color: var(--muted);
+}
+.matrix-cell.res-outside::before,
+.matrix-swatch.res-outside::before {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border: 2px dotted var(--edge-stub);
+  border-radius: 2px;
+  pointer-events: none;
+}
+.matrix-swatch.res-outside::before {
+  inset: 0;
+}
+/* the kinds of a cell by the map's arrowheads (▸ calls, ▹ extends, › imports), keyed when there are two */
+.matrix-kind {
+  position: absolute;
+  bottom: 1px;
+  left: 3px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1;
+}
+.matrix-key-item .matrix-kind {
+  position: static;
+  font-size: 13px;
 }
 .matrix-key-items {
   display: flex;
@@ -5391,14 +5522,17 @@ code {
   gap: 5px;
 }
 .matrix-swatch {
+  position: relative;
   display: inline-block;
   width: 16px;
   height: 12px;
   border: 1px solid var(--border);
   border-radius: 2px;
+  vertical-align: -1px;
 }
-/* An arrow back up the order: a corner mark in the warning colour. */
-.matrix-cell.is-back::after {
+/* An arrow back up the order: a corner flag in the warning colour, the same on the cell and in the key. */
+.matrix-cell.is-back::after,
+.matrix-swatch.is-back-swatch::after {
   content: "";
   position: absolute;
   top: 0;
@@ -5406,10 +5540,22 @@ code {
   border-top: 9px solid var(--warn);
   border-left: 9px solid transparent;
 }
+.matrix-swatch.is-back-swatch {
+  overflow: hidden;
+}
+.matrix-swatch.is-back-swatch::after {
+  border-top-width: 8px;
+  border-left-width: 8px;
+}
+/* Hover and the picked box: opaque tints (a sticky header must hide the cells that scroll under it). */
 .matrix-grid th.is-hot,
 .matrix-cell.has-arrow:hover {
-  background-color: var(--hover);
+  background-color: color-mix(in srgb, var(--fg) 7%, var(--panel));
   color: var(--fg);
+}
+/* the picked or hovered box's row and column stay; the other arrows step back, as on the map */
+.matrix-grid.has-line .matrix-cell.has-arrow:not(.in-line, .is-selected, .is-match) {
+  opacity: 0.35;
 }
 .matrix-grid th.is-related,
 .matrix-cell.is-related {
@@ -5420,8 +5566,9 @@ code {
   box-shadow: inset 0 0 0 3px var(--match);
 }
 .matrix-grid th.is-match {
-  background: var(--match-soft);
+  background: color-mix(in srgb, var(--match) 16%, var(--panel));
 }
+/* Selected: a filled ring. Focus: a ring outside the cell, offset, in the text colour: the two never look alike. */
 .matrix-grid th.is-selected,
 .matrix-cell.is-selected {
   box-shadow: inset 0 0 0 3px var(--accent);
@@ -5431,8 +5578,62 @@ code {
   color: var(--fg);
 }
 .matrix-grid [data-r]:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -4px;
+  position: relative;
+  z-index: 4;
+  outline: 2px dashed var(--fg);
+  outline-offset: 1px;
+}
+/* the picture Save image draws (MatrixPicture): the same marks, as SVG paint */
+.mx-pic text {
+  fill: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+.mx-pic .mx-pic-head,
+.mx-pic .mx-pic-text {
+  text-anchor: middle;
+}
+.mx-pic .mx-pic-head {
+  fill: var(--muted);
+  font-weight: 600;
+}
+.mx-pic rect {
+  fill: var(--panel);
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.mx-pic .mx-pic-diagonal {
+  fill: var(--matrix-mark);
+}
+.mx-pic .res-precise,
+.mx-pic .res-static {
+  fill: color-mix(in srgb, var(--edge) 24%, var(--panel));
+}
+.mx-pic .res-heuristic {
+  stroke: var(--matrix-mark);
+  stroke-width: 2;
+  stroke-dasharray: 5 3;
+}
+.mx-pic .res-mixed {
+  stroke: var(--matrix-mark);
+  stroke-width: 2;
+  stroke-dasharray: 8 3 2 3;
+}
+.mx-pic .res-llm {
+  stroke: var(--edge-llm);
+  stroke-width: 2;
+}
+.mx-pic .res-user {
+  stroke: var(--edge-user);
+  stroke-width: 2;
+}
+.mx-pic .res-outside {
+  stroke: var(--edge-stub);
+  stroke-width: 2;
+  stroke-dasharray: 1 3;
+}
+.mx-pic .mx-pic-back {
+  fill: var(--warn);
 }
 /* A narrow pane: the zoom toolbar (with Matrix) stays one row, never taller, and scrolls sideways when the
    buttons do not fit, rather than breaking its labels over two lines. */
@@ -5454,4 +5655,20 @@ code {
   .matrix-key {
     font-size: 12px;
   }
+}
+
+/* N18: "Skip to the content", the first stop of the Tab key; out of sight until it has the focus. */
+.skip-link {
+  position: absolute;
+  left: 8px;
+  top: -48px;
+  z-index: 100;
+  padding: 8px 14px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 650;
+}
+.skip-link:focus {
+  top: 8px;
 }

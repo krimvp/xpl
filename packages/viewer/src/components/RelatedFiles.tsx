@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
-import { relatedFiles, type RelatedFileSet, type TourStep } from "@xpl/core";
+import type { RelatedFileSet, TourStep } from "@xpl/core";
 import { stepSelection } from "../derive.js";
 import { useDerived, useStore, useViewerState } from "../hooks.js";
-import { mergeSameCards, ownCards, repeatsShownCode } from "../relatedCards.js";
+import { holdsCode, mergeSameCards, readerCards, repeatsShownCode } from "../relatedCards.js";
 
 const LABELS: Record<RelatedFileSet["kind"], string> = {
   loads: "Reads",
@@ -48,7 +48,8 @@ export function RelatedFiles({
   const anchors = [
     ...selection.flatMap((id) => {
       const element = state.model.element(id);
-      if (!element || element.type === "derived-edge") return [];
+      // (a box that holds code names no setting: its cards are its arrows, readerCards)
+      if (!element || element.type === "derived-edge" || holdsCode(id, state.model)) return [];
       return (
         element.type === "node"
           ? element.node
@@ -64,12 +65,9 @@ export function RelatedFiles({
   const links = useMemo(
     () =>
       mergeSameCards(
-        ownCards(
-          relatedFiles(selection, state.model, focus),
-          selection,
-          state.model,
-          new Set(anchors.map((anchor) => anchor.file)),
-        ).filter((link) => !(guide && link.kind === "test") && !repeatsShownCode(link, focus)),
+        readerCards(selection, state.model, focus).filter(
+          (link) => !(guide && link.kind === "test") && !repeatsShownCode(link, focus),
+        ),
       ),
     // (`anchors` follows `selection`, `step` and the applied step)
     [selection, state.model, focus, guide, step, state.applied],

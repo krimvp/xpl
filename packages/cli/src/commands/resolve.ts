@@ -55,7 +55,7 @@ export function renderResolveReport(report: ResolveReport): string[] {
 export const resolveCommand: CommandSpec = {
   name: "resolve",
   usage: "xpl resolve <explainer> [--write] [--allow-stale]",
-  summary: "Re-resolve anchors; report drifted llm elements and missing anchors",
+  summary: "Check each code link again; list the text to rewrite and the links whose code is gone",
   details: [
     "Re-resolves every anchor (elements, sequence steps, tour code overrides) against the index of the",
     "current code: ok, moved (same text, new lines: the span is updated), drifted (text changed) or",

@@ -103,6 +103,8 @@ test.describe("architecture maps", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(ARCHITECTURE_BUNDLE.href + "?mode=read&perspective=map&view=view:overview");
     await page.waitForFunction(() => window.__xpl !== undefined);
+    // (on a phone the picker sits behind "About this map")
+    await page.getByRole("button", { name: "About this map" }).click();
     const topic = page.getByRole("combobox", { name: "Choose a diagram" });
     await topic.selectOption("view:completion-path");
     await expect(
@@ -299,6 +301,8 @@ test.describe("architecture maps", () => {
       await expect(expand).toBeVisible();
       if (perspective === "map") {
         await expect(expand).toHaveText("Show inside");
+        // the picker sits behind "About this map" on a phone (the diagram gets the room)
+        await page.getByRole("button", { name: "About this map" }).click();
         const topic = page.locator(caption).getByRole("combobox", { name: "Choose a diagram" });
         await expect
           .poll(async () => {

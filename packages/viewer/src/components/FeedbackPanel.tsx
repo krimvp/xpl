@@ -77,7 +77,7 @@ function AnswerEvidence({
           if (text === undefined || !source || hashText(text) !== source.hash) {
             setRecorded(true);
             setError(
-              "Current source differs or is unavailable. These highlighted lines are the recorded answer evidence.",
+              "Current source differs or is unavailable. These highlighted lines are the code the answer used.",
             );
             return;
           }

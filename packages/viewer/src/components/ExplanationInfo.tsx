@@ -130,7 +130,7 @@ export function ExplanationInfo() {
               ? `Named omissions: ${review.omissions.join("; ")}`
               : "No omissions named."}{" "}
             {status === "out-of-date" &&
-              "Reviewed content or evidence changed, or evidence is unavailable in this snapshot."}
+              "The reviewed text or its code changed, or the code is not in this page."}
           </p>
           <details>
             <summary>Review source snapshot</summary>

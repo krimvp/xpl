@@ -954,7 +954,7 @@ class Validator {
         if (!covered) {
           this.error(
             `${path}.anchors`,
-            `llm edge ${id} needs at least one anchor inside its ${label} (${end}): ${describeInside(end)}. Evidence is required at both ends (e.g. the call site and the target's definition).`,
+            `llm edge ${id} needs an anchor at its ${label === "from" ? "start" : "end"} (${label}: ${end}): ${describeInside(end)}. An arrow needs code at both ends (e.g. the call site and the target's definition).`,
             id,
             "evidence",
           );

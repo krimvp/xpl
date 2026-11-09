@@ -133,6 +133,14 @@ describe("xpl refs --in: an implementation shows the callers of the interface me
     expect(out).not.toContain("in: none");
   });
 
+  it("show --refs names the same callers, not none", async () => {
+    const { out } = await xpl(go, "show", "sym:internal/queue/queue.go#Queue.Pop", "--refs");
+    expect(out).toContain("incoming refs: none, plus 1 via interface\n");
+    expect(out).toMatch(
+      /^ {2}call {2}sym:internal\/runner\/runner\.go#Runner\.Dispatch .* via sym:internal\/runner\/runner\.go#JobQueue\.Pop$/m,
+    );
+  });
+
   it("the other implementers are siblings, not callers: they stay out of the hop's list", async () => {
     const { json } = await xplJson<any>(go, "refs", QUEUE_REQUEUE, "--in");
     const hop = json.in.find((r: any) => r.kind === "impl");

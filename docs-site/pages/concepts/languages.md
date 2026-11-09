@@ -7,8 +7,8 @@ Ruby and PHP have named declarations and no references.
 
 Tree-sitter WASM extracts symbols without installing language toolchains. References (calls, imports,
 inheritance, type uses and reads) come from xpl's scope-aware heuristic resolver or, when available, a
-compiler-grade SCIP indexer. References always keep their source label. The viewer draws heuristic edges
-lighter; the authoring skill treats them as hints to confirm.
+compiler-grade SCIP indexer. References always keep their source label. The viewer draws heuristic arrows
+dashed; the authoring skill treats them as hints to confirm.
 
 Web requests are references too. A request with a literal or template path (`fetch`, axios, ky, got, `useSWR`,
 Python `requests` and `httpx`, Go `net/http`) is linked to the handler of the route with the same method and
@@ -57,37 +57,9 @@ declarations.
 Without checked targets, a standalone import reports `refs: none` and fails under `--precise require`. See the
 [CLI reference](../reference/index.md) for artifact requirements.
 
-Rust resolves unshadowed bare root-function calls in one file. It also resolves receiver calls when a field,
-local type or one-method return type identifies a receiver and one target method. An explicit root-level `use
-crate::module::Type` can connect a module file under an indexed `src/lib.rs` or `src/main.rs` crate root.
-Without a known root, the imported receiver stays unresolved; standalone `src/bin` crates and custom
-crate-root paths are not resolved. A generic bound points to its trait method, without guessing a concrete
-implementation. Unknown or ambiguous receivers, calls inside nested functions, closures or macros, and
-syntax-error files produce no receiver calls. The bare pass skips bodies with macros or local imports. Call
-coverage stays partial; no macro expansion or cfg evaluation runs.
-
-Ruby tags anchor named classes, modules, instance and singleton methods, and direct constant assignments.
-Scoped assignments such as `Other::CONST =` are omitted because lexical nesting does not establish their
-owner. They report `refs: none`: xpl does not infer Ruby calls, imports, inheritance or cross-file namespace
-ownership. Metaprogrammed declarations and local bindings are outside this syntax path. Ruby source appears in
-`search --code` and repository drafts; the viewer currently shows it as plain text.
-
-PHP tags anchor named namespaces, interfaces, traits, classes, functions, methods and constants. Unbraced
-namespaces span the following top-level declarations until the next namespace. They report `refs: none`: xpl
-does not infer PHP calls, imports, inheritance or dynamic dispatch. Anonymous or generated declarations are
-outside this syntax path. PHP source appears in `search --code` and repository drafts; the viewer currently
-shows it as plain text.
-
-Java's built-in pack parses source with its grammar and resolves references heuristically. Those references
-are partial: overloads, ambiguous names and inherited or runtime dispatch can make a guessed target incomplete
-or wrong. Inspect the code and analysis coverage before describing a relationship as certain. For
-compiler-produced facts, xpl can import a separately generated, source-checked SCIP artifact; it does not run
-a Java producer automatically. Only facts that match checked source declarations and supported relationships
-are used, and the coverage report records omissions. This optional path needs a working Java build (the
-documented producer workflow uses JDK and Maven).
-
-Rust tags have bounded experimental coverage. The pinned rust-analyzer producer can omit full ranges, which
-may prevent imported relationships from attaching to Rust tags; use `--precise off` for Rust today.
+Java, Rust, Ruby and PHP each have limits: forms of code that their pack does not read, or reads only by
+name. The [CLI reference](../reference/index.md), under `xpl index`, lists them language by language, as the
+skill reads them. Check them before you describe a path in one of these languages.
 
 The [Rust tags notes](https://github.com/krimvp/xpl/blob/main/docs/rust-tags.md) and the
 [language support assessment](https://github.com/krimvp/xpl/blob/main/docs/assessment-2026-10-04-language-support.md)

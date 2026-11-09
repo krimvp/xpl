@@ -52,3 +52,17 @@ for (const scheme of ["light", "dark"] as const) {
     expect(problems).toEqual([]);
   });
 }
+
+test("picking an arrow shows no lines out of the map, only the arrow the reader asked about", async ({
+  page,
+}) => {
+  await openMap(page);
+  await byId(page, "edge:job-completed").click();
+  // the code of the arrow puts the caret in its ends' files; their lines out stay hidden
+  await expect(page.locator(".workspace-diagram .edge.is-stub:not(.is-stub-quiet)")).toHaveCount(0);
+  // a box picked after it brings its own back
+  await byId(page, "file:src/worker.ts").click();
+  await expect(
+    page.locator(".workspace-diagram .edge.is-stub:not(.is-stub-quiet)").first(),
+  ).toBeVisible();
+});

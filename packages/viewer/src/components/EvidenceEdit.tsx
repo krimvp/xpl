@@ -176,7 +176,7 @@ export function EvidenceEdit({
         {state.editError && <p role="alert">{state.editError}</p>}
         <div className="actions">
           <p role="status">
-            {state.editBusy ? "Saving…" : dirty ? "Unsaved evidence draft" : "No changes"}
+            {state.editBusy ? "Saving…" : dirty ? "Unsaved code-link changes" : "No changes"}
           </p>
           <button type="submit" className="btn" disabled={!dirty}>
             Save code links

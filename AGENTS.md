@@ -31,7 +31,7 @@ service, code), or a change between two commits (with a diff and "before" claims
 | `packages/cli`                  | `@xpl/cli`: the `xpl` command (29 subcommands, one file each in `src/commands/`), git access, lint, drafts, the local server, bundling. Built with esbuild to `dist/xpl.mjs`.                                                     | ARCHITECTURE §5, `skill/code-explainer/reference/cli.md` |
 | `packages/viewer`               | `@xpl/viewer`: React 19 + CodeMirror 6 + dagre, built by Vite to one self-contained `dist/index.html`. Read, Explore and Present modes.                                                                                           | ARCHITECTURE §6                                          |
 | `skill/code-explainer`          | **The product skill** that end users install: how Claude makes an explainer. Not instructions for working on this repo.                                                                                                           | ARCHITECTURE §7                                          |
-| `fixtures/*-jobrunner`          | Tiny real repos with committed explainers; acceptance tests point into them by line.                                                                                                                                              | ARCHITECTURE §8                                          |
+| `fixtures/*-jobrunner`          | Tiny real repos, one per language; ts, py and go hold committed explainers. Acceptance tests point into them by line.                                                                                                             | ARCHITECTURE §8                                          |
 | `.explainer/xpl.explainer.json` | xpl's own explainer of itself. Checked against the code by a test.                                                                                                                                                                | `docs-sync` skill                                        |
 | `docs/`                         | `ARCHITECTURE.md` (the contracts), `handoff.md` (the original brief), dated reviews (historical records).                                                                                                                         |                                                          |
 | `.claude/skills/`               | Skills for working on this repo (see below).                                                                                                                                                                                      |                                                          |
@@ -74,8 +74,8 @@ local checks are the gate: run them before every push.
 - **Trust labels.** Every reference is `precise` (SCIP) or `heuristic`. Never blur the two.
 - **User edits win.** Explainer elements carry provenance; an `llm` patch never overwrites `origin: "user"`
   elements or `userFields`. Changes to `applyPatch` keep this and test it.
-- **The explainer file is written only by `xpl apply` and `xpl change`.** Never hand-edit
-  `*.explainer.json`; write a patch.
+- **Agents change the explainer file (`*.explainer.json`) only through `xpl apply` and `xpl change`; never
+  hand-edit it.** Write a patch.
 - **Fixture line numbers are load-bearing.** Prettier ignores `fixtures/`. Do not reformat or shift lines
   there; see the `tdd` skill if a fixture must change.
 - **`docs/` is hand-formatted.** Prettier ignores it; keep lines near 110 columns.

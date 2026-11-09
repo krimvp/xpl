@@ -23,7 +23,10 @@
  *          overlays it): `codeFocus` computes their code from the references when the edge is not on screen;
  *       3. those with an end in an embedded file, so that whatever is added to a view next to embedded code
  *          (a ghost, a directory that opens into files) keeps its edges; `read` references, nearly half of all of
- *          them and rarely wanted, need both ends there (`bothEnds`).
+ *          them and rarely wanted, need both ends there (`bothEnds`);
+ *       4. when the explainer has a graph view, every `implements` and `extends` reference, and the implementations
+ *          of each interface method a kept call names: a call through an interface reaches the box of its one
+ *          implementation (graph.ts).
  *     References that end in something the index cannot resolve are dropped: no view derives anything from them.
  *
  * So whatever the viewer derives for the explainer's own views (nodes, edges with their anchors, stubs, ghosts,
@@ -36,6 +39,7 @@
  */
 import { collectAnchors } from "./anchors.js";
 import { repr } from "./graph.js";
+import { implementationsOf } from "./implementations.js";
 import { asIndexModel, type IndexModel } from "./index-model.js";
 import { EDGE_TO_REF_KIND, elementIdForSymbolId, parseId, symbolId } from "./ids.js";
 import { ExplainerModel } from "./model.js";
@@ -93,7 +97,12 @@ export function pruneIndex(source: SymbolIndex | IndexModel, options: PruneOptio
     if (from === undefined || to === undefined) return false; // dead: deriveGraph skips it as well
     const a = whole.has(from);
     const b = whole.has(to);
-    return (bothEnds.has(ref.kind) ? a && b : a || b) || needs?.keepsRef(ref) === true;
+    return (
+      (bothEnds.has(ref.kind) ? a && b : a || b) ||
+      // what implements what: `deriveGraph` follows a call through an interface to its implementation
+      (needs?.graphs === true && (ref.kind === "implements" || ref.kind === "extends")) ||
+      needs?.keepsRef(ref) === true
+    );
   });
 
   const keep = new Set<SymbolId>();
@@ -104,6 +113,14 @@ export function pruneIndex(source: SymbolIndex | IndexModel, options: PruneOptio
   for (const ref of refs) {
     if (model.symbol(ref.from)) keep.add(ref.from);
     if (model.symbol(ref.to)) keep.add(ref.to);
+    // the implementations of a called interface method decide whether the call reaches one of them
+    if (
+      needs?.graphs === true &&
+      ref.kind === "call" &&
+      model.parentSymbol(ref.to)?.kind === "interface"
+    ) {
+      for (const impl of implementationsOf(model, ref.to)) keep.add(impl.id);
+    }
   }
   // The parent chains, from a snapshot: what is added on the way brings its own parents along.
   for (const id of [...keep]) {
@@ -138,6 +155,8 @@ export function pruneIndex(source: SymbolIndex | IndexModel, options: PruneOptio
 interface ExplainerNeeds {
   /** The symbols the explainer names (a symbol id may name one the index no longer has). */
   symbols: ReadonlySet<SymbolId>;
+  /** The explainer has a graph view with something in it. */
+  graphs: boolean;
   /** A symbol inside a graph view of the explainer: a box that opens into it. */
   keepsSymbol(id: SymbolId): boolean;
   /** A reference that lies on a graph view of the explainer, or that a derived edge it names is made of. */
@@ -215,6 +234,7 @@ function explainerNeeds(explainer: Explainer, index: IndexModel): ExplainerNeeds
 
   return {
     symbols,
+    graphs: includes.length > 0,
     keepsSymbol: (id) => inside(elementIdForSymbolId(id)),
     keepsRef: (ref) =>
       inside(elementIdForSymbolId(ref.from)) ||

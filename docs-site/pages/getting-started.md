@@ -37,21 +37,28 @@ writes the guide as a patch, and `xpl` checks every code link before it saves
 ### Without an agent
 
 To read a finished guide first, open one of the [examples](https://krimvp.github.io/xpl/#more-examples).
-To draft your own, run `xpl start`. It drafts the guide from the index, and you write the text:
+To draft your own, index the repository and find the id of the function where the answer starts. Then run
+`xpl start`. It drafts the guide from the index, and you write the text:
 
 ```sh
+xpl index --precise off
+xpl outline --kind function,method --depth 9
 xpl start job-retries --question "How does a failed job get retried?" \
   --entry src/runner.ts#Runner.dispatch --audience maintainers --precise off
 xpl view job-retries
 ```
 
-`--entry` names the function where the answer starts; `xpl outline` lists the ids. The draft is then a
-call sequence from that function. Without `--entry`, `xpl start` drafts a map of the whole repository.
+`--entry` takes an id as `xpl outline` prints it, with or without `sym:`. The draft is then a call sequence
+from that function. Without `--entry`, `xpl start` drafts a map of the whole repository.
 
-`xpl start` indexes the repository, creates the guide and applies a checked draft. It prints the path of
-the draft patch and of its notes, both outside the repository. Read the notes first: they name the parts of
-the draft that are provisional or left out. Write the TODO text, check each claim against its code, then run
-`xpl lint job-retries` and `xpl ready job-retries`.
+`xpl start` creates the guide and applies a checked draft. It prints the path of the draft patch and of its
+notes, both outside the repository. Read the notes first: they name the parts of the draft that are
+provisional or left out. Then write the TODO text in one of two ways:
+
+- in `xpl view`, under Edit > **Edit the tour**, and in each box's details;
+- in the draft patch, then run `xpl apply job-retries <draft patch>` to save it into the guide.
+
+Check each claim against its code, then run `xpl lint job-retries` and `xpl ready job-retries`.
 
 ## View it and export HTML
 

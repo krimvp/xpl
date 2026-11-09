@@ -194,7 +194,7 @@ test("live repair rejects incomplete and stale evidence, persists explicit repai
     // Draft survives navigating to a different target and back.
     await page.evaluate(() => window.__xpl!.select(["file:src/worker.ts"]));
     await page.evaluate(() => window.__xpl!.select(["concept:retry-policy"]));
-    await expect(page.getByText("Unsaved evidence draft", { exact: true })).toBeVisible();
+    await expect(page.getByText("Unsaved code-link changes", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Save code links", exact: true }).click();
     await expect(page.getByTestId("evidence-edit")).toBeVisible();
     const saved = JSON.parse(readFileSync(path, "utf8")).concepts[0];

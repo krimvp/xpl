@@ -10,7 +10,7 @@ import type { Args } from "../args.js";
 import type { CommandSpec } from "../command.js";
 import type { Ctx } from "../context.js";
 import { CliError, UsageError } from "../errors.js";
-import { plural, rangeText } from "../format.js";
+import { kindWord, plural, rangeText } from "../format.js";
 import { buildOutline, outlineJson, renderOutline } from "../outline-tree.js";
 import {
   collectRefs,
@@ -18,6 +18,7 @@ import {
   groupByKind,
   needsFrom,
   refLine,
+  viaInterfaceRefs,
   type RefDirection,
   type RefEntry,
 } from "../ref-data.js";
@@ -57,16 +58,25 @@ function refsSection(
   subject: string,
   entries: readonly RefEntry[],
   hint: string,
+  via: readonly RefEntry[] = [],
 ): string[] {
-  if (entries.length === 0) return [`${title}: none`];
+  const plus = via.length > 0 ? `, plus ${via.length} via interface` : "";
+  if (entries.length === 0 && via.length === 0) return [`${title}: none`];
   const ordered = groupByKind(entries);
   const shown = ordered.slice(0, MAX_REF_LINES);
-  const lines = [`${title}: ${entries.length} (${countByKind(entries)})`];
+  const lines = [
+    entries.length === 0
+      ? `${title}: none${plus}`
+      : `${title}: ${entries.length} (${countByKind(entries)})${plus}`,
+  ];
   for (const entry of shown) {
     lines.push(`  ${refLine(entry, needsFrom(entry, direction, subject))}`);
   }
   if (ordered.length > shown.length) {
     lines.push(`  ... ${ordered.length - shown.length} more; ${hint}`);
+  }
+  for (const entry of groupByKind(via).slice(0, MAX_REF_LINES)) {
+    lines.push(`  ${refLine(entry)} via ${entry.to}`);
   }
   return lines;
 }
@@ -231,6 +241,7 @@ async function showCode(
     ? {
         out: groupByKind(collectRefs(ws.model, target, "out")),
         in: groupByKind(collectRefs(ws.model, target, "in")),
+        viaInterface: groupByKind(viaInterfaceRefs(ws.model, target)),
       }
     : undefined;
 
@@ -256,7 +267,8 @@ async function showCode(
 
   const absWidth = String(Math.max(...shown.map((s) => s.line))).length;
   const offsetWidth = String(Math.max(0, ...shown.map((s) => s.offset ?? 0))).length;
-  const out = [`${target.id} (${kind}) ${file}:${rangeText(range)} ${indexedHash}`];
+  const word = whole ? kind : kindWord(ws.model, target.symbol);
+  const out = [`${target.id} (${word}) ${file}:${rangeText(range)} ${indexedHash}`];
   for (const s of shown) {
     const abs = String(s.line).padStart(absWidth);
     const off =
@@ -291,6 +303,7 @@ async function showCode(
         target.id,
         refs.in,
         `xpl refs ${target.id} --in --limit 0`,
+        refs.viaInterface,
       ),
     );
   }
@@ -440,6 +453,7 @@ export const showCommand: CommandSpec = {
     `--refs appends the references leaving and entering the element, grouped by kind: each line is`,
     "  <kind>  <other id>  (<file>:<line>, <precise|heuristic>)  +<offset>",
     "where +<offset> counts lines from the start of the referencing symbol: a call-site anchor's span.",
+    "Calls of an interface method that the element implements follow as `... via <interface method>`.",
     `Long symbols are cut after ${DEFAULT_MAX_LINES} lines (--max-lines 0 prints all; --lines 401-800 selects a part).`,
     "--at base <path> prints a changed file as it was before the change the guide records (`xpl change`): the",
     "  offsets are those a base anchor's span uses (0-based from line 1 of the base file), and `-` marks the lines",

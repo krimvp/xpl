@@ -220,7 +220,8 @@ export async function layoutFlow(source: ProcessFlow): Promise<FlowLayout> {
     number.get(children.find((child) => child.id === id)?.copyOf ?? id) ?? 0;
   const facing = readsBackwards(result, indexOf) ? mirrored(result) : result;
   // The main path of a run of choices goes straight down (V1-08): a box moves under the one before it, its
-  // early exits step aside. Kept only when no route then runs through a box.
+  // early exits step aside. Kept only when no route then runs through a box and no box lands on another
+  // (an exit moved aside can reach the next choice's ends, V3-03).
   const straight = straightened(facing, transitions, 36, indexOf);
   let routed: Point[][] = routeFlow(
     straight ?? facing,
@@ -228,7 +229,10 @@ export async function layoutFlow(source: ProcessFlow): Promise<FlowLayout> {
     straight ? straight.moved : new Set(),
   );
   let placed: LayeredResult = straight ?? facing;
-  if (straight && !clearOfBoxes(routed, transitions, straight.boxes)) {
+  if (
+    straight &&
+    (!clearOfBoxes(routed, transitions, straight.boxes) || !apart(straight.boxes, 0))
+  ) {
     routed = routeFlow(facing, transitions, new Set());
     placed = facing;
   }
@@ -313,6 +317,22 @@ function routeFlow(
   );
   separateTracks(routed, "DOWN");
   return routed;
+}
+
+/** True when no two boxes overlap or come closer than `gap` side by side. */
+function apart(boxes: ReadonlyMap<string, Box>, gap: number): boolean {
+  const list = [...boxes.values()];
+  return list.every((a, i) =>
+    list
+      .slice(i + 1)
+      .every(
+        (b) =>
+          a.y >= b.y + b.height ||
+          b.y >= a.y + a.height ||
+          a.x >= b.x + b.width + gap - 0.5 ||
+          b.x >= a.x + a.width + gap - 0.5,
+      ),
+  );
 }
 
 /** True when no route runs through a box other than its own two. */
@@ -412,8 +432,10 @@ function straightened(
       ([, b]) => b.x < target + child.width + gap && b.x + b.width + gap > target,
     );
     if (clash.some(([other]) => (out.get(other) ?? []).length > 0)) continue;
+    const before = new Map(
+      [main, ...clash.map(([other]) => other)].map((k) => [k, boxes.get(k)!.x]),
+    );
     child.x = target;
-    moved.add(main);
     // the exits it clashes with go to the side they were on, packed away from it
     for (const side of [-1, 1]) {
       let edge = side < 0 ? target - gap : target + child.width + gap;
@@ -424,12 +446,28 @@ function straightened(
             (side > 0 && b.x + b.width / 2 === target + child.width / 2),
         )
         .sort(([, a], [, b]) => side * (a.x - b.x));
-      for (const [other, b] of list) {
+      for (const [, b] of list) {
         b.x = side < 0 ? edge - b.width : edge;
         edge = side < 0 ? b.x - gap : b.x + b.width + gap;
-        moved.add(other);
       }
     }
+    // an exit pushed aside onto a box of another branch (V3-03): this box stays where dagre put it
+    const landed = [...before.keys()].some((k) => {
+      const a = boxes.get(k)!;
+      return [...boxes].some(
+        ([other, b]) =>
+          !before.has(other) &&
+          a.y < b.y + b.height &&
+          b.y < a.y + a.height &&
+          a.x < b.x + b.width + gap - 0.5 &&
+          b.x < a.x + a.width + gap - 0.5,
+      );
+    });
+    if (landed) {
+      for (const [k, x] of before) boxes.get(k)!.x = x;
+      continue;
+    }
+    for (const [k, x] of before) if (Math.abs(boxes.get(k)!.x - x) >= 0.5) moved.add(k);
   }
   if (moved.size === 0) return undefined;
   // back inside the padding, and as wide as it now is

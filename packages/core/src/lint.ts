@@ -39,7 +39,7 @@
  * `TOOL_WORDS`).
  */
 import { deriveGraph, type DerivedGraph } from "./graph.js";
-import { isBaseAnchor } from "./anchors.js";
+import { collectAnchors, isBaseAnchor } from "./anchors.js";
 import { isTestFile } from "./index-model.js";
 import { parseId } from "./ids.js";
 import type { Explainer, GraphView } from "./schema.js";
@@ -96,7 +96,7 @@ export const LINT_RULES: Record<LintRule, string> = {
   "tour-first-step": "tour that does not start with the big picture",
   "tour-covers-map": "map box the tour never visits",
   "tour-length": "tour with too many steps",
-  "tour-ends": "tour that does not end on the map",
+  "tour-ends": "tour that does not end on the map with where next",
   "unused-view": "diagram no tour step shows and no box opens",
   "many-concepts": "explainer with too many concepts",
   "duplicate-step": "tour step copied from another tour",
@@ -389,7 +389,9 @@ const FILLER_ONLY_BEFORE: Readonly<Record<string, RegExp>> = {
  * explains code says "box" and "arrow", not "node" and "edge". Matched in lower case only (so `Node.js` and an
  * `LLM` pass), as whole words, outside code spans, in every title, summary, note and detail. A word the explainer uses
  * in the label or id of a box or a concept, or in a path a view shows, is the code's own word there (a parser's
- * syntax nodes, `anchors.ts`), so it passes.
+ * syntax nodes, `anchors.ts`), so it passes; so does a word of the guide's title, of a view's question or of a
+ * linked file's path. Outside tours only the senses that belong to xpl count (`XPL_SENSE`, `CODE_TOOL_WORDS`), and
+ * quoted text is the code's.
  */
 export const TOOL_WORDS: Readonly<Record<string, string>> = {
   node: 'write "box" (on a map), or name the part',
@@ -942,7 +944,7 @@ const NOT_PARTICIPLES = new Set(
     "sophisticated dedicated varied need speed seed feed bleed breed embed hundred kindred naked wicked " +
     "sacred rugged shred unchanged indeed undefined unused unrelated unsupported unexpected untested " +
     "unnamed unsigned unchecked unhandled unresolved unaffected unmodified uncommitted untracked unsaved " +
-    "outdated nested deprecated"
+    "outdated nested deprecated malformed"
   ).split(" "),
 );
 
@@ -955,6 +957,12 @@ function passives(masked: string): string[] {
     const word = m[1]!;
     if (word !== word.toLowerCase() || NOT_PARTICIPLES.has(word)) continue;
     if (word === "started" && /^g/i.test(m[0])) continue; // "to get started"
+    // "keeps the window from being resized": the subject is named, "being" is a gerund
+    if (
+      /^being\b/i.test(m[0]) &&
+      /\b(?:from|without|of|for|after|before)\s+$/i.test(text.slice(0, m.index))
+    )
+      continue;
     if (IRREGULAR_PARTICIPLES.has(word) || /^[a-z]{2,}ed$/.test(word))
       out.push(m[0].replace(/\s+/g, " "));
   }
@@ -983,7 +991,10 @@ const CONCRETE_NOUNS = new Set(
     "payment component department instance sentence reference sequence preference difference presence " +
     "distance balance interface evidence audience licence license fence " +
     "string thing ring ping king wing sibling ceiling padding heading building binding mapping setting " +
-    "listing spring morning evening nothing something everything anything during ending meaning"
+    "listing spring morning evening nothing something everything anything during ending meaning " +
+    // names of mechanisms: "Rate limiting applies per user" names the thing, not an action that hides the code
+    "limiting balancing injection rendering loading negotiation handling caching batching pooling routing " +
+    "logging tracing scheduling streaming"
   ).split(" "),
 );
 /** First words that do not make a subject of the next: articles, owners, prepositions. */
@@ -1060,6 +1071,29 @@ const TOUR_ONLY_TOOL_WORDS = new Set([
   "anchors",
   "anchored",
 ]);
+/**
+ * Outside tours, a text describes code, and these are everyday words of code too (an SQL upsert, an LLM client, npm
+ * provenance, a call site): checked in tours only.
+ */
+const CODE_TOOL_WORDS = new Set([
+  "upsert",
+  "upserts",
+  "llm",
+  "provenance",
+  "call-site",
+  "call-sites",
+]);
+/**
+ * Outside tours, the other tool words count only where they mean xpl's parts: a stub box, a ghost arrow, an
+ * authored overlay, anchor evidence. A gRPC stub, an error overlay or the evidence of a court case pass.
+ */
+const XPL_SENSE: Readonly<Record<string, { before?: RegExp; after?: RegExp }>> = {
+  stub: { after: /^[\s-]*(?:box|boxes|arrows?|policy|policies|maps?|mode)\b/i },
+  ghost: { after: /^[\s-]*(?:box|boxes|arrows?|policy|policies|maps?)\b/i },
+  overlay: { before: /\b(?:authored|edge|arrow|stored)[\s-]+$/i },
+  evidence: { before: /\b(?:source|anchor|code-link|answer)[\s-]+$/i },
+};
+const xplSense = (word: string) => XPL_SENSE[word.replace(/s$/, "")];
 /** A test double is a stub too: "stub" passes in a text about tests. */
 const TEST_CONTEXT = /\b(?:tests?|testing|mocks?|fakes?|fixtures?|spy|spies)\b/i;
 
@@ -1175,6 +1209,8 @@ function stems(text: string): string[] {
  * servers", "findEdge" names "findEdge" and "the parsers" names "Parser". Backticks do not matter.
  */
 function names(text: string, name: string): boolean {
+  // a short code name (`` `Pop` ``, see `namesOf`) names the part only as code, in backticks
+  if (name.startsWith("`")) return text.includes(name);
   const want = stems(name);
   if (want.length === 0) return false;
   const have = stems(text);
@@ -1199,6 +1235,10 @@ interface Evidence {
    */
   change?: boolean;
 }
+
+/** "a job that", "an input that fails": the absolute word describes an example input, not the code. */
+const HYPOTHETICAL_BEFORE =
+  /(?<![\p{L}])(?:a|an|any)\s+(?:job|input|request|message|task|item|value|event|record|entry|user|payload|row|key|file)s?\s+(?:that|which|who)\s+(?:[\p{L}-]+\s+)?$/iu;
 
 /** Words that make a sentence about what a change changes. */
 const CHANGE_WORDS = /\b(?:chang(?:e|es|ed|ing)|unchanged|differ(?:s|ent|ently)?)\b/i;
@@ -1256,7 +1296,21 @@ class Linter {
    * @param ownWords stems of the words in the labels and ids of the explainer's boxes and concepts and of what its
    *   views show: a tool word among them is the code's own word (`tool-word`).
    */
-  constructor(private readonly ownWords: ReadonlySet<string> = new Set()) {}
+  constructor(
+    private readonly ownWords: ReadonlySet<string> = new Set(),
+    /** The labels of the guide's boxes and concepts, lower case: `abstract-subject` lets a text start with one. */
+    private readonly labels: readonly string[] = [],
+  ) {}
+
+  /** Does `phrase` ("Rate limiting") start like a label of the guide ("Rate limiter", "rate limiting")? */
+  private namesLabel(phrase: string): boolean {
+    const want = phrase.toLowerCase().split(/\s+/);
+    const close = (a: string, b: string) => a.slice(0, 5) === b.slice(0, 5);
+    return this.labels.some((label) => {
+      const have = label.split(/\s+/);
+      return want.every((w, i) => have[i] !== undefined && close(w, have[i]!));
+    });
+  }
 
   add(where: Where, rule: LintRule, quote: string, message: string, hint: string): void {
     this.findings.push({ rule, ...where, quote, message, hint });
@@ -1276,9 +1330,11 @@ class Linter {
       );
     const fillers: { phrase: string; index: number }[] = [];
     const taken: [number, number][] = [];
+    // quoted text (an error message, a log line) is the code's words: same length, so indexes stay valid
+    const unquoted = withoutQuotes(text);
     for (const { phrase, pattern } of FILLER_PATTERNS) {
       pattern.lastIndex = 0;
-      for (let m = pattern.exec(text); m; m = pattern.exec(text)) {
+      for (let m = pattern.exec(unquoted); m; m = pattern.exec(unquoted)) {
         const from = m.index;
         const to = m.index + m[0].length;
         if (taken.some(([a, b]) => from < b && to > a)) continue;
@@ -1323,6 +1379,8 @@ class Linter {
         }
         const before = /([A-Za-z]+)\s+$/.exec(text.slice(0, m.index))?.[1];
         if (before !== undefined && NOT_ABSOLUTE_AFTER.has(before.toLowerCase())) continue;
+        // an input made up to show a case ("a job that fails every attempt")
+        if (HYPOTHETICAL_BEFORE.test(text.slice(0, m.index))) continue;
         if (evidence.anchored || provedBy(text, masked.spans, m.index, evidence)) continue;
         absolutes.push({ word: m[0].toLowerCase(), index: m.index });
       }
@@ -1364,16 +1422,28 @@ class Linter {
     );
   }
 
-  /** `tool-word`: xpl's own words in reader text, unless the explainer's boxes or concepts name the code that way. */
+  /**
+   * `tool-word`: xpl's own words in reader text, unless the explainer's boxes or concepts name the code that way.
+   * Tours speak about the guide, so every tool word counts there; other texts describe code, where only the senses
+   * that belong to xpl count (`XPL_SENSE`). Quoted text is the code's.
+   */
   private toolWords(where: Where, text: string, quoteAt: (index: number) => string): void {
     const found: { word: string; index: number }[] = [];
     const tour = where.kind === "tour" || where.kind === "tour-step";
+    const plain = withoutQuotes(text);
     for (const { word, pattern } of TOOL_PATTERNS) {
       if (this.ownWords.has(stem(word))) continue;
-      if (!tour && TOUR_ONLY_TOOL_WORDS.has(word)) continue;
+      if (!tour && (TOUR_ONLY_TOOL_WORDS.has(word) || CODE_TOOL_WORDS.has(word))) continue;
       if (word.startsWith("stub") && TEST_CONTEXT.test(text)) continue;
+      const sense = tour ? undefined : xplSense(word);
       pattern.lastIndex = 0;
-      for (let m = pattern.exec(text); m; m = pattern.exec(text)) {
+      for (let m = pattern.exec(plain); m; m = pattern.exec(plain)) {
+        if (
+          sense &&
+          !(sense.before?.test(plain.slice(0, m.index)) ?? false) &&
+          !(sense.after?.test(plain.slice(m.index + m[0].length)) ?? false)
+        )
+          continue;
         if (word.startsWith("edge")) {
           const before = tokenBefore(text, m.index);
           if (EDGE_AFTER.test(text.slice(m.index + m[0].length))) continue;
@@ -1564,15 +1634,17 @@ class Linter {
       if (subject === "It" && i > 0 && opts.summary && bareSubject(list[0]!) === undefined) {
         subject = undefined; // the first sentence names the thing (or starts with a verb next to its label)
       }
-      // in a summary, where the label next to it names the code and a verb start is the easy fix
-      const action = subject === undefined && opts.summary ? abstractSubject(sentence) : undefined;
+      // a box or concept named so ("Rate limiting") is the subject the text should have
+      const found = subject === undefined ? abstractSubject(sentence) : undefined;
+      const action = found !== undefined && !this.namesLabel(found) ? found : undefined;
       if (action !== undefined) {
         this.add(
           where,
           "abstract-subject",
           excerpt(unmask(sentence, masked.spans)),
           `"${action}" names an action, not the code that does it`,
-          'make the code the subject ("`assembleSymbols` assigns ids", not "Symbol assembly assigns ids"), or start a box summary with the verb ("Assigns ids ...")',
+          'make the code the subject ("`assembleSymbols` assigns ids", not "Symbol assembly assigns ids")' +
+            (opts.summary ? ', or start a box summary with the verb ("Assigns ids ...")' : ""),
         );
       }
       const dashes = withoutCode(sentence).match(DASH)?.length ?? 0;
@@ -1759,8 +1831,10 @@ function namesOf(id: string, at: Lookup): string[] {
   if (parsed.type === "symbol") {
     const last = parsed.path.split(".");
     names.push(parsed.path, last.slice(-2).join("."));
-    // the method name alone ("findEdge" for nodes.findEdge), when it is long enough not to be a common word
-    if (last.length > 1 && last.at(-1)!.length >= 4) names.push(last.at(-1)!);
+    // the method name alone ("findEdge" for nodes.findEdge), when it is long enough not to be a common word;
+    // a short one ("Pop") only in backticks
+    if (last.length > 1)
+      names.push(last.at(-1)!.length >= 4 ? last.at(-1)! : `\`${last.at(-1)!}\``);
   } else if (parsed.type === "file" || parsed.type === "dir") {
     const base = parsed.path.slice(parsed.path.lastIndexOf("/") + 1);
     names.push(base);
@@ -1897,6 +1971,17 @@ function noteTitle(note: unknown): string {
   return (HEADING.exec(line)?.[1] ?? line).trim();
 }
 
+/** The first sentence of a note's body (after its `###` title). */
+function firstSentence(note: unknown): string {
+  if (typeof note !== "string") return "";
+  const body = note.replace(/^\s*###[^\n]*\n/, "").trim();
+  return /^[^\n]*?[.!?](?:\s|$)|^[^\n]*/.exec(body)?.[0] ?? "";
+}
+
+/** Words of a last step that points on: where next, what to read next, what the tour left out. */
+const WHERE_NEXT =
+  /\b(?:next|further|see also|other guides?|where to go|what to read|read on|left out|not cover(?:s|ed)?|did not (?:open|show|cover)|from here)\b/i;
+
 /** `tour-first-step`, `tour-length`, `tour-ends` and `tour-covers-map` for one tour (see `LINT_RULES`). */
 function orderChecks(
   lint: Linter,
@@ -1947,18 +2032,24 @@ function orderChecks(
     last !== undefined &&
     steps.length >= LINT_LIMITS.tourEndsSteps &&
     usesMap &&
-    viewOf(last)?.type !== "graph" &&
     !change &&
     !isTalk(tour)
   ) {
     const view = viewOf(last);
-    lint.add(
-      where,
-      "tour-ends",
-      excerpt(noteTitle(last.note) || (str(last.id) ?? "")),
-      `the last step (${str(last.id) ?? "?"}) is ${view ? `on the ${String(view.type)} ${str(view.id)}` : "on no diagram"}, not on the map`,
-      "end on the map with where next: the boxes the tour did not open, or the next guide to read",
-    );
+    const onMap = view?.type === "graph";
+    // its title or first sentence says so: "Where to go next", "Read next: ...", "What this tour left out"
+    const start = `${noteTitle(last.note)} ${firstSentence(last.note)}`;
+    if (!onMap || !WHERE_NEXT.test(start)) {
+      lint.add(
+        where,
+        "tour-ends",
+        excerpt(noteTitle(last.note) || (str(last.id) ?? "")),
+        onMap
+          ? `the last step (${str(last.id) ?? "?"}) is on the map, but its title and first sentence do not say where to go next`
+          : `the last step (${str(last.id) ?? "?"}) is ${view ? `on the ${String(view.type)} ${str(view.id)}` : "on no diagram"}, not on the map`,
+        "end on the map with where next: the boxes the tour did not open, or the next guide to read",
+      );
+    }
   }
 
   if (steps.length > LINT_LIMITS.tourSteps) {
@@ -2501,8 +2592,18 @@ export function lintExplainer(explainer: Explainer, model?: ExplainerModel): Lin
     for (const id of [...list(record(view).include), ...list(record(view).participants)]) {
       if (typeof id === "string") own.push(id);
     }
+    // the question a view answers is the reader's: "How does the error overlay work?"
+    own.push(str(record(record(view).scope).question) ?? "");
   }
-  const lint = new Linter(new Set(own.flatMap((text) => stems(text))));
+  // and the guide's title, and every file it links to (`src/client/overlay.ts`)
+  own.push(str(explainer.title) ?? "");
+  for (const site of collectAnchors(explainer)) {
+    if (typeof site.anchor.file === "string") own.push(site.anchor.file);
+  }
+  const labels = [...list(explainer.nodes), ...list(explainer.concepts)]
+    .map((item) => str(record(item).label)?.toLowerCase() ?? "")
+    .filter((label) => label !== "");
+  const lint = new Linter(new Set(own.flatMap((text) => stems(text))), labels);
   const summaries = storedSummaries(explainer);
   const byId = lookup(explainer);
 

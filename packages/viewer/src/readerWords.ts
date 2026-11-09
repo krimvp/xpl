@@ -13,10 +13,21 @@ import type { AnchorRole, DerivedEdge } from "@xpl/core";
 export function mapEdgeSource(edge: Pick<DerivedEdge, "resolution" | "stored">): string {
   const { resolution, stored } = edge;
   const note = stored ? "author's note · " : "";
-  if (resolution === "precise") return `${note}precise: checked by a language tool`;
-  if (resolution === "heuristic") return `${note}heuristic: matched by name`;
-  if (resolution === "mixed") return `${note}partly precise, partly heuristic`;
+  const trust = trustWords(resolution);
+  if (trust) return `${note}${trust}`;
   return resolution === "static" ? "from the code" : "added by the author";
+}
+
+/**
+ * How the references under an arrow found in the code were found, in one wording per trust label (L3-6),
+ * wherever a reader sees it: the arrow's details, the rail, the text view, the map's arrow labels.
+ * Undefined for an arrow that was not found by references (added by the author, or static).
+ */
+export function trustWords(resolution: DerivedEdge["resolution"] | string): string | undefined {
+  if (resolution === "precise") return "precise: checked by a language tool";
+  if (resolution === "heuristic") return "heuristic: matched by name";
+  if (resolution === "mixed") return "partly matched by name";
+  return undefined;
 }
 
 /** What a highlighted range is, for a reader: "called here", not "call-site". */

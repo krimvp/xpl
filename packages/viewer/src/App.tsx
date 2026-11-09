@@ -125,6 +125,10 @@ function Shell() {
 
   return (
     <div className="app" data-mode={state.mode}>
+      {/* N18: the first Tab offers a jump past the header to the guide, the diagram or the slide. */}
+      <a className="skip-link" href="#" onClick={skipToContent}>
+        Skip to the content
+      </a>
       <Header />
       <div className="workspace-warnings">
         {state.readOnlyGuide && (
@@ -182,6 +186,15 @@ function Shell() {
       )}
     </div>
   );
+}
+
+/** Moves keyboard focus to the page's main area (the Tour, a diagram tab, Explore or the slide). */
+function skipToContent(event: React.MouseEvent) {
+  event.preventDefault();
+  const main = document.querySelector<HTMLElement>(".app > main");
+  if (!main) return;
+  if (!main.hasAttribute("tabindex")) main.tabIndex = -1;
+  main.focus();
 }
 
 const count = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;

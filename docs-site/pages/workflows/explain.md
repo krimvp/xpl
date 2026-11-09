@@ -11,6 +11,13 @@ Add "quickly" for a fast answer: one diagram and a five-step tour. To add a ques
 have, say `Existing guide: <name>` instead of `New guide`. [Create a guide](../skill/create.md) explains each
 choice and what to do when a run stops.
 
+## A question
+
+A guide to a question starts on a map of the code it touches, then follows one path in a flow or a
+sequence. Select a step and its code lights up beside the diagram.
+
+![A sequence of how a job is dispatched: Runner.dispatch takes a job from the queue, runs it on a worker and requeues it in a loop until it succeeds or runs out of retries. The requeue step is selected, and its code in runner.ts and queue.ts is highlighted.](../../../docs/images/dispatch-step-selected-light.png)
+
 ## Architecture maps
 
 An overview of a repository goes from the top down. The first map shows the system: who uses it, the

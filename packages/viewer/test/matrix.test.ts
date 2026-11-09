@@ -6,6 +6,7 @@
 import type { DerivedEdge, DerivedGraph, GraphNode } from "@xpl/core";
 import { describe, expect, it } from "vitest";
 import { buildMatrix } from "../src/matrix.js";
+import { mapParts } from "../src/parts.js";
 
 const box = (id: string, over: Partial<GraphNode> = {}): GraphNode => ({
   id,
@@ -72,13 +73,48 @@ describe("buildMatrix", () => {
         arrow("calls", "file:c.ts", "file:a.ts", { count: 4 }),
       ],
     );
-    // (a box nothing points at may come first: alone.ts)
     expect(picture(g)).toEqual([
+      "a.ts: . 1 . .",
+      "b.ts: . . 1 .",
+      "c.ts: 4! . . .",
       "alone.ts: . . . .",
-      "a.ts: . . 1 .",
-      "b.ts: . . . 1",
-      "c.ts: . 4! . .",
     ]);
+  });
+
+  it("puts only the arrows of a real cycle below the diagonal", () => {
+    // main uses hub; hub and a use each other; hub also uses two leaves. One arrow of the hub-a pair must go
+    // back; the arrows to the leaves need not.
+    const g = graph(
+      ["leaf1", "leaf2", "main", "hub", "a"].map((id) => box(id)),
+      [
+        arrow("calls", "main", "hub"),
+        arrow("calls", "hub", "a"),
+        arrow("calls", "a", "hub"),
+        arrow("calls", "hub", "leaf1"),
+        arrow("calls", "hub", "leaf2"),
+      ],
+    );
+    expect(picture(g)).toEqual([
+      "main: . 1 . . .",
+      "hub: . . 1 1 1",
+      "a: . 1! . . .",
+      "leaf1: . . . . .",
+      "leaf2: . . . . .",
+    ]);
+  });
+
+  it("keeps a hub in a two-way pair with many leaves to one back cell", () => {
+    const leaves = Array.from({ length: 6 }, (_, i) => `leaf${i}`);
+    const g = graph(
+      [...leaves, "hub", "twin"].map((id) => box(id)),
+      [
+        arrow("calls", "hub", "twin"),
+        arrow("calls", "twin", "hub"),
+        ...leaves.map((leaf) => arrow("calls", "hub", leaf)),
+      ],
+    );
+    const m = buildMatrix(g);
+    expect(m.cells.flat().filter((cell) => cell?.back)).toHaveLength(1);
   });
 
   it("joins the arrows of one pair into one cell that selects the arrow the map draws", () => {
@@ -114,5 +150,106 @@ describe("buildMatrix", () => {
       { id: "grp:jobs", label: "Jobs" },
       { id: "file:src/b.ts", label: "b.ts", group: "Jobs" },
     ]);
+  });
+
+  it("calls a cell mixed only when precise and heuristic references meet, not for two authored arrows", () => {
+    const g = graph(
+      [box("file:a.ts"), box("file:b.ts")],
+      [
+        arrow("calls", "file:a.ts", "file:b.ts", {
+          id: "edge:emits",
+          label: "emits",
+          resolution: "llm",
+          stored: true,
+        }),
+        arrow("calls", "file:a.ts", "file:b.ts", {
+          id: "edge:mine",
+          label: "my words",
+          resolution: "user",
+          stored: true,
+        }),
+      ],
+    );
+    const cell = buildMatrix(g).cells[0]![1]!;
+    expect(cell.resolution).toBe("user");
+    expect(cell.authored).toBe(true);
+  });
+
+  it("sums each box's lines out of the map into an Outside column and row, with the stubs' ids", () => {
+    const g = graph(
+      [box("file:a.ts"), box("file:b.ts")],
+      [arrow("calls", "file:a.ts", "file:b.ts")],
+    );
+    g.stubs = [
+      {
+        id: "stub:out:a",
+        direction: "out",
+        inside: "file:a.ts",
+        ghost: "x",
+        ghostLabel: "x",
+        targets: [],
+        kinds: ["calls"],
+        count: 5,
+      },
+      {
+        id: "stub:out:a2",
+        direction: "out",
+        inside: "file:a.ts",
+        ghost: "y",
+        ghostLabel: "y",
+        targets: [],
+        kinds: ["imports"],
+        count: 2,
+      },
+      {
+        id: "stub:in:b",
+        direction: "in",
+        inside: "file:b.ts",
+        ghost: "z",
+        ghostLabel: "z",
+        targets: [],
+        kinds: ["calls"],
+        count: 1,
+      },
+    ];
+    const m = buildMatrix(g);
+    expect(m.out).toEqual([
+      {
+        select: ["stub:out:a", "stub:out:a2"],
+        count: 7,
+        kinds: ["calls", "imports"],
+        text: "calls & imports ×7",
+      },
+      undefined,
+    ]);
+    expect(m.in).toEqual([
+      undefined,
+      { select: ["stub:in:b"], count: 1, kinds: ["calls"], text: "calls ×1" },
+    ]);
+  });
+});
+
+describe("one order for the parts list and the matrix", () => {
+  it("lists a map's boxes in the matrix's order, a group's boxes under it", () => {
+    // the names sort against the arrows: astore.ts and list.ts are used, so they come after their users
+    const g = graph(
+      [
+        box("file:astore.ts"),
+        box("grp:cmds", { label: "Commands", kind: "group", container: true }),
+        box("file:run.ts", { parent: "grp:cmds" }),
+        box("file:list.ts", { parent: "grp:cmds" }),
+      ],
+      [
+        arrow("calls", "file:run.ts", "file:astore.ts"),
+        arrow("calls", "file:run.ts", "file:list.ts"),
+      ],
+    );
+    const view = { id: "view:m", type: "graph", title: "m", include: [] } as unknown as Parameters<
+      typeof mapParts
+    >[1];
+    const model = { node: () => undefined } as unknown as Parameters<typeof mapParts>[2];
+    const parts = mapParts(g, view, model).boxes.map((b) => b.label);
+    expect(parts).toEqual(["Commands", "run.ts", "list.ts", "astore.ts"]);
+    expect(buildMatrix(g).boxes.map((b) => b.label)).toEqual(["run.ts", "list.ts", "astore.ts"]);
   });
 });

@@ -1,5 +1,5 @@
 /** Small text helpers shared by the commands. */
-import type { Issue, Range } from "@xpl/core";
+import type { IndexedSymbol, IndexModel, Issue, Range } from "@xpl/core";
 
 export function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
@@ -8,6 +8,17 @@ export function plural(n: number, one: string, many = `${one}s`): string {
 /** `a class`, `an interface`, `an enum`: the noun with its indefinite article. */
 export function withArticle(noun: string): string {
   return `${/^[aeiou]/i.test(noun) ? "an" : "a"} ${noun}`;
+}
+
+/**
+ * The language's own word for a symbol's kind, for text a person reads: a Go struct is `struct` and its fields are
+ * `field`. The index and `--json` keep the stored kind (`class`, `variable`), which `--kind` filters take.
+ */
+export function kindWord(model: IndexModel, symbol: IndexedSymbol): string {
+  if (model.file(symbol.file)?.language !== "go") return symbol.kind;
+  if (symbol.kind === "class") return "struct";
+  if (symbol.kind === "variable" && model.parentSymbol(symbol.id)?.kind === "class") return "field";
+  return symbol.kind;
 }
 
 export function formatBytes(bytes: number): string {

@@ -18,8 +18,7 @@ New commands and drafts:
   of string literals, a Python Enum, a Go const block) and the functions that move it between them. (#237)
 - `xpl health` lists committed secrets, secrets in variables sent to the browser, committed `.env` files,
   code files over 1,000 lines and files nothing uses. It shows at most the first 4 characters of a secret
-  and exits 0 with or without
-  findings. (#236)
+  and exits 0 with or without findings. (#236)
 
 Guides and the viewer:
 
@@ -38,6 +37,16 @@ Guides and the viewer:
   nothing is selected, the right column lists the parts of the diagram ("On this map"). Trust labels read
   "precise (checked by a language tool)" and "heuristic (matched by name)". An arrow to code outside the map
   is drawn only while you point at it or select it.
+- **Matrix** in a map's toolbar shows the map as a dependency matrix: a row and a numbered column per box,
+  and in each cell the arrows from the row's box to the column's, with their count. A cell below the
+  diagonal goes back up the order; with its mirror cell it marks a cycle. A view with `"render": "matrix"`
+  opens that way.
+- Trust is never shown by colour alone. Heuristic arrows are dashed, partly matched arrows are dash-dot and
+  arrows to code outside the map are dotted, in both themes. A key line under the diagram's caption names
+  the marks the map draws now. With something selected, the arrows that touch none of it are dimmed.
+- A large map starts at a readable zoom. "Fit all" then counts the boxes out of sight, and after a fit it
+  offers "Readable size". A flow keeps its main path straight down, and sequence frames show their condition.
+- The parts list beside a map says which boxes of the map each box uses and is used by.
 
 Indexing:
 
@@ -51,10 +60,14 @@ Drafts and lint:
 
 - `xpl draft path` starts its tour on a map of the files the path crosses. `xpl draft repo` adds a box for
   the person who starts the program, and one for the settings files the code loads. Both drafts end on a
-  "where to go next" step.
+  "where to go next" step. `xpl draft path` frames the calls that sit in a loop or a branch and keeps at most
+  8 steps; `xpl draft repo` keeps at most 9. A program that starts a standard-library server (`net/http`,
+  `node:http`, `http.server`) gets a box for its clients.
 - `xpl lint` checks more of the text: summaries over 2 sentences or 45 words (`long-summary`), long detail
   paragraphs, passive voice, "we", tool words such as "anchor" in a tour, views no tour uses, too many
-  concepts and repeated steps. It knows more filler words, and a tour note may have at most 50 words.
+  concepts and repeated steps. It knows more filler words, and a tour note may have at most 50 words. New
+  rules also check that a note starts with a `### title`, that a title has at most 12 words, that a longer
+  tour ends on its map (`tour-ends`), and that a note does not open with "So", "But" or "And".
 - The skill puts its hard rules first, starts every guide from its purpose, and gives each scope a tour shape
   and a length budget. Its writing guide follows Orwell's rules and ASD-STE100 Simplified Technical English.
 

@@ -21,7 +21,7 @@ commands. `--dir <path>` sets another destination.
 | Factory Droid | `~/.agents/skills/code-explainer`         | `/code-explainer`        |
 | Devin         | `<project>/.agents/skills/code-explainer` | `@skills:code-explainer` |
 
-The invocations of the harnesses other than Claude Code have not been tested live.
+The invocations of the harnesses other than Claude Code have not been tested live. Each agent needs its own sign-in and provider access.
 
 **Devin** runs in a remote environment. Install Node 22.12 or newer and xpl there first. Then run
 `xpl skill install --agent devin` there, in the target repo. The launcher records an absolute CLI path and has
@@ -30,7 +30,7 @@ files, but it cannot check Devin's cloud discovery or sign-in.
 
 **From source:** clone the public [source repository](https://github.com/krimvp/xpl) and run
 `npm install && npm run build`. Then run `npm pack ./packages/cli/dist` and install the tarball with
-`npm install -g --ignore-scripts ./krimvp-xpl-0.3.0.tgz`. For an offline tarball, use
+`npm install -g --ignore-scripts ./krimvp-xpl-<version>.tgz`. For an offline tarball, use
 `npm install -g --offline --ignore-scripts <tarball>`.
 
 **Updates.** Run `xpl skill install` again after you update or move the CLI. It refuses to overwrite local edits

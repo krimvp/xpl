@@ -335,6 +335,64 @@ describe("deriveGraph: derived edges", () => {
     expect(pairs).not.toContainEqual([F.runner, S.dispatch]);
   });
 
+  it("draws a call through an interface to the box of its one implementation outside tests", () => {
+    // Go: the runner declares the interface it calls; the queue implements it without importing the runner
+    const world = makeWorld({
+      files: [
+        { path: "runner/runner.go", lines: 20, language: "go" },
+        { path: "runner/runner_test.go", lines: 10, language: "go" },
+        { path: "queue/queue.go", lines: 20, language: "go" },
+      ],
+      symbols: [
+        { id: "runner/runner.go#JobQueue", kind: "interface", start: 1, end: 3 },
+        { id: "runner/runner.go#JobQueue.Pop", kind: "method", start: 2, end: 2 },
+        { id: "runner/runner.go#Runner.Dispatch", kind: "method", start: 5, end: 15 },
+        { id: "queue/queue.go#Queue", kind: "class", start: 1, end: 3 },
+        { id: "queue/queue.go#Queue.Pop", kind: "method", start: 5, end: 12 },
+        { id: "runner/runner_test.go#fakeQueue", kind: "class", start: 1, end: 3 },
+        { id: "runner/runner_test.go#fakeQueue.Pop", kind: "method", start: 5, end: 8 },
+      ],
+      refs: [
+        {
+          from: "queue/queue.go#Queue",
+          to: "runner/runner.go#JobQueue",
+          kind: "implements",
+          line: 1,
+        },
+        {
+          from: "runner/runner_test.go#fakeQueue",
+          to: "runner/runner.go#JobQueue",
+          kind: "implements",
+          line: 1,
+        },
+        {
+          from: "runner/runner.go#Runner.Dispatch",
+          to: "runner/runner.go#JobQueue.Pop",
+          line: 7,
+          resolution: "heuristic",
+        },
+      ],
+    });
+    const files = ["file:runner/runner.go", "file:queue/queue.go"];
+    const { graph } = derive(files, {}, {}, world);
+    const call = graph.edges.find((e) => e.kind === "calls");
+    expect(call).toMatchObject({
+      from: "file:runner/runner.go",
+      to: "file:queue/queue.go",
+      count: 1,
+      resolution: "heuristic",
+    });
+    // the code link is the call site in the runner, and the code that runs
+    expect(call!.anchors.map((a) => [a.role, a.file, a.symbol])).toEqual([
+      ["call-site", "runner/runner.go", "Runner.Dispatch"],
+      ["definition", "queue/queue.go", "Queue.Pop"],
+    ]);
+    // the implements arrow stays, in its own direction
+    expect(ids(graph.edges)).toContain(
+      "edge:implements:file:queue/queue.go->file:runner/runner.go",
+    );
+  });
+
   it("aggregates through a group, and skips edges internal to it", () => {
     const { graph } = derive(
       ["grp:scheduling", F.worker],

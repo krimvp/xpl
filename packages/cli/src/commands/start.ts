@@ -191,7 +191,9 @@ export const startCommand: CommandSpec = {
             ? [`apply warning: ${applyWarnings.length - 3} more in ${notesFile}`]
             : []),
           ...(pathHint ? [`note: ${pathHint}`] : []),
-          `next: complete the TODOs in \`xpl view ${name}\` or edit the draft patch, then run \`xpl lint ${name}\``,
+          // the draft is applied already: an edited patch changes nothing until it is applied again
+          `next: write the TODOs in \`xpl view ${name}\` (Edit > Edit the tour), or edit ${patchPath} and run ` +
+            `\`xpl apply ${name} ${patchPath}\`; then \`xpl lint ${name}\``,
         ].join("\n"),
       );
     }

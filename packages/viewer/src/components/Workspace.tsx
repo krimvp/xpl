@@ -4,7 +4,7 @@ import { viewReverseIndex } from "../derive.js";
 import { sharedActor } from "../layout/flowLayout.js";
 import { describeElement } from "../details.js";
 import { renderInline } from "../markdown.js";
-import { leadSentences, looksLikeCode } from "../readerWords.js";
+import { leadSentences, looksLikeCode, mapEdgeSource } from "../readerWords.js";
 import { stepTitle } from "../stepTitle.js";
 import { useDerived, useStore, useViewerState } from "../hooks.js";
 import {
@@ -37,6 +37,8 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
   const [sourceOpen, setSourceOpen] = useState(startWithSource);
   /** The guide section scrolled to (Guide), for the breadcrumb: where the reader is, not what was clicked. */
   const [reading, setReading] = useState<string | undefined>(undefined);
+  /** On a phone the caption's question, links and picker sit behind "About this map" (R3-2). */
+  const [aboutOpen, setAboutOpen] = useState(false);
   const columns = useRef<HTMLDivElement>(null);
   const map = useMemo(
     () => workspaceMap(state),
@@ -129,6 +131,19 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
   const topicShown =
     !!info && onScreen && !wholeFlow && !(state.perspective === "guide" && appliedStep);
   const showSource = code || sourceOpen || codeFirst;
+  // Where the reader is: the step on screen, else what is selected. A map or a flow with nothing selected
+  // is named by its caption (title and levels), not a second time here (U24).
+  const crumb = readingStep
+    ? stepTitle(readingStep, state.model)
+    : appliedStep
+      ? stepTitle(appliedStep, state.model)
+      : (info?.title ??
+        (state.perspective === "map" || state.perspective === "flow"
+          ? ""
+          : code
+            ? "Code"
+            : (tour?.title ?? "Overview")));
+  const diagramWord = state.perspective === "map" ? "map" : "flow";
   useEffect(() => {
     if (!showSource) columns.current?.scrollTo({ top: 0, behavior: "instant" });
   }, [showSource, state.perspective]);
@@ -192,14 +207,10 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
           <button className="link" onClick={() => store.setPerspective("guide")}>
             {state.explainer.title}
           </button>
-          <span aria-hidden="true">›</span>
+          {crumb && <span aria-hidden="true">›</span>}
           {/* Polite live region: a screen reader hears what a click or a scroll brought on screen. */}
           <span data-testid="breadcrumb-topic" aria-live="polite">
-            {readingStep
-              ? stepTitle(readingStep, state.model)
-              : appliedStep
-                ? stepTitle(appliedStep, state.model)
-                : (info?.title ?? diagramTitle ?? (code ? "Code" : (tour?.title ?? "Overview")))}
+            {crumb}
           </span>
         </nav>
         {/* A double-click that changed the tab says so (always mounted, so a screen reader hears it). */}
@@ -239,7 +250,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                 <Guide onReading={setReading} returningFromPresent={startWithSource} />
               ) : (
                 <>
-                  <div className="workspace-caption">
+                  <div className={`workspace-caption${aboutOpen ? " is-about-open" : ""}`}>
                     <div>
                       <p className="eyebrow">{state.perspective === "map" ? "Map" : "Flow"}</p>
                       <ZoomTrail
@@ -250,6 +261,15 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                           ? map.view.title
                           : (flow?.title ?? "The tour's steps")}
                       </h2>
+                      {/* (a phone only: the rest of the caption is one tap away, the diagram gets the room) */}
+                      <button
+                        type="button"
+                        className="link caption-about"
+                        aria-expanded={aboutOpen}
+                        onClick={() => setAboutOpen((open) => !open)}
+                      >
+                        About this {diagramWord}
+                      </button>
                       {viewQuestion && <p className="view-question">{viewQuestion}</p>}
                       {state.perspective === "flow" && flowOwner && (
                         <p className="caption-owner" data-testid="caption-owner">
@@ -450,6 +470,13 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
             <section className="topic-summary" data-testid="topic-summary">
               {/* While a step is applied the breadcrumb names the step: this is the box picked in it. */}
               <p className="eyebrow">{appliedStep ? "In this step" : "Selected"}</p>
+              {/* an arrow's title is its label: say which two boxes it joins, and how it was found */}
+              {(info.type === "edge" || info.type === "derived-edge") && info.where && (
+                <p className="parts-ends topic-ends" data-testid="topic-ends">
+                  {info.where}
+                  {info.derived ? ` · ${mapEdgeSource(info.derived)}` : ""}
+                </p>
+              )}
               <h2 className={looksLikeCode(info.title) ? "is-code" : undefined}>{info.title}</h2>
               {info.summary && <SummaryText key={info.id} text={info.summary} />}
               <TopicFacts
@@ -479,7 +506,8 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
             reading={tour && scrolledAway ? { tourId: tour.id, step: scrolledAway } : undefined}
           />
           {/* scrolled away from the applied step: its code links would no longer match the step on screen */}
-          {active && !scrolledAway && (
+          {/* (in the Tour the step shows its own code: only a box picked from it gets this list) */}
+          {active && !scrolledAway && (state.perspective !== "guide" || topicShown) && (
             <details className="workspace-inspector">
               <summary>Where this is in the code</summary>
               <Details

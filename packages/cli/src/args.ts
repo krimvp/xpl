@@ -121,7 +121,7 @@ export function parseCommandArgs(
     const near = Object.keys(all).filter((name) => editDistance(name, typed) <= 2);
     throw new UsageError(
       near.length > 0
-        ? `unknown option ${unknown[1]}. Did you mean ${near.map((n) => `"--${n}"`).join(" or ")}?`
+        ? `unknown option ${unknown[1]}. Did you mean: ${near.map((n) => `--${n}`).join(", ")}?`
         : `unknown option ${unknown[1]} (a value that starts with "-" must come after "--")`,
     );
   }

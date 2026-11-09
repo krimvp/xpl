@@ -340,7 +340,8 @@ export async function discoverFiles(
     if (wanted && !wanted.has(language)) continue;
     const reason = pathExclusion(path);
     if (reason) {
-      record(reason, path);
+      // xpl's own folder (indexes, cache, guides) is not a candidate anybody left out: not reported
+      if (!path.startsWith(".explainer/")) record(reason, path);
       continue;
     }
     selected.push({ path, abs: join(root, ...path.split("/")), language });

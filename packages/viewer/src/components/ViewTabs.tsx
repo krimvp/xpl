@@ -274,7 +274,7 @@ function ViewsMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        title="Every view of this explainer: pick one to jump to it"
+        title="Every diagram in this guide: pick one to jump to it"
         onClick={() => (open ? close(false) : show())}
         onKeyDown={(event) => {
           if (open || event.altKey || event.ctrlKey || event.metaKey) return;

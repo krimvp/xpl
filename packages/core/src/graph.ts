@@ -8,7 +8,8 @@
 import { DEFAULT_EDGE_KINDS } from "./constants.js";
 import { globMatcher } from "./glob.js";
 import { derivedEdgeId, elementIdForSymbolId, parseId, REF_TO_EDGE_KIND, REPO_ID } from "./ids.js";
-import type { IndexModel } from "./index-model.js";
+import { isTestFile, type IndexModel } from "./index-model.js";
+import { implementationsOf, type Implementation } from "./implementations.js";
 import type { ExplainerModel } from "./model.js";
 import type {
   Anchor,
@@ -487,6 +488,41 @@ export function deriveGraph(
   const throughVia = (inside: ElementId, outside: ElementId) =>
     viaEnds.get(inside)?.some((via) => model.subtreeContains(via, outside)) ?? false;
 
+  const addEdge = (kind: Edge["kind"], a: ElementId, b: ElementId, ref: Reference) => {
+    const id = derivedEdgeId(kind, a, b);
+    let agg = edgeAggs.get(id);
+    if (!agg) {
+      agg = { kind, from: a, to: b, refs: [], resolution: ref.resolution };
+      edgeAggs.set(id, agg);
+    }
+    agg.refs.push(ref);
+    if (ref.resolution !== agg.resolution) agg.resolution = "mixed";
+  };
+  // A call of an interface method runs its implementation: when the index knows exactly one outside test
+  // files, the call also reaches the implementation's box (Go code calls a queue through an interface it
+  // declares itself, so the call alone never leaves the caller's file).
+  const dispatchMemo = new Map<SymbolId, Implementation | null>();
+  const dispatched = (ref: Reference): Reference | undefined => {
+    let impl = dispatchMemo.get(ref.to);
+    if (impl === undefined) {
+      const found =
+        index.parentSymbol(ref.to)?.kind === "interface"
+          ? implementationsOf(index, ref.to).filter((i) => {
+              const file = index.fileOfSymbolId(i.id);
+              return file !== undefined && !isTestFile(file);
+            })
+          : [];
+      impl = found.length === 1 ? found[0]! : null;
+      dispatchMemo.set(ref.to, impl);
+    }
+    if (impl === null) return undefined;
+    return {
+      ...ref,
+      to: impl.id,
+      resolution: impl.resolution === "precise" ? ref.resolution : "heuristic",
+    };
+  };
+
   for (const ref of index.refs) {
     const kind = REF_TO_EDGE_KIND[ref.kind];
     if (!kind || !kinds.has(kind)) continue;
@@ -496,18 +532,17 @@ export function deriveGraph(
     if (dropRef?.(ref)) continue;
     const a = rep.repr(fromEl);
     const b = rep.repr(toEl);
+    if (a !== undefined && kind === "calls") {
+      const hop = dispatched(ref);
+      const implEl = hop && !dropRef?.(hop) ? endpoint(hop.to) : undefined;
+      const c = implEl === undefined ? undefined : rep.repr(implEl);
+      if (hop && c !== undefined && c !== a && c !== b && !nested(a, c)) addEdge(kind, a, c, hop);
+    }
     if (a !== undefined && b !== undefined) {
       // a call of a symbol to itself (recursion) is a loop on its box, when the box is that symbol
       const loop = a === b && kind === "calls" && a === fromEl && b === toEl;
       if (a === b ? !loop : nested(a, b)) continue;
-      const id = derivedEdgeId(kind, a, b);
-      let agg = edgeAggs.get(id);
-      if (!agg) {
-        agg = { kind, from: a, to: b, refs: [], resolution: ref.resolution };
-        edgeAggs.set(id, agg);
-      }
-      agg.refs.push(ref);
-      if (ref.resolution !== agg.resolution) agg.resolution = "mixed";
+      addEdge(kind, a, b, ref);
     } else if (a !== undefined) {
       if (!throughVia(a, toEl)) addStub("out", a, toEl, kind);
     } else if (b !== undefined && !throughVia(b, fromEl)) addStub("in", b, fromEl, kind);

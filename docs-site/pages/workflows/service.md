@@ -31,7 +31,7 @@ than 1,000 answers per question.
 
 `--backend none` (the default) disables agent execution. `--backend claude` uses the installed Claude Code
 proposal runner. `--skill-dir <folder>` selects a managed skill installation; `--job-timeout <seconds>` sets
-the deadline (default 300). Both settings are saved. "Available" means set up, not signed in: a job reports a
+the deadline (default 300). Both settings are saved. "configured" means set up, not signed in: a job reports a
 failed login or provider error when it runs.
 
 ```sh

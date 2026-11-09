@@ -87,7 +87,10 @@ describe("xpl start", () => {
       "off",
     );
     expect(result.code, result.err).toBe(0);
-    expect(result.out).toContain("next: complete the TODOs");
+    // the draft is applied already: the next line says to apply an edited patch again
+    expect(result.out).toMatch(
+      /^next: write the TODOs in `xpl view \S+` \(Edit > Edit the tour\), or edit (\S+) and run `xpl apply \S+ \1`; then `xpl lint \S+`$/m,
+    );
     expect(result.out).toContain("note: Provisional architecture: confirm project kind");
     expect(result.out).toContain("draft notes:");
     expect(result.out).toContain("xpl view job-retries");

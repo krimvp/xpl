@@ -2552,7 +2552,7 @@ describe("applyPatch: one wave of errors", () => {
         },
       ],
     });
-    expect(pathsOf(r)).toEqual(["edges[0].anchors[1]"]); // no "needs at least one anchor inside its to"
+    expect(pathsOf(r)).toEqual(["edges[0].anchors[1]"]); // no "needs an anchor at its end"
     // fix the anchor and the evidence is judged after all
     const wrongEnd = apply({
       edges: [

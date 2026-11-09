@@ -12,7 +12,7 @@ import {
 import { makeBundle, TEXTS } from "./world.js";
 import { workspaceMap, workspaceView } from "../src/workspace.js";
 import { ViewerStore } from "../src/store.js";
-import { mergeSameCards, ownCards, repeatsShownCode } from "../src/relatedCards.js";
+import { mergeSameCards, readerCards, repeatsShownCode } from "../src/relatedCards.js";
 
 describe("process flows and related files", () => {
   it("supports explicit decisions, labeled branches, terminal outcomes and code anchors", () => {
@@ -142,7 +142,7 @@ describe("process flows and related files", () => {
     });
   });
 
-  it("a box that holds other code shows only its own cards, not those found inside it", () => {
+  it("a box that holds other code shows only the arrows drawn from or to it (R3-7)", () => {
     const bundle = makeBundle();
     bundle.index.resources = [
       {
@@ -162,20 +162,32 @@ describe("process flows and related files", () => {
       anchors: [],
       provenance: { origin: "user" },
     });
+    // the box's own code links name a settings file: still no "Its settings are in" card on the box
+    bundle.explainer.nodes.find((node) => node.id === "grp:core")!.anchors =
+      bundle.explainer.concepts
+        .find((concept) => concept.id === "concept:retry")!
+        .anchors.filter((anchor) => anchor.role === "config");
     const model = new ExplainerModel(bundle.explainer, bundle.index);
-    const links = relatedFiles(["grp:core"], model);
-    // the core group holds A.run, so the index's read inside it is listed for the group too
-    expect(links.map((link) => link.id)).toEqual(["resource:0", "edge:core-reads"]);
-    expect(ownCards(links, ["grp:core"], model).map((link) => link.id)).toEqual([
+    const ids = (links: { id: string }[]) => links.map((link) => link.id);
+    // core holds A.run, which reads c.yaml: a fact about A.run, not about the whole box
+    expect(ids(relatedFiles(["grp:core"], model))).toContain("resource:0");
+    expect(ids(readerCards(["grp:core"], model, codeFocus(["grp:core"], model)))).toEqual([
       "edge:core-reads",
     ]);
-    // a setting card stays only for a file the box's own code links (or its step's) name
-    const setting = { ...links[0]!, id: "anchor:config:config/c.yaml" };
-    expect(ownCards([setting], ["grp:core"], model)).toEqual([]);
-    expect(ownCards([setting], ["grp:core"], model, new Set(["config/c.yaml"]))).toEqual([setting]);
-    // a box of code keeps every card
-    const run = relatedFiles(["sym:src/a.ts#A.run"], model);
-    expect(ownCards(run, ["sym:src/a.ts#A.run"], model)).toEqual(run);
+    // with a box of code beside it, that one's cards come back, and the box adds its arrow
+    const both = ["grp:core", "sym:src/a.ts#A.run"];
+    expect(ids(readerCards(both, model, codeFocus(both, model)))).toEqual([
+      "resource:0",
+      "edge:core-reads",
+    ]);
+    // a step's own setting stays (its code links say so, not the box's)
+    const step = [
+      { file: "config/c.yaml", range: { startLine: 2, endLine: 4 }, role: "config" as const },
+    ].map((range) => ({ ...range, elementId: "tour:demo/t3", status: "ok" as const }));
+    expect(ids(readerCards(["grp:core"], model, step))).toEqual([
+      "anchor:config:config/c.yaml",
+      "edge:core-reads",
+    ]);
   });
 
   it("leaves out a setting card for a file whose code the step already shows", () => {

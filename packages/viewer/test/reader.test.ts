@@ -157,7 +157,7 @@ describe("plain words for readers", () => {
       "author's note · precise: checked by a language tool",
     );
     expect(mapEdgeSource({ stored: true, resolution: "mixed" })).toBe(
-      "author's note · partly precise, partly heuristic",
+      "author's note · partly matched by name",
     );
     expect(mapEdgeSource({ stored: true, resolution: "llm" })).toBe("added by the author");
     expect(mapEdgeSource({ stored: true, resolution: "static" })).toBe("from the code");

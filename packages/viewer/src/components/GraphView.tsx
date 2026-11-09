@@ -138,6 +138,8 @@ interface Marks {
   lit?: ReadonlySet<string>;
   /** In a still picture: what the frame cuts (graphLayout `cutAt`), drawn faded. */
   cut?: ReadonlySet<string>;
+  /** An arrow of the map (not a line out of it) is selected: only that arrow's lines out are shown. */
+  arrowPicked?: boolean;
 }
 
 /**
@@ -334,11 +336,15 @@ export function GraphView({
   const marks = useMemo<Marks>(() => {
     const selected = new Set(selection);
     const lit = layout ? litBoxes(layout, selected) : undefined;
+    const arrowPicked =
+      layout !== undefined &&
+      allEdgesOf(layout).some((edge) => !edge.stub && selected.has(edge.id));
     return {
       selected,
       matches: new Set(matches),
       related,
       ...(lit ? { lit } : {}),
+      ...(arrowPicked ? { arrowPicked } : {}),
     };
   }, [selection, matches, related, layout]);
 
@@ -503,16 +509,19 @@ export function GraphView({
   );
 
   // Boxes and arrows, or the same as a matrix: the view's `render` says which it opens as, the reader's choice
-  // holds until the diagram starts over (another view, another tour step).
+  // holds until the diagram starts over (another view, another tour step). A matrix of three boxes says
+  // nothing the map does not, and Present shows the author's picture: there the switch is offered only when
+  // the view opens as a matrix.
   const stored = state.model.view(viewId);
   const opensAsMatrix = stored?.type === "graph" && stored.render === "matrix";
   const [choice, setChoice] = useState<{ key: string; matrix: boolean }>();
   const matrix = choice?.key === resetKey ? choice.matrix : opensAsMatrix;
-  const matrixToggle = (
+  const offersMatrix =
+    opensAsMatrix || (!present && graph.nodes.filter((node) => !node.container).length >= 4);
+  const matrixToggle = offersMatrix ? (
     <button
       type="button"
       className="matrix-toggle"
-      aria-pressed={matrix}
       title={
         matrix
           ? "Show this map as boxes and arrows again"
@@ -520,15 +529,17 @@ export function GraphView({
       }
       onClick={() => setChoice({ key: resetKey, matrix: !matrix })}
     >
-      Matrix
+      {matrix ? "Diagram" : "Matrix"}
     </button>
-  );
+  ) : null;
 
   let body;
   if (matrix && graph.nodes.length > 0)
     body = (
       <MatrixView
         graph={graph}
+        order={order}
+        imageName={stored?.title ?? viewId}
         selected={marks.selected}
         matches={marks.matches}
         related={related}
@@ -1479,14 +1490,18 @@ function allEdgesOf(layout: Pick<GraphLayout, "nodes" | "edges">): LayoutEdge[] 
   return out;
 }
 
-/** A line out of the map that no one looks at: not drawn, and not in the Tab order (its ghost box still is). */
+/**
+ * A line out of the map that no one looks at: not drawn, and not in the Tab order (its ghost box still is).
+ * With an arrow of the map selected, its ends (selected as related boxes, and under the caret) do not bring
+ * their lines out back: they would bury the arrow the reader asked about (uiux R3-4).
+ */
 function stubIsQuiet(edge: LayoutEdge, marks: Marks, hovered: string | undefined): boolean {
-  return (
-    edge.stub &&
-    ![edge.id, edge.from, edge.to].some(
-      (id) => id === hovered || marks.selected.has(id) || marks.matches.has(id),
-    )
-  );
+  if (!edge.stub) return false;
+  // (the selection a map gets holds the picked arrow's ends too, as related boxes)
+  if (marks.arrowPicked)
+    return !(marks.selected.has(edge.id) || edge.from === hovered || edge.to === hovered);
+  const looked = (id: string) => id === hovered || marks.selected.has(id) || marks.matches.has(id);
+  return ![edge.id, edge.from, edge.to].some(looked);
 }
 
 /** The classes of an edge (and of its label): kind, trust, state, and quiet in a reader view. */

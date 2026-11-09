@@ -9,7 +9,7 @@ describe("xpl cli", () => {
     expect(out).toContain("Usage: xpl <command> [options]");
     expect(out).toContain("Docs: https://krimvp.github.io/xpl/docs/reference/");
     expect(out).not.toContain("docs/ARCHITECTURE.md");
-    expect(out).toMatch(/feedback\s+Import, inspect or export durable reader feedback/);
+    expect(out).toMatch(/feedback\s+Import, list or export reader requests/);
     expect(out).toContain("--root");
     expect(out).toContain("--json");
     expect(out).toContain("--index");
@@ -51,14 +51,14 @@ describe("xpl cli", () => {
     const typo = await invoke(["indx"]);
     expect(typo.code).toBe(2);
     expect(typo.err.trim()).toBe(
-      'error: unknown command "indx". Did you mean "index"? Run "xpl --help" for the list of commands.',
+      'error: unknown command "indx". Did you mean: index? Run "xpl --help" for the list of commands.',
     );
   });
 
   it("an unknown option names the closest option of the command", async () => {
     const typo = await invoke(["outline", "--depht", "3"]);
     expect(typo.code).toBe(2);
-    expect(typo.err).toContain('unknown option --depht. Did you mean "--depth"?');
+    expect(typo.err).toContain("unknown option --depht. Did you mean: --depth?");
     expect(typo.err).not.toContain("must come after");
   });
 

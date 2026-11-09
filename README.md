@@ -5,8 +5,8 @@ lights up. Put the cursor in the code and the boxes that cover it light up. An a
 guide, and xpl checks that every code link points at code that exists now. xpl does not check that the text is
 true; a person reviews that. Share a guide as a local page or as one HTML file.
 
-![A map of how a job is dispatched. The Runner.dispatch box is selected, and its code in runner.ts is highlighted beside it.](site/images/jobrunner-light.png#gh-light-mode-only)
-![A map of how a job is dispatched. The Runner.dispatch box is selected, and its code in runner.ts is highlighted beside it.](site/images/jobrunner-dark.png#gh-dark-mode-only)
+![A sequence of how a job is dispatched. The Runner.dispatch lifeline is selected, and its code in runner.ts is highlighted beside it.](site/images/jobrunner-light.png#gh-light-mode-only)
+![A sequence of how a job is dispatched. The Runner.dispatch lifeline is selected, and its code in runner.ts is highlighted beside it.](site/images/jobrunner-dark.png#gh-dark-mode-only)
 
 A guide opens on its tour: steps in order, each with a small diagram and the code it links to. The Map, Flow
 and Code tabs show the whole diagrams and the files. [Open this example](https://krimvp.github.io/xpl/demo/)
@@ -27,8 +27,8 @@ In Claude Code, in your repository, ask a question and name the reader:
 /code-explainer explain How does X work? Audience: maintainers.
 ```
 
-The agent indexes the repository (xpl lists its files, its symbols and the references between them), writes
-the guide and opens it. Other agents (Codex, Pi, Factory Droid, Devin) are in the
+`/code-explainer` is a chat command in Claude Code, not a shell command. The agent indexes the repository (xpl
+lists its files, its symbols and the references between them), writes the guide and opens it. Other agents (Codex, Pi, Factory Droid, Devin) are in the
 [install options](https://krimvp.github.io/xpl/docs/skill/create/#install). Shell completion and the
 supported platforms are in [Getting started](https://krimvp.github.io/xpl/docs/getting-started/).
 
@@ -43,10 +43,13 @@ excerpt of its code; "Show code" opens the full range.
 Open a finished guide in your browser: the [examples](https://krimvp.github.io/xpl/#more-examples) explain
 Vite, Zod, Cobra and xpl itself. Each one is a single HTML file that you can save and open offline.
 
-To make a draft of your own repository without an agent, run this in the repository. `--entry` names the
-function where the answer starts (`xpl outline` lists the ids):
+To make a draft of your own repository without an agent, run these commands in the repository. `xpl index`
+builds the index. `xpl outline` lists the ids; pick the function where the answer starts (with or without its
+`sym:` prefix):
 
 ```sh
+xpl index --precise off
+xpl outline --kind function,method --depth 9
 xpl start first-guide --question "How does a request reach the database?" \
   --entry src/api.ts#handleOrder --audience maintainers --precise off
 xpl view first-guide
@@ -54,7 +57,9 @@ xpl view first-guide
 
 The draft holds the boxes, the steps and their code links, with TODO text for you to write. Without
 `--entry`, `xpl start` drafts a map of the whole repository instead of the path that answers the question.
-`xpl lint first-guide` and `xpl ready first-guide` list what is still missing.
+Write the text in `xpl view`, under Edit > **Edit the tour**. Or edit the draft patch that `xpl start` prints,
+and run `xpl apply first-guide <draft patch>`. `xpl lint first-guide` and `xpl ready first-guide` list what is
+still missing.
 
 From a source checkout of xpl, you can also open the sample job runner:
 

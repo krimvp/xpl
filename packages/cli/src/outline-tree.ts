@@ -7,7 +7,7 @@
  * its symbols, a symbol's is itself and its descendants.
  */
 import { baseName, dirOf, parseId, symId, type IndexModel, type IndexedSymbol } from "@xpl/core";
-import { rangeText } from "./format.js";
+import { kindWord, rangeText } from "./format.js";
 
 export interface OutlineNode {
   id: string;
@@ -15,6 +15,8 @@ export interface OutlineNode {
   label: string;
   /** `repo`, `dir`, the file's language, or the symbol's kind. */
   kind: string;
+  /** The kind in the language's own word (`kindWord`), for the text output. */
+  word?: string;
   range?: { startLine: number; endLine: number };
   /** Files below (repo and dir). */
   files?: number;
@@ -218,6 +220,7 @@ function makeNode(model: IndexModel, fans: Fans, id: string, opts: OutlineOption
         type: "symbol",
         label: symbol.path.slice(symbol.path.lastIndexOf(".") + 1),
         kind: symbol.kind,
+        word: kindWord(model, symbol),
         range: { startLine: symbol.range.startLine, endLine: symbol.range.endLine },
       };
     }
@@ -265,7 +268,7 @@ export function renderOutline(root: OutlineNode): string[] {
     if (node.type === "repo") {
       parts.push(node.label, `${node.files} files, ${node.symbols} symbols`);
     } else {
-      parts.push(node.kind);
+      parts.push(node.word ?? node.kind);
       if (node.type === "dir") parts.push(`${node.files} file${node.files === 1 ? "" : "s"}`);
       if (node.range) parts.push(rangeText(node.range));
       parts.push(`in=${node.fanIn} out=${node.fanOut}${node.recursive ? "  recursive" : ""}`);

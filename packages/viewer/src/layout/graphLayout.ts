@@ -319,7 +319,7 @@ function ghostWidth(label: string, detail: string): number {
 function edgeLabelText(edge: DerivedEdge): string {
   const text =
     (edge.label ? edge.label : `${edge.kind} ×${edge.count}`) +
-    (edge.resolution === "mixed" ? " (mixed confidence)" : "");
+    (edge.resolution === "mixed" ? " (partly matched by name)" : "");
   // "A reaches C through B": one arrow, which names what it passes through
   const via = edge.via?.map((item) => item.label) ?? [];
   if (via.length === 0) return text;
@@ -328,6 +328,18 @@ function edgeLabelText(edge: DerivedEdge): string {
 
 function stubLabelText(stub: Stub): string {
   return `${stub.kinds.join(" & ")} ×${stub.count}`;
+}
+
+/**
+ * The label of one of a two-way pair, which shares its line with its twin: led by an arrow that points the way
+ * this one goes ("↓ viewer page", "↑ HTTP /api"), so the two labels on one line cannot be read the wrong way.
+ */
+function wayLabel(text: string, points: readonly Point[]): string {
+  const [a, b] = [points[0], points[points.length - 1]];
+  if (!a || !b) return text;
+  const way =
+    Math.abs(b.x - a.x) >= Math.abs(b.y - a.y) ? (b.x > a.x ? "→" : "←") : b.y > a.y ? "↓" : "↑";
+  return `${way} ${text}`;
 }
 
 function labelBox(text: string): { text: string; width: number; height: number } {
@@ -1396,7 +1408,9 @@ function layeredLayout(
       anchor: points[0] ?? { x: 0, y: 0 },
     };
     if (pairedWith.has(edge.id)) laidOut.own = halfRoute(points);
-    const box = edge.stub ? undefined : labelBox(edge.label);
+    const box = edge.stub
+      ? undefined
+      : labelBox(laidOut.own ? wayLabel(edge.label, points) : edge.label);
     const centre =
       box &&
       (laidOut.own
@@ -1428,7 +1442,7 @@ function layeredLayout(
       own,
       anchor: own[0] ?? { x: 0, y: 0 },
     };
-    const box = labelBox(edge.label);
+    const box = labelBox(wayLabel(edge.label, points));
     const centre = labelOnRoute(own, box, undefined);
     if (centre) twin.label = { ...box, x: centre.x - box.width / 2, y: centre.y - box.height / 2 };
     (drawn.holder ? drawn.holder.edges : canvasEdges).push(twin);

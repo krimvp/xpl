@@ -7,7 +7,8 @@ export const stageCommand: CommandSpec = {
   name: "stage",
   usage:
     "xpl stage <explainer> --dir <outside-folder> [--preview] [--files referenced|boundary|all] [--note <reason>] [--require-review] [--pr-result <result.json>]",
-  summary: "Preview included source and stage a local immutable ready version",
+  summary:
+    "Save a finished guide as a fixed version on this machine (--preview lists the code it holds)",
   details: [
     "--dir is required and must be outside the source checkout, including through symlink ancestors.",
     "--preview checks readiness and lists included head/base files without creating storage or HTML.",

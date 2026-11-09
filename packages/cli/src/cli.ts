@@ -310,10 +310,10 @@ function unknownCommand(name: string): UsageError {
   const near = COMMANDS.filter(
     (c) => c.name.startsWith(name) || name.startsWith(c.name) || editDistance(c.name, name) <= 2,
   );
-  const mean = near.map((c) => `"${c.name}"`).join(" or ");
+  const mean = near.map((c) => c.name).join(", ");
   return new UsageError(
     `unknown command "${name}".` +
-      (near.length > 0 ? ` Did you mean ${mean}?` : "") +
+      (near.length > 0 ? ` Did you mean: ${mean}?` : "") +
       ` Run "xpl --help" for the list of commands.`,
   );
 }

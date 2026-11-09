@@ -122,6 +122,8 @@ test("a phone reader keeps the theme button in the header, and the Map leads to 
     size.width,
   );
   await page.getByTestId("perspective-map").click();
+  // on a phone the way to Explore sits behind "About this map", with the caption's question and picker
+  await page.getByRole("button", { name: "About this map" }).click();
   await page.getByTestId("explore-link").click();
   await expect.poll(() => stateOf(page).then((s) => s.perspective)).toBe("explore");
 });

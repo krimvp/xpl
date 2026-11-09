@@ -145,6 +145,17 @@ export function viewContentStatuses(model: ExplainerModel): ViewContentStatus[] 
 }
 
 /** Structural and source blockers, unfinished required content, then mechanical reader warnings. */
+/** What to do about empty required text, in the words of what is empty (a tour summary is not an element). */
+function missingHint(elementId: string, field: string): string {
+  if (field === "views") return "add a diagram with `xpl apply`";
+  if (field === "steps") return "add the tour's steps with `xpl apply`";
+  if (field === "note") return "write this step's note with `xpl apply`";
+  if (elementId.startsWith("tour:")) return `write the tour ${field} with \`xpl apply\``;
+  if (elementId.startsWith("view:") || elementId === "(explainer)")
+    return `write the ${field} with \`xpl apply\``;
+  return "write this text with `xpl apply`, or take the element off its diagrams";
+}
+
 export function checkReadiness(
   explainer: Explainer,
   index: SymbolIndex,
@@ -162,10 +173,10 @@ export function checkReadiness(
     message: issue.message,
     hint:
       issue.code === "change"
-        ? "Regenerate the change record with xpl change <name> <base>..<head>."
+        ? "make the change record again with `xpl change <name> <base>..<head>`"
         : issue.code === "commit" || /anchor/.test(issue.code ?? "")
-          ? "Run xpl resolve <explainer> --write; re-explain drifted code or repair missing anchors."
-          : "Repair this field with xpl apply; run xpl validate again.",
+          ? "run `xpl resolve <explainer> --write`, then rewrite the text of the code that changed and fix the code links that are gone"
+          : "fix this field with `xpl apply`, then run `xpl validate` again",
   }));
   if (options.sourceWarning)
     findings.unshift({
@@ -174,7 +185,7 @@ export function checkReadiness(
       elementId: "(source)",
       field: "index",
       message: options.sourceWarning,
-      hint: "Run xpl index, then xpl resolve <explainer> --write and repair drifted claims.",
+      hint: "run `xpl index`, then `xpl resolve <explainer> --write`, and rewrite the text of the code that changed",
     });
   // A resolver may retain cached ranges when text is unavailable. Ready output needs readable evidence.
   for (const site of collectAnchors(explainer)) {
@@ -195,7 +206,7 @@ export function checkReadiness(
         elementId: site.elementId,
         field: site.path,
         message: `${anchor.file}${isBaseAnchor(anchor) ? "@base" : ""}: source text is unavailable.`,
-        hint: "Rebuild the snapshot with the referenced source; repair or remove anchors whose code is gone.",
+        hint: "rebuild the snapshot with the code it links to; fix or remove the code links whose code is gone",
       });
   }
   for (const file of index.files) {
@@ -207,7 +218,7 @@ export function checkReadiness(
         elementId: `file:${file.path}`,
         field: "source",
         message: "Source text does not match the indexed file hash.",
-        hint: "Run xpl index and resolve; rebuild this snapshot.",
+        hint: "run `xpl index` and `xpl resolve <explainer> --write`, then rebuild this snapshot",
       });
   }
   const structurallyValid = !findings.some(
@@ -221,7 +232,7 @@ export function checkReadiness(
       elementId,
       field,
       message: "Required reader text is empty.",
-      hint: "Write this text with xpl apply, or remove the element from the explanation's scope.",
+      hint: missingHint(elementId, field),
     });
   if (!hasText(explainer.title)) missing("(explainer)", "title");
   if (model) {
@@ -242,7 +253,7 @@ export function checkReadiness(
           elementId: `file:${path}`,
           field: "source",
           message: `${path}: source needed by the explanation is unavailable.`,
-          hint: "Rebuild the snapshot with its referenced source files.",
+          hint: "rebuild the snapshot with the files the guide links to",
         });
     }
     if (explainer.change)
@@ -260,7 +271,7 @@ export function checkReadiness(
             elementId: `file:${file.path}`,
             field: "baseFiles",
             message: `${file.path}@base: before-source needed by the change is unavailable.`,
-            hint: "Rebuild from a checkout with the change's base commit available.",
+            hint: "rebuild from a checkout that has the change's base commit",
           });
       }
     const ids = new Set<string>();
@@ -317,7 +328,7 @@ export function checkReadiness(
       elementId: "(explainer)",
       field: "review",
       message: "Team policy requires a current author review of all stored explanation content.",
-      hint: "Inspect the content and evidence, then record an all-content review from Edit, or explicitly turn off the optional policy.",
+      hint: "check the text against its code, then record a review of all of it (Edit > Mark as reviewed), or run without `--require-review`",
     });
   const errors = findings.filter((f) => f.severity === "error").length;
   return {

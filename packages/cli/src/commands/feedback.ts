@@ -16,7 +16,7 @@ import { loadExplainer, openWorkspace } from "../repo.js";
 export const feedbackCommand: CommandSpec = {
   name: "feedback",
   usage: "xpl feedback <explainer> [--import <file> | --export <file> | --outcomes <file>]",
-  summary: "Import, inspect or export durable reader feedback; record selected outcomes",
+  summary: "Import, list or export reader requests, and record what was done with each",
   details: [
     "Offline pages export code-explainer/feedback@1 JSON. Import deduplicates by stable request ID",
     "and refuses conflicting original content. Higher outcome revisions update stored results;",

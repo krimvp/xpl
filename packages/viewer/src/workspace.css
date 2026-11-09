@@ -1490,3 +1490,47 @@
   white-space: normal;
   text-align: left;
 }
+
+/* r3-frame (R3-2): on a phone the diagram gets most of the screen (55% or more of its height). The caption
+   keeps its levels and title; its question, "Inside …" links, picker and "Explore all diagrams" sit behind
+   "About this map". The key line goes (the toolbar's Key says it all), and the topic column under the diagram
+   starts below it, its first line peeking in at the bottom. */
+.caption-about {
+  display: none;
+}
+/* (a short screen, a phone on its side or 200% zoom, has its own one-line caption: below) */
+@media (max-width: 760px) and (min-height: 561px) {
+  .workspace-caption {
+    padding: 12px 16px;
+  }
+  .caption-about {
+    display: inline-block;
+    margin-top: 6px;
+    font-size: 13px;
+  }
+  .workspace-caption:not(.is-about-open)
+    :is(.view-question, .caption-insides, .caption-actions select, .explore-link) {
+    display: none;
+  }
+  .workspace .key-line {
+    display: none;
+  }
+  /* (as tall as the caption and the diagram: the column scrolls, the topic column follows them) */
+  .workspace:is([data-perspective="map"], [data-perspective="flow"]) .workspace-primary {
+    min-height: auto;
+    overflow: visible;
+  }
+  .workspace-primary > .workspace-diagram,
+  .workspace-primary > .flow-diagram {
+    flex: none;
+    height: max(62vh, 320px);
+  }
+}
+/* r3-frame (R3-3): in the Tour the right column shows only when it has something for the step on screen
+   (related files, or a box picked from the step); otherwise the text takes its width. */
+.workspace[data-perspective="guide"] .workspace-context:empty {
+  display: none;
+}
+.workspace[data-perspective="guide"] .workspace-columns:has(> .workspace-context:empty) {
+  grid-template-columns: minmax(0, 1fr);
+}

@@ -6,8 +6,25 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { ExplainerPatch, SequenceView } from "@xpl/core";
-import { copyFixture, makeTempDir, writeFile, xpl, xplJson } from "./helpers.js";
+import {
+  deriveGraph,
+  ExplainerModel,
+  IndexModel,
+  type Explainer,
+  type ExplainerPatch,
+  type GraphView,
+  type SequenceView,
+} from "@xpl/core";
+import {
+  fullIndex,
+  copyFixture,
+  indexedFixture,
+  makeTempDir,
+  readJson,
+  writeFile,
+  xpl,
+  xplJson,
+} from "./helpers.js";
 
 interface DraftJson {
   notes: string[];
@@ -400,5 +417,37 @@ describe("xpl draft path: loops and branches", () => {
         toStep: view.steps![2]!.id,
       }),
     ]);
+  });
+});
+
+describe("xpl draft path: Go code that calls through an interface", () => {
+  it("the file map draws the call from the runner to the queue, not only the queue implementing the runner's interface", async () => {
+    const dir = await indexedFixture("go-jobrunner");
+    expect((await xpl(dir, "new", "d")).code).toBe(0);
+    const { patch } = await drafted(dir, "sym:internal/runner/runner.go#Runner.Dispatch");
+    const files = patch.views!.find((v) => v.type === "graph") as GraphView;
+    const explainer = readJson<Explainer>(dir, ".explainer/d.explainer.json");
+    const model = new ExplainerModel(explainer, new IndexModel(fullIndex(dir)));
+    const view = model.views.find((v) => v.id === files.id) as GraphView;
+    const arrows = deriveGraph(view, model).edges.map((e) => `${e.kind} ${e.from} -> ${e.to}`);
+    expect(arrows).toContain(
+      "calls file:internal/runner/runner.go -> file:internal/queue/queue.go",
+    );
+    expect(arrows).toContain(
+      "calls file:internal/runner/runner.go -> file:internal/worker/pool.go",
+    );
+    // what implements what points the other way and answers another question: not on this map
+    expect(arrows.filter((a) => !a.startsWith("calls "))).toEqual([]);
+  });
+
+  it("every sentence of a note that speaks to the author is a TODO, so lint stops it from reaching a reader", async () => {
+    const dir = await indexedFixture("go-jobrunner");
+    expect((await xpl(dir, "new", "d")).code).toBe(0);
+    const { patch } = await drafted(dir, "sym:internal/runner/runner.go#Runner.Dispatch");
+    const sentences = patch
+      .tours![0]!.steps!.flatMap((step) => (step.note ?? "").split(/(?<=[.:)])\s+(?=[A-Z])/))
+      .filter((s) => /\b(draft|review|delete this line)\b/i.test(s));
+    expect(sentences.length).toBeGreaterThan(0);
+    expect(sentences.filter((s) => !s.startsWith("TODO:"))).toEqual([]);
   });
 });

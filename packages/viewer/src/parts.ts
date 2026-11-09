@@ -1,5 +1,5 @@
 /**
- * The parts of a diagram in words, in reading order (components/PartsPanel.tsx, "On this map"): each box with
+ * The parts of a diagram in words, in reading order (a map's boxes in the matrix's order, `boxOrder`) (components/PartsPanel.tsx, "On this map"): each box with
  * what it is for, the arrows its author named, or the numbered steps of a flow or a sequence. Every row is an
  * element of the diagram (its id), so a click shows its code and a caret in that code marks the row.
  */
@@ -13,6 +13,7 @@ import {
 } from "@xpl/core";
 import { drawnEdges } from "./drawnEdges.js";
 import { ROLE_WORDS } from "./layout/graphLayout.js";
+import { boxOrder } from "./matrix.js";
 import { readerBadge } from "./readerWords.js";
 
 export interface BoxPart {
@@ -75,8 +76,10 @@ export function linkWords(verb: string, names: readonly string[]): string | unde
 }
 
 export function mapParts(graph: DerivedGraph, view: GraphView, model: ExplainerModel): MapParts {
-  const order = new Map<string, number>();
-  (Array.isArray(view.include) ? view.include : []).forEach((id, i) => order.set(id, i));
+  // the matrix's order (users before what they use), so the list and the matrix read alike
+  const order = new Map(
+    boxOrder(graph, Array.isArray(view.include) ? view.include : []).map((id, i) => [id, i]),
+  );
   const byId = new Map(graph.nodes.map((node) => [node.id, node]));
   const children = new Map<string | undefined, typeof graph.nodes>();
   for (const node of graph.nodes) {
@@ -89,9 +92,7 @@ export function mapParts(graph: DerivedGraph, view: GraphView, model: ExplainerM
   const edges = drawnEdges(graph.edges.filter((edge) => byId.has(edge.from) && byId.has(edge.to)));
   const boxes: BoxPart[] = [];
   const walk = (parent: string | undefined, depth: number) => {
-    const list = [...(children.get(parent) ?? [])].sort(
-      (a, b) => rank(a.id) - rank(b.id) || a.label.localeCompare(b.label),
-    );
+    const list = [...(children.get(parent) ?? [])].sort((a, b) => rank(a.id) - rank(b.id));
     for (const node of list) {
       const inside = children.get(node.id)?.length ?? 0;
       // (a file is said by the box's own badge; a group says how many files it holds)

@@ -10,7 +10,8 @@ export const reviseCommand: CommandSpec = {
   name: "revise",
   usage:
     "xpl revise <explainer> --select <id,id> [--include <id,id>] [-o <file>] | xpl revise <explainer> --run <id> [--proposal <file> | --decisions <file> | --accept] [-o <file>]",
-  summary: "Select feedback, inspect bounded proposals and accept a recoverable next revision",
+  summary:
+    "Pick reader requests, review the changes your agent proposes, and accept the ones you want",
   details: [
     "Select immutable feedback IDs after xpl index. The guide is preserved; anchors are resolved in memory.",
     "A chosen agent supplies --proposal JSON: [{id, patch}], with ordinary xpl apply patches, actor llm.",

@@ -29,9 +29,8 @@ the map.
 ## Mark a guide as reviewed
 
 Edit > **Mark as reviewed** records your name, what you checked (the text and the code links) and what you did
-not check. **About this guide** shows the review state: **Not yet reviewed by a person**, **Reviewed by a person** or
-**Changed since a person reviewed it**. It is
-separate from the code checks. A review of named boxes and steps covers them and their code links; a change to
+not check. **About this guide** shows the review state: **Not yet reviewed by a person**, **Reviewed by a
+person** or **Changed since a person reviewed it**. It is separate from the code checks. A review of named boxes and steps covers them and their code links; a change to
 other code does not make it out of date. A review of the whole repository covers every indexed file. A saved
 HTML page holds the review, but it cannot see later changes to the repository.
 
