@@ -33,7 +33,7 @@ export interface LegendShows {
   icons?: readonly KeyIcon[];
   /** The "See what is inside" corner button (a magnifier). */
   zoom?: boolean;
-  /** The "Show its parts here" corner button. */
+  /** The "Show inside" corner button. */
   expandHere?: boolean;
   /** Lines labelled with a count the viewer made up ("calls ×3"). */
   counts?: boolean;

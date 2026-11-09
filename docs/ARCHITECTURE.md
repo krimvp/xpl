@@ -1582,7 +1582,7 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 | `xpl resolve <explainer> [--write] [--allow-stale]` | §4.2 re-resolve against the index of the current code; report drifted llm elements, missing anchors; `--write` saves |
 | `xpl feedback <explainer> [--import <file> \| --export <file> \| --outcomes <file>]` | durable reader feedback: stable-ID import deduplication, snapshot context inspection, portable export and selected-ID outcome merges; no generation |
 | `xpl revise <explainer> --select <id,id> [--include <id,id>] [-o file]` / `--run <id> [--proposal file \| --decisions file \| --accept]` | explicitly selected feedback; bounded ordinary patch proposals, source and explanation diff; author subset/missing-anchor decisions; identity/freshness/readiness before atomic acceptance; prior artifact and retry journal |
-| `xpl status [explainer] [--view <id>] [--all]` | `--all` inventories every repository guide against one current index, without saving prose; otherwise the skill's to-do list, read-only: per view the shown nodes, stored edges and steps without a summary (static edges optional), concepts without one, drift (user-owned drift counted apart), missing anchors, broken references (ids gone from the index), stale derived-edge overlays, queued requests; per graph view the ghosts and stubs it draws (counts, the most referenced ghost ids, and for each folded ghost up to 3 of the elements it stands for with their counts; `--json`: every ghost with its count and all its `targets` (`{id, count}`), and every stub id, in `views[].ghosts`) with a warning above 12 ghosts; the tours (id, step count, steps whose focus ids or view are gone); `--view <id>`: that view only, with what it draws (each arrow: id, kind, ends, references, stored or derived, label; each `hidden` id and what it takes out; a flow's step links) |
+| `xpl status [explainer] [--view <id>] [--all]` | `--all` inventories every repository guide against one current index, without saving prose; otherwise the skill's to-do list, read-only: per view the shown nodes, stored edges and steps without a summary or with one that still starts with `TODO` (a draft's placeholder; static edges optional), concepts without one (or a TODO one), drift (user-owned drift counted apart), missing anchors, broken references (ids gone from the index), stale derived-edge overlays, queued requests; per graph view the ghosts and stubs it draws (counts, the most referenced ghost ids, and for each folded ghost up to 3 of the elements it stands for with their counts; `--json`: every ghost with its count and all its `targets` (`{id, count}`), and every stub id, in `views[].ghosts`) with a warning above 12 ghosts; the tours (id, step count, steps whose focus ids or view are gone; a tour without a summary, or a TODO one, counts as unexplained); `--view <id>`: that view only, with what it draws (each arrow: id, kind, ends, references, stored or derived, label; each `hidden` id and what it takes out; a flow's step links) |
 | `xpl ready [explainer] [--note reason] [--require-review]` | shared readiness report before export; `--json` adds `ok` to the report above; 0 ready (warnings allowed), 1 blockers/failure, 2 usage; writes nothing; a note records intentional warning/omission decisions |
 | `xpl lint [explainer] [--patch <file\|->] [--warn-only]` | checks the text a reader sees (the index, when there is one, counts the boxes and arrows of maps): rules below; `--patch` lints the explainer as it would be after `xpl apply` of that patch (merged in memory as actor `llm`, nothing written; a patch apply would reject prints the rejection and exits 1); exit 1 with any finding (so `lint --patch && apply` stops on one), 0 with `--warn-only` unless a `todo-left` error |
 | `xpl health` | a quick check of the indexed files (below): committed secrets, secrets in browser variables, `.env` files, code files over 1,000 lines, possibly unused code files; each finding with file, line, severity, why and fix; secret values masked; always exits 0 (a report, not a gate) |
@@ -1815,13 +1815,25 @@ file; `--json` adds the counts and what was left out.
   folders left out; label and summary TODOs) plus the outside systems they use, with an `llm` edge (`kind:
   custom`, label TODO) from each part to each system it imports, anchored at that import. `excludeFiles` for
   tests and docs on both. The tour: the system map, what it relies on, the inside of the biggest service,
-  then one step per part, the main part first. When imported outbound systems appear, the saved patch asks
+  then one step per part, the main part first, inside the skill's repo budget (`DRAFT_LIMITS.repoSteps`, 9
+  steps with where next): when the parts do not fit, the last part step takes the rest together. A file that
+  imports a standard-library web server module and also calls what starts it (`ListenAndServe`,
+  `createServer`, `serve_forever`; `outside.ts` `SERVER_STARTS`) adds the inbound Clients at that line, since
+  the import alone (`net/http` is also a client) proves nothing. Only a program with no inbound system and no
+  library shape gets an Operator (`role: person`) at its `main` (a Java `main` method of a top-level class
+  too), with one arrow to each part that holds one. When imported outbound systems appear, the saved patch asks
   whether each is on the default runtime path or is optional. The service and outside boxes keep their ids
   across drafts. A code file qualifies as a part when any indexed declaration in it has a substantive kind,
   including a class or method inside a Ruby module or PHP namespace. Imports, namespace wrappers and constants
   alone do not qualify; tests remain excluded. A `refs: none` index supplies no cross-file call arrows.
 - `path <entry>`: a sequence of the calls the entry symbol makes (depth 1, source order, at most 6
-  participants and 12 calls), and a tour with a big-picture step and one step per main call (at most 8).
+  participants and 12 calls), and a tour inside the skill's budget for a question (`DRAFT_LIMITS.pathSteps`,
+  8 steps with the map, the big picture and where next): the main calls share the steps that are left.
+  Frames come from the entry's syntax tree (`control-blocks.ts`, one walk over node types the TS/JS, Python,
+  Go, Java and Rust grammars share): a `loop` around the calls in a loop, an `alt` around a branch whose
+  calls sit in two or more arms, an `opt` around a branch with calls in one arm, at most 5, outermost first.
+  Each label is a TODO that quotes the deciding code; an `alt` adds a note that the frame has one label and no
+  line between its arms, so the label names each arm.
 - `class <entry>` (`draft-class.ts`): the type hierarchy around a class or interface. Up: the targets of the
   entry's `extends` and `implements` references, breadth first, at most 6. Down: the symbols whose `extends` or
   `implements` references point at it, two levels, the map at most 14 boxes. One graph view with `edgeKinds:

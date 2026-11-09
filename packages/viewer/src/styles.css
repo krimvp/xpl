@@ -969,6 +969,13 @@ code {
   white-space: nowrap;
 }
 
+/* A button whose label holds a title (Details: "Open its own map: ..."): it wraps inside a phone's pane. */
+.btn.is-wrapping {
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
+}
+
 .btn:hover:not(:disabled) {
   background: var(--hover);
 }

@@ -71,8 +71,6 @@ export function transitionText(edge: {
  * one branch is about 700 units wide, so it shows at full size in a pane of that width.)
  */
 export const STAGE_WIDTH = 250;
-/** The tallest stage box: three lines of label and the actor line under them (`stageHeight`). */
-export const STAGE_HEIGHT = 102;
 /** A stage box is as tall as its words: one line of label is 66 units, each more adds a line (V2-07). */
 export function stageHeight(label: string): number {
   return 66 + 18 * (wrapWords(label, STAGE_LABEL_CHARS, 3).length - 1);

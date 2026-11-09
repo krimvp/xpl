@@ -65,7 +65,7 @@ A summary is concrete and about this code ("requeues with `baseDelay * 2^attempt
 9. **Claims you can prove.** Absolute words, guard conditions, complete lists and folklore follow the rules in SKILL.md, "Accuracy".
 10. **One concrete example** helps more than a general rule: "with the default settings, the three retries wait 500 ms, 1 s and 2 s".
 11. **Talk to the reader** about their own code: "your handler", "your config file". Do not use "we" (`xpl lint`: `we-voice`).
-12. **Plain words for the reader**, not tool words: say box, diagram (or map, flow, sequence), step, arrow and code link. `xpl lint` (`tool-word`) flags node, edge, anchor, evidence, upsert, llm, provenance, stub, ghost, overlay and call-site. A word that is in the name of a box of the guide passes. Avoid "view" and "group" too.
+12. **Plain words for the reader**, not tool words: say box, diagram (or map, flow, sequence), step, arrow and code link. `xpl lint` (`tool-word`) flags evidence, upsert, llm, provenance, stub, ghost, overlay and call-site everywhere, and node, edge and anchor in tours only: a box summary may describe code that has nodes and edges of its own. A word that is in the name of a box of the guide passes, and so does "stub" in a text about tests. Avoid "view" and "group" too.
 13. **Rewrite, do not append.** When the code changes, rewrite the text whole, so the summary still says what the part is for in 1-2 sentences. Put a new case in `detail` or in a step of its own. A summary is never a list of changes.
 14. **Tell the reader what the code does**, not what to do. "Look at", "Notice" and "Compare" are fine. Author steps (reindex, choose an anchor) belong in the skill, not in a guide.
 
@@ -93,7 +93,7 @@ They also follow the core of ASD-STE100, Simplified Technical English:
 
 ### 2b. Words
 
-**Use the word on the left**, not the ones on the right. A code name in backticks is always fine (`validate`, `emit`). `xpl lint` checks the vague verbs (manages, provides, supplies, preserve, retain). It does not check the code verbs (render, dispatch, emit, persist, expose, enable, allow, verify, discover), because they are real API words: choose those yourself.
+**Use the word on the left**, not the ones on the right. A code name in backticks is always fine (`validate`, `emit`). `xpl lint` checks the vague verbs (manages, preserve, retain, harness as a verb) and many of the other words on the right, such as utilize, commence and prior to. It does not check the code verbs (render, dispatch, emit, persist, expose, enable, allow, verify, discover, provides, supplies), because they are real API words: choose those yourself.
 
 | Use                           | Not                                                |
 | ----------------------------- | -------------------------------------------------- |

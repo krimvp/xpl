@@ -248,7 +248,10 @@ try {
     await page.goto(pathToFileURL(output).href + "?perspective=map");
     await expect(page.locator("#root")).toContainText("Local install demo");
     await expect(page.locator(".workspace-diagram svg").first()).toBeVisible();
-    await expect(page.getByTestId("draft-banner")).toContainText("Draft preview");
+    // every draft says so in the header; one with problems left also lists them in a bar
+    await expect(page.getByTestId("draft-pill")).toHaveText("Draft");
+    if (language === "ts")
+      await expect(page.getByTestId("draft-banner")).toContainText("Draft. 7 problems to fix");
     await page.close();
     assert.deepEqual(problems, []);
 

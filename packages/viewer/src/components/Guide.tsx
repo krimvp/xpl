@@ -393,7 +393,7 @@ function GuideSection({
       ? [{ id, from: element.step.from, label: element.step.label }]
       : [];
   });
-  // The two ends of each call the section shows: a "Parts" card does not list them a second time.
+  // The two ends of each call the section shows: the "In the code" card does not list them a second time.
   const callEnds = new Set(
     step.focus.flatMap((id) => {
       const element = state.model.element(id);
@@ -526,7 +526,9 @@ function GuideSection({
         const fresh = members.filter((member) => !callEnds.has(member));
         return fresh.length > 0 && !onlyTests ? (
           <figure className="guide-mini" key={id}>
-            <figcaption>{element?.type === "concept" ? "Where this applies" : "Parts"}</figcaption>
+            <figcaption>
+              {element?.type === "concept" ? "Where this applies" : "In the code"}
+            </figcaption>
             <div className="guide-mini-row">
               {fresh.map((member) => (
                 <button
