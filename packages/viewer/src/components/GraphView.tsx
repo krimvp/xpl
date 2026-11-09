@@ -946,13 +946,14 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
     node.change && changeText(node.change),
   );
   // left to right, the order Tab takes them in
+  // (top right, in the name's row: the box keeps room for them there, and a summary's lines run below)
   const cornerButtons = (
     <>
       {expandable && (
         <CornerButton
           className="expand-here"
           x={node.width - ZOOM_SIZE - 6 - (zoomable ? ZOOM_SIZE + 4 : 0)}
-          y={node.height - ZOOM_SIZE - 6}
+          y={lid + 6}
           label={`Show what is inside ${node.label}, in its box`}
           title="Show inside: what is inside it, in this box, on this map"
           onPress={() => store.toggleExpanded(node.id)}
@@ -968,7 +969,7 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
         <CornerButton
           className="zoom"
           x={node.width - ZOOM_SIZE - 6 - (showCollapse ? 30 : 0)}
-          y={container ? 8 : node.height - ZOOM_SIZE - 6}
+          y={container ? 8 : lid + 6}
           label={`Open the map of what is inside ${node.label}`}
           title="Open its own map: what is inside it"
           onPress={zoom}

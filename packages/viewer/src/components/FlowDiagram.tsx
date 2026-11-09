@@ -1,5 +1,5 @@
 import { DiagramText } from "./DiagramText.js";
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   codeFocus,
   processFlow,
@@ -15,7 +15,6 @@ import {
   EDGE_LABEL_LINE,
   EDGE_LABEL_CHARS,
   layoutFlow,
-  layoutFlowFitting,
   levelTitle,
   type FlowLayout,
   placedStages,
@@ -141,39 +140,14 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
       ),
     [flow, roles, state.model, owner],
   );
-  // The pane's size, coarsely (as GraphView): a slide picks its flow's direction and parts for it. Elsewhere
-  // a flow keeps the shape it got for the window (`layoutFlowView`), whatever pane it is drawn in.
-  const [host, setHost] = useState<HTMLDivElement | null>(null);
-  const [pane, setPane] = useState<{ width: number; height: number }>();
-  useLayoutEffect(() => {
-    const el = host;
-    if (!el || !present) return;
-    const step = (n: number) => Math.round(Math.log(Math.max(n, 1)) / Math.log(1.15));
-    let last = "";
-    const measure = () => {
-      const shape = `${step(el.clientWidth)}x${step(el.clientHeight)}`;
-      if (shape === last) return;
-      last = shape;
-      setPane({ width: el.clientWidth, height: el.clientHeight });
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [host, present]);
-  const slidePane = present ? pane : undefined;
+  // A flow keeps the shape it got for the window (`layoutFlowView`), whatever pane draws it: the Tour's
+  // picture, the Flow tab, Explore and Present. (Present chose its own for the slide's pane, and a reader
+  // who had learned the picture lost it when the talk started.)
   useEffect(() => {
-    // a slide waits for its pane's size
-    if (present && !slidePane) return;
     let cancelled = false;
     setError(undefined);
     // (an outline beside the code is one narrow column, top to bottom, whatever the window's shape)
-    (slidePane
-      ? layoutFlowFitting(drawn, slidePane, { actors })
-      : outline
-        ? layoutFlow(drawn, { actors })
-        : layoutFlowView(view.id, drawn, { actors })
-    ).then(
+    (outline ? layoutFlow(drawn, { actors }) : layoutFlowView(view.id, drawn, { actors })).then(
       (result) => {
         if (!cancelled) setLaidOut({ flow: drawn, layout: result });
       },
@@ -184,7 +158,7 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
     return () => {
       cancelled = true;
     };
-  }, [drawn, actors, slidePane, present, outline, view.id]);
+  }, [drawn, actors, outline, view.id]);
   if (error)
     return (
       <div className="diagram-message" role="alert">
@@ -193,7 +167,7 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
     );
   if (!layout)
     return (
-      <div ref={setHost} className={`diagram-message flow-diagram${outline ? " is-outline" : ""}`}>
+      <div className={`diagram-message flow-diagram${outline ? " is-outline" : ""}`}>
         Drawing the flow…
       </div>
     );
@@ -548,7 +522,6 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
     );
   return (
     <div
-      ref={setHost}
       className={`flow-diagram${outline ? " is-outline" : ""}`}
       data-testid="process-flow"
       data-direction={layout.direction}

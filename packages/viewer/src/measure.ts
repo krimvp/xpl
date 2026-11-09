@@ -17,6 +17,27 @@ function canvas(): CanvasRenderingContext2D | null {
   return context;
 }
 
+/** The code font stack (styles: `--font-mono`). */
+export const CODE_FONT =
+  'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace';
+
+/** Width in px of `text` set in the code font at `size`. */
+export function codeWidth(text: string, size: number): number {
+  const key = `code|${size}|${text}`;
+  const known = cache.get(key);
+  if (known !== undefined) return known;
+  const ctx = canvas();
+  let width: number;
+  if (ctx) {
+    ctx.font = `400 ${size}px ${CODE_FONT}`;
+    width = ctx.measureText(text).width;
+  } else {
+    width = text.length * size * 0.6;
+  }
+  cache.set(key, width);
+  return width;
+}
+
 /** Width in px of `text` set in `font` (a CSS font shorthand such as `600 13px system-ui`). */
 export function textWidth(text: string, size: number, weight: number | string = 400): number {
   const key = `${weight}|${size}|${text}`;

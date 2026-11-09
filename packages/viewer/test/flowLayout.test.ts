@@ -9,6 +9,7 @@ import {
   decisionSize,
   layoutFlow,
   layoutFlowFitting,
+  stateMachine,
   stateRoles,
   type FlowLayout,
 } from "../src/layout/flowLayout.js";
@@ -286,6 +287,33 @@ function choices() {
   ]);
 }
 
+/** The longest stretch two routes share (on one line, overlapping), in diagram units. */
+function sharedRun(a: FlowLayout["edges"][number], b: FlowLayout["edges"][number]): number {
+  const segments = (edge: FlowLayout["edges"][number]) => {
+    const points = edge.sections.flatMap((s) => [s.startPoint, ...s.bendPoints, s.endPoint]);
+    return points.slice(1).map((p, i) => [points[i]!, p] as const);
+  };
+  let longest = 0;
+  for (const [p, q] of segments(a))
+    for (const [r, t] of segments(b)) {
+      const vertical = Math.abs(p.x - q.x) < 0.5 && Math.abs(r.x - t.x) < 0.5;
+      const horizontal = Math.abs(p.y - q.y) < 0.5 && Math.abs(r.y - t.y) < 0.5;
+      if (vertical && Math.abs(p.x - r.x) < 0.5)
+        longest = Math.max(
+          longest,
+          Math.min(Math.max(p.y, q.y), Math.max(r.y, t.y)) -
+            Math.max(Math.min(p.y, q.y), Math.min(r.y, t.y)),
+        );
+      if (horizontal && Math.abs(p.y - r.y) < 0.5)
+        longest = Math.max(
+          longest,
+          Math.min(Math.max(p.x, q.x), Math.max(r.x, t.x)) -
+            Math.max(Math.min(p.x, q.x), Math.min(r.x, t.x)),
+        );
+    }
+  return longest;
+}
+
 /** The scale the viewer fits a layout into a pane at (PanZoom: 24 px of padding a side, at most 1.25). */
 const fit = (layout: FlowLayout, pane: { width: number; height: number }) =>
   Math.min(1.25, (pane.width - 48) / layout.width, (pane.height - 48) / layout.height);
@@ -377,14 +405,20 @@ describe("a long flow in a laptop's pane", () => {
     expect([layout.direction, layout.parts]).toEqual(["DOWN", 1]);
   });
 
-  // two arrows out of one choice ran side by side, 7 px apart, across the whole width: they read as dividers
-  it("runs the arrows from one box to the next row as one trunk, other boxes' arrows a lane apart", async () => {
+  // two arrows out of one choice ran side by side, 7 px apart, across the whole width: they read as dividers.
+  // Then they shared one trunk, and the "yes" and "no" of vite's "Circular invalidation?" could not be told
+  // apart: one trunk only for arrows into the same box.
+  it("runs the arrows into one box of the next row as one trunk, every other arrow a lane apart", async () => {
     const layout = await layoutFlow(choices(), { direction: "RIGHT", parts: 2 });
     const row = (id: string) => (box(layout, id).y > box(layout, "f:1").y + 150 ? 1 : 0);
     const wraps = layout.edges.filter(
       (edge) => edge.to !== undefined && row(edge.from) !== row(edge.to),
     );
-    expect(wraps.length).toBeGreaterThan(1);
+    // "Circular invalidation?": its "no" to the next choice, its "yes" to a copy of "Reload the page"
+    expect(wraps.map((edge) => `${edge.from}->${edge.to}`).sort()).toEqual([
+      "f:4->f:5",
+      "f:4->f:6#3",
+    ]);
     // each one's longest run across the flow: its height
     const across = (edge: FlowLayout["edges"][number]) => {
       const points = edge.sections.flatMap((s) => [s.startPoint, ...s.bendPoints, s.endPoint]);
@@ -396,9 +430,60 @@ describe("a long flow in a laptop's pane", () => {
     for (const a of wraps)
       for (const b of wraps) {
         if (a === b) continue;
-        if (a.from === b.from) expect(across(a)).toBe(across(b));
-        else expect(Math.abs(across(a) - across(b))).toBeGreaterThanOrEqual(16);
+        if (a.to === b.to) expect(across(a)).toBe(across(b));
+        else {
+          expect(Math.abs(across(a) - across(b))).toBeGreaterThanOrEqual(16);
+          expect(sharedRun(a, b)).toBeLessThanOrEqual(20);
+        }
       }
+  });
+
+  // a 12-step retry decision (5 choices in a row, one end reached 7 ways): "yes" of step 2 ran straight
+  // through the diamond of step 4, its word on 4's question; the wrap into step 10 ran through step 5
+  it("in a long run of choices, runs no arrow through a box and puts no word on one", async () => {
+    const choice = (label: string, ...next: [number, string][]): Step => ({
+      label,
+      shape: "decision",
+      next: next.map(([n, word]) => ({ step: `f:${n}`, label: word })),
+    });
+    const flow = flowOf([
+      choice("Retries left?", [2, "yes"], [12, "no"]),
+      choice("Forced by a hook?", [10, "yes"], [3, "no"]),
+      choice("Method allowed?", [4, "yes"], [12, "no"]),
+      choice("What does the check say?", [5, "true, other or not set"], [12, "false"]),
+      choice(
+        "Which kind of failure?",
+        [6, "timeout"],
+        [7, "bad status"],
+        [10, "network error"],
+        [12, "other"],
+      ),
+      choice("Retry timeouts?", [10, "yes"], [12, "no"]),
+      choice("Status in the list?", [8, "yes"], [12, "no"]),
+      choice("Did the server say when?", [11, "yes"], [9, "no"]),
+      choice("Payload too large?", [12, "yes"], [10, "no"]),
+      { label: "Compute the backoff wait", next: [] },
+      { label: "Use the server's wait", shape: "terminal", next: [] },
+      { label: "Throw: no retry", shape: "terminal", next: [] },
+    ]);
+    const layout = await layoutFlowFitting(flow, pane);
+    expect([layout.direction, layout.parts]).toEqual(["RIGHT", 2]);
+    expect(routesThroughBoxes(layout)).toEqual([]);
+    const onBoxes = layout.edges.flatMap((edge) =>
+      edge.labels.flatMap((l) =>
+        layout.children
+          .filter(
+            (c) =>
+              l.x < c.x + c.width &&
+              c.x < l.x + l.width &&
+              l.y < c.y + c.height &&
+              c.y < l.y + l.height,
+          )
+          .map((c) => `${l.text} on ${c.id}`),
+      ),
+    );
+    expect(onBoxes).toEqual([]);
+    expect(overlaps(layout)).toEqual([]);
   });
 
   it("runs the arrow from the end of one row to the start of the next between the rows", async () => {
@@ -483,6 +568,46 @@ describe("a flow of states (xpl draft states)", () => {
       step("done", T, []),
     ],
   };
+
+  // a move reached from two states drew two arrows with one id (one data-element-id, one React key)
+  it("draws a move reached from two states as two arrows, each its own id, both picking the move", () => {
+    const flow = {
+      ...view,
+      steps: [
+        step("queued", T, ["start"]),
+        step("start", start, ["running"]),
+        step("running", T, ["start", "finish"]),
+        step("finish", finish, ["done"]),
+        step("done", T, []),
+      ],
+    };
+    const roles = stateRoles(flow)!;
+    const machine = stateMachine(processFlow(flow as never), roles)!;
+    expect(machine.flow.transitions.map((t) => [t.id, t.from, t.to])).toEqual([
+      ["start", "queued", "running"],
+      ["start#from:running", "running", "running"],
+      ["finish", "running", "done"],
+    ]);
+    expect(machine.moveOf.get("start")).toBe("start");
+    expect(machine.moveOf.get("start#from:running")).toBe("start");
+    expect(machine.flow.stages.map(({ step }) => step.id)).toEqual(["queued", "running", "done"]);
+  });
+
+  it("is no state machine when a move has no state before it: it would have no arrow to be drawn on", () => {
+    const flow = {
+      ...view,
+      steps: [
+        step("queued", T, []),
+        step("start", start, ["running"]),
+        step("running", T, ["finish"]),
+        step("finish", finish, ["done"]),
+        step("done", T, []),
+      ],
+    };
+    const roles = stateRoles(flow)!;
+    expect(roles.get("start")).toBe("move");
+    expect(stateMachine(processFlow(flow as never), roles)).toBeUndefined();
+  });
 
   it("tells its states from its moves", () => {
     expect(Object.fromEntries(stateRoles(view as never)!)).toEqual({

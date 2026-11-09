@@ -22,6 +22,7 @@ import {
   ICON_ROOM,
   startAnchor,
   startFocus,
+  wholePicture,
   type LayoutEdge,
   type LayoutNode,
 } from "../src/layout/graphLayout.js";
@@ -585,6 +586,38 @@ describe("layoutGraph", () => {
     expect(layout.nodes.map((n) => [n.id, n.badge, n.role, n.sketch])).toEqual([
       ["grp:client", "sketch", "person", true],
       ["grp:db", "database", "database", undefined],
+    ]);
+  });
+
+  // ky's system map: the box "Your app" carried the chip "your app"
+  it("badges a box by its role when its technology only repeats its name", async () => {
+    const graph: DerivedGraph = {
+      nodes: [
+        {
+          id: "grp:app",
+          label: "Your app",
+          kind: "group",
+          role: "external",
+          tech: "your app",
+          container: false,
+        },
+        {
+          id: "grp:db",
+          label: "Orders",
+          kind: "group",
+          role: "database",
+          tech: "PostgreSQL",
+          container: false,
+        },
+      ],
+      edges: [],
+      stubs: [],
+      ghosts: [],
+    };
+    const layout = await layoutGraph(graph);
+    expect(layout.nodes.map((n) => [n.id, n.badge])).toEqual([
+      ["grp:app", "external system"],
+      ["grp:db", "PostgreSQL"],
     ]);
   });
 
@@ -1326,6 +1359,34 @@ describe("what a still picture's frame cuts", () => {
   });
 });
 
+// ky's "Every file of ky" step 1 names every box: its picture cut "types" at the left and "errors" at the
+// bottom, the big picture in part
+describe("the still picture of a step about every box", () => {
+  const content = { width: 1100, height: 700 };
+  const all = { boxes: [{ x: 20, y: 10, width: 1060, height: 680 }] };
+  it("shows the whole diagram, as tall as it takes up to the tallest picture, below the usual floor", () => {
+    const whole = wholePicture(619, 620, content, all)!;
+    // 599 px of width for 1,100 units: 0.545, under the 0.6 floor of a framed picture
+    expect(whole.transform.k).toBeCloseTo(599 / 1100, 5);
+    expect(whole.height).toBeCloseTo(700 * (599 / 1100) + 20, 5);
+    expect(whole.transform.x).toBeCloseTo(10, 5);
+    expect([whole.hidden, whole.partial]).toEqual([0, false]);
+  });
+  it("is no special case for a step about part of the diagram, or a diagram too large to read whole", () => {
+    expect(
+      wholePicture(619, 620, content, { boxes: [{ x: 20, y: 10, width: 300, height: 200 }] }),
+    ).toBe(undefined);
+    expect(
+      wholePicture(
+        619,
+        620,
+        { width: 4000, height: 700 },
+        { boxes: [{ x: 0, y: 0, width: 4000, height: 700 }] },
+      ),
+    ).toBe(undefined);
+  });
+});
+
 // "Go" on each of cobra's 7 boxes said nothing a box could tell apart; the map says it once
 describe("a badge every box shares", () => {
   const go = (id: string): DerivedGraph["nodes"][number] => ({
@@ -1513,6 +1574,89 @@ describe("tables", () => {
       expect(end.x).toBeLessThan(to.x + to.width);
     }
     expect(lanes.size).toBe(2);
+  });
+
+  // ky's data map: "HTTPError extends KyError" turned inside the NormalizedOptions table and left its top,
+  // so it read "HTTPError extends NormalizedOptions"
+  it("routes an arrow around a table it would turn inside, never through it", async () => {
+    const rows = (t: string, names: string[], types: Record<string, string> = {}) =>
+      names.map((n, i) => field(t, n, i, types[n] ?? "string"));
+    const extend = (from: string, to: string) => ({
+      ...graph.edges[0]!,
+      id: `edge:extends:${from}->${to}`,
+      kind: "extends" as const,
+      from,
+      to,
+    });
+    const hold = (from: string, to: string) => ({
+      ...graph.edges[0]!,
+      id: `edge:references:${from}->${to}`,
+      from,
+      to,
+    });
+    const ky: DerivedGraph = {
+      nodes: [
+        { ...type("KyError"), symbolKind: "class" },
+        ...rows("KyError", ["name"]),
+        { ...type("TimeoutError"), symbolKind: "class" },
+        ...rows("TimeoutError", ["name", "request"]),
+        { ...type("ResponseSizeError"), symbolKind: "class" },
+        ...rows("ResponseSizeError", ["name", "request", "maxResponseSize"]),
+        { ...type("HTTPError"), symbolKind: "class" },
+        ...rows("HTTPError", ["name", "response", "request", "options", "data"], {
+          options: "NormalizedOptions",
+        }),
+        type("NormalizedOptions"),
+        ...rows("NormalizedOptions", [
+          "method",
+          "credentials",
+          "headers",
+          "retry",
+          "baseUrl",
+          "prefix",
+          "onDownloadProgress",
+          "onUploadProgress",
+        ]),
+        type("Options"),
+        ...rows("Options", ["method", "headers", "signal"]),
+      ],
+      edges: [
+        extend("HTTPError", "KyError"),
+        extend("ResponseSizeError", "KyError"),
+        extend("TimeoutError", "KyError"),
+        hold("HTTPError.options", "NormalizedOptions"),
+        hold("NormalizedOptions.baseUrl", "Options"),
+        hold("NormalizedOptions.onDownloadProgress", "Options"),
+        hold("NormalizedOptions.onUploadProgress", "Options"),
+      ],
+      stubs: [],
+      ghosts: [],
+    };
+    const layout = await layoutGraph(ky);
+    const boxes = absoluteBoxes(layout.nodes);
+    const table = (id: string) => (boxes.has(id) && !id.includes(".") ? id : id.split(".")[0]!);
+    const through = layout.edges.flatMap((edge) =>
+      layout.nodes
+        .filter((n) => n.id !== table(edge.from) && n.id !== table(edge.to))
+        .filter((n) => {
+          const b = boxes.get(n.id)!;
+          return edge.points.some((p, i) => {
+            const q = edge.points[i + 1] ?? p;
+            return (
+              Math.max(p.x, q.x) > b.x &&
+              Math.min(p.x, q.x) < b.x + b.width &&
+              Math.max(p.y, q.y) > b.y &&
+              Math.min(p.y, q.y) < b.y + b.height
+            );
+          });
+        })
+        .map((n) => `${edge.id} through ${n.id}`),
+    );
+    expect(through).toEqual([]);
+    // it goes up 10 px left of the table, the nearer side
+    const route = layout.edges.find((e) => e.id === "edge:extends:HTTPError->KyError")!.points;
+    const options = boxes.get("NormalizedOptions")!;
+    expect(route.map((p) => p.x)).toContain(options.x - 10);
   });
 
   it("is laid out in the direction that draws it larger in the pane", async () => {

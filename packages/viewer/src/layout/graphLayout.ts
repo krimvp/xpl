@@ -27,7 +27,7 @@ import {
 } from "@xpl/core";
 import { drawnEdges, isHolds, kindCount, rowTypeText } from "../drawnEdges.js";
 import type { ChangeStatus } from "../diff.js";
-import { textWidth } from "../measure.js";
+import { codeWidth, textWidth } from "../measure.js";
 import {
   distanceToSegment,
   nearRoute,
@@ -38,6 +38,7 @@ import {
 } from "../svg.js";
 import { unionBox, type Focus } from "../viewport.js";
 import {
+  aroundBoxes,
   layered,
   layerIndex,
   orthogonalRoute,
@@ -212,12 +213,30 @@ export function codeRuns(lines: readonly string[]): { text: string; code: boolea
   });
 }
 
+/** The font size of code in a box summary (styles: `.node .box-summary .box-code`). */
+const SUMMARY_CODE_FONT = 11.5;
+
 /**
- * `text` wrapped at word boundaries into lines no wider than `width`, at most `max` of them; the last line of a
- * longer text is cut and ends in "…". A word longer than a line is cut too.
+ * The width of each line of a box summary as drawn: its words in the summary font, its code (between
+ * backticks, also a span that goes on from the line before) in the code font, the backticks dropped.
+ */
+function summaryWidths(lines: readonly string[]): number[] {
+  return codeRuns(lines).map((runs) =>
+    runs.reduce(
+      (sum, run) =>
+        sum +
+        (run.code ? codeWidth(run.text, SUMMARY_CODE_FONT) : textWidth(run.text, SUMMARY_FONT)),
+      0,
+    ),
+  );
+}
+
+/**
+ * `text` wrapped at word boundaries into lines no wider than `width` as drawn (`summaryWidths`), at most `max`
+ * of them; the last line of a longer text is cut and ends in "…". A word longer than a line is cut too.
  */
 function wrapText(text: string, width: number, max = SUMMARY_LINES): string[] {
-  const fits = (line: string) => textWidth(line, SUMMARY_FONT) <= width;
+  const fits = (line: string) => summaryWidths([line])[0]! <= width;
   const cut = (line: string) => {
     let out = line;
     while (out.length > 1 && !fits(`${out}…`)) out = out.slice(0, -1);
@@ -261,11 +280,15 @@ export function labelWidth(label: string): number {
 
 /**
  * The badge of a box: its technology or its role on an architecture map ("PostgreSQL", "database"), else
- * the kind of code it is.
+ * the kind of code it is. A technology that only repeats the box's name ("Your app", "your app") says
+ * nothing: the role does.
  */
 function nodeBadge(node: GraphNode): string {
   if (node.sketch) return "sketch";
-  if (node.role !== undefined) return node.tech ?? ROLE_WORDS[node.role];
+  if (node.role !== undefined)
+    return node.tech !== undefined && node.tech.toLowerCase() !== node.label.toLowerCase()
+      ? node.tech
+      : ROLE_WORDS[node.role];
   return node.kindWord ?? node.symbolKind ?? node.kind;
 }
 
@@ -745,54 +768,6 @@ interface Level {
   /** The box of the level: a container's own node, or undefined for the canvas. */
   node: LayoutNode | undefined;
   routes: LayeredResult["routes"];
-}
-
-/** Detour orthogonal segments around other boxes after their pinned positions replace dagre's. */
-function aroundBoxes(points: Point[], boxes: Box[]): Point[] {
-  let route = points;
-  for (let pass = 0; pass < 32; pass++) {
-    let changed = false;
-    for (let i = 1; i < route.length; i++) {
-      const a = route[i - 1]!,
-        b = route[i]!;
-      const horizontal = a.y === b.y;
-      const obstacle = boxes.find((box) =>
-        horizontal
-          ? a.y > box.y &&
-            a.y < box.y + box.height &&
-            Math.max(a.x, b.x) > box.x &&
-            Math.min(a.x, b.x) < box.x + box.width
-          : a.x === b.x &&
-            a.x > box.x &&
-            a.x < box.x + box.width &&
-            Math.max(a.y, b.y) > box.y &&
-            Math.min(a.y, b.y) < box.y + box.height,
-      );
-      if (!obstacle || inside(obstacle, a, 0) || inside(obstacle, b, 0)) continue;
-      const cross = horizontal ? "y" : "x",
-        along = horizontal ? "x" : "y";
-      const size = horizontal ? "height" : "width",
-        length = horizontal ? "width" : "height";
-      const low = obstacle[cross] - 10,
-        high = obstacle[cross] + obstacle[size] + 10;
-      const offset = Math.abs(a[cross] - low) <= Math.abs(a[cross] - high) ? low : high;
-      const forward = a[along] < b[along];
-      const entry = forward ? obstacle[along] - 10 : obstacle[along] + obstacle[length] + 10;
-      const exit = forward ? obstacle[along] + obstacle[length] + 10 : obstacle[along] - 10;
-      route = [
-        ...route.slice(0, i),
-        { ...a, [along]: entry },
-        { ...a, [along]: entry, [cross]: offset },
-        { ...b, [along]: exit, [cross]: offset },
-        { ...b, [along]: exit },
-        ...route.slice(i),
-      ];
-      changed = true;
-      break;
-    }
-    if (!changed) break;
-  }
-  return route;
 }
 
 /** True when two orthogonal routes cross or share a stretch away from their ends. */
@@ -1522,18 +1497,18 @@ function layeredLayout(
         if (route) route.label = undefined;
       }
     }
-    items.forEach((item, n) =>
+    // a route that still runs through a box (or turns inside one) goes around it
+    items.forEach((item, n) => {
+      const others = obstacles
+        .filter(([id]) => id !== item.from.key && id !== item.to.key)
+        .map(([, box]) => box);
+      const route = routed[n]!;
       item.store(
-        pinned
-          ? aroundBoxes(
-              routed[n]!,
-              siblings
-                .filter((node) => node.id !== item.from.key && node.id !== item.to.key)
-                .map((node) => nodeBox(node)),
-            )
-          : routed[n]!,
-      ),
-    );
+        pinned || others.some((box) => crossesBox(route, box, 0))
+          ? aroundBoxes(route, others)
+          : route,
+      );
+    });
   }
 
   // Each edge, whole: the inner parts on its way out of the containers around its start, the part its holder
@@ -2246,6 +2221,38 @@ export function frameFocus(
   return {
     boxes: focused.map((id) => boxes.get(id)!),
     neighbours: [...near].flatMap((id) => boxes.get(id) ?? []),
+  };
+}
+
+/** The zoom a whole picture of a step about every box may go down to: 13-unit labels at about 6px. */
+const WHOLE_PICTURE_MIN = 0.45;
+
+/**
+ * The still picture of a step whose focus spans the whole diagram (a tour's big-picture step): all of it,
+ * centred across, as tall as that takes up to `maxHeight`, and below the floor a framed picture keeps (it
+ * has "Open in Map" for a closer look). A frame of part of it cut boxes at the edges and named no part.
+ * Undefined for any other step, or when the whole would be drawn smaller than `WHOLE_PICTURE_MIN`: the
+ * usual frame (`snapshotView`) places those. Any kind of diagram; `focus` and `content` in its units.
+ */
+export function wholePicture(
+  width: number,
+  maxHeight: number,
+  content: { width: number; height: number },
+  focus: Focus | undefined,
+):
+  | { transform: { k: number; x: number; y: number }; height: number; hidden: 0; partial: false }
+  | undefined {
+  const spread = unionBox(focus?.boxes ?? []);
+  if (!spread || width <= 0 || content.width <= 0 || content.height <= 0) return undefined;
+  if (spread.width < 0.9 * content.width || spread.height < 0.9 * content.height) return undefined;
+  const pad = 10;
+  const k = Math.min(1, (width - 2 * pad) / content.width, (maxHeight - 2 * pad) / content.height);
+  if (k < WHOLE_PICTURE_MIN) return undefined;
+  return {
+    transform: { k, x: (width - content.width * k) / 2, y: pad },
+    height: content.height * k + 2 * pad,
+    hidden: 0,
+    partial: false,
   };
 }
 

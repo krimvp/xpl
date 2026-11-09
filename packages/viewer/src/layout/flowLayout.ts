@@ -3,6 +3,7 @@ import { textWidth } from "../measure.js";
 import type { Point } from "../svg.js";
 import type { Box } from "../svg.js";
 import {
+  aroundBoxes,
   type Direction,
   layered,
   orthogonalRoute,
@@ -354,7 +355,7 @@ export async function layoutFlow(
   const parts = Math.max(1, Math.floor(options.parts ?? 1));
   const split = parts > 1 ? inParts(laid, parts) : undefined;
   const out = {
-    ...(split ?? laid),
+    ...clearOfOthers(split ?? laid),
     direction,
     labelChars,
     parts: split ? parts : 1,
@@ -685,6 +686,37 @@ function inParts(
         clear(head[head.length - 2]!)
       )
         head.pop();
+      // the arrow goes straight down from the end of its head past the bottom of its part: where a box of
+      // the part is in the way (ky's "Forced by a hook?" ran through the next choice), it first steps aside
+      // to the nearest side of the boxes in the way
+      const last = head[head.length - 1]!;
+      const ahead = (x: number, y: number) =>
+        layout.children.some(
+          (c) =>
+            c.id !== edge.from &&
+            partOf(c.id) === part &&
+            c.y + c.height > y &&
+            x > c.x - 6 &&
+            x < c.x + c.width + 6,
+        );
+      if (ahead(last.x, last.y)) {
+        const jog = last.y + 14;
+        const flat = (x: number) =>
+          layout.children.every(
+            (c) =>
+              c.id === edge.from ||
+              c.y >= jog ||
+              c.y + c.height <= jog ||
+              Math.max(x, last.x) <= c.x ||
+              Math.min(x, last.x) >= c.x + c.width,
+          );
+        const aside = layout.children
+          .filter((c) => partOf(c.id) === part && c.id !== edge.from)
+          .flatMap((c) => [c.x - 12, c.x + c.width + 12])
+          .filter((x) => !ahead(x, jog) && flat(x))
+          .sort((a, b) => Math.abs(a - last.x) - Math.abs(b - last.x))[0];
+        if (aside !== undefined) head.push({ x: last.x, y: jog }, { x: aside, y: jog });
+      }
       return [edge.id, head] as const;
     }),
   );
@@ -703,17 +735,18 @@ function inParts(
     for (const p of points) extend(part, p.x, p.x, crossing.includes(edge) ? -Infinity : p.y);
     for (const l of edge.labels) extend(part, l.x, l.x + l.width, l.y + l.height);
   }
-  // The arrows that leave one box share a lane (one trunk, split only near their ends), and the lanes keep
-  // `WRAP_LANE` apart: the arrow that leaves furthest along runs innermost, so no two of them cross.
+  // Each arrow runs in a lane of its own, `WRAP_LANE` apart, and only arrows into one box share one: arrows
+  // out of one choice that shared a trunk could not be told apart ("yes" and "no" ran as one line). The
+  // arrow that leaves furthest along runs innermost, so no two of them cross.
   const headEnd = (edge: FlowLayout["edges"][number]) => {
     const head = kept.get(edge.id)!;
     return head[head.length - 1]!.x;
   };
-  const sources = [...new Set(crossing.map((edge) => edge.from))];
-  const farthest = (from: string) =>
-    Math.max(...crossing.filter((edge) => edge.from === from).map(headEnd));
-  sources.sort((a, b) => farthest(b) - farthest(a));
-  const lanes = sources.length;
+  const targets = [...new Set(crossing.map((edge) => edge.to!))];
+  const farthest = (to: string) =>
+    Math.max(...crossing.filter((edge) => edge.to === to).map(headEnd));
+  targets.sort((a, b) => farthest(b) - farthest(a));
+  const lanes = targets.length;
   const dx: number[] = [],
     dy: number[] = [];
   let cursor = Math.min(...lo);
@@ -743,7 +776,7 @@ function inParts(
         labels: edge.labels.map((l) => ({ ...l, ...m(l) })),
       };
     }
-    const lane = sources.indexOf(edge.from);
+    const lane = targets.indexOf(edge.to!);
     const to = partOf(edge.to!);
     const head = kept.get(edge.id)!.map(move(from));
     const last = head[head.length - 1]!;
@@ -752,13 +785,44 @@ function inParts(
     const run = low[from]! + dy[from]! + 18 + WRAP_LANE * lane;
     const gutter = hi[from]! + dx[from]! + PART_GAP / 2 + WRAP_LANE * lane;
     const over = top - 16 - WRAP_LANE * lane;
+    // it comes down into its box from over the part; where a box of that part is in the way, it comes down
+    // beside the boxes in the way and steps across just above its own
+    const jog = end.y - 14;
+    const blocked = (x: number) =>
+      children.some(
+        (c) =>
+          c.id !== edge.to &&
+          partOf(c.id) === to &&
+          c.y < jog &&
+          x > c.x - 6 &&
+          x < c.x + c.width + 6,
+      );
+    const flat = (x: number) =>
+      children.every(
+        (c) =>
+          c.id === edge.to ||
+          c.y >= jog ||
+          c.y + c.height <= jog ||
+          Math.max(x, end.x) <= c.x ||
+          Math.min(x, end.x) >= c.x + c.width,
+      );
+    const beside = blocked(end.x)
+      ? children
+          .filter((c) => partOf(c.id) === to && c.id !== edge.to)
+          .flatMap((c) => [c.x - 12, c.x + c.width + 12])
+          .filter((x) => !blocked(x) && flat(x))
+          .sort((a, b) => Math.abs(a - end.x) - Math.abs(b - end.x))[0]
+      : undefined;
+    const into =
+      beside === undefined
+        ? [{ x: end.x, y: over }, end]
+        : [{ x: beside, y: over }, { x: beside, y: jog }, { x: end.x, y: jog }, end];
     const route = [
       ...head,
       { x: last.x, y: run },
       { x: gutter, y: run },
       { x: gutter, y: over },
-      { x: end.x, y: over },
-      end,
+      ...into,
     ];
     return {
       ...edge,
@@ -810,6 +874,81 @@ function inParts(
     ]),
   );
   return { width: maxX + 24, height: maxY + 30, children: outChildren, edges: outEdges };
+}
+
+/**
+ * The layout with every route and label clear of the boxes it does not join: a route that still runs through
+ * a box goes around it, and a label on a box (it read as part of the box's words: "What does shouldRetry
+ * yes") moves along its own route to the first place where it is on no box and no other label.
+ */
+function clearOfOthers<T extends Pick<FlowLayout, "children" | "edges">>(layout: T): T {
+  const pointsOf = (edge: FlowLayout["edges"][number]) =>
+    edge.sections.flatMap((s) => [s.startPoint, ...s.bendPoints, s.endPoint]);
+  const edges = layout.edges.map((edge) => {
+    const others = layout.children.filter((c) => c.id !== edge.from && c.id !== edge.to);
+    const points = pointsOf(edge);
+    if (!others.some((b) => runsThrough(points, b))) return edge;
+    const route = aroundBoxes(points, others);
+    return {
+      ...edge,
+      sections: [
+        { startPoint: route[0]!, bendPoints: route.slice(1, -1), endPoint: route.at(-1)! },
+      ],
+    };
+  });
+  type Label = FlowLayout["edges"][number]["labels"][number];
+  const meets = (a: Box, b: Box, gap: number) =>
+    a.x < b.x + b.width + gap &&
+    b.x < a.x + a.width + gap &&
+    a.y < b.y + b.height + gap &&
+    b.y < a.y + a.height + gap;
+  const placed: Label[] = edges.flatMap((edge) => edge.labels);
+  const free = (label: Label, own: Label) =>
+    !layout.children.some((c) => meets(label, c, 2)) &&
+    !placed.some((other) => other !== own && meets(label, other, 2));
+  const moved = edges.map((edge) => {
+    if (edge.labels.every((label) => free(label, label))) return edge;
+    const points = pointsOf(edge);
+    const labels = edge.labels.map((label) => {
+      if (free(label, label)) return label;
+      // along the route from its start, 4 units at a time: the first place that is free
+      for (let i = 1; i < points.length; i++) {
+        const a = points[i - 1]!,
+          b = points[i]!;
+        const length = Math.abs(b.x - a.x) + Math.abs(b.y - a.y);
+        for (let at = 0; at <= length; at += 4) {
+          const t = length === 0 ? 0 : at / length;
+          const x = a.x + (b.x - a.x) * t,
+            y = a.y + (b.y - a.y) * t;
+          const candidate = {
+            ...label,
+            x: x - label.width / 2,
+            y: y - label.height / 2,
+          };
+          if (free(candidate, label)) {
+            placed[placed.indexOf(label)] = candidate;
+            return candidate;
+          }
+        }
+      }
+      return label;
+    });
+    return { ...edge, labels };
+  });
+  return { ...layout, edges: moved };
+}
+
+/** True when an orthogonal route runs into the inside of a box (its border does not count). */
+function runsThrough(points: readonly Point[], b: Box): boolean {
+  return points.slice(1).some((p, i) => {
+    const a = points[i]!;
+    return (
+      Math.max(a.x, p.x) > b.x + 1 &&
+      Math.min(a.x, p.x) < b.x + b.width - 1 &&
+      Math.max(a.y, p.y) > b.y + 1 &&
+      Math.min(a.y, p.y) < b.y + b.height - 1
+    );
+  });
 }
 
 /** True when more pairs of boxes side by side read against the step numbers (higher on the left) than with them. */
@@ -1309,14 +1448,16 @@ export function stageActor(
 }
 
 /**
- * The one part every step of the flow starts from (the steps of one function), when there are two steps or
- * more: named once with the flow (its caption), not under every box. A box whose code is in another part
- * (`anchorOwner`) still names that part.
+ * The one part that at least four in five steps of the flow start from (the steps of one function), when
+ * there are two steps or more: named once with the flow (its caption), not under every box. A box another
+ * part does, or whose code is in another part (`anchorOwner`), still names that part.
  */
 export function sharedActor(flow: Pick<ProcessFlow, "stages">): ElementId | undefined {
   if (flow.stages.length < 2) return undefined;
-  const actors = new Set(flow.stages.map(({ step }) => step.from));
-  return actors.size === 1 ? [...actors][0] : undefined;
+  const count = new Map<ElementId, number>();
+  for (const { step } of flow.stages) count.set(step.from, (count.get(step.from) ?? 0) + 1);
+  const [actor, n] = [...count].sort((a, b) => b[1] - a[1])[0]!;
+  return n >= 0.8 * flow.stages.length ? actor : undefined;
 }
 
 /** `to`, when the step's first anchor is inside it and not inside `from`. */

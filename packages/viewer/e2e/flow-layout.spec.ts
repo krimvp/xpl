@@ -126,6 +126,23 @@ test("a long flow keeps one layout in the Read tab, after Fit all and in Explore
   expect(problems).toEqual([]);
 });
 
+// zod's parse flow was in rows on the Flow tab and a top-down tree on the slides: the talk lost the picture
+test("Present draws a long flow in the shape the Flow tab drew it", async ({ page }) => {
+  const problems = watchProblems(page);
+  await openVariant(page, viteChoices, "?perspective=flow&view=view:dispatch", {
+    width: 1440,
+    height: 900,
+  });
+  const flow = page.getByTestId("process-flow");
+  await expect(flow).toHaveAttribute("data-direction", "RIGHT");
+  await expect(flow).toHaveAttribute("data-parts", "2");
+  expect(await page.evaluate(() => window.__xpl!.present("tour:intro", 2))).toBe(true);
+  const slide = page.locator(".present [data-testid=process-flow]");
+  await expect(slide).toHaveAttribute("data-direction", "RIGHT");
+  await expect(slide).toHaveAttribute("data-parts", "2");
+  expect(problems).toEqual([]);
+});
+
 test("on a phone a long flow is one column, top to bottom, with no box cut at the side", async ({
   page,
 }) => {
