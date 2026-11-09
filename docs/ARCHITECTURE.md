@@ -422,7 +422,8 @@ writeIndex(root: string, index: SymbolIndex, signal?: AbortSignal): Promise<stri
 The index file is one line of JSON, without indentation: on xpl that is 20.9 MB instead of 28.9 MB, and every
 command parses it. Pipe it through `jq .` to read it.
 
-Pipeline: discover files → per file: read, hash, reuse extraction or parse/`pack.extract`/free the tree → assemble symbols
+Pipeline: discover and read files (one read each) → per file, 16 at a time, facts added in file order: hash, reuse
+extraction or parse/`pack.extract`/free the tree → assemble symbols
 (ids, `~N` suffixes, whole-line ranges, hashes, parents) → heuristic resolution of every site, plus the packs'
 `inferRefs` → providers normalize and merge declarations and references by capability and file → commit id → `SymbolIndex`. `tool` =
 `xpl-indexer@<v> web-tree-sitter@<v> <grammar>@<v> …`. A file with syntax errors is indexed anyway: one
@@ -1776,8 +1777,9 @@ explainer commands, the explainer's own `index.path` when that file exists (`xpl
 exists to move an explainer to a newer index); otherwise among `.explainer/index-*.json`: the only one, else
 the one named for the current commit id, else the newest. None → an error that says to run `xpl index`.
 
-**Stale index.** Whatever was chosen is compared with the working tree (the commit id it would get now, then
-per-file hashes). If they differ, commands warn, naming the changed, new and deleted files: `index X … does
+**Stale index.** Whatever was chosen is compared with the working tree, file by file (the hashes; the commit id
+the tree would get now is computed only for the warning). If they differ, commands warn, naming the changed,
+new and deleted files: `index X … does
 not match the working tree (Y): 2 changed (src/queue.ts, src/runner.ts). Line numbers and offsets may be off;
 run xpl index`. `XPL_SKIP_STALE_CHECK=1` skips advisory comparisons (about a second per 5000 files). Strict
 validation and HTML export always check freshness and fail on a stale index; `--allow-drift`
