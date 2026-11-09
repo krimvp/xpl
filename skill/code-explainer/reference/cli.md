@@ -221,8 +221,8 @@ analysis report for omissions.
 
 Rust tags are experimental. They give declarations, heuristic calls in a few forms, and the imports of `mod`
 declarations and of `use` paths inside the package (`crate::`, `self::`, `super::` or the crate's own name).
-Read the coverage lines that `xpl index --verbose` prints (also under About this guide) before you write graph
-claims. xpl has no Rust SCIP import: plain `xpl index` needs no flag, and `--precise require` fails.
+Read the coverage line that `xpl index` prints for Rust before you write graph claims; `--verbose` and About
+this guide give the whole report. xpl has no Rust SCIP import: plain `xpl index` needs no flag, and `--precise require` fails.
 
 Ruby tags also report partial declarations. They capture class, module, method and constant syntax. Qualified
 class, module and assignment targets need a preceding same-file owner declaration; unknown owners and

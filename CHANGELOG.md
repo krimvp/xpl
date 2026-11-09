@@ -82,6 +82,20 @@ Guides and the viewer:
 - An `implements` arrow lifted to a file or a folder reads "implements an interface in". A value declared
   `const` is a "constant". A tour step on a group lists only the tests among its members that are test code.
 - On a phone, the Map and Flow tabs open on the diagram, not on the code a Tour step opened.
+- A flow too tall for its pane is also laid out left to right, or in 2-4 parts side by side, and the shape
+  that reads larger wins. A decision diamond is as big as its words, and its arrows meet its outline.
+- A flow of states (`xpl draft states`) draws the states as pills and the moves between them as flat dotted
+  boxes, with no step numbers.
+- On a Go map an embedded field or interface reads "embeds" (or "embeds a type in"), not "extends".
+- Explore keeps the diagram's height when you select something: Details open at the top of the code column,
+  and the file tree stays beside the code.
+- A Present slide whose focus covers nearly all of a map shows the whole map, even when its text is then
+  smaller than 12 px.
+- Search names each result's kind and file in plain words and says how many files the page holds. What it
+  cannot find in this page is listed under "What search cannot find here".
+- J and K step through the Tour. The Code tab with nothing selected has no empty column.
+- The box, arrow or step whose code holds the caret is magenta, so it is not confused with the orange "called
+  here" mark in the code.
 
 Indexing:
 
@@ -91,6 +105,10 @@ Indexing:
 - A request path built from a file's string constant reads the constant's value. `xpl draft map` leaves out
   code files that define and use nothing. (#240)
 - Names that a function takes from `await import()` or `require()` resolve, so their calls are arrows.
+- Rust: a root-level `mod` declaration and a `use` path inside the package (`crate::`, `self::`, `super::` or
+  the crate's own name) are file imports (heuristic). `xpl health` and `xpl draft map` read them as "this
+  file is used". `xpl health` no longer calls a file unused when its language's analysis does not follow
+  imports: it says how many files it cannot tell about.
 
 Drafts and lint:
 
@@ -113,6 +131,12 @@ Drafts and lint:
   settings box. A draft numbers its new tour steps after the ids the guide already uses.
 - `xpl draft path` draws an `opt` over the rest of a loop body when a guard with no drawn call skips it with
   `continue` or `break`.
+- The `xpl draft map` tour ends on where to start reading: the shallowest file with a `main` function, else a
+  file named like main, index or app. Its first note names the files that are not code, which have no box.
+- `xpl lint` flags a box on a map of summaries whose label has more than 5 words, or whose sentence is over
+  130 characters or starts with an article, "This", "It" or the file's name (`map-box`).
+- `xpl draft class` leaves types in test files off the map, with a note, unless the entry is in one. A Go
+  entry's links read "embeds" and "embedded by".
 - `-o /dev/null` no longer replaces `/dev/null` with a regular file: xpl writes to a device in place.
 - The skill puts its hard rules first, starts every guide from its purpose, and gives each scope a tour shape
   and a length budget. Its writing guide follows Orwell's rules and ASD-STE100 Simplified Technical English.
@@ -125,6 +149,8 @@ Command-line messages:
   that lists candidates.
 - Each command's `--help` is shorter: usage, a few lines, the options and a link to the docs.
 - `xpl resolve` and `xpl change` take the only guide when you leave out its name.
+- Messages and hints use plain words and name the command to run, for example "fix this field with
+  `xpl apply`, then run `xpl validate` again".
 
 Docs:
 

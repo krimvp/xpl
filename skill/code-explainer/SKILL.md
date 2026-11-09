@@ -89,14 +89,14 @@ Every tour follows this spine. A change and a presentation end on their own poin
 
 Length budgets (the other files and the drafts follow this table):
 
-| Scope            | Steps                 | Note body (aim) | Tour summary  | Diagrams a tour uses           | Boxes per map          | Concepts |
-| ---------------- | --------------------- | --------------- | ------------- | ------------------------------ | ---------------------- | -------- |
-| question, states | 5-8                   | 25-40 words     | 2-4 sentences | 1 map, 1 flow or sequence      | 3-6                    | 0-2      |
-| class, data      | 5-8                   | 25-40 words     | 2-4 sentences | 1 map, 1 flow if items move    | 3-6, 8 with a note     | 0-2      |
-| repo             | 6-9                   | 25-40 words     | 3-5 sentences | system map, inside map, 1 path | 3-7 system, 4-8 inside | 0-3      |
-| change           | 6-12                  | 25-45 words     | 3-5 sentences | the change map, 1-2 flows      | 4-8                    | 0-2      |
-| map              | 1 + top folders, ≤ 12 | 15-30 words     | 2-3 sentences | the folder maps                | one box per entry      | 0        |
-| presentation     | 5-9                   | ≤ 280 chars     | 2-3 sentences | existing views                 | ≤ 8                    | 0-1      |
+| Scope            | Steps                                  | Note body (aim) | Tour summary  | Diagrams a tour uses           | Boxes per map          | Concepts |
+| ---------------- | -------------------------------------- | --------------- | ------------- | ------------------------------ | ---------------------- | -------- |
+| question, states | 5-8                                    | 25-40 words     | 2-4 sentences | 1 map, 1 flow or sequence      | 3-6                    | 0-2      |
+| class, data      | 5-8                                    | 25-40 words     | 2-4 sentences | 1 map, 1 flow if items move    | 3-6, 8 with a note     | 0-2      |
+| repo             | 6-9                                    | 25-40 words     | 3-5 sentences | system map, inside map, 1 path | 3-7 system, 4-8 inside | 0-3      |
+| change           | 6-12                                   | 25-45 words     | 3-5 sentences | the change map, 1-2 flows      | 4-8                    | 0-2      |
+| map              | 1 + top folders + where to start, ≤ 12 | 15-30 words     | 2-3 sentences | the folder maps                | one box per entry      | 0        |
+| presentation     | 5-9                                    | ≤ 280 chars     | 2-3 sentences | existing views                 | ≤ 8                    | 0-1      |
 
 This table is the one source of these numbers; the other files point here. Lint checks only part of it: `tour-summary` flags more than 5 sentences, so keep to the column yourself. A small subject can take fewer steps than the column: do not pad it. A second, in-detail tour of a repo may open one sequence per part, 1-2 steps each. A sequence has 3-6 participants in every scope. A class map or a data map may hold 8 boxes when each one answers the question; a step then names the types left off. `draft class` stops at 8 boxes, `draft data` at 6 (8 rows a table). Hard limits for every scope: a note body has 50 words at most (`long-note`). A box, concept or step `summary` has 2 sentences and 45 words at most, and says what the thing is for (`long-summary`). A `detail` paragraph has 80 words at most (`long-detail`).
 
@@ -137,7 +137,7 @@ Then:
 
 ## explain map: every file, in plain words
 
-A quick map of a project, file by file, often of code an AI assistant wrote. The reader is its owner, who may not read code. Follow `reference/explain-map.md`: `xpl draft map`, then `xpl health`. Each box gets a label of 2-5 plain words and one sentence of at most about 120 characters that starts with a verb. The reply lists each high-severity `xpl health` finding with its file, line, kind and fix, and calls it a quick check, not a security audit.
+A quick map of a project, file by file, often of code an AI assistant wrote. The reader is its owner, who may not read code. Follow `reference/explain-map.md`: `xpl draft map`, then `xpl health`. Each box gets a label of 2-5 plain words and one sentence of at most about 120 characters that starts with a verb; `xpl lint` checks both (`map-box`). The reply lists each high-severity `xpl health` finding with its file, line, kind and fix, and calls it a quick check, not a security audit.
 
 ## explain change <base>..<head>: a PR, an MR or a branch diff
 

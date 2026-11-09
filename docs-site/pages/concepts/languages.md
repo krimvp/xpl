@@ -2,7 +2,7 @@
 
 xpl indexes TypeScript, JavaScript, Python, Go and Java with language packs. YAML, JSON and TOML keys are
 symbols, so a code link can point at a configuration entry as it points at a function. A code link to any other
-text file points at the whole file. Rust has experimental declarations and some heuristic calls inside a crate.
+text file points at the whole file. Rust has experimental declarations, some heuristic calls inside a crate, and the `mod` and `use` imports within the package.
 Ruby and PHP have named declarations and no references.
 
 Tree-sitter WASM extracts symbols without installing language toolchains. References (calls, imports,
@@ -28,16 +28,16 @@ an older index loads with its coverage marked unknown.
 
 ## Precise reference tools and artifacts
 
-| Language                | Tool and requirements                                                     |
-| ----------------------- | ------------------------------------------------------------------------- |
-| TypeScript / JavaScript | `scip-typescript` 0.4.0 via `npx`; first use may need network access      |
-| Python                  | `scip-python` 0.6.6 via `npx`; first use may need network access          |
-| Go                      | `scip-go` 0.2.7; Go 1.25 or a `go` that can download the toolchain        |
-| Java                    | `--scip` with a separately generated, source-checked artifact             |
-| Rust                    | Experimental declarations and bounded bare and receiver calls (heuristic) |
-| Ruby                    | Named classes, modules, methods and constants; no references              |
-| PHP                     | Named declarations; no references                                         |
-| YAML, JSON, TOML        | Keys are symbols; no references                                           |
+| Language                | Tool and requirements                                                                                              |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| TypeScript / JavaScript | `scip-typescript` 0.4.0 via `npx`; first use may need network access                                               |
+| Python                  | `scip-python` 0.6.6 via `npx`; first use may need network access                                                   |
+| Go                      | `scip-go` 0.2.7; Go 1.25 or a `go` that can download the toolchain                                                 |
+| Java                    | `--scip` with a separately generated, source-checked artifact                                                      |
+| Rust                    | Experimental declarations, bounded bare and receiver calls, and `mod`/`use` imports within the package (heuristic) |
+| Ruby                    | Named classes, modules, methods and constants; no references                                                       |
+| PHP                     | Named declarations; no references                                                                                  |
+| YAML, JSON, TOML        | Keys are symbols; no references                                                                                    |
 
 `xpl index` tries precise tools by default. Use `--precise off` for heuristic results or `--precise require`
 to fail when a precise tool cannot run. `XPL_SCIP_TIMEOUT_MS` sets the per-tool timeout (default 10 minutes).

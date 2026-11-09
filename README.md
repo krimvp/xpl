@@ -98,7 +98,8 @@ optional local service. See
 ## Languages and precision
 
 xpl indexes TypeScript, JavaScript, Python, Go and Java, and the keys of YAML, JSON and TOML files. Rust has
-experimental declarations and some heuristic calls. Ruby and PHP have named declarations and no references.
+experimental declarations, some heuristic calls and the `mod` and `use` imports within the package. Ruby and
+PHP have named declarations and no references.
 
 Every reference has one of two labels. **precise** (checked by a language tool): from a SCIP indexer.
 **heuristic** (matched by name): from xpl's own matching by name and scope, a hint to confirm in the code. Web
