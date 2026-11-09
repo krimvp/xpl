@@ -11,6 +11,11 @@
           "file": "packages/vite/src/node/cli.ts",
           "find": ".command('[root]', 'start dev server')",
           "role": "usage"
+        },
+        {
+          "file": "packages/vite/src/node/cli.ts",
+          "find": ".command('build [root]', 'build for production')",
+          "role": "usage"
         }
       ]
     },
@@ -78,6 +83,85 @@
       "label": "Builder",
       "role": "component",
       "summary": "Creates build environments and runs the production build path."
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge:developer-starts-server",
+      "from": "grp:developer",
+      "to": "grp:dev-server",
+      "kind": "calls",
+      "label": "starts dev server",
+      "summary": "The default CLI command creates the development server and starts listening for requests.",
+      "anchors": [
+        {
+          "file": "packages/vite/src/node/cli.ts",
+          "find": ".command('[root]', 'start dev server')",
+          "role": "usage"
+        },
+        {
+          "file": "packages/vite/src/node/cli.ts",
+          "find": "const server = await createServer({",
+          "role": "call-site"
+        },
+        {
+          "file": "packages/vite/src/node/server/index.ts",
+          "symbol": "createServer",
+          "find": "export function createServer(",
+          "role": "definition"
+        }
+      ]
+    },
+    {
+      "id": "edge:developer-builds-app",
+      "from": "grp:developer",
+      "to": "grp:production-build",
+      "kind": "calls",
+      "label": "runs production build",
+      "summary": "The CLI build command creates a builder and runs its application build.",
+      "anchors": [
+        {
+          "file": "packages/vite/src/node/cli.ts",
+          "find": ".command('build [root]', 'build for production')",
+          "role": "usage"
+        },
+        {
+          "file": "packages/vite/src/node/cli.ts",
+          "find": "await builder.buildApp()",
+          "role": "call-site"
+        },
+        {
+          "file": "packages/vite/src/node/build.ts",
+          "symbol": "createBuilder",
+          "find": "export async function createBuilder(",
+          "role": "definition"
+        }
+      ]
+    },
+    {
+      "id": "edge:browser-requests-modules",
+      "from": "grp:browser",
+      "to": "grp:dev-server",
+      "kind": "custom",
+      "label": "requests modules",
+      "summary": "The development server receives browser script and import requests, transforms their modules, and sends the result.",
+      "anchors": [
+        {
+          "file": "packages/vite/src/node/server/middlewares/transform.ts",
+          "find": "req.headers['sec-fetch-dest'] === 'script' ||",
+          "role": "usage"
+        },
+        {
+          "file": "packages/vite/src/node/server/middlewares/transform.ts",
+          "find": "const result = await environment.transformRequest(url)",
+          "role": "call-site"
+        },
+        {
+          "file": "packages/vite/src/node/server/middlewares/transform.ts",
+          "find": "return send(req, res, result.code, type, {",
+          "role": "call-site"
+        }
+      ]
     }
   ],
   "views": [
@@ -205,7 +289,7 @@
           "focus": [
             "file:packages/vite/src/node/server/index.ts"
           ],
-          "note": "### Development creates a listening server and watcher\n\nBrowser requests and file changes can arrive throughout the development session. The server keeps both channels active.",
+          "note": "### Development builds a server, a hot-update channel and a file watcher\n\nThe dev server is an HTTP server around connect middlewares, a WebSocket server for hot updates, and a file watcher. The CLI then starts it with `server.listen`.",
           "code": [
             {
               "file": "packages/vite/src/node/server/index.ts",
@@ -216,6 +300,16 @@
               "file": "packages/vite/src/node/server/index.ts",
               "find": "const ws = createWebSocketServer(httpServer, config, httpsOptions)",
               "role": "usage"
+            },
+            {
+              "file": "packages/vite/src/node/server/index.ts",
+              "find": "chokidar.watch(",
+              "role": "usage"
+            },
+            {
+              "file": "packages/vite/src/node/cli.ts",
+              "find": "await server.listen()",
+              "role": "call-site"
             }
           ],
           "editor": {
@@ -228,7 +322,7 @@
           "focus": [
             "file:packages/vite/src/node/build.ts"
           ],
-          "note": "### Production runs the configured builder\n\nThe build command calls `buildApp`. The builder chooses its configured application build and falls back to its environments when needed.",
+          "note": "### Production runs the configured builder\n\nThe build command calls `buildApp`. The builder runs its configured application build; when that builds no environment, it builds every environment.",
           "code": [
             {
               "file": "packages/vite/src/node/cli.ts",
@@ -237,7 +331,7 @@
             },
             {
               "file": "packages/vite/src/node/build.ts",
-              "find": "if (!configBuilderBuildAppCalled) {\n        await configBuilder.buildApp(builder)",
+              "find": "if (!configBuilderBuildAppCalled) {\n        await configBuilder.buildApp(builder)\n      }\n      // fallback to building all environments if no environments have been built\n      if (\n        Object.values(builder.environments).every(\n          (environment) => !environment.isBuilt,\n        )\n      ) {\n        for (const environment of Object.values(builder.environments)) {\n          await builder.build(environment)\n        }\n      }",
               "role": "usage"
             }
           ],

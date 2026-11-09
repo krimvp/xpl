@@ -122,7 +122,7 @@
       "scope": {
         "root": "repo",
         "depth": 1,
-        "question": "Source links are checked; prose still needs review."
+        "question": "What does xpl take in, and what does it give back?"
       },
       "include": [
         "grp:author",
@@ -227,7 +227,7 @@
               "role": "definition"
             }
           ],
-          "note": "### The CLI runs the authoring workflow\n\nCommands load the index and guide, check an author's patch, and write or export the result. The command layer owns filesystem access.",
+          "note": "### The CLI runs the authoring workflow\n\nCommands load the index and guide, check an author's patch, and write or export the result. The CLI and the indexer read and write files; core does not, so the viewer can run the same checks in a browser.",
           "editor": {
             "primary": "packages/cli/src/commands/apply.ts"
           }

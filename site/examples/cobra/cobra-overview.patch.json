@@ -313,7 +313,7 @@
               "role": "usage"
             }
           ],
-          "note": "### The root selects the command that runs\n\nThe root searches its child command tree, then passes the remaining input to the selected command. That command checks its own flags and handler.",
+          "note": "### The root selects the command that runs\n\nThe root searches its child command tree, then passes the remaining input to the selected command. That command parses its own flags, checks its arguments and runs its handler.",
           "editor": {
             "primary": "command.go"
           }

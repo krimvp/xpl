@@ -113,7 +113,7 @@ input. Give it a `--cache-dir` outside the repo, and `--skill-dir` for a skill i
    question". Set `scope.question` on each view, and give every box and arrow it shows a summary. Replace every
    `TODO` with checked text, and write the tour. Keep the user's fields. Lint, then apply:
    `xpl lint <name> --patch /absolute/scratch/draft.json && xpl apply <name> /absolute/scratch/draft.json`.
-5. Run `xpl validate <name>`, `xpl status <name>` until nothing is unexplained, and
+5. Run `xpl validate <name>`, `xpl status <name>` until it reports `to do: 0 with no text`, and
    `xpl anchors <name> tour:<slug>`. Do the accuracy pass and the newcomer re-read from `SKILL.md`. Lint the
    stored guide again.
 6. Run `xpl ready <name>` and fix every error. For an omission or a warning you keep on purpose, add

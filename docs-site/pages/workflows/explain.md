@@ -16,7 +16,7 @@ choice and what to do when a run stops.
 A guide to a question starts on a map of the code it touches, then follows one path in a flow or a
 sequence. Select a step and its code lights up beside the diagram.
 
-![A sequence of how a job is dispatched: Runner.dispatch takes a job from the queue, runs it on a worker and requeues it. The loop frame reads "while the runner is running". The requeue step is selected, and its code in runner.ts and queue.ts is highlighted.](../../../docs/images/dispatch-step-selected-light.png)
+![A sequence of how a job is dispatched: Runner.dispatch takes a job from the queue, runs it on a worker and requeues it. The loop frame reads "while the runner is running", and an opt frame around the requeue reads "the attempt failed and retries are left". The requeue step is selected, and its code in runner.ts and queue.ts is highlighted.](../../../docs/images/dispatch-step-selected-light.png)
 
 ## Types, states and data
 

@@ -63,6 +63,15 @@ Guides and the viewer:
 - Present widens the diagram column, up to about two thirds of the slide, so that a map keeps 12 px text.
 - A precise language tool now clears the "Some arrows may be missing" bar for what it covers, also when the
   tree-sitter pack of that language does not.
+- A Go struct is a "struct" and its fields are "field" on the box, its icon, the Key and the Details. A
+  field's arrow is "holds" everywhere, its accessible name included, with the type that owns the field.
+- A data map is one Tab stop per table, starting at the tour's first table. Down goes into its rows; "-"
+  folds a table to one box and "+" shows its rows again.
+- On Map and Flow, the diagram takes the full width until you select something; then the code column opens.
+- In Present the text card is as tall as its text and the diagram gets the rest; the Fit chip never covers a
+  box.
+- In a change guide a flow step whose code the change added or edits carries a "New" or "Changed" pill, as
+  a map box does. A group whose code the change added in full (a box of new tests) is "New".
 
 Indexing:
 
@@ -84,6 +93,10 @@ Drafts and lint:
   concepts and repeated steps. It knows more filler words, and a tour note may have at most 50 words. New
   rules also check that a note starts with a `### title`, that a title has at most 12 words, that a longer
   tour ends on its map (`tour-ends`), and that a note does not open with "So", "But" or "And".
+- `xpl change` finds the tests of a changed symbol through its callers too, and `xpl draft change` gives
+  the changed code its "before" links. `xpl lint` flags a sequence with more than 6 lifelines
+  (`many-participants`).
+- `-o /dev/null` no longer replaces `/dev/null` with a regular file: xpl writes to a device in place.
 - The skill puts its hard rules first, starts every guide from its purpose, and gives each scope a tour shape
   and a length budget. Its writing guide follows Orwell's rules and ASD-STE100 Simplified Technical English.
 

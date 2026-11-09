@@ -406,6 +406,15 @@
               "file": "command.go",
               "symbol": "Command.execute",
               "span": {
+                "from": 34,
+                "to": 48
+              },
+              "role": "usage"
+            },
+            {
+              "file": "command.go",
+              "symbol": "Command.execute",
+              "span": {
                 "from": 50,
                 "to": 51
               },
@@ -421,7 +430,7 @@
               "role": "usage"
             }
           ],
-          "note": "### Help requests and non-runnable commands exit\n\nThe runnable check follows the version route. `ValidateArgs` runs after both help exits.",
+          "note": "### Help requests and non-runnable commands exit\n\nThe version flag also exits here: the command prints its version and returns before any argument check. Arguments are checked only after these exits.",
           "editor": {
             "primary": "command.go"
           }
@@ -443,7 +452,7 @@
               "role": "usage"
             }
           ],
-          "note": "### Positional arguments get checked before hooks\n\nWhen a runnable command reaches this step, argument validation can stop execution before any configured pre-run hook.",
+          "note": "### Positional arguments get checked before hooks\n\nWhen a runnable command reaches this step, argument validation can stop execution before any configured pre-run hook. The `OnInitialize` functions have already run.",
           "editor": {
             "primary": "command.go"
           }
@@ -510,7 +519,7 @@
               "role": "usage"
             }
           ],
-          "note": "### Post-run hooks follow a successful handler\n\nA handler error returns before these hooks. If a post-run hook reports an error, execution returns that error instead of success.",
+          "note": "### Post-run hooks follow a successful handler\n\nA handler error returns before these hooks. If a post-run hook reports an error, execution returns that error instead of success. `execute` defers the `OnFinalize` functions, so they run after an error too.",
           "editor": {
             "primary": "command.go"
           }
