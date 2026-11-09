@@ -26,7 +26,7 @@ New commands and drafts:
 
 Guides and the viewer:
 
-- Sketch boxes show an idea or a plan before there is code. They are drawn dotted, labelled "sketch" and
+- Sketch boxes show an idea or a plan before there is code. They are drawn dotted, labeled "sketch" and
   linked to no code. (#233)
 - Select a box and choose "What it leads to" or "What leads to it" to light up every box reached along its
   arrows. (#233)
@@ -45,7 +45,7 @@ Guides and the viewer:
   and in each cell the arrows from the row's box to the column's, with their count. A cell below the
   diagonal goes back up the order; with its mirror cell it marks a cycle. A view with `"render": "matrix"`
   opens that way.
-- Trust is never shown by colour alone. Heuristic arrows are dashed, partly matched arrows are dash-dot and
+- Trust is never shown by color alone. Heuristic arrows are dashed, partly matched arrows are dash-dot and
   arrows to code outside the map are dotted, in both themes. A key line under the diagram's caption names
   the marks the map draws now. With something selected, the arrows that touch none of it are dimmed.
 - A large map starts at a readable zoom. "Fit all" then counts the boxes out of sight, and after a fit it
@@ -85,7 +85,7 @@ Guides and the viewer:
 - A flow too tall for its pane is also laid out left to right, or in 2-4 parts side by side, and the shape
   that reads larger wins. A decision diamond is as big as its words, and its arrows meet its outline.
 - A flow of states (`xpl draft states`) is drawn as a state diagram: the states are pills and each move is a
-  labelled arrow between two states, with no step numbers. A move is still a link to its code.
+  labeled arrow between two states, with no step numbers. A move is still a link to its code.
 - On a Go map an embedded field or interface reads "embeds" (or "embeds a type in"), not "extends".
 - Explore keeps the diagram's height when you select something: Details open at the top of the code column,
   and the file tree stays beside the code.

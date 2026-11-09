@@ -127,7 +127,7 @@ Conventions (all packages):
   `reference/commands.md` is generated from
   `xpl --help` and each command's `--help`, and the build fails when `cli.md` has no section for a listed
   command. `zensical build --strict` fails on a missing page or anchor, and the local link check above also
-  runs over every built docs page. The colours and fonts repeat
+  runs over every built docs page. The colors and fonts repeat
   `site/style.css` in `docs-site/pages/stylesheets/xpl.css`.
 
 - ESM, TypeScript `strict`. Relative imports use `.js` suffixes (NodeNext style; bundlers accept it).
@@ -238,7 +238,7 @@ Conventions (all packages):
     `resolved.commit` is the base SHA and `resolved.range` is in base lines. Only allowed in a changed file
     that has a base version (modified, renamed or deleted) and only when the explainer has a change record.
 17. `SequenceView.type` may be `"flow"`: the same fields as a sequence, drawn as stages and decisions. A step
-    adds `shape?: "stage" | "decision" | "terminal"` and `next?: { step, label? }[]` (labelled branches to
+    adds `shape?: "stage" | "decision" | "terminal"` and `next?: { step, label? }[]` (labeled branches to
     steps of the same view; without `next` a step goes on to the next one, a `terminal` ends a path). A
     sequence view can be projected into stages by `processFlow` (`projected: true`); the viewer keeps its
     sequence diagram in Read and Explore. A `next` link may add `kind: "recurse"` (the steps from an earlier
@@ -418,7 +418,7 @@ Pipeline: discover files → per file: read, hash, reuse extraction or parse/`pa
 `xpl-indexer@<v> web-tree-sitter@<v> <grammar>@<v> …`. A file with syntax errors is indexed anyway: one
 warning covers them all and names the first lines (`N file(s) have syntax errors; symbols near these lines may
 be incomplete: a.ts:12,40`; at most 5 files and 3 lines each), and errors a pack knows cost no symbol are not
-reported (`errorInTypePosition`: the TS grammar cannot read a labelled tuple element such as `[symbol:
+reported (`errorInTypePosition`: the TS grammar cannot read a labeled tuple element such as `[symbol:
 string]`, and its recovery stays inside the tuple; for the JSON pack, the trailing commas of JSONC). Files under
 `testdata/`, `fixtures/` or `__fixtures__/` are never reported. An extraction failure is a warning and a file
 without symbols. References are sorted by file, position and kind. The same walk collects resource sites
@@ -470,7 +470,10 @@ adds the mount prefixes to the routes, matches each request against them and emi
   segment, a request hole only a route parameter. Of the matching routes, those with the most literal
   segments win (`/orders/latest` over `/orders/:id`), then those with the request's own method; ties keep
   them all. A catch-all that matches no literal segment (`/{full_path:path}`, `app.get("*")`, a single-page
-  fallback or a proxy) links nothing. A request to its own symbol is dropped.
+  fallback or a proxy) links nothing. A route in a test file answers only the requests of the same test (the
+  same symbol, or one inside the other): each of ky's tests starts a server on `/`, and every request of every
+  test and type test matched every one of them (`test/main.ts` in=41517). A request to its own symbol is
+  dropped.
 
 Limits: paths held in variables other than a file's string constants or built by helpers, routes registered from data (a list of route objects,
 `app.route("/x").get(h)` chains, fastify plugins' `prefix`, `basePath`, Django URL confs), proxies that
@@ -681,7 +684,7 @@ interface FileFacts {
   `Queue()` from the code under test, and no reference points at it; it still is the `from` of the references
   inside it. Not stored in the index.
 - `SiteDraft { kind, name, qualifier, site, local? }` (`kind`: `call import extends implements type-ref write read`):
-  `qualifier` is the receiver chain left to right, with the receiver normalised to `"this"` (TS `this`, Python
+  `qualifier` is the receiver chain left to right, with the receiver normalized to `"this"` (TS `this`, Python
   `self`/`cls`, the Go receiver variable; TS `super` stays): `this.pool.lease()` → `["this", "pool"]`,
   `lease`. `x()` in a chain is the result of calling `x`, `:T` a value of declared type `T`. A receiver the
   pack cannot spell (`arr[0].run()`) yields no site. `local`: a bare name that something around the site binds
@@ -953,7 +956,7 @@ Compatibility: the index schema stays `code-explainer/index@0`. `analysis`, the 
 load. Reports optionally retain `version`, `configuration` and `snapshot` identities. No abilities or complete
 outcomes are inferred from language names, symbols, ranges or reference counts; legacy coverage is unknown. File anchors remain available for their indexed files.
 Pruning and packing preserve reports unchanged, so missing bundle edges never alter run coverage.
-`describeAnalysis` produces the analyser's report for `xpl index --verbose`. Each capability result names
+`describeAnalysis` produces the analyzer's report for `xpl index --verbose`. Each capability result names
 its provider id, so a file-only fallback's limits do not describe a separate artifact provider's symbols.
 `readerCoverage` gives readers a summary and one plain line per language in the diagrams' words ("names in
 part", "arrows matched by name, so some can be missing", "no inherits or type uses"), with data files as
@@ -968,7 +971,7 @@ Tool commands and diagnostic details remain author-facing.
 
 | Language | Symbols (kind) | Path rules |
 |---|---|---|
-| TS/TSX/JS | class (also a class expression bound to a const, an anonymous default export), interface, type alias (`type`), enum (members are not symbols), function and generator declarations, `const/let/var` declarators (arrow/function initialiser → `function`, else `variable`; destructured names too), class members (methods incl. constructor/get/set/abstract → `method`; fields → `variable`, **except fields initialised with an arrow or function, which are `method`**), interface members (method signatures → `method`, property signatures → `variable`), functions nested in functions or methods (declarations, and `const/let/var` with an arrow/function initialiser that are statements of the body), methods and function-valued properties of top-level object literals (`method`), namespaces (`other`) | `Class.member` (`#private` keeps its `#`, `[Symbol.iterator]` → `@@iterator`), `outer.inner`, `obj.key`, `NS.name`; anonymous default export → `default`; body-less overload signatures are skipped when an implementation follows, ambient declarations are kept; `declare module` / `declare global` members are listed as top-level; **test blocks**: statement-level `describe` / `suite` / `context` / `it` / `test` calls with a string title (also `.only`, `.skip`, `.each(table)(…)`) are `function` symbols whose path is the titles nested by `describe`, each with `.` and `#` replaced by `_` (`Queue.pop().returns the oldest job`) and whose range is the whole statement; they are `anchorOnly`, and a block whose path equals a real symbol's is dropped |
+| TS/TSX/JS | class (also a class expression bound to a const, an anonymous default export), interface, type alias (`type`), enum (members are not symbols), function and generator declarations, `const/let/var` declarators (arrow/function initializer → `function`, else `variable`; destructured names too), class members (methods incl. constructor/get/set/abstract → `method`; fields → `variable`, **except fields initialized with an arrow or function, which are `method`**), interface members and the members of an object type alias (`type X = {…}`, and each `{…}` of an `A & {…}`) (method signatures → `method`, property signatures → `variable`), functions nested in functions or methods (declarations, and `const/let/var` with an arrow/function initializer that are statements of the body), methods and function-valued properties of top-level object literals (`method`), namespaces (`other`) | `Class.member` (`#private` keeps its `#`, `[Symbol.iterator]` → `@@iterator`), `outer.inner`, `obj.key`, `NS.name`; anonymous default export → `default`; body-less overload signatures are skipped when an implementation follows, ambient declarations are kept; `declare module` / `declare global` members are listed as top-level; **test blocks**: statement-level `describe` / `suite` / `context` / `it` / `test` calls with a string title (also `.only`, `.skip`, `.each(table)(…)`) are `function` symbols whose path is the titles nested by `describe`, each with `.` and `#` replaced by `_` (`Queue.pop().returns the oldest job`) and whose range is the whole statement; they are `anchorOnly`, and a block whose path equals a real symbol's is dropped |
 | Python | class; `def` / `async def` (`function`; directly in a class body → `method`); module- and class-level simple assignments (`variable`; also annotation-only `id: str`; each name of a tuple target; in `if`/`try`/`with` blocks the first assignment of a name the file does not import); the attributes `__init__` sets on `self` (`self._ready: list[Job] = []`: a `variable` child of the class, over the assignment's lines, once per name, unless the class body defines the name); `type X = …` (`type`) | `Class.method`, `outer.inner`, `Class.Inner.method`; the range starts at the first decorator; definitions inside `if`/`try`/`with`/`for`/`while`/`match` belong to the scope around them; `if __name__ == "__main__":` is skipped; `@overload` stubs are skipped; `@x.setter` gives `x~2` |
 | Go | `func` (`function`); methods (`method`, path `Recv.Name`, pointer receivers and type parameters stripped); `type` declarations (struct → `class`, interface → `interface`, anything else, aliases included → `type`); struct fields (`variable`, `Type.field`, nested anonymous structs `Type.field.sub`); interface methods (`method`); top-level `var`/`const` specs (`variable`, one per name, `_` declares nothing) | a method is a child of its receiver type only when that type is declared in the same file; **a type symbol's range starts at its name** (not at `type`); **embedded struct fields and interface elements are not symbols but `extends` sites**; function-local types and closures are not symbols |
 | YAML/JSON | mapping keys (`key`) | dotted key path; sequence items by index (`workers.0.name`); at most 6 levels of keys and 2000 keys per file (one warning beyond); a key's range is its whole `key: value` pair; YAML merge (`<<`), empty, complex and alias keys are not symbols |
@@ -1019,7 +1022,9 @@ nothing is guessed. Unresolved sites and self-references are dropped, except a c
 recursion is a `call` reference with `from === to`. Module resolution (`resolveModule`):
 TS relative specifiers with extension and `index` probing (`.js` → `.ts`), `tsconfig`/`jsconfig` `paths` and
 `baseUrl` (with relative `extends`), workspace packages by `package.json` name (entry through `exports`/
-`types`/`module`/`main`, build output mapped back to source) and `imports`; Python dotted and relative
+`types`/`module`/`main`, build output mapped back to source, also through a `tsconfig*.json` `outDir` and
+`rootDir` in the package folder, so a package that imports itself by its own name reaches its source) and
+`imports`; Python dotted and relative
 imports, `src/` layouts, nested project roots and namespace packages; Go every `go.mod` in the repository
 (module path → package directory, local `replace`s), a package's files being one namespace.
 
@@ -1083,7 +1088,8 @@ and retains the heuristic label;
 required mode rejects it. The observed failure results and limits remain in the report. A file whose
 occurrences fall outside its text (`//line` directives of generated Go code) counts as not described. Where the tool saw an occurrence
 it could not link (`ProviderOutput.blind`), the innermost heuristic reference holding that position is kept,
-unless the tool has the same edge on that line. `precise: "auto"` (the default) turns a
+unless the tool has the same edge on that line. In TypeScript, a `local` with no definition is blind (the
+binding of an import scip-typescript could not find, such as the package's own name with no build output). `precise: "auto"` (the default) turns a
 failed or missing tool into a warning and keeps the heuristic references; `"require"` fails instead; `"off"`
 never runs SCIP. Other environment: `XPL_WASM_DIR` (where the `.wasm` files come from: `dist/wasm/` next to
 the bundled CLI, `node_modules` in development).
@@ -1170,7 +1176,7 @@ length); same-named symbols elsewhere (same path in another file, same name); pa
 files rank after production code. For a span anchor whose symbol vanished, the symbol whose text now contains
 the anchored lines is found by content. Every candidate is spelled twice: as an element id
 (`sym:src/a.ts#A.b`) and as the fields an anchor takes (`file: "src/a.ts", symbol: "A.b"`). `xpl` inputs are
-normalised loosely by `normalizeElementId` (`src/a.ts#A.b`, `./src/`, …), with the same suggestions.
+normalized loosely by `normalizeElementId` (`src/a.ts#A.b`, `./src/`, …), with the same suggestions.
 
 ### 4.3 Element model and IDs (`ids.ts`, `model.ts`)
 
@@ -1214,10 +1220,10 @@ id wins (validation reports the duplicates).
   `edge:<kind>:<a>-><b>` with `count`, `resolution` (`precise` or `heuristic` when all references agree, otherwise `mixed`) and derived
   anchors: each site as `call-site` (calls) or `usage`, plus each target's definition, at most 50 of each,
   never stored. A derived `implements` or `extends` edge whose head is no type (a file, a folder, a group)
-  is labelled "implements an interface in" / "extends a type in": "Job queue implements Runner" on a folder
+  is labeled "implements an interface in" / "extends a type in": "Job queue implements Runner" on a folder
   map read as if the queue were a kind of runner; the parts list says "has an interface implemented
   by" at the other end. Go has no inheritance: a derived `extends` edge from a Go file or symbol (an embedded
-  field or interface element) is labelled "embeds" between types and "embeds a type in" otherwise.
+  field or interface element) is labeled "embeds" between types and "embeds a type in" otherwise.
 - **Stored edges** are shown whatever their `kind`, when both ends are represented in the view. One whose id
   equals a derived id overlays that edge (label, summary, anchors) and keeps its derived resolution; the
   others carry `llm`, `user` or `static` after their provenance. Stored edges follow the same nesting rule
@@ -1238,7 +1244,7 @@ id wins (validation reports the duplicates).
   (`view.stubs`, `stubs.ts`; default `top` / 8) to decide what is drawn:
   - `top`: a target that is a symbol of a file the view shows only in part (the file holds an included node
     but is not itself in the view), or such a file when the whole file is the outside end (a module import),
-    folds into **one ghost per file**, `ghost:rest:file:<path>`, labelled "rest of <file>". The ghosts are
+    folds into **one ghost per file**, `ghost:rest:file:<path>`, labeled "rest of <file>". The ghosts are
     then ranked by the references that lead to them (ties by key) and the first `max` (default 8) stay; the
     others fold into one overflow ghost per direction, `ghost:more:in` / `ghost:more:out` ("+N more", N = the
     elements it stands for). A stub is aggregated per `(direction, inside, ghost key)` after the folding.
@@ -1264,7 +1270,7 @@ id wins (validation reports the duplicates).
   target?, kinds, count, direction: "in" | "out" | "both", targets }`; `stubs[i] = { id, direction, inside,
   ghost (the key), ghostLabel, targets, kinds, count }`.
 - The viewer also preserves mixed confidence when it combines edge kinds between the same boxes.
-  Mixed arrows are drawn dash-dot and labelled "(partly matched by name)"; their details say
+  Mixed arrows are drawn dash-dot and labeled "(partly matched by name)"; their details say
   that some references are hints. Selection details and code focus use the drawn aggregate
   (all kinds, total reference count and their anchors). Individual index references remain `precise` or `heuristic`.
 - Pure view edits: `expandStub(view, stub)`: `include += ghost target` (nothing for a folded ghost).
@@ -1576,7 +1582,7 @@ Reset may clear selected pins or all pins; a later placement edit conflicts rath
 - `sequence.ts`: step and participant lookups, frames resolved to step ranges with nesting depth and the
   step ranges of an alt's arms (`resolveFrames`, `frameArms`; arms that do not split the frame resolve to
   none, so the frame is drawn without lines), disambiguated lifeline labels. `flow.ts`: `processFlow(view)`,
-  the stages and labelled transitions of a flow view (or a sequence read as a flow, `projected`).
+  the stages and labeled transitions of a flow view (or a sequence read as a flow, `projected`).
   `related-files.ts`: `relatedFiles`, the config, test and `resources` files linked to a selection.
   `bundle.ts`: the viewer's data format (§5). `index-pack.ts`: `packIndex` / `unpackIndex`, the compact index
   of a bundle (`xpl-index-pack@1`, §5). Optional trailing tuple positions refer to the index-level
@@ -1611,12 +1617,12 @@ Reset may clear selected pins or all pins; a later placement edit conflicts rath
     This analysis does not add nodes to draft maps.
   - **Tests**: test functions (top level, or methods of a test class) with any reference to the symbol, or to
     its class for the two cases above; a test file only for a module-level reference (an import) when none of
-    its tests has one. Two weaker kinds are labelled, never shown as direct: a test that calls a direct caller
+    its tests has one. Two weaker kinds are labeled, never shown as direct: a test that calls a direct caller
     (a function or method outside tests) of a changed function or method (`via: "call"`, `through`: the same
     one hop as the call paths), and a test that calls the class of a changed method (`via: "instance"`, a
     guess). A closer kind wins, and a guess never adds to the count of a test found another way.
     `testSymbols` lists the tests the change adds or edits. `untested` lists the changed symbols that none of
-    these reach. Changed test files are listed separately; a missing reference does not prove the behaviour
+    these reach. Changed test files are listed separately; a missing reference does not prove the behavior
     has no test.
 
 ---
@@ -1642,7 +1648,7 @@ fatal errors (`error: …`) and warnings (`warning: …`) go to stderr.
 |---|---|
 | `xpl completion <bash\|zsh\|fish>` | prints shell completion from the CLI command and option tables; guide-name candidates come from local `.explainer/*.explainer.json` files at completion time |
 | `xpl index [--precise auto\|off\|require] [--commit c] [--no-cache] [--scip artifact\|manifest.json] [--verbose]` | build + write the index; caches file-local extraction by default, `--no-cache` bypasses reads/writes, resolution and semantic tooling stay fresh; `--scip` selects source-verified artifact import instead of automatic tools; writes `.explainer/.gitignore` (`index-*.json`); prints per-language trust, one plain line per limited language (`--verbose`: cache, timing and the full coverage report), enumerated exclusions and names explainers bound to another index |
-| `xpl outline [--under <id>] [--depth n] [--kind k,...] [--keys] [--limit n]` | dir/file/symbol tree with kind, lines, fan-in/fan-out (references into/out of the subtree); default depth 2, or deeper (up to 8) until a code file shows; a chain of folders that each hold one folder is one row and one level; config keys only with `--keys`; `--kind method,function` keeps only those symbol kinds, with the dirs, files and parents that hold a match; the repo line carries the name `xpl new` records |
+| `xpl outline [--under <id>] [--depth n] [--kind k,...] [--keys] [--limit n]` | dir/file/symbol tree with kind, lines (a file's last line as `wc -l` counts it; `IndexedFile.lines` also counts the empty line after a final newline, the region whole-file anchors hash), fan-in/fan-out (references into/out of the subtree); default depth 2, or deeper (up to 8) until a code file shows; a chain of folders that each hold one folder is one row and one level; config keys only with `--keys`; `--kind method,function` keeps only those symbol kinds, with the dirs, files and parents that hold a match; the repo line carries the name `xpl new` records |
 | `xpl show <id> [--refs] [--context n] [--lines a-b] [--max-lines n]` | code with 0-based offsets relative to the symbol (the numbers spans use); dirs and the repo list children; `--refs` appends outgoing and incoming references with `+offset`. `xpl show --at base <path> [--lines a-b] [--explainer name]`: a changed file as it was before the change the explainer records, with the offsets a base anchor's span uses (from line 1) and `-` on the lines the change removes or rewrites; paths only (a symbol id is a usage error); `--explainer` picks the explainer when several record a change |
 | `xpl refs <id> [--in\|--out] [--kind k] [--depth n] [--max-children n] [--limit n] [--tests]` | call/reference hierarchy with sites; hops through interfaces as `impl` lines and through base classes (TS, JS, Python) as `override` lines; test doubles and test subclasses hidden unless `--tests`; a subtree is printed once (later occurrences: `(expanded above)`), at most `--max-children` (default 15) references under a line of a hierarchy (`... +8 more`); `--kind read` finds the readers of a variable or field, `--kind request` the web requests to a route handler |
 | `xpl search <pattern> [--regex] [-i] [--limit n] [--under <dir\|glob>] [--code]` | text hits over the working tree with enclosing symbol id and offset; code files first, then config, then docs (`--code`: code only); `--under` keeps the search in a dir, file, symbol or glob |
@@ -1667,7 +1673,7 @@ fatal errors (`error: …`) and warnings (`warning: …`) go to stderr.
 | `xpl draft change\|repo\|path\|map\|class\|states <explainer> [<entry id> ...] [-o file]` | prints a patch skeleton built from the index (and the change record) with no LLM, `TODO:` in every text to write (below); the summary goes to stderr |
 | `xpl view <explainer> [--port p] [--host h] [--no-open]` | local server (below) |
 | `xpl service <start\|pause\|resume\|stop\|status> [explainer] [--background] [--port p] [--backend none\|claude] [--skill-dir folder] [--job-timeout seconds] [--recover] [--watch]` | optional repository-scoped lifecycle around the same viewer server; loopback only; persisted context and explicit interrupted-owner recovery |
-| `xpl bundle [explainer] -o out.html [--mode explore\|present] [--tour id] [--files referenced\|boundary\|all] [--boundary-max n] [--embed-index full\|pruned] [--draft] [--note reason] [--require-review] [--allow-drift]` | self-contained HTML after the shared readiness check (exit 1 before writing with errors); `--draft` writes a labelled preview with findings; `--allow-drift` is a legacy draft flag that still refuses stale indexes; warnings and optional author notes are retained; `--tour` (`tour:intro` or `intro`) implies present mode; embeds the files the explainer references by default and prints what went in (`8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB)`), `--files boundary` adds the direct callers, callees and tests of anchored symbols (at most `--boundary-max`, default 40), `--files all` every indexed file; with a change recorded, every changed file at head and the base text of the changed files go in too; the symbol index in it is pruned to what the viewer can draw with `--files referenced` or `boundary` and whole with `--files all` (`--embed-index` overrides) and packed (the summary line says `index 0.3 MB (1.3 MB as plain JSON, pruned from 9.0 MB)`) |
+| `xpl bundle [explainer] -o out.html [--mode explore\|present] [--tour id] [--files referenced\|boundary\|all] [--boundary-max n] [--embed-index full\|pruned] [--draft] [--note reason] [--require-review] [--allow-drift]` | self-contained HTML after the shared readiness check (exit 1 before writing with errors); `--draft` writes a labeled preview with findings; `--allow-drift` is a legacy draft flag that still refuses stale indexes; warnings and optional author notes are retained; `--tour` (`tour:intro` or `intro`) implies present mode; embeds the files the explainer references by default and prints what went in (`8 of 12 files embedded (referenced: 18.4 KB of source; --files all adds 4 files, 6.7 KB)`), `--files boundary` adds the direct callers, callees and tests of anchored symbols (at most `--boundary-max`, default 40), `--files all` every indexed file; with a change recorded, every changed file at head and the base text of the changed files go in too; the symbol index in it is pruned to what the viewer can draw with `--files referenced` or `boundary` and whole with `--files all` (`--embed-index` overrides) and packed (the summary line says `index 0.3 MB (1.3 MB as plain JSON, pruned from 9.0 MB)`) |
 | `xpl doctor [--agent none\|claude\|codex\|pi\|droid\|devin] [--skill-dir folder]` | local setup report: Node, artifact hashes, grammar loading, installed skill version, optional git/npx/Go and selected harness; requests the latest npm version with a 1.5-second timeout unless `XPL_NO_UPDATE_CHECK=1`; no tool downloads or authentication probes; required failures exit 1 |
 | `xpl stage <explainer> --dir <outside-folder> [--preview] [--files referenced\|boundary\|all] [--note reason] [--require-review] [--pr-result result.json]` | previews included head/base files; stages only ready local HTML and an immutable manifest, rechecks inputs before promoting an atomic current symlink under a lock; retains prior versions; PR guides require a verified ready result and a final GitHub base/head check |
 | `xpl skill install [--agent claude\|codex\|pi\|droid\|devin] [--dir path]` | copies the bundled skill and writes its CLI binding; repeat to update; Claude is default; defaults to `~/.claude/skills/code-explainer` for Claude, `~/.agents/skills/code-explainer` for Codex/Pi/Droid, and the current project's `.agents/skills/code-explainer` for Devin; refuses unmanaged directories, symlinks and local edits |
@@ -1757,7 +1763,7 @@ git revisions (`main..HEAD`, `2284ff0^..2284ff0`); `<base>...<head>` starts from
 compare): otherwise it exits 1 and says to check out the head and run `xpl index`. For a `wt-` index (a root
 below the git top level) that commit is `HEAD`, when the tree is clean and the index matches it. No git, an
 unknown revision, or the same commit twice: exit 1 with a plain message. The files and hunks come from `git
-diff -M --name-status -z` and `git diff -U0` (`--relative` to the root, no colour, no external diff, no
+diff -M --name-status -z` and `git diff -U0` (`--relative` to the root, no color, no external diff, no
 textconv); git is only read, never written. The record is written under the explainer's file lock, right after
 `index`, and nothing is written when it is unchanged. Base anchors that no longer match the new base are
 counted in a warning. Then it prints the analysis (§4.8): the files with `+/-` counts, each changed symbol
@@ -1898,7 +1904,10 @@ it to a file; `--json` adds the counts and what was left out.
   at that import. `excludeFiles` for tests and docs on both. The tour: the system map, what it relies on, the
   inside of the biggest service, then one step per part, the main part first, inside the skill's repo budget
   (`DRAFT_LIMITS.repoSteps`, 9 steps with where next) less `PATH_ROOM` (2) for the main path and its risks,
-  which a note says to draft with `xpl draft path` on the main part's top function: when the parts do not fit,
+  which a note says to draft with `xpl draft path` on the main part's top function (a library: `requestPath`
+  walks down from it through the one callee that reaches 90% of what it reaches, past builders and wrappers,
+  until the calls spread out; ky's createInstance -> createRequest -> `Ky.create`), and where next shows
+  that function's code: when the parts do not fit,
   the parts with the fewest references share one step. A part's step shows the functions and methods other
   parts call most, then its top symbols. With no `loads` resource, a settings file (yaml, json, toml, ini,
   env; not a manifest) that the code names in a string literal is the Settings box's lead. A new tour's steps
@@ -1907,7 +1916,9 @@ it to a file; `--json` adds the counts and what was left out.
   it (`ListenAndServe`, `createServer`, `serve_forever`; `outside.ts` `SERVER_STARTS`) adds the inbound
   Clients at that line, since the import alone (`net/http` is also a client) proves nothing. Only a program
   with no inbound system and no library shape gets an Operator (`role: person`) at its `main` (a Java `main`
-  method of a top-level class too), with one arrow to each part that holds one. When imported outbound systems
+  method of a top-level class too), with one arrow to each part that holds one. A library (`isLibrary`: package
+  metadata and no program to run, or a README that says library or framework) is the `system` box, and a
+  "Your app" box (`role: external`, `tech: your app`), anchored at the README's import, calls it. When imported outbound systems
   appear, the saved patch asks whether each is on the default runtime path or is optional. The service and
   outside boxes keep their ids across drafts. A code file qualifies as a part when any indexed declaration in
   it has a substantive kind, including a class or method inside a Ruby module or PHP namespace. Imports,
@@ -1932,14 +1943,19 @@ it to a file; `--json` adds the counts and what was left out.
   (`ControlBlock.arms[].condition`; "otherwise" for an `else`). An arm runs from its first call to the call
   before the next arm, so the arms split the frame's steps. An arm starts at the column of its body, so a call
   that computes the condition on the arm's first line (Go's `if err := r.queue.Ack(job); err != nil {`) runs
-  before the frame; a branch whose arms draw no call has none. A one-line callee that calls nothing, called in
-  a branch's condition before its body (Go's `if result.OK() {`), is not drawn: the guard says it. In the
+  before the frame; a branch whose arms draw no call has none. A one-line callee that calls nothing (or only
+  other one-line functions: ky's `isNonArrayObject` calls `isObject`), called in a branch's condition before
+  its body (Go's `if result.OK() {`), is not drawn: the guard says it. A callee called again is drawn at its
+  first call, and again at its first call on the main path (in no explicit arm) when the first was in an arm.
+  A method of the entry's own class (or of a class in its method order) is a lifeline of its own; a method of
+  another class goes to that class's lifeline. In the
   tour, the outermost `alt`/`opt` around a call is its step's branch, except the implicit arm, whose calls are
   the main path; such a step's heading is about the arm it holds ("what happens in this arm (the code: ...)"),
   so it differs from the branch inside the implicit arm. When the calls outnumber the steps, an `alt` keeps
   its step first, then an `opt`, then the call that reaches the most code; a log call (`LOG_CALL`: `log`,
   `logf`, `debug`, `print`, ...) ranks last. The last step, where to go next, focuses nothing. Left out of the
-  sequence, each with a note: one-line helpers of the entry's class or file that call nothing, and conversions
+  sequence, each with a note: one-line helpers of the entry's class or file that call nothing or only other
+  one-liners, and conversions
   to a type or data built from a class with no constructor (Go's `nodeTyp(t)`). A summary names the subclasses
   that override a called method. Several entries (`path <explainer> <id> <id2>`) give one sequence each and
   one tour through them. A method a class inherits starts at the base that defines it (a note says which); its
@@ -2010,7 +2026,8 @@ it to a file; `--json` adds the counts and what was left out.
   view's `edgeKinds` are the defaults plus `requests` (existing views keep theirs). A folder box `opens` its
   folder's view; a folder of one file is that file; a folder that only holds one folder is that folder. Every box gets a label and a
   summary TODO; a file's TODO holds its header comment (`headerComment`: a comment that opens the file and is
-  followed by a blank line, an import or a package line), its top-level definitions, and the files that use
+  followed by a blank line, an import or a package line; a license or banner comment before it, `/*! … */`,
+  `// Copyright`, an SPDX line, is skipped), its top-level definitions, and the files that use
   it and that it uses, ranked by references and named by their shortest unique path. A start tour
   (`tour:map`): the top view at the README's description (`aboutAnchor`), then each top-level folder, at most
   8, at the first definition of its most used file, then where a newcomer starts reading: the shallowest
@@ -2183,7 +2200,7 @@ directory symlink swapped while a writer waits cannot import or publish another 
 address, root, guide and backend. UUID/root and secret bearer-token replies from `GET /api/service` verify
 the instance; `POST /api/service/stop` uses the same token and the existing JSON/origin guards. The token is
 never included in CLI output or a viewer bundle. Stop closes the listener and drains queued artifact writes
-before marking ownership stopped. No PID is signalled. An alive PID without a matching handshake remains
+before marking ownership stopped. No PID is signaled. An alive PID without a matching handshake remains
 unavailable; recovery refuses it, including PID reuse. A demonstrably exited owner requires `--recover`,
 which archives its record as `interrupted-<UUID>.json` before reserving another instance. Writer locks are
 never stolen on a timer: a crashed transaction requires explicit inspection/removal of its lock directory.
@@ -2209,7 +2226,7 @@ not chosen: polling reuses the indexer's discovery rules, observes ignored confi
 Git worktrees and non-Git directories. Watching defaults to `--precise off`; `auto|require` explicitly
 enables semantic tools. `--scip` reloads and watches a supplied artifact or manifest/artifact pair.
 Watch options are per-start, never saved as an automatic opt-in. A pinned `--index` is rejected; a watched
-start clears a previously saved pin. Stop drains the running build and prevents cancelled publication.
+start clears a previously saved pin. Stop drains the running build and prevents canceled publication.
 Restart and `--recover` reuse the saved guide/backend attachment with a new instance UUID. Passing
 `--watch` again publishes for that instance; live bundles retain the guide attachment and follow its
 current checked index. Recovery without `--watch` retires the old pointer and returns to manual indexes.
@@ -2282,9 +2299,9 @@ job or removed from the request queue.
 Lifecycle `state` is `queued | running | completed | failed | cancelled | superseded | interrupted`.
 Jobs retain `createdAt`, `updatedAt`, numeric `attempt`, nullable `owner: {instanceId, attemptId}`,
 bounded progress messages, nullable failure reason and nullable `result: {revisionRunId}`. One runner
-per repository claims queued jobs in ledger order; cancelling a running job aborts its signal but does
+per repository claims queued jobs in ledger order; canceling a running job aborts its signal but does
 not start conflicting work until that invocation exits. Progress and completion check both owner IDs
-and running state under the ledger lock. Cancelled/superseded results and late old-attempt results are
+and running state under the ledger lock. Canceled/superseded results and late old-attempt results are
 discarded. Completion records a proposal reference, never applies a patch or finalizes feedback.
 
 Restart marks previously running jobs `interrupted`, retains their input and progress, and requires an
@@ -2300,7 +2317,7 @@ and its POSIX process group; startTime is Linux's boot UUID plus the leader's ke
 The runner records it under the ledger lock and current attempt fence before Claude can start.
 On a new owner, recovery checks the start time and group identity before signalling a recorded group
 and waits for every live group member to stop before marking running work interrupted or dispatching queued work.
-A missing, exited or reused PID is not signalled. Older/control-only attempts have no process record.
+A missing, exited or reused PID is not signaled. Older/control-only attempts have no process record.
 Locks left by a killed transaction still require inspection/removal, never timeout-based theft.
 
 Managed services expose `GET /api/jobs`, `GET /api/jobs/<UUID>` and `POST /api/jobs` with
@@ -2336,7 +2353,7 @@ replace a failed attempt's uncommitted proposal only through its new guarded att
 rechecked after the journal, artifact and selected-outcome lock waits, and before publication. Acceptance
 reuses #30's freshness, exact candidate identity, readiness and user-field protection checks. The guide
 commits before selected outcomes; later feedback is merged untouched. Committing/committed/done journals
-cannot be cancelled or superseded: their remaining outcome publication must recover first. Repeating
+cannot be canceled or superseded: their remaining outcome publication must recover first. Repeating
 acceptance uses the same journal and never republishes the candidate or advances outcomes twice.
 `result.accepted` is a display receipt derived only from the matching done journal, not a lifecycle state
 or an independent permission. Recovery does not compare the old job input with the already committed guide.
@@ -2371,7 +2388,7 @@ jobs separate. `POST /api/answers` takes `{id: UUID, requestId}`; GET collection
 `/<UUID>/<retry|cancel|supersede>` use the same attachment/loopback guards and retry baseline as jobs.
 Submission checks the request ID under the ledger lock. A request has at most one answer job;
 concurrent submissions with different job UUIDs return the existing job, including terminal jobs and
-after restart. Failed/interrupted jobs use explicit retry; cancelled questions need a new request.
+after restart. Failed/interrupted jobs use explicit retry; canceled questions need a new request.
 Only a configured answer runner accepts new work. Frozen questions can finish or retry after source or
 explanation changes; `contextReason` reports the current difference without changing the original input.
 
@@ -2406,7 +2423,7 @@ progress controls and context warnings use the Feedback panel (§6).
 Explicit `service --backend claude` selects it. The saved `--skill-dir` identifies a verified managed
 installation (default `~/.claude/skills/code-explainer`); `--job-timeout` bounds each call (300 seconds by
 default, 1–3600 seconds). Enabled means configured; only an actual job establishes usable provider access.
-The viewer renders backendAvailable from the attachment: configured Claude is labelled without a
+The viewer renders backendAvailable from the attachment: configured Claude is labeled without a
 sign-in claim; the unavailable state points to manual revision.
 Missing tooling/skill, authentication, rate limits and timeout failures leave the job retryable with a
 recovery message. No keys, accounts, provider setup or hosted xpl backend are created.
@@ -2743,7 +2760,9 @@ is open (the Guide, Present), else "<explainer title> · xpl".
 **Search and guides** (`components/SearchLibrary.tsx`): one header entry opens an accessible dialog. A
 150 ms debounce sends literal, case-insensitive queries to an inline Web Worker; both index construction
 and scanning run off the UI thread. The worker calls core's pure `query` using supplied text only. Results
-have independent 16-row pages for symbols, concepts, steps, guides/tours and source (80 rows maximum).
+have independent 16-row pages for steps, concepts, guides/tours, symbols and source, in that order: the
+guide's own words first (80 rows maximum). Symbols are ranked: names whose code is in the page first, then
+names in test files (core `isTestFile`) after the others; a function in a test file is labeled "Test".
 Each group reports its visible range and total, with Previous/Next controls; source lines cannot crowd out
 explanations or symbol results. Snippets retain at most 400 characters around matches. Stale request IDs
 are ignored, and changing the query or supplied snapshots resets all pages. Source, symbols and prose
@@ -2782,7 +2801,7 @@ the compact status bar below it; the draft marker remains separate.
 service pages report offline, connecting,
 connected, disconnected (network failure) or service unavailable (HTTP refusal). Managed pages name their
 guide; Connection details shows root, last instance and configured backend availability. Claude Code is
-labelled configured; sign-in is checked only when a job runs. An unconfigured service points to manual
+labeled configured; sign-in is checked only when a job runs. An unconfigured service points to manual
 `xpl revise`. Existing two-second explainer
 polling also checks availability with unsaved edits; requests have a five-second deadline. A stopped or
 unavailable managed service keeps retrying the same address, never searches ports or changes roots.
@@ -2824,7 +2843,7 @@ workbench. **Present** plays a tour as slides. The header is one row built the s
 what the mode moves between, the save state (only when there is something to say: "Unsaved", "Saving…", "Not
 saved"), the theme button, the mode's one action, and the **Edit** menu.
 
-**Theme.** The colours are CSS variables (`styles.css`); the dark ones apply under `<html data-theme="dark">`.
+**Theme.** The colors are CSS variables (`styles.css`); the dark ones apply under `<html data-theme="dark">`.
 `theme.ts` sets that attribute before the first render, from the reader's choice: Auto (the default, which
 follows `prefers-color-scheme` and its changes), Light or Dark. The header's icon button cycles the three and
 names the current one and the next in its label (at 760 px and narrower the header has no room for it, and the
@@ -2909,7 +2928,9 @@ ready pages and draft previews; an export decision never retargets a request to 
   cut as many, takes the one that holds more arrows whole (`Focus.fill`): it never starts mid-label, nor on an
   empty lifeline beside the arrows. Every lifeline is one of the boxes not to cut, so a side does not cut a
   participant's name in half where a place that cuts none exists. A map picture slides the same way past every
-  box and group frame. A focused lifeline brings its own arrows in while there is room. The excerpt's caption
+  box and group frame. A focused lifeline brings its own arrows in while there is room. A focused arrow brings
+  in the lifelines the arrows after it join, nearest first, while the frame can zoom out to its floor for
+  them: the picture shows where the run goes next, not half of its last lifeline's name. The excerpt's caption
   says how much of its code link it shows ("lines 44–55 (12 of its 37 lines)"). A picture is laid out only
   when its section comes near the screen (an IntersectionObserver), and once per view. Tests (`stepTests.ts`)
   are the test code the step's focus points at (`test` anchors, and focused code in test files), one entry per
@@ -2926,8 +2947,10 @@ ready pages and draft previews; an export decision never retargets a request to 
   checked focus, including explicit `step.code` and before-change anchors. The step's first code link (the one
   its note talks about first; for a step without `code`, a definition before a call) supplies at most 12
   lines; "code link 2 of 3" numbers it in the step's own order, and ‹ › ("Previous code link", "Next code
-  link") page through the others, the code before a change among them, marked as removed lines
-  (`pre.is-before`). Each picture carries a text alternative (`pictureWords`): the parts it shows by name
+  link") page through the others, the code before a change among them (`pre.is-before`). With Show changes
+  on, an excerpt of a changed file marks its lines as the code pane does (`paneDiff`): the lines the change
+  removes on the code before it (`is-gone`), the lines it adds or rewrites on the code after it (`is-add`),
+  and the words a rewrite changed; the lines around them stay plain. Each picture carries a text alternative (`pictureWords`): the parts it shows by name
   and what the step lights up.
   "Show code" opens the shown range and its before/head side. Missing, drifted or unavailable source is stated
   instead of guessed. Source text comes from the bundle or the existing file loader.
@@ -2946,13 +2969,17 @@ ready pages and draft previews; an export decision never retargets a request to 
   box always is. A hidden stub has no keyboard stop. Guide pictures and Present follow the same rule. With
   something selected, the arrows that touch none of it are dimmed (`is-dim`; `GraphView` `litBoxes`: the
   selected boxes, the boxes inside them, the ends of a selected arrow); their labels are not faded but turn
-  grey (`--edge-label-dim`, 3:1 or more on the canvas in both themes). A line under the caption (`Legend.tsx`
+  gray (`--edge-label-dim`, 3:1 or more on the canvas in both themes). A line under the caption (`Legend.tsx`
   `KeyLine`) names the marks the map draws now, each drawn with the Key's own classes: the arrow kinds when it
-  mixes them (a map of calls alone names "calls" when the line shows anything else, so an arrow without words
-  has one), authored, found, matched by name, partly matched, and "code outside this map" (the dashed ghost
+  mixes them (a map of calls alone names "calls" when the line shows anything else and it draws derived
+  arrows, so an arrow without words has one; beside authored arrows its found item reads "calls, found in the
+  code", one item for one look; `keyMarks.ts keyLineItems`), authored, found, matched by name, partly
+  matched, and "code outside this map" (the dashed ghost
   box; the dotted stub line only while one is drawn). On a phone it is one row that scrolls sideways. Reader
   boxes drop the group, directory and symbol badges. A reader map starts whole only when that reads at zoom
-  0.75 or more; else it starts on its focus at that zoom, with "Fit all". A flow with nothing picked starts on
+  0.75 or more; else it starts on its focus at that zoom, with "Fit all". The part that four in five steps of
+  a flow or more start from (`sharedActor`) is named once in the caption, not under each box; a box another
+  part does names that part. A flow with nothing picked starts on
   its first step; a code-first outline also picks that step, so the code pane shows its code.
 - **Code**: the editors and the file tree. On the other tabs "Show code" opens the code beside them.
   On the Map and the Flow the code column waits for code to show. While nothing is selected (no box, no caret,
@@ -2974,8 +3001,9 @@ selection), and a right rail: the selected element's summary (eyebrow "Selected"
 tour step is applied; hidden while a guide section is the topic). In the Tour the rail is decided once per
 tour (so the text never changes width while the reader scrolls): a tour with related files for any step keeps
 it for every step. In the Tour the rail has one name, "This step's code": where the step's own code is (one
-file and its first lines per row, a click opens it; hidden on a phone, where the step's card shows that code
-and no bar is left for it), then the files it relates to; a box picked from a step gets "Related files". A
+file and its first lines per row, a click opens it), then the files it relates to (settings, tests). On a
+phone the Tour shows none of this: the step's card names the step's code, its settings and tests included,
+so the text keeps the whole height; a box picked from a step gets "Related files". A
 tour with none has no rail unless a box is picked from a step (`.workspace-context:empty`); the Code tab with
 nothing selected has no empty rail either. J and K step through the Tour (`Guide.tsx`; not in a text field,
 the code or a menu), as the list of steps says. Escape clears the selection on the Map and Flow tabs as in
@@ -3074,12 +3102,12 @@ under a band with its name and a bar down their row headers. Cell (row, column) 
 row's box to the column's: the arrows `drawnEdges` draws (what a click selects, as a click on the arrow) and
 every derived or stored edge id of the pair (what the caret lights). It shows the reference count (in full; a
 cell widens for it), or "•" when every arrow in it is one the author added, and the trust of its arrows by
-fill, never by colour alone (as the map's dashes): solid for precise and static, thin stripes for heuristic,
+fill, never by color alone (as the map's dashes): solid for precise and static, thin stripes for heuristic,
 stripes and fill for mixed, an outline for `llm` and `user`. `mixed` means precise and heuristic references in
 one cell; two authored arrows in one cell take the weaker word (`joinTrust`: heuristic, mixed, user, llm,
 static, precise). The stripes and the diagonal cells use `--matrix-mark`, 3:1 on the panel in both themes
-(`contrast.test.ts`); a count sits on a plate of the panel colour (`.matrix-count`), so stripes never run
-through its digits, and the grid is centred in its pane. When the cells hold kinds with more than one
+(`contrast.test.ts`); a count sits on a plate of the panel color (`.matrix-count`), so stripes never run
+through its digits, and the grid is centerd in its pane. When the cells hold kinds with more than one
 arrowhead, each cell shows them as the map's heads (▸ calls, ▹ extends and implements, › imports and
 references) and the key names them. A last column "Out" sums each box's lines out of the map, and a last row
 "Outside this map" sums the lines into each box from code the map does not draw: a click selects those stubs.
@@ -3103,7 +3131,7 @@ the boxes it uses (an arrow between their contents counts for them). Tarjan's al
 use each other directly or round a loop; these components are placed users first, the earliest listed ready
 one each time (the view's include order, then the graph's). Inside a component the box with the fewest users
 still to place goes first. So only an arrow of a real cycle lies below the diagonal (`is-back`, a corner flag
-in the warning colour, the same flag in the key), and the cells below the diagonal have a faint warning tint.
+in the warning color, the same flag in the key), and the cells below the diagonal have a faint warning tint.
 The key says how to read across and, only when a back cell exists, what a flagged cell means. Two-way link: a
 cell click selects the drawn arrows, a row or column header selects the box, the caret's matches light cells
 (`is-match`) and headers, and the first lit cell scrolls into the frame. A picked box (or a hovered header)
@@ -3122,7 +3150,7 @@ map's `DiagramText`). The map's key line is hidden while the matrix shows.
 whole diagram at its own size plus 16 units of margin, not the part the viewport shows, at 2 pixels per unit
 (less when a side would pass 16384 px). The diagram is styled by CSS tokens, which an SVG drawn as an image
 does not see, so each element of a copy gets the computed values of its paint properties (fill, stroke,
-opacity, font, text anchor and the like), and the copy is drawn on the pane's background colour: the image
+opacity, font, text anchor and the like), and the copy is drawn on the pane's background color: the image
 looks like the screen in either theme, with the selection, trace and match marks it shows. The sticky
 participant heads of a sequence (an overlay) are left out; the heads drawn at the top are in. It fetches
 nothing, so it works in an offline bundle. **Diagram keyboard navigation** (`components/PanZoom.tsx`): focus
@@ -3189,11 +3217,11 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
   an edit. **Edit map** resets selected/all placement to automatic layout with the same undo. Pan/zoom remain
   transient navigation. If the layout throws, a grid layout keeps the diagram usable (`data-fallback`). A map
   draws one arrow per pair of boxes and direction (`drawnEdges`): the derived edges of several kinds between
-  two boxes merge into one arrow, labelled per kind ("calls ×5 · references ×2"), under the id of the first;
-  an authored edge between the same two boxes replaces them. Edges are styled by resolution, never by colour
+  two boxes merge into one arrow, labeled per kind ("calls ×5 · references ×2"), under the id of the first;
+  an authored edge between the same two boxes replaces them. Edges are styled by resolution, never by color
   alone (the same dash in both themes, on the map, the key line and the Key, `--dash-*` in styles.css):
   precise solid; heuristic thinner, lighter and dashed; `mixed` dash-dot; `llm` and `user` thicker and
-  coloured; stubs dotted, leading to ghost boxes (at most 8 by default plus one "+N more" per direction, see
+  colored; stubs dotted, leading to ghost boxes (at most 8 by default plus one "+N more" per direction, see
   §4.4; ghosts that stand for several elements have a dotted border and a list icon). A ghost that links to
   several boxes says its count is a total ("calls ×12 in all"): the details of each box give its share. The
   head says the kind (`keyMarks` `headOf`): filled for calls and most kinds, hollow for `extends` and
@@ -3206,13 +3234,17 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
   in it. Double-clicking a node calls `drillIn`; a container has a collapse button. A box with a `role` is
   drawn as what it is (`RoleBox`: a cylinder for `database`, `cache` and `storage`, a pipe for `queue`, a
   dashed box for `external` and `person`, with a person icon, a heavier border for `service` and `system`) and
-  its badge is its `tech` or its role. A sketch box (`Node.sketch`) keeps its role's shape, is drawn dotted
+  its badge is its `tech` or its role (the role when the `tech` only repeats the box's name: "Your app"). A
+  box's corner buttons (open its map, show inside) sit at its top right, in the name's row, which keeps room
+  for them; a summary's lines run below them. A sketch box (`Node.sketch`) keeps its role's shape, is drawn dotted
   (`.is-sketch`) and badged "sketch". On a view with `boxText: "summary"` a box that is not a container shows
   its summary under the badge row (`LayoutNode.lines`, wrapped by `graphLayout.wrapText` on at most 3 lines,
-  the last cut with "…"); such a box is at least 300 units wide and grows 16 per line. On a view with
+  the last cut with "…", its code measured in the code font it is drawn in); such a box is at least 300 units wide and grows 16 per line. On a view with
   `boxText: "members"` a table (`GraphNode.rows`) is laid out by `graphLayout`'s `table` instead of a layered
   level: the header, then one row per child in `row` order, each `ROW_HEIGHT` (24) high and as wide as the
-  widest name plus type. A row's arrow is pinned to the table's side at the row's height (an entry like a
+  widest name plus type. On any map, a route that still runs through a box it does not join, or turns
+  inside one, goes around it (`layered.ts aroundBoxes`: a bend inside a box moves out with its segment to the
+  nearer side): a route that turned inside a table read as an arrow into it. A row's arrow is pinned to the table's side at the row's height (an entry like a
   container's border port, so no route runs inside the table), and an arrow to the table itself meets its
   header band: it means the type, not a field. A map with tables is laid out in the direction that draws it
   larger in its pane, as any map (`layoutGraphFitting`). Laid out down the page, a row's arrow still leaves
@@ -3240,7 +3272,8 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
   button ("See what is inside"; a double-click does the same, and Details offers it too): `store.zoomInto`
   shows that view, in the map or flow perspective that draws it, as a navigation step (Back returns). Above
   the diagram, `ZoomTrail` lists the levels above the current view (`zoomTrail`), each a link
-  (`store.goToLevel`). A box that opens a graph view (`GraphNode.expandable`) also offers "Show the inside
+  (`store.goToLevel`), on one line: in a narrow column a level above is cut short (whole on hover), never
+  the current one. A box that opens a graph view (`GraphNode.expandable`) also offers "Show the inside
   here": `store.toggleExpanded` adds it to `state.expanded`, and the view is drawn through `expandInPlace`
   (core `levels.ts`), with the boxes of the view it opens added, so the parts of a service sit inside its box
   and their arrows cross its border; its collapse button folds it back. At 760 px and narrower, the caption
@@ -3273,7 +3306,7 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
   frame place the diagram under the band the floating zoom toolbar covers (its bottom + 6 px), so the toolbar
   never covers a box of a fitted diagram; whether a diagram reads whole is decided on the whole pane, so the
   band never turns a whole first view into a framed one. A framed first view whose whole height fits the pane
-  starts at the diagram's top, not centred (a sequence's lifeline names come first). A focus that spans 90% of
+  starts at the diagram's top, not centerd (a sequence's lifeline names come first). A focus that spans 90% of
   the diagram or more on both axes (a step about every box of a map, as `xpl draft map` writes) starts whole
   when that reads at `READABLE_FLOOR`, even below the view's own floor (Present's 12 px): a frame of part of
   it shows a corner with boxes cut mid-word. On a phone the first frame fits the part of the pane on screen,
@@ -3286,12 +3319,13 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
   element a folded ghost stands for); its details list those elements with a button each. Ghosts are pictures
   in Present: no menu and no Tab stop, named "(outside this map)".
 - **Sequence view:** lifelines, one row per step (`call` solid, `return` dashed, `async` open head),
-  self-calls as loops, frames (`loop`/`alt`/`opt`/`par`) as labelled rectangles around their steps, nested by
+  self-calls as loops, frames (`loop`/`alt`/`opt`/`par`) as labeled rectangles around their steps, nested by
   `resolveFrames`, each at least as wide as its tab and its "[condition]" (`frameLabelWidth`); the condition
-  has a halo, so no lifeline runs through it. An `alt` with `arms` draws its `label` after the tab without
+  has a halo, so no lifeline runs through it. Only the outermost frame is tinted; a frame inside another is an
+  outline (`.is-nested`), so deep nesting does not darken under its words. An `alt` with `arms` draws its `label` after the tab without
   brackets, each arm's "[condition]" at the top left of the arm, and a dashed line (`frame-divider`) above
   every arm but the first; the layout leaves a row of room above each arm (`FrameBox.arms`). The alt's own
-  label is italic and in the text colour; every "[condition]" (loop, opt, arm) is in one muted tone. A frame's
+  label is italic and in the text color; every "[condition]" (loop, opt, arm) is in one muted tone. A frame's
   tab and label is a button (`data-frame-head`): a frame has no code link of its own, so a click selects its
   steps (`FrameBox.steps`) and the code shows theirs, the first step's first. The line that tests the
   condition is not highlighted (a frame and an arm have no anchors); the tooltip of a frame's name and of an
@@ -3308,13 +3342,13 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
   width fits at 0.7 (`SEQUENCE_WIDTH_ZOOM`) starts at the zoom that shows all its lifelines, cut only at the
   bottom.
 - **Flow view:** `processFlow` (§4.8) laid out by the same layered layout, top to bottom: stages as boxes,
-  decisions as diamonds, terminals, and the labelled `next` branches. A stage box is as tall as its label
+  decisions as diamonds, terminals, and the labeled `next` branches. A stage box is as tall as its label
   (`stageHeight`: 66 units for one line, 18 more per line, at most three; the label at 14 units, the actor at
   13). A diamond is as big as its words (`decisionSize`: twice the text block's width and height, between 150
   x 84 and 300 x 150), and its arrows start and end on its outline, not on the corners of its bounding box.
   **Direction and parts** (`layoutFlowFitting`, as `layoutGraphFitting` does for maps): a flow that shows at
   its natural size top to bottom stays so; else the pane's shape decides. An upright pane under 600 px (a
-  phone) gets one column in step order (`inColumn`: narrow boxes centred on one line, an arrow to the next
+  phone) gets one column in step order (`inColumn`: narrow boxes centerd on one line, an arrow to the next
   step straight down, every other arrow out of the box's right side into a lane beside the column and into its
   target's right side; the arrows into one step share a lane, and its ends are drawn once). A landscape pane
   sets the flow left to right (narrower boxes: 20 characters a line, diamonds 14) in 1-4 rows, like lines of
@@ -3325,13 +3359,17 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
   either way. A flow is cut into parts only between two bands of boxes where every arrow across the cut goes
   down and its label is above the cut; of those, the cuts that make the longest part shortest win, each arrow
   across a cut beyond the first counting as an eighth of the flow's length (`inParts`). An arrow from one part
-  to the next runs down past its part, through the gap, over the next part and into its box. The arrows that
-  leave one box share that lane (one trunk, split only near their ends); lanes of different boxes are 16 units
-  apart, the arrow that leaves furthest along innermost, so they do not cross. The shape is picked once per
+  to the next runs down past its part, through the gap, over the next part and into its box; where a box of
+  its part is in the way, it steps aside to the nearest side of the boxes in the way first, and it comes down
+  beside the boxes in its target's part and steps across just above its target. Only arrows into the same box
+  share a lane (two arms of one choice in one trunk could not be told apart); lanes are 16 units apart, the
+  arrow that leaves furthest along innermost, so they do not cross. Last, every route that still runs
+  through a box it does not join goes around it (`aroundBoxes`), and a label on a box moves along its own
+  route to the first place on no box and no other label (`clearOfOthers`). The shape is picked once per
   flow for the page, for a pane worked out from the window (`flowPane`: the window less 240 px of columns, and
   130 px of header), whichever of the Tour picture, the Flow tab or Explore draws it first (`layoutFlowView`);
-  "Fit all", "Show code" and a pane that changes shape change only the zoom. Present picks its own, for its
-  slide. `data-direction` and `data-parts` on the diagram say which, and a projected flow's note says how to
+  "Fit all", "Show code" and a pane that changes shape change only the zoom. Present draws the same shape.
+  `data-direction` and `data-parts` on the diagram say which, and a projected flow's note says how to
   read it (`readingOrder`). A repeated end's copies (`repeatEnds`) are dashed and carry no step number. A flow
   of states and moves (`xpl draft states`; `stateRoles`: the status type is the entry point and first
   participant, a state step runs from it to itself and leads only to moves, a move runs inside its function
@@ -3377,7 +3415,7 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
   container that stands for them in the view. A diagram element whose code holds the caret (`is-match`,
   `--match`) is magenta; orange is the code's "called here" (`--hl-call-site-bar`), and `contrast.test.ts`
   keeps the two hues at least 60° apart. A sequence's arm conditions are drawn at a call's size (13 units) in
-  the text colour.
+  the text color.
 - **Reverse lookup:** every caret or selection change in an editor is reported as a line range;
   `lookup(file, line)` (§4.5) marks the matching diagram elements and concepts `is-match`.
 - **Details:** kind, label, provenance badge (origin, commit, fields you edited), the id, summary and detail,
@@ -3460,7 +3498,11 @@ change the details also say what it did to the element ("Added by this change", 
 section lists "Code that calls what changed". A name in the code has a hover with "Who calls it"
 (Shift+F12) and "Go to definition" (F12, or Ctrl/Cmd+click). A pane header folds the pane or gives it the
 whole column, steps through its changes (`pane-hunks`) or its places (`RangeStepper`), and names the function
-the code is in ("in X"). The file tree has a filter (matching paths, flat), change marks (A, M, R, D; removed
+the code is in ("in X"). A narrow header cuts the folder at its start ("…/types/"), never the file name. A
+jump to a line (a focus, a hunk, a caller row) scrolls only the pane's own scroller (`paneOnlyScroll`, a
+CodeMirror `scrollHandler`): the default scrolled every scrollable ancestor too, so in a stack of many panes
+each pane pulled the column down to itself and the column opened on its last file. Caret moves keep the
+default, so the column follows the caret. The file tree has a filter (matching paths, flat), change marks (A, M, R, D; removed
 files are listed) and a "context" tag on files a `--files boundary` bundle carries only for context. When
 anchors drifted or went missing (`xpl bundle --allow-drift`, or `xpl view`), a banner under the header counts
 them (`DriftBanner.tsx`), drifted lines are striped (`xpl-hl-drifted`) and the pane says "changed since". The
@@ -3472,7 +3514,7 @@ including delayed source-file reads; the next poll retries the workspace.
 
 **Text and concepts.** In Explore, select a node, stored arrow or concept and use **Edit text** in Details.
 Label, summary and Markdown detail stay in a form draft until **Save text**; concepts can also select related
-elements. Drafts live in the store, keyed by element, until saved or explicitly cancelled; switching boxes or
+elements. Drafts live in the store, keyed by element, until saved or explicitly canceled; switching boxes or
 returning to reading keeps them. Save/Cancel stay visible at the bottom of the editor. Summary-only corrections
 do not require fixing an existing empty label. The header names unsaved drafts, saving, saved and rejected edits.
 Live saves check the version captured when the editor opened; a stale form must be reopened and inspected.
@@ -3541,7 +3583,10 @@ read-only: no drill-in, expand or collapse, and ghosts are pictures. Framing rul
   and "Fit all" when nothing is out of sight, stay hidden until the mouse moves; so does the header's Edit
   menu (or until the keyboard reaches it). A code pane opens with one whole line above its focus. On a
   phone or a touch screen "Fit all" shows, alone, and the title bar drops the question. Elsewhere the hidden
-  zoom buttons take no room in the bar (they stay a Tab stop), so the question keeps its width. A lower
+  zoom buttons take no room in the bar (they stay a Tab stop), so the question keeps its width. While part of
+  the diagram is out of sight the "Fit all" cue stays in the bar and the question gives way (beside the cue
+  it kept a few letters; the title says it on hover). A second line for it would shrink the diagram after
+  it was framed, and move the frame. A lower
   level's title bar names its parent box once ("xpl › The four packages…"), not every level above it.
 - While no code is on screen (a step with none, or a detour that selected none: `data-code="none"`), the
   diagram takes the whole width and the code column goes, as on the Map and the Flow.
@@ -3577,12 +3622,12 @@ change did. The pure logic is in `diff.ts`; base text comes from `ViewerBundle.b
 from `GET /api/base-file` (each file once; an error shows in its pane).
 
 - **Code.** A changed file's pane marks the head lines the change added (`xpl-add`) or rewrote (`xpl-chg`)
-  with a green tint and bar, and `+` in a narrow gutter (`xpl-diff-gutter`), so the marks do not rely on colour
+  with a green tint and bar, and `+` in a narrow gutter (`xpl-diff-gutter`), so the marks do not rely on color
   alone. Paired rewritten lines also mark the changed words or spaces on each side (`xpl-word-add`,
   `xpl-word-del`); the line marks and source line numbers stay the same. Removed base lines are shown inline,
   read-only (`xpl-removed`, `−` in the gutter): above the lines
   that replaced them, or below the line they followed for a pure deletion (git's `newStart` rule). A changed
-  line inside the focus keeps its focus colour, its gutter cell is tinted instead, and changed lines are
+  line inside the focus keeps its focus color, its gutter cell is tinted instead, and changed lines are
   never dimmed. Without the base text the block says "N lines removed (the code before the change is not
   included in this page)". The pane header says "Changed", "New file", "Renamed from <old path>" or "Removed",
   and has a **Show changes** toggle, on by default, that turns the marks off for every pane
@@ -3591,7 +3636,7 @@ from `GET /api/base-file` (each file once; an error shows in its pane).
   headed "Before (base 85c3b74)", with the base lines the change removes or rewrites marked (`xpl-gone`).
   Clicks in it look nothing up (its line numbers are the old ones). Panes follow the order of the anchors,
   so a step that names the old lines first shows them first, and a primary file shows both of its sides. A
-  file the change removed opens from base in a "Before" pane labelled "Removed"; a renamed file's "Before"
+  file the change removed opens from base in a "Before" pane labeled "Removed"; a renamed file's "Before"
   pane shows its old path. In the details panel a base anchor's row is tagged "before" and opens the base
   pane at its line.
 - **Map badges.** A file or symbol box gets a "New" pill for an added file or a range wholly covered by pure
@@ -3683,7 +3728,7 @@ patches and snapshots stay outside the indexed tree. An interrupted authoring ru
 guide and outside patch, without deleting the guide or using `--actor user` to bypass protected fields.
 Creation finishes with `xpl ready <name>` and a gated offline bundle outside the source root. The author
 records justified warning/omission decisions with the same `--note` on both commands, opens the guide
-locally or inspects the snapshot, and reports what was checked. A requested `--draft` preview is labelled
+locally or inspects the snapshot, and reports what was checked. A requested `--draft` preview is labeled
 as unfinished; it is not the creation workflow's finished result.
 
 The authoring agent chooses among three scopes: `explain <question>` (part of a project), `explain repo`
@@ -3720,7 +3765,7 @@ cloud sessions) or `xpl view`.
   responsibility crosses folders; concepts anchored to code, config keys and tests; `llm` edges only for the
   links just found, evidence at both ends; a summary for everything the views show); write ONE patch; **re-read
   every summary against the `show` output of its anchors**, removing or qualifying absolute words (only,
-  never, all, always, nothing but) and any behaviour the anchored code does not show (prose is the main
+  never, all, always, nothing but) and any behavior the anchored code does not show (prose is the main
   quality risk: the viewer displays it next to the code); apply; check; show the result; answer in 3–6
   sentences.
 - **`explain change <base>..<head>`** (`reference/explain-change.md`): read-only on the user's repo and
@@ -3772,7 +3817,7 @@ analysis cannot see, with anchors at both ends; stable ids (slugs chosen once, s
 reused); the default actor `llm` (never overwrite `origin: "user"` or `userFields`; `--actor user` only for
 text the user dictates; views and tours the user edited are theirs too); summaries are 1–2 concrete sentences
 about this code, every claim visible in the code their anchors show; for a change, never describe old
-behaviour that was not read in the base code; lazy; ask rather than guess.
+behavior that was not read in the base code; lazy; ask rather than guess.
 
 `reference/`: `create.md` (install, installed creation prompts, target choice and recovery; the one copy of
 the install steps), `quick.md` (the one-page
@@ -3852,7 +3897,7 @@ apply and validate; `cli/test/draft.test.ts` applies each draft as it is and che
 `anchors` are clean and `lint` reports only `todo-left`; `cli/test/lint.test.ts` covers every rule and
 `--patch`. The e2e suite covers Read (the guide, titles said once, the header at 1280×720 and 1440×900, text
 of 12 px or more in Present), explore, tours, the diff view (`change.spec.ts`), `xpl view`'s API from the
-browser (`/api/base-file` included), degraded (malformed) explainers and both colour schemes; besides,
+browser (`/api/base-file` included), degraded (malformed) explainers and both color schemes; besides,
 architecture maps (`architecture.spec.ts`, on the Python fixture with the skill's worked overview), many views
 in one header (`header.spec.ts`), big diagrams (`large-graph.spec.ts`), crowded views (`stubs.spec.ts`), the
 file tree (`file-tree.spec.ts`), recursion and the code-first layout (`recursion.spec.ts`), and the Key,

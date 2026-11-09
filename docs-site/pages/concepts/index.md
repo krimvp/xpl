@@ -60,7 +60,7 @@ that the text about the code is right: the author still answers for that.
 ## Trust labels
 
 `xpl index` records symbols and the references between them (calls, imports, inheritance, type uses and
-reads). Every reference is labelled:
+reads). Every reference is labeled:
 
 - **precise** (checked by a language tool): from a SCIP indexer, when its tool can run;
 - **heuristic** (matched by name): from xpl's own resolver, which matches names by scope, when no precise
@@ -75,7 +75,7 @@ analysis costs.
 `xpl ready <guide>` checks a guide before it is shared: the index is current, every code link resolves,
 the required text is written, and the reader checks of `xpl lint` are reported. Blockers stop a ready export
 (`xpl bundle`, Save as HTML) before anything is written. Warnings invite a decision: `--note "reason"`
-records an intentional omission in the report and in the HTML. `xpl bundle --draft` writes a labelled draft
+records an intentional omission in the report and in the HTML. `xpl bundle --draft` writes a labeled draft
 for repair work.
 
 An optional author review records who checked which text and which code links. It is shown apart from the

@@ -61,7 +61,7 @@ agent authentication or provider access. Required failures exit 1; JSON includes
 
 ## `xpl skill install [--agent claude|codex|pi|droid|devin] [--dir <path>]`
 
-Copies the bundled code-explainer skill to the selected harness's default skill directory, or the chosen
+Copies the bundled code-explainer skill to the selected agent's default skill directory, or the chosen
 directory, and binds `bin/xpl` to this installed CLI. `claude` is the default and installs to
 `~/.claude/skills/code-explainer`; `codex`, `pi` and `droid` install to `~/.agents/skills/code-explainer`;
 `devin` installs to the current project's `.agents/skills/code-explainer`.
@@ -69,8 +69,8 @@ Rerun after updating or moving the CLI. Refuses symlinks,
 unmanaged directories, added files and locally edited skill files; move them aside first to preserve them.
 The launcher prints one warning when its recorded skill version differs from the CLI package it runs.
 It recommends skill reinstall for an older skill and a CLI update for a newer skill.
-The CLI package bundles the skill and launcher. Install and configure the selected harness separately;
-the installer does not verify provider access or live invocation behaviour. Invoke the skill as
+The CLI package bundles the skill and launcher. Install and configure the selected agent separately;
+the installer does not verify provider access or live invocation behavior. Invoke the skill as
 `$code-explainer` in Codex, `/skill:code-explainer` in Pi, `/code-explainer` in Factory Droid, or
 `@skills:code-explainer` in Devin. Devin cloud discovery and authentication are not verified by xpl.
 In Devin, run `xpl skill install --agent devin` inside the connected remote environment and target repo
@@ -123,10 +123,11 @@ hits/misses and wall milliseconds, fresh heuristic-resolution time and semantic 
 `extraction` (`enabled`, `scope`, `hits`, `misses`, `writeFailures`, `wallMs`, optional `bypassReason`) and
 `work` (`heuristicResolutionMs`, `semanticMs`, `semanticRuns`). The text summary also prints a cache bypass
 reason or failed cache writes. Plain text without an extractor counts as neither a hit nor a miss.
-Measurements cover analysis stages, not CLI startup or index serialization. These incidental measurements are outside the saved index and exported viewers.
-Removing `.explainer/cache` reclaims old content entries; `--no-cache` leaves them untouched.
+Measurements cover analysis stages, not CLI startup or index serialization. They are not saved in the
+index or in exported viewers. Removing `.explainer/cache` reclaims old content entries; `--no-cache`
+leaves them untouched.
 
-With `--verbose`, the summary is followed by **Analysis coverage** and per-capability outcomes labelled by
+With `--verbose`, the summary is followed by **Analysis coverage** and per-capability outcomes labeled by
 analysis provider (`supported`, `partial`, `unsupported`, `failed`) with analyzed file counts and limits.
 `--json` includes the same `analysis` reports as the saved index. Abilities are separate from observed coverage:
 a described file or empty reference list never proves complete relationships. Exported viewers keep the report even when their
@@ -152,7 +153,7 @@ Tool commands and diagnostic details are omitted from these summaries.
     lexical nesting, and no relationships.
 - `refs: precise 10/11 (scip-go@0.2.7), 1 heuristic`: the tool described only 10 of the 11 files (build-tagged Go files, files a project's own configuration excludes). Those files keep heuristic references, so **their references are hints**; a warning above the summary names them: `warning: scip-go@0.2.7 did not describe 1 file(s) (excluded by build constraints or by the tool's own configuration, or unreadable?); their references stay heuristic: internal/queue/windows_only.go`.
 - `--precise auto` (default) falls back to heuristic with a warning, e.g. ``warning: precise resolver "scip-go" failed (scip-go@v0.2.7 could not be started (is `go` installed and on PATH?): spawn go ENOENT); using heuristic references for go``. `off` never runs SCIP (faster); syntax packs, including Java, still run. `require` exits 1 instead of falling back.
-- A file with syntax errors is indexed anyway. One warning covers all such files, with the first lines to look at: `warning: 1 file(s) have syntax errors; symbols near these lines may be incomplete: src/broken.ts:2` (at most 5 files and 3 lines each). Errors that cannot have cost a symbol (a TS labelled tuple element such as `[symbol: string]`) are not reported.
+- A file with syntax errors is indexed anyway. One warning covers all such files, with the first lines to look at: `warning: 1 file(s) have syntax errors; symbols near these lines may be incomplete: src/broken.ts:2` (at most 5 files and 3 lines each). Errors that cannot have cost a symbol (a TS labeled tuple element such as `[symbol: string]`) are not reported.
 - Reference kinds: `call import extends implements type-ref read write request`. A `request` is a web request (`fetch("/api/orders")`, `axios.post(...)`, `requests.get(...)`, `http.Get(...)`) whose method and path match a route the repository defines. The routes come from Express, Koa, Hono, Fastify, Next.js route files and `pages/api`, FastAPI, Flask, net/http, chi, gin and echo. A request points at the route's handler. For an inline handler it points at the symbol around it (the module scope `<file>#` at the top level). Request references are always heuristic: a matching path does not prove which server answers. A `read` is a use of a module- or package-level variable or constant, or of a field whose type is known, that is not a call or an assignment (`this.config.retry`, `LIMIT`). The built-in syntax and tool adapters leave out locals and parameters. Artifact imports can keep role-backed references to checked local declarations. A TS `import type` and a Python `import` under `TYPE_CHECKING` are `type-ref`, not `import`: `import` references are runtime dependencies.
 - Symbols beyond declarations: config keys (`kind: key`) of yaml, json and toml files (`config/default.yaml#retry.maxRetries`, `pyproject.toml#project.scripts.flask`). TS test blocks are symbols too: statement-level `describe`/`suite`/`context`/`it`/`test` calls with a string title. Their path is the nested titles (`test/retry.test.ts#fails twice, then succeeds: acked after two requeues`; `.` and `#` in a title become `_`). Test blocks can be anchored and outlined but nothing references them by name.
 - Re-run after every code change. Guides bound to an older index print ``hint: 1 guide (jobrunner) is bound to another index; run `xpl resolve <name> --write` to move it to this one.``
@@ -253,7 +254,7 @@ drafts, and its source opens as plain text in the viewer.
 
 ## `xpl outline [--under <id>] [--depth <n>] [--kind <k,...>] [--keys] [--limit <n>]`
 
-One line per element: `<id>  <kind>  <first>-<last line>  in=<fan-in> out=<fan-out>`. `in`/`out` count references into and out of the element's subtree (calls, imports, type uses, reads), so high numbers mark hubs. A symbol's calls of itself stay inside it and do not count. `recursive` after the counts marks a symbol that calls itself (`"recursive": true` in `--json`). `[+n]` = n children below the depth limit. Default depth 2, or deeper until a code file shows (a Maven `src/main/java/<package>`), `--limit 400` lines. A chain of folders that each hold only one folder is one row (`dir:src/main/java/app`) and one level. Config keys (yaml, json, toml) are hidden unless `--keys`. `--kind method,function` lists only symbols of those kinds (`class interface function method type variable enum key other`, and Go's `struct` and `field`; repeat or comma-separate) together with the dirs, files and parent symbols that hold a match, so each keeps its place; with `--kind` and no `--depth` it searches every level. Go code shows `struct` and `field` where the index stores `class` and `variable` (`--json` keeps the stored kind, and `--kind struct,field` works too); a method on `T` or `*T` is `sym:<file>#T.Method`. The `repo` line carries the name `xpl new` records (from `package.json`, `go.mod`, `pyproject.toml`, `Cargo.toml`, the git remote), not the directory's.
+One line per element: `<id>  <kind>  <first>-<last line>  in=<fan-in> out=<fan-out>`. `in`/`out` count references into and out of the element's subtree (calls, imports, type uses, reads), so high numbers mark hubs. A symbol's calls of itself stay inside it and do not count. `recursive` after the counts marks a symbol that calls itself (`"recursive": true` in `--json`). `[+n]` = n children below the depth limit. Default depth 2, or deeper until a code file shows (a Maven `src/main/java/<package>`), `--limit 400` lines. A chain of folders that each hold only one folder is one row (`dir:src/main/java/app`) and one level. Config keys (yaml, json, toml) are hidden unless `--keys`. `--kind method,function` lists only symbols of those kinds (`class interface function method type variable enum key other`, and Go's `struct` and `field`; repeat or comma-separate) together with the dirs, files and parent symbols that hold a match, so each keeps its place; with `--kind` and no `--depth` it searches every level. Go code shows `struct` and `field` where the index stores `class` and `variable` (`--json` keeps the stored kind, and `--kind struct,field` works too); a method on `T` or `*T` is `sym:<file>#T.Method`. Ruby modules and PHP namespaces show as `other`; a constant in a class shows as `field`. The `repo` line carries the name `xpl new` records (from `package.json`, `go.mod`, `pyproject.toml`, `Cargo.toml`, `pom.xml`, the git remote), not the directory's.
 
 ```
 $ xpl outline --depth 1
@@ -465,7 +466,7 @@ next: write each TODO, then `xpl lint shop --patch /work/map.json` and `xpl appl
 
 ## `xpl start <name> --question <question> --audience <reader> [--entry <symbol>] [--precise auto|off|require]`
 
-Creates a first guide in one command. It runs `index`, `new`, `draft` and `apply`, using the same source anchor checks as manual authoring. Without `--entry`, the draft is a repository map, not the path that answers the question. The output says so, and names a function to start that path at, with the `xpl draft path` command to run. The function is a guess from the question's words, ranked by the words in its name and code. With an indexed function or method such as `src/runner.ts#Runner.dispatch`, it is a call sequence from that entry. The applied guide contains TODO text and can be opened with `xpl view <name>`; complete and check the text before sharing. The patch and all draft notes are saved in a temporary directory outside the repository. The text output shows up to three notes and apply warnings; `--json` includes their full lists. Every note that names a path to draft names the same guessed entry. Existing guides are never overwritten.
+Creates a first guide in one command. It runs `index`, `new`, `draft` and `apply`, using the same source anchor checks as manual authoring. Without `--entry`, the draft is a repository map, not the path that answers the question. The output says so, and names a function to start that path at, with the `xpl draft path` command to run. The function is a guess from the question's words, ranked by the words in its name and code. With an indexed function or method such as `src/runner.ts#Runner.dispatch`, it is a call sequence from that entry. The applied guide contains TODO text and can be opened with `xpl view <name>`; complete and check the text before sharing. The patch and all draft notes are saved in a temporary directory outside the repository. The text output shows up to three notes and apply warnings; `--json` includes their full lists. The `xpl draft path` command is named once, in the last note. Existing guides are never overwritten.
 
 ```
 $ xpl start job-retries --question "How does a failed job get retried?" --audience maintainers --precise off
@@ -474,7 +475,7 @@ draft patch: /tmp/xpl-first-guide-…/draft.patch.json
 draft notes: /tmp/xpl-first-guide-…/draft-notes.json
 note: the draft guesses the kind of project, its users and its entry points from the code and its import lines: check each in the README and the code
 note: settings files the code loads (from the index): `config/default.yaml`; check that the code reads each at run time
-note: room is left for 2 more steps (9 at most), the main path and its risks: run `xpl draft path job-retries sym:src/runner.ts#Runner.dispatch` and copy the steps you keep
+note: room is left for 2 more steps (9 at most), the main path and its risks
 note: drafted an overview of the whole repository, not the path that answers the question (no --entry). To draft that path, run `xpl draft path job-retries sym:src/runner.ts#Runner.dispatch -o <file>` (a guess from the question's words), or pass --entry next time.
 next: write the TODOs in `xpl view job-retries` (Edit > Edit the tour), or edit /tmp/xpl-first-guide-…/draft.patch.json and run `xpl apply job-retries /tmp/xpl-first-guide-…/draft.patch.json`; then `xpl lint job-retries`
 ```
@@ -483,7 +484,7 @@ next: write the TODOs in `xpl view job-retries` (Edit > Edit the tour), or edit 
 
 ## `xpl new <name> [--title <title>] [--repo <name>] [--url <url>]`
 
-Creates an empty `.explainer/<name>.explainer.json` bound to the selected index. Refuses to overwrite (`error: … already exists; not overwriting it`). It records a repository name (`repo.name`, the label of the repo box): `--repo`, else the first of these. The `package.json` `name`, the last element of the `go.mod` module (`example.com/acme/jobrunner/v2` gives `jobrunner`), `[project] name` in `pyproject.toml`, `[package] name` in `Cargo.toml`, the base name of the git remote (`origin`, else the first), the directory name. `--url` records where the repository lives; it is never taken from the git remote (which may carry credentials).
+Creates an empty `.explainer/<name>.explainer.json` bound to the selected index. Refuses to overwrite (`error: … already exists; not overwriting it`). It records a repository name (`repo.name`, the label of the repo box): `--repo`, else the first of these. The `package.json` `name`, the last element of the `go.mod` module (`example.com/acme/jobrunner/v2` gives `jobrunner`), `[project] name` in `pyproject.toml`, `[package] name` in `Cargo.toml`, the project's `artifactId` in `pom.xml`, the base name of the git remote (`origin`, else the first), the directory name. `--url` records where the repository lives; it is never taken from the git remote (which may carry credentials).
 
 ```
 $ xpl new jobrunner --title "Job runner"
@@ -772,13 +773,13 @@ request or expansion, and export `feedback.json`. Saving starts no generation. I
 ```sh
 xpl feedback myguide --import /tmp/feedback.json
 xpl feedback myguide --json
-# Explicitly invoke the feedback operation with your harness token.
+# Then run /code-explainer feedback in your agent.
 xpl feedback myguide --outcomes /tmp/outcomes.json
 xpl feedback myguide --export /tmp/results.json
 ```
 
 Exports use `{schema: "code-explainer/feedback@1", requests: [...]}`. Each request has `id`, `elementId`,
-`kind: correct|explain|expand`, `at`, immutable `context: {explainerHash, sourceHash}`, optional `note`,
+`kind: correct|explain|expand`, `at`, a fixed `context: {explainerHash, sourceHash}`, optional `note`,
 `view`, `label`, `explainer`, `sourceWarning` and `range: {file, fromLine, toLine, side: head|base}`, and
 `outcome: {revision, status, reason, at}`. Status is `pending`, `addressed`, `unresolved`, `rejected` or `outdated`.
 Outcomes are separate from author notes. Capture starts at revision zero. Imports deduplicate by ID and
@@ -837,9 +838,9 @@ Checks the text a reader sees. That is the explainer title, tour titles, tour `s
 
 **It exits 1 on any finding,** so `xpl lint <name> --patch p.json && xpl apply <name> p.json` stops on one. Fix it; for a finding you keep on purpose, say why in your reply and run with `--warn-only` (exit 0 on warnings; a `todo-left` error still exits 1). `--strict` is the default and is kept for older scripts.
 
-**Before you apply.** `--patch <file|->` lints the explainer as it would be after `xpl apply <explainer> <file>`. The patch is merged in memory the way `apply` merges it (same checks, actor `llm`), and nothing is written. A patch that `apply` would reject prints the same rejection lines and exits 1. `-` reads the patch from stdin.
+**Before you apply.** `--patch <file|->` lints the explainer as it would be after `xpl apply <explainer> <file>`. The patch is merged in memory the way `apply` merges it (same checks, actor `llm`), and nothing is written. A patch that `apply` would reject prints the same rejection lines and exits 1. The warnings `apply` would print (a step id that does not start with its view's slug) come after the findings and also exit 1: fix them in the patch, because an id never changes once applied. `-` reads the patch from stdin.
 
-- `todo-left`: A `TODO` in any authored text, including frame/transition labels, audience, technology and view questions. One error per stored field; a tour note includes its heading and body. IDs, paths, anchors and metadata are excluded. Nested text names its field path and nearest element ID. Exit 1 even with `--warn-only`.
+- `todo-left`: A `TODO` in any authored text, including frame/transition labels, audience, technology and view questions. One error per stored field; a tour note includes its heading and body. IDs, paths, anchors and metadata are excluded. Nested text names its field path and nearest element ID. Exit 1 even with `--warn-only`. A text that still holds a `TODO` gets only this finding: the other text rules judge it once it is written.
 - `tour-summary`: a tour without a `summary`, or one of fewer than 2 or more than 5 sentences (the answer, then up to four reasons)
 - `tour-first-step`: the first step does not show the big picture. It focuses a test (a file the index counts as a test, or a group of them), or only a concept that lights up nothing in its picture. Or it opens on a flow or sequence when the tour has a map. Or its title says "edge case", "corner case", "gotcha" or "open question"
 - `tour-covers-map`: a map (graph view) of at most 10 boxes that the tour uses has boxes that never come up. No step focuses the box, something inside it, a group it belongs to, a step or edge that starts or ends there, or a concept related to it. And no note or the summary names it (by its label, symbol or file name, or a method by its own name: `findEdge` for `nodes.findEdge`). Names match by word stems, case-insensitive, with or without backticks: "the web server" names "Web servers". Lists the boxes (`ids` in `--json`). Give each a step, name it in a note in plain words, or take it off the map
@@ -883,6 +884,8 @@ Checks the text a reader sees. That is the explainer title, tour titles, tour `s
 - `untitled-step`: a tour step without a note, or whose note has no `### title` and a first sentence over 80 characters (or opens with a list or code): the viewer shows that sentence cut short, or "Step N". Replaces `note-heading` for such a step
 - `change-not-shown`: an explainer of a change: changed files whose code no tour step shows (its `code` ranges, what it focuses, their members, ends and anchors; `ids` in `--json`). Naming a code file in a note is not enough: show it on a step (a range in `code`, or a symbol in the focus). Docs (readme, `*.md`, `docs/`), tests, lock files and renames with no edits may instead be named in a tour text (by file name, or by path when two changed files share one); the message says which kind each is
 - `far-ranges`: a tour step whose ranges in one file (its `code`, else the anchors of what it focuses) make more than 3 places, ranges over 40 lines apart. Present shows a pane per place, at most 3 per file, so the last pane holds the rest and opens at the first. (Read steps through any number, "range 1 / 4".) Keep the places the note is about, or split the step. Two or three far-apart places are fine. Not judged while the note holds a `TODO`
+- `many-ranges`: a tour step with no `code` whose focus has no anchors of its own, so it shows the code the box falls back to (a folder's files, a group's members): more than 2 ranges. Give the step `code` with the ranges the note is about, or focus a smaller box. Needs the index; not judged while the note holds a `TODO`.
+- `many-diagrams`: a tour that follows a path (it shows a flow or a sequence) and uses more than 1 map or more than 1 flow or sequence, the question budget in SKILL.md. A change, a presentation and a tour on an architecture map (a box with a `role`) are not judged. Keep the diagram that answers the question, or split the tour.
 - `long-talk-note`: in a talk (a tour whose id or title says talk, presentation, demo or slides), a note over 280 characters under its title: Present sets it in its smaller caption type, and it may scroll
 - `big-map`: a graph view a tour shows with more than 8 boxes (counted on the index; without one, the `include` entries): a guide picture or a slide of it is too small to read
 - `many-participants`: a sequence a tour shows with more than 6 participants: the lifelines get too narrow to read. Fold a helper into the lifeline that calls it, or leave out calls that do not change the answer
@@ -927,7 +930,7 @@ error   tours[0].sumary [tour:intro]: unknown field "sumary" (allowed: id, title
 nothing linted: fix the patch, then run `xpl lint --patch` again
 ```
 
-A flow step is named with its view (`host-check:1 (step in view:host-check)`). `--json`: `{ok, path, patch?, changed?, protectedIds?, strict, checked, total, counts: {<rule>: n}, findings: [{rule, severity?, elementId, kind: explainer|tour|tour-step|view|step|node|edge|concept, view?, field, quote, message, hint, ids?}]}`. `ok` is false when the exit code is 1: a finding (with `--warn-only`, a `todo-left` error), or a rejected patch. A rejected patch gives `{ok: false, path, patch, changed: [], issues, error}`, as `apply` does. `field` is `title`, `summary`, `note`, `note heading`, `label` or `detail`; `steps` for the order checks, `code` for `far-ranges`, `change` for `change-not-shown`, and `include` or `hidden` for the map checks. `strict` is false with `--warn-only`. `view` names the map of a `tour-covers-map` finding. `ids` lists the boxes, files or edges a finding is about.
+A flow step is named with its view (`host-check:1 (step in view:host-check)`). `--json`: `{ok, path, patch?, changed?, protectedIds?, strict, checked, total, counts: {<rule>: n}, findings: [{rule, severity?, elementId, kind: explainer|tour|tour-step|view|step|node|edge|concept, view?, field, quote, message, hint, ids?}]}`. `ok` is false when the exit code is 1: a finding (with `--warn-only`, a `todo-left` error), or a rejected patch. A rejected patch gives `{ok: false, path, patch, changed: [], issues, error}`, as `apply` does. `field` is `title`, `summary`, `note`, `note heading`, `label` or `detail`; `steps` for the order checks and `many-diagrams`, `code` for `far-ranges` and `many-ranges`, `change` for `change-not-shown`, and `include` or `hidden` for the map checks. `strict` is false with `--warn-only`. `view` names the map of a `tour-covers-map` finding. `ids` lists the boxes, files or edges a finding is about.
 
 ## `xpl health`
 
@@ -982,7 +985,7 @@ through indexing, diff computation and source reads. Checkout bytes must match t
 indexing. A configured smudge, encoding or line-ending conversion that changes content fails preparation
 and removes staging; disable that conversion for the PR run before retrying.
 
-JSON output gives `directory`, `repository`, `manifestPath` and `pr` identity. The immutable `input.json`
+JSON output gives `directory`, `repository`, `manifestPath` and `pr` identity. The `input.json` (never changed once written)
 records `schemaVersion: 1`, `kind: "github-pr-input"`, preparation time, PR identity, the rename-aware
 API base..head change, changed-file before/after source, head analysis and warnings. Text is read from
 the exact git commits; added-before and deleted-after sides are absent, and binary/unreadable sides have
@@ -999,13 +1002,13 @@ bad arguments exit 2. No credentials are created and nothing is written to GitHu
 
 ```sh
 xpl pr create owner/repo 42 --name pr-42 --audience reviewers --question "What changes for callers?" --skill-dir /absolute/installed-skill --cache-dir /absolute/pr-cache --json
-# Explicitly invoke the returned prompt with your harness token in the installed agent.
+# Run the returned prompt with the skill's command in the installed agent.
 # Author through handoff.json's command prefix, which calls the installed skill launcher safely.
 xpl pr finish /absolute/pr-cache/input-XXXXXX --cache-dir /absolute/pr-cache --json
 ```
 
 `create` uses the same preparation, then verifies the installed skill and bound CLI. Its launcher runs
-`new`, `change` with the full API base..head and `draft change`. The immutable `handoff.json` records the
+`new`, `change` with the full API base..head and `draft change`. The `handoff.json` (never changed once written) records the
 input digest, name, installed paths/CLI hash, commands and explicit skill invocation. The output adds
 `handoffPath` and `invocation`. It starts no model: invoke the prompt yourself in the installed agent.
 Use the supplied `command` prefix for every authoring command; it excludes inherited Git overrides and
@@ -1095,8 +1098,8 @@ Records the change an explainer is about, from git, and prints what it touches. 
 
 - `<base>..<head>` takes any git revisions (`main..HEAD`, `2284ff0^..2284ff0`); `<base>...<head>` starts from their merge base; `<base>` alone ends at the commit of the index. The head must be the commit the index was built from, else it stops: `the head HEAD~1 (85c3b74) is not the commit the index was built from (2284ff0). Check out 85c3b74, run xpl index, then run this again`.
 - It stores `change: {base, head, files: [{path, status: added|modified|deleted|renamed, oldPath?, hunks: [{oldStart, oldLines, newStart, newLines}]}]}` in the explainer (full SHAs; hunks as `git diff -U0` prints them). Patches cannot change it.
-- It prints the changed files with `+added -removed`, and the **changed symbols**: index symbols that hold an added or edited line (`new` when every line is new; a function nested in a function counts as part of it). For each changed symbol it prints its **direct callers** outside test files, and the indexed tests that reference it (a test function, or a test file for an import). A test also counts in three cases. It calls one of the symbol's direct callers (`through <caller>`: one call between them, as for the call paths). It calls the class of a changed constructor. Or it builds the class of a changed method (`builds its class; a guess`). When none of these finds a test, the output says so. A missing reference does not prove that no test exercises the behaviour. Changed test files are listed separately. A method that runs when an instance is called (`__call__`, `handle`) gets `callers via instance`: the code that builds its class. That is a guess, and the output says so. Lines outside any symbol (imports, module-level code) are listed apart.
-- For changed functions and methods, **call paths through one intermediate function** show two indexed call sites with each hop labelled precise or heuristic. They show possible reachability, not guaranteed execution. No runtime callback or middleware wiring is inferred. Tests, cycles and instance guesses are not expanded. Each changed symbol has at most 100 paths and 1000 inspected references; a truncation note means the result is incomplete, including in JSON. Draft maps keep their direct callers.
+- It prints the changed files with `+added -removed`, and the **changed symbols**: index symbols that hold an added or edited line (`new` when every line is new; a function nested in a function counts as part of it). For each changed symbol it prints its **direct callers** outside test files, and the indexed tests that reference it (a test function, or a test file for an import). A test also counts in three cases. It calls one of the symbol's direct callers (`through <caller>`: one call between them, as for the call paths). It calls the class of a changed constructor. Or it builds the class of a changed method (`builds its class; a guess`). When none of these finds a test, the output says so. A missing reference does not prove that no test exercises the behavior. Changed test files are listed separately. A method that runs when an instance is called (`__call__`, `handle`) gets `callers via instance`: the code that builds its class. That is a guess, and the output says so. Lines outside any symbol (imports, module-level code) are listed apart.
+- For changed functions and methods, **call paths through one intermediate function** show two indexed call sites with each hop labeled precise or heuristic. They show possible reachability, not guaranteed execution. No runtime callback or middleware wiring is inferred. Tests, cycles and instance guesses are not expanded. Each changed symbol has at most 100 paths and 1000 inspected references; a truncation note means the result is incomplete, including in JSON. Draft maps keep their direct callers.
 - A bounded **Not checked** section lists report-level partial, unavailable or failed analysis with the number of changed paths that report actually analyzed. It also lists changed paths absent from the loaded index and removed files the index cannot inspect. A commit mismatch is called out, so a stale index's limits are not presented as head coverage. No section means no omission was recorded; it does not prove complete semantic coverage. The exported change guide puts the same section below its summary, and `--json` includes `omissions: string[]`.
 - `xpl change <explainer>` without a range prints the analysis of the recorded change again.
 
@@ -1136,7 +1139,7 @@ The same rules hold for every kind:
 - Step counts follow the budget table in `SKILL.md`. The caps below are the draft's own.
 - Ids in the guide are not reused (`view:change-map-2`). A new tour numbers its steps after the highest `t<n>` of the guide's tours, so you can copy a step from one tour to another.
 - A box the guide already explains gets no new summary.
-- The draft is checked as `apply` checks it before it is printed.
+- The draft is checked as `apply` checks it before it is printed. When the code changed after `xpl index`, it says to run `xpl index` and `xpl resolve <explainer> --write`, then draft again.
 - A heuristic reference is a hint: a dashed arrow, and a note. Check each one in the code.
 
 When the index has `request` references, a new map's `edgeKinds` add `requests`, so the code that sends a web request has an arrow to the route that answers it.
@@ -1151,7 +1154,7 @@ Needs the change record: run `xpl change <explainer> <base>..<head>` first.
 
 **Draws**
 
-- One map, "What this change touches" (`stubs: none`). It holds the changed symbols, their direct callers outside tests, and one group box for the changed tests.
+- One map, "What this change touches" (`stubs: none`; arrows for calls, reads, type uses, `extends` and `implements`, so a changed default value or type has its arrows). It holds the changed symbols, their direct callers outside tests, and one group box for the changed tests.
 - Box summaries that start with `New:`, `Changed:` or `Unchanged:`.
 - A code link for every changed file, tests too. A deleted file links to the code before the change (`at: "base"`).
 
@@ -1173,24 +1176,26 @@ A caller is code that calls. A test, or code that only names a changed type, is 
 **Draws** two levels.
 
 - A system map (`view:system`, `stubs: none`): the project as one service box, or one per program under `services/`, `apps/` or `cmd/`.
-- Who reaches it: a web or command-line framework, or a web server start call (`ListenAndServe`). A program with only a `main` gets an `Operator` box there; a library gets a "Your app" box at the README example.
+- Who reaches it: a web or command-line framework, or a web server start call (`ListenAndServe`). A program with only a `main` gets an `Operator` box there. A library is the `system` box, and a "Your app" box (`role: external`, `tech: your app`) at the README example calls it.
 - What it relies on (databases, queues, APIs), from its imports, and a `Settings file` box.
+- Each arrow it adds there gets a label TODO and a summary TODO, so `ready` finds no empty text once the TODOs are written.
 - Each service box `opens` a map of its inside: at most 8 parts, and the outside systems each imports.
 
-**Tour** (at most 7 steps): the system map with the README, what it relies on, the inside, one step per part (at the functions other parts call most), then `### Where to go next`. Room is left for 2 steps of the main path.
+**Tour** (at most 7 steps): the system map with the README, what it relies on, the inside, one step per part (at the functions other parts call most), then `### Where to go next`, at the code where the main path starts. Room is left for 2 steps of the main path.
 
 **Notes it prints**
 
 - That the kind of project and its users are a guess.
 - The settings files, and whether the code loads them or only names them.
-- The `xpl draft path` command that fills the room for the main path.
+- The `xpl draft path` command that fills the room for the main path. For a library it starts where the request goes, past the builder that returns the client (ky: `Ky.create`, not `createInstance`). In Ruby or PHP, which have no references, the note says to write those steps from `xpl show` instead.
 - The outside systems found, and the files left off the inside map.
 
 ### `xpl draft path <id> [<id> ...]`
 
-**Draws** a sequence of the entry's calls (depth 1, source order; at most 6 participants and 12 calls).
+**Draws** a sequence of the entry's calls (depth 1, source order; at most 6 participants and 12 calls). In Ruby or PHP the index has no references, so there is no call to draw: the draft says so, and you write the steps from `xpl show`.
 
-- Each call links to its call site and to the callee's definition. A method goes to its class's lifeline; a call through an interface, to its one implementation.
+- Each call links to its call site and to the callee's definition. A method of the entry's own class is a lifeline of its own (`Ky.#run` calls `Ky.#retry`); a method of another class goes to that class's lifeline; a call through an interface, to its one implementation.
+- A callee called twice is drawn at its first call, and again at its first call on the main path when the first was inside a branch (the `delay` of an early exit and the `delay` after it). A one-line check in a branch's condition is not drawn, also when it calls another one-line check.
 - Frames from the syntax tree: a `loop` around calls in a loop, an `alt` around a branch with calls in two or more arms (`arms`), an `opt` around a branch with calls in one arm. An `if` that ends in `continue`, `return`, `break`, `raise` or `throw` makes the rest of its block the other arm. Each label is a TODO that quotes the condition.
 - When the calls cross files, a map of those files first (`view:<entry>-files`), with a summary TODO per file box.
 - A call's label keeps short arguments; long ones are cut to their names and the names of the calls in them (`requeue(job, backoffDelay(…))`).
@@ -1209,7 +1214,7 @@ Several entries give one sequence each and one tour.
 - Every box gets a label and a one-sentence summary to write. A file's TODO holds its header comment, what it defines, and the files it uses and that use it.
 - Over 30 boxes, files that use each other become groups (`grp:map-<path>-<n>`) that open a map of their files. Over 12 boxes, a map opens as a dependency matrix.
 
-**Tour** (`tour:map`): the top map at the README, each top-level folder at its most used file, then where a newcomer starts reading (the entry file, at `main`). With a change recorded, `tour:changes-<head>` has a step per changed file.
+**Tour** (`tour:map`): the top map at the README, each top-level folder at its most used file, then `### Where to go next:` where a newcomer starts reading (the entry file, at `main`, or Java's `main` method of its class). With a change recorded, `tour:changes-<head>` has a step per changed file.
 
 **Notes it prints**: the files left off and why, the files that are not code (settings, manifests), groups, matrices, moved files, and edited boxes whose code is gone.
 
@@ -1223,7 +1228,7 @@ Run it again after the code changed (`xpl index`, `xpl resolve <explainer> --wri
 - Each box gets a summary TODO with its kind, its links and its methods. In Go, `extends` reads "embeds" and a struct is a "struct".
 - Types in test files stay off the map unless the entry is in one.
 
-**Tour** (at most 8 steps): the entry, then each type next to it. The first step names the boxes no step visits.
+**Tour** (at most 8 steps): the entry, then each type next to it, then `### Where to go next`. The first step names the boxes no step visits.
 
 **Notes it prints**: types left off (over the cap, or in a test file), and arrows that rest on heuristic references. An entry that is not a class or an interface, or has no hierarchy, is refused.
 
@@ -1257,8 +1262,8 @@ Run it again after the code changed (`xpl index`, `xpl resolve <explainer> --wri
 $ xpl draft path jobrunner sym:src/runner.ts#Runner.dispatch -o path.json
 wrote path.json
 draft path for jobrunner: a sequence of 9 calls between 6 participants after a map of the 3 files it crosses, 9 summaries, a tour of 8 steps, 29 anchors, 50 TODOs to write
-note: called more than once, drawn once at the first call: Runner.log (3 calls)
-note: not drawn, one-line helpers that call nothing: backoffDelay
+note: called more than once, drawn at the first call (and at the first on the main path): Runner.log (3 calls)
+note: not drawn, one-line helpers that call nothing or only other one-liners: backoffDelay
 note: calls without a tour step of their own (at most 5 call steps): Runner.log, RunnerStats.record, WorkerPool.release
 next: write each TODO, then `xpl lint jobrunner --patch path.json` and `xpl apply jobrunner path.json`
 $ xpl draft map jobrunner -o map.json
@@ -1385,10 +1390,10 @@ drain and launcher exit. Inherited stream close cannot delay completion; teardow
 releases the child handle after drain or deadline, so shutdown can exit. Cleanup failure writes a failed
 job with `JOB_PROCESS_CLEANUP`, its group/verification details and a durable scheduling barrier.
 Restart/recovery clears that barrier only after verifying the old group gone; an unverified group is never
-signalled by PID. Service death
+signaled by PID. Service death
 closes the attempt launcher's pipe and kills the group too. Before running Claude, the job records the
 group ID and Linux boot/start ticks under its attempt lock. Recovery verifies that identity, terminates
-the old group and waits before allowing retry; a reused PID is never signalled. Verified execution
+the old group and waits before allowing retry; a reused PID is never signaled. Verified execution
 requires Linux /proc; other platforms report a job failure and can use manual revision. After source and
 ownership rechecks, valid ready proposals enter the existing revision journal as `proposed`. Inspect
 `xpl revise <guide> --run <revisionRunId>` before deciding anything. Creation fills a guide made by `xpl new`/draft authoring, with selected creation requests and included new IDs; it does
@@ -1410,8 +1415,8 @@ the review; inspect it again before accepting. Tokens are derived from the saved
 migration. Older clients that omit the token receive 400; manual `revise --accept` is unchanged.
 Per-request previews advance through proposals in order; each shows its own changes relative to the
 preceding candidate. The chosen combined candidate must still pass readiness. Decisions use the same
-statuses, reconciliation and missing-anchor permissions as `xpl revise`. Cancelled/superseded/old attempts
-and stale candidates cannot apply. Once journaled acceptance begins, recover it before cancelling or superseding.
+statuses, reconciliation and missing-anchor permissions as `xpl revise`. Canceled/superseded/old attempts
+and stale candidates cannot apply. Once journaled acceptance begins, recover it before canceling or superseding.
 Controlled executables prove adapter/lifecycle failures only; a real installed Claude job proves the
 provider integration. `claude --version` does not establish authentication.
 
@@ -1430,7 +1435,7 @@ ID belongs to one question. Imports or completions exceeding 1,000 answers for a
 changing history or publishing a result receipt; saved answers are never truncated. Without an
 answer backend the request stays pending for `/code-explainer feedback`. Submission deduplicates by request
 ID under the job ledger lock, even with different supplied job UUIDs or after restart. Existing terminal jobs
-are returned; failed/interrupted jobs use explicit retry and cancelled questions need a new request.
+are returned; failed/interrupted jobs use explicit retry and canceled questions need a new request.
 The viewer derives its job UUID from the request ID without browser storage. The viewer's Feedback panel
 uses these routes for **Ask a question**, progress, retry/cancel and answer history. Details and selected
 head/base code lines open that panel. JSON import/export preserves answers independently of outcomes.
@@ -1451,7 +1456,7 @@ It defaults to `--precise off`; `--precise auto|require` enables semantic tools,
 supplied artifact or manifest/artifact pair. `--watch` rejects an explicit `--index` and clears a saved pin.
 Repeat watch options on restart. Recovery retires the previous watch pointer. Freshness checks reuse the
 saved precise/artifact selection; older records without it need a watched restart. Validation after all
-publication locks prevents superseded/cancelled results from publishing. Failed builds retain the last index marked out of
+publication locks prevents superseded/canceled results from publishing. Failed builds retain the last index marked out of
 date; source/configuration freshness and anchor drift still block ready export. Builds report every guide;
 `xpl status --all` reads the inventory without saving prose. Generated exports and excluded outputs do
 not change watched Git cleanliness or generation, including from a clean tree. No generated revision is accepted and no
@@ -1620,11 +1625,11 @@ do not pass `--files` or `--note` with `--pr-result`.
 fails, 2 reports usage. A crashed writer's `current.lock` needs explicit removal after verifying it stopped.
 If lock cleanup fails after successful promotion, the command succeeds with a cleanup warning; the
 new current version remains usable.
-Opening current resolves to its immutable version folder before navigation. The page's About this
+Opening current resolves to its version folder (never changed once written) before navigation. The page's About this
 explanation panel shows its version, included source and captured prior versions with their scope and
 author review state. The existing query contract uses `version=<version-folder>`, `tour=<id>&step-id=<id>`,
 `view=<id>&focus=<element>` (repeatable), or `file=<path>&range=1:1-1:6&side=head|base`.
-The viewer searches source and symbols across contained guide snapshots. Results name the guide and index commit; source links add `guide=<key>&snapshot=<index-commit>&source-hash=<file-hash>`. The hash comes from the supplied file searched, so a changed file is rejected on open or reload even if the index commit stays the same. Navigation updates the hash from the head or Before file shown by the URL side. Current-guide links keep loaded files offline, including lazily fetched source. Save or cancel pending edits first. Reload reports missing source explicitly if the new bundle omits a file loaded only in the previous page. Missing files and pruned symbols stay labelled; catalog-only guides are not searched until opened.
+The viewer searches source and symbols across contained guide snapshots. Results name the guide and index commit; source links add `guide=<key>&snapshot=<index-commit>&source-hash=<file-hash>`. The hash comes from the supplied file searched, so a changed file is rejected on open or reload even if the index commit stays the same. Navigation updates the hash from the head or Before file shown by the URL side. Current-guide links keep loaded files offline, including lazily fetched source. Save or cancel pending edits first. Reload reports missing source explicitly if the new bundle omits a file loaded only in the previous page. Missing files and pruned symbols stay labeled; catalog-only guides are not searched until opened.
 Ranges use 1-based lines and inclusive UTF-16 columns; omitted columns select whole lines.
 Column positions allow line length + 1, including column 1 on an empty line. Base paths are change head
 keys, including renamed files and deleted files. Links resolve only supplied source.

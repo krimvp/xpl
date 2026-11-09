@@ -50,8 +50,8 @@ Read each changed symbol at head (`xpl show <id> --refs`) and at base (`xpl show
 
 A "before" claim is any sentence about the old code: "used to", "no longer", "already", "now", "instead of", "before this change".
 
-- **Read what decided the old behaviour,** not only the removed lines. Read the callers (`git grep -n <name> <base> -- <dir>`), the defaults, the exception paths, and the library calls that can fail. In the example, the hunk only adds a check to `loadConfig`. What happened before is in `backoffDelay`, which the diff does not touch: `Math.min(baseDelayMs * 2 ** (attempt - 1), maxDelayMs)` returned `maxDelayMs` for every retry.
-- **Never infer old behaviour from the hunk alone.** Removed lines show what the old code said, not what it did for every input. A removed `split(":")[0]` cuts at the first `:`, not the last. An old lookup may have raised an exception that a caller turned into a 500. Run the base when the result depends on a library or on input values (section 1).
+- **Read what decided the old behavior,** not only the removed lines. Read the callers (`git grep -n <name> <base> -- <dir>`), the defaults, the exception paths, and the library calls that can fail. In the example, the hunk only adds a check to `loadConfig`. What happened before is in `backoffDelay`, which the diff does not touch: `Math.min(baseDelayMs * 2 ** (attempt - 1), maxDelayMs)` returned `maxDelayMs` for every retry.
+- **Never infer old behavior from the hunk alone.** Removed lines show what the old code said, not what it did for every input. A removed `split(":")[0]` cuts at the first `:`, not the last. An old lookup may have raised an exception that a caller turned into a 500. Run the base when the result depends on a library or on input values (section 1).
 - **Anchor it in the base.** A base anchor points at the old lines of a modified, renamed or deleted file: `{"file": "src/config.ts", "at": "base", "find": "<text from the old file>", "role": "usage"}`, or a `span` counted from line 1 of the old file (the offsets `xpl show --at base` prints). No `symbol`: the base is not indexed. Put it next to the head anchor of the same claim, in the order of SKILL.md, "The tour" (range order). Code that the change does not touch is anchored without `at`: its old code is its current code. Format: `patch-format.md` section 1.
 - **Write it "Before: ... Now: ..."**, with the input that shows the difference: "Before: `maxDelayMs: 100` with `baseDelayMs: 500` made each retry wait 100 ms. Now: `loadConfig` throws `config: retry.maxDelayMs must be at least retry.baseDelayMs`."
 - **The bundle shows the diff** (SKILL.md, "Workflow", step 9): rewritten lines mark changed words on both
@@ -71,8 +71,8 @@ Unchanged code that you show for context is described as unchanged: "Unchanged: 
 ## 6. Tests and gaps
 
 - `xpl change` lists the tests that reference each changed symbol. A reference is not a check: read what each test asserts before you say what it covers.
-- For each behaviour change and each new branch (every `if`, early return or skip condition the change adds or moves), name the test that covers it, new or old. Name each branch that no test covers ("no test sends a non-HTTP scope through the new check"). Check a gap with `search` in the tests before you claim it.
-- A missing indexed test reference does not prove that no test covers the behaviour. For constructors and instance-call methods, a test reference to the class counts too. Changed test files are listed separately; check whether they test the behaviour through other code.
+- For each behavior change and each new branch (every `if`, early return or skip condition the change adds or moves), name the test that covers it, new or old. Name each branch that no test covers ("no test sends a non-HTTP scope through the new check"). Check a gap with `search` in the tests before you claim it.
+- A missing indexed test reference does not prove that no test covers the behavior. For constructors and instance-call methods, a test reference to the class counts too. Changed test files are listed separately; check whether they test the behavior through other code.
 - A test that also passes on the base **does not show the old bug**. It can still guard the new code: say what it checks. Do not call a test useless or redundant without evidence, such as a change to the new code that the test does not catch.
 - The draft anchors every changed file, test files too. Keep at least one anchor in each when you edit the draft. A tour step must show the code of each changed code file (a range in its `code`, or a symbol in its focus; a one-line change is a one-line range): naming a code file in a note does not pass `change-not-shown`. Docs (readme, `*.md`), tests, lock files and renames may instead be named in a note.
 
@@ -89,7 +89,7 @@ Understanding the change is the main review task, and files shown last get fewer
 | next | tests and gaps                    | the changed test files; what no test covers                                                 |
 | last | risks and open questions          | the worst realistic failure, edge cases, inputs that still behave the old way               |
 
-For a modified symbol, the draft puts a base anchor on the old lines of its first hunk, before the head anchor. Check that it covers the old code the "Before:" sentence is about, and add one for each other hunk you describe. The draft always writes the "who else is affected" step. With no other callers, it says so and asks for the checks of section 5: readers of a changed result, public exports and siblings.
+For a modified symbol, the draft puts a base anchor on the old lines of its first hunk that removes or rewrites lines, before the head anchor. A hunk that only adds lines gets none: add a base anchor on the lines around it when the "Before:" sentence needs them. Check that it covers the old code the "Before:" sentence is about, and add one for each other hunk you describe. The draft always writes the "who else is affected" step. With no other callers, it says so and asks for the checks of section 5: readers of a changed result, public exports and siblings.
 
 Keep the first step and the last in place. To fit a small change, merge the rest:
 
@@ -99,7 +99,7 @@ Keep the first step and the last in place. To fit a small change, merge the rest
 
 **The risk** names the worst realistic failure the change can cause, and the input that triggers it. Check it against the code: what does a caller or a wrapper of the changed code do that now fails, hangs or behaves differently? Do not narrow it to tests when real callers can hit it too. Do not make it bigger than the code allows. The tour summary, the last step and the reply carry it.
 
-**Views.** The draft's map, "What this change touches", holds the changed symbols, their direct callers and one group box for the tests. Its box summaries start with `New:`, `Changed:` or `Unchanged:`; keep that word and write the rest. Add **a flow** of the new behaviour only when the change adds or moves a decision, or changes its condition. Draw the new condition as its own `decision` step. Label its boxes with plain stage names ("Check the retry delays", "Reject the config"). A branch that belongs to one caller says so in its label.
+**Views.** The draft's map, "What this change touches", holds the changed symbols, their direct callers and one group box for the tests. Its box summaries start with `New:`, `Changed:` or `Unchanged:`; keep that word and write the rest. Add **a flow** of the new behavior only when the change adds or moves a decision, or changes its condition. Draw the new condition as its own `decision` step. Label its boxes with plain stage names ("Check the retry delays", "Reject the config"). A branch that belongs to one caller says so in its label.
 
 ## 8. A large change
 

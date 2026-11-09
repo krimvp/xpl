@@ -17,29 +17,29 @@ Say each fact once, in the place where it belongs.
 
 Write every authored text before ready export, including frame labels, transition conditions, audience and technology. `xpl lint` checks all of them for TODO placeholders. A tour note is one stored field, including its heading and body.
 
-| Field                              | Says                                                                                               | Length                          | Format          |
-| ---------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------- | --------------- |
-| tour `summary`                     | the answer first, then up to four reasons; for a change: the behaviour change, the risk, the tests | SKILL.md budget                 | markdown        |
-| tour `title`                       | the question the tour answers, or what it covers; for a change, the change                         | about 8 words                   | plain           |
-| note heading (`### ...`)           | the point of this step, as a statement                                                             | about 8 words                   | plain           |
-| note body                          | what to notice here and why it matters; what no summary says; a comparison may be a small table    | 1-3 sentences, 50 words at most | markdown        |
-| element `summary`                  | what this part is for, then what it does, with its conditions                                      | 1-2 sentences, 45 words at most | inline markdown |
-| element `detail`                   | the cases, conditions and lists that do not fit in the summary                                     | paragraphs of 80 words at most  | markdown        |
-| view `title`                       | what the diagram shows                                                                             | about 8 words                   | plain           |
-| flow step `label`                  | the stage, in plain words ("Find a handler", "Answer 400")                                         | 2-5 words                       | plain           |
-| sequence step `label`              | the call, as written in the code (`requeue(job, backoff)`)                                         | the call text                   | plain           |
-| step `summary`                     | what happens at this step, with its condition                                                      | 1-2 sentences, 45 words at most | inline markdown |
-| group, concept and edge labels     | a plain noun phrase; an edge label may be the topic or key (`job.completed`)                       | 1-4 words                       | plain           |
-| box `label` on an architecture map | what the part is to a reader ("Payments", "Orders database"), not its folder or class              | 1-3 words                       | plain           |
-| box `tech`                         | the technology ("PostgreSQL", "REST API", "Go service")                                            | 1-3 words                       | plain           |
-| arrow label to an outside box      | what passes ("stores orders", "charges cards", "sends receipts")                                   | 1-4 words                       | plain           |
-| frame `label`                      | when the steps inside run ("attempts left", "for each route"); with arms, what the `alt` decides   | a short condition, may be code  | plain           |
-| arm `label` (of an `alt` frame)    | when this arm runs ("retries left", "else")                                                        | a short condition, may be code  | plain           |
-| field row of a data map            | nothing: the row shows the field's declaration; a `summary` is optional                            | none needed                     | inline markdown |
+| Field                              | Says                                                                                              | Length                          | Format          |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------- | --------------- |
+| tour `summary`                     | the answer first, then up to four reasons; for a change: the behavior change, the risk, the tests | SKILL.md budget                 | markdown        |
+| tour `title`                       | the question the tour answers, or what it covers; for a change, the change                        | about 8 words                   | plain           |
+| note heading (`### ...`)           | the point of this step, as a statement                                                            | about 8 words                   | plain           |
+| note body                          | what to notice here and why it matters; what no summary says; a comparison may be a small table   | 1-3 sentences, 50 words at most | markdown        |
+| element `summary`                  | what this part is for, then what it does, with its conditions                                     | 1-2 sentences, 45 words at most | inline markdown |
+| element `detail`                   | the cases, conditions and lists that do not fit in the summary                                    | paragraphs of 80 words at most  | markdown        |
+| view `title`                       | what the diagram shows                                                                            | about 8 words                   | plain           |
+| flow step `label`                  | the stage, in plain words ("Find a handler", "Answer 400")                                        | 2-5 words                       | plain           |
+| sequence step `label`              | the call, as written in the code (`requeue(job, backoff)`)                                        | the call text                   | plain           |
+| step `summary`                     | what happens at this step, with its condition                                                     | 1-2 sentences, 45 words at most | inline markdown |
+| group, concept and edge labels     | a plain noun phrase; an edge label may be the topic or key (`job.completed`)                      | 1-4 words                       | plain           |
+| box `label` on an architecture map | what the part is to a reader ("Payments", "Orders database"), not its folder or class             | 1-3 words                       | plain           |
+| box `tech`                         | the technology ("PostgreSQL", "REST API", "Go service")                                           | 1-3 words                       | plain           |
+| arrow label to an outside box      | what passes ("stores orders", "charges cards", "sends receipts")                                  | 1-4 words                       | plain           |
+| frame `label`                      | when the steps inside run ("attempts left", "for each route"); with arms, what the `alt` decides  | a short condition, may be code  | plain           |
+| arm `label` (of an `alt` frame)    | when this arm runs ("retries left", "else")                                                       | a short condition, may be code  | plain           |
+| field row of a data map            | nothing: the row shows the field's declaration; a `summary` is optional                           | none needed                     | inline markdown |
 
 **Formats.** _Markdown_ fields render markdown. Headings and links go only in a note body or a `detail`. _Inline markdown_ fields render code spans and emphasis (`` `Queue.requeue` ``, `**Changed:**`), but no headings or links. _Plain_ fields are shown as written, so `**Changed:**` appears with its asterisks: write no markup there. Backticks around identifiers are fine everywhere. The reply to the user is not a field: SKILL.md, "Workflow", says what it holds.
 
-**Tables.** A note may compare two to four things: two options, a value before and after, the policies of a setting. Then a small table after its sentences reads faster than a list. Write a header row, a rule row, then one row per item. Start and end each row with `|`. Leave a blank line before the table. Keep each cell to a few words. `:--`, `:-:` or `--:` in the rule row aligns a column left, centre or right. The Tour tab and Present show the table under the note, in both themes. `xpl lint` reads each cell on its own, so a row is never one long sentence, but the cells count toward the note's 50 words.
+**Tables.** A note may compare two to four things: two options, a value before and after, the policies of a setting. Then a small table after its sentences reads faster than a list. Write a header row, a rule row, then one row per item. Start and end each row with `|`. Leave a blank line before the table. Keep each cell to a few words. `:--`, `:-:` or `--:` in the rule row aligns a column left, center or right. The Tour tab and Present show the table under the note, in both themes. `xpl lint` reads each cell on its own, so a row is never one long sentence, but the cells count toward the note's 50 words.
 
 ```
 ### A fixed wait never grows
@@ -173,7 +173,7 @@ The first thing on the screen, so it leads with the answer. The first sentence s
 - **Whole project:** what the project is (language and kind: "a Python web framework", "a Go command-line tool"), what it is for, and the main path in one sentence. Take what the project is from its README or package metadata (`xpl show file:README.md`, `pyproject.toml#project.description`), and say nothing the README or the code does not say.
   > go-jobrunner is a small Go program that runs background jobs from an in-memory queue. A runner takes each job, runs it on a worker, and retries a failed job with a growing delay. An event bus tells the metrics when a job finishes. This tour shows those parts and follows one job from the queue to the end.
 - **Part of a project:** the answer to the question in the first sentence, then the reasons, and what the tour leaves out.
-- **No code names in the summary**, with two exceptions: a name the reader must type (a command, a setting), and an example input value that shows a behaviour change (`maxDelayMs: 100`, a sample header). Say "the payment step", not `chargeCard`.
+- **No code names in the summary**, with two exceptions: a name the reader must type (a command, a setting), and an example input value that shows a behavior change (`maxDelayMs: 100`, a sample header). Say "the payment step", not `chargeCard`.
   > The runner puts a failed job back on the queue with a growing delay, until the job uses up its retries. After that, the runner parks the job in a dead-letter list. The runner makes each decision, and the queue stores the job again. This tour leaves out the metrics and the worker pool.
 - **A change:** what changes for users (with one example), who is affected, the worst realistic failure (`explain-change.md` section 7), and what the tests cover. Example: `explain-change.md` section 10.
 

@@ -43,13 +43,13 @@ xpl service resume
 
 The git-ignored `.explainer/service/` directory holds local context and ownership records. If the owner exits,
 status reports it as interrupted. Inspect the artifacts, then use `xpl service start --recover` to archive the
-old instance and start again. A process whose identity cannot be verified is never signalled or replaced.
+old instance and start again. A process whose identity cannot be verified is never signaled or replaced.
 Inspect a crashed artifact-writer lock before removing it; elapsed time alone does not prove the writer
 stopped.
 
 With the Claude backend, a job writes an ordinary revision proposal and waits for you to review it. The agent
 cannot change the code, and a finished job does not apply a patch. In the Jobs panel you read the code and
-text changes, decide on each request, review the combined result, then accept it. A cancelled, replaced,
+text changes, decide on each request, review the combined result, then accept it. A canceled, replaced,
 out-of-date or earlier result cannot be applied. While the service owns a run, it refuses proposals and
 acceptances made by hand, so these checks always run. Revision by hand still works when the service is
 stopped.
@@ -66,7 +66,7 @@ xpl status --all --json
 ```
 
 The watcher polls files and configuration, coalesces edits, and rebuilds the index. Readers see a complete
-snapshot; a failed or cancelled build keeps the previous index marked out of date. Moved code keeps its prose,
+snapshot; a failed or canceled build keeps the previous index marked out of date. Moved code keeps its prose,
 while a drifted or missing code link blocks a ready export. Watching does not write guide text, accept revisions
 or discard feedback.
 

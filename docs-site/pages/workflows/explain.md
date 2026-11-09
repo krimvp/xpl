@@ -61,7 +61,7 @@ map again.
 ## Sketches
 
 A guide can start with a sketch: a diagram of an idea or a plan before there is code to read, or of
-something that is not in one place in the code. Sketch boxes are drawn dotted, labelled "sketch" on the map
+something that is not in one place in the code. Sketch boxes are drawn dotted, labeled "sketch" on the map
 and linked to no code. xpl never checks them and never shows them as code. Replace a sketch box with a box of
 code when it can point at code.
 

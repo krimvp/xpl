@@ -10,10 +10,10 @@ xpl skill install
 xpl doctor --agent claude
 ```
 
-Claude Code is the default target. For another harness, pass `--agent codex`, `pi`, `droid` or `devin` to both
+Claude Code is the default target. For another agent, pass `--agent codex`, `pi`, `droid` or `devin` to both
 commands. `--dir <path>` sets another destination.
 
-| Harness       | Skill directory                           | Invoke it with           |
+| Agent         | Skill directory                           | Invoke it with           |
 | ------------- | ----------------------------------------- | ------------------------ |
 | Claude Code   | `~/.claude/skills/code-explainer`         | `/code-explainer`        |
 | Codex         | `~/.agents/skills/code-explainer`         | `$code-explainer`        |
@@ -21,7 +21,7 @@ commands. `--dir <path>` sets another destination.
 | Factory Droid | `~/.agents/skills/code-explainer`         | `/code-explainer`        |
 | Devin         | `<project>/.agents/skills/code-explainer` | `@skills:code-explainer` |
 
-The invocations of the harnesses other than Claude Code have not been tested live. Each agent needs its own sign-in and provider access.
+The invocations of the agents other than Claude Code have not been tested live. Each agent needs its own sign-in and provider access.
 
 **Devin** runs in a remote environment. Install Node 22.12 or newer and xpl there first. Then run
 `xpl skill install --agent devin` there, in the target repo. The launcher records an absolute CLI path and has
@@ -64,16 +64,16 @@ ask whether the user means that guide. Do not delete it, recreate it or extend i
 to a guide, read its views, tours and `userFields`. Use fresh view and tour ids and the default `llm` actor; the
 user's text stays in place.
 
-After `xpl skill install` and `xpl doctor --agent <name>`, invoke the skill in the harness with a prompt like
+After `xpl skill install` and `xpl doctor --agent <name>`, invoke the skill in the agent with a prompt like
 these. For a skill in a custom `--dir`, pass that folder to `xpl doctor` with `--skill-dir <folder>`.
 
 ```text
-<harness-token> explain repo. Root: /work/orders. Audience: new maintainers. Question: how do requests reach storage? New guide: orders-overview. Use --precise off.
-<harness-token> explain how failed jobs are retried. Root: /work/jobs. Audience: backend engineers. New guide: job-retries. Use --precise off.
-<harness-token> explain change HEAD~1..HEAD. Root: /work/jobs. Audience: reviewers. Question: what changes for callers and what can fail? New guide: retry-change. Use --precise off.
+<agent-command> explain repo. Root: /work/orders. Audience: new maintainers. Question: how do requests reach storage? New guide: orders-overview. Use --precise off.
+<agent-command> explain how failed jobs are retried. Root: /work/jobs. Audience: backend engineers. New guide: job-retries. Use --precise off.
+<agent-command> explain change HEAD~1..HEAD. Root: /work/jobs. Audience: reviewers. Question: what changes for callers and what can fail? New guide: retry-change. Use --precise off.
 ```
 
-Replace `<harness-token>` with the invocation from the table in "Install".
+Replace `<agent-command>` with the invocation from the table in "Install".
 
 To add a question to a guide you know, say `Existing guide: orders-overview` instead of `New guide`. The agent can
 take the root from its current directory. It can propose the audience or name when the request makes them clear.
@@ -86,7 +86,7 @@ input. Give it a `--cache-dir` outside the repo, and `--skill-dir` for a skill i
 
 - It fetches the exact base and head commits into a separate repository, and runs `new`, `change` and `draft`
   there through the installed launcher.
-- It prints a prompt for the skill. Put the harness token in front of it and run it in the agent. No model starts
+- It prints a prompt for the skill. Put the skill's command (the table in "Install") in front of it and run it in the agent. No model starts
   on its own.
 - Read `handoff.json`, and put its `command` prefix in front of every authoring command. The prefix pins the
   installed CLI and the owned Git paths, and drops inherited Git overrides.
