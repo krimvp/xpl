@@ -156,25 +156,47 @@ describe("the change on the map", () => {
     expect(changeStatus("sym:src/a.ts#A.run", model, replacement)).toBe("changed");
   });
 
-  it("a group or directory is changed when a file it covers is; files and symbols keep their own status", () => {
-    const record = change([modified([{ oldStart: 12, oldLines: 1, newStart: 12, newLines: 1 }])]);
-    const files: Record<string, string[]> = {
-      "grp:core": ["src/b.ts", "src/a.ts"],
-      "grp:other": ["src/b.ts"],
-      "dir:src": ["src/a.ts"],
+  it("a group or directory is new when the change added all the code it covers, else changed when a file it covers is", () => {
+    // head 22-28 inserted (a new test function), line 12 rewritten
+    const record = change([
+      modified([
+        { oldStart: 12, oldLines: 1, newStart: 12, newLines: 1 },
+        { oldStart: 21, oldLines: 0, newStart: 22, newLines: 7 },
+      ]),
+    ]);
+    const lines = (file: string, startLine: number, endLine: number) => ({
+      file,
+      range: { startLine, endLine },
+    });
+    const code: Record<string, ReturnType<typeof lines>[]> = {
+      "grp:core": [lines("src/b.ts", 1, 5), lines("src/a.ts", 30, 40)],
+      "grp:other": [lines("src/b.ts", 1, 5)],
+      "dir:src": [lines("src/a.ts", 10, 14)],
+      "grp:tests": [lines("src/a.ts", 22, 28)],
+      "grp:mixed": [lines("src/a.ts", 22, 28), lines("src/b.ts", 1, 5)],
     };
     const marks = changeMarks(
-      ["grp:core", "grp:other", "dir:src", "sym:src/b.ts#B.go", "file:src/a.ts"],
+      [
+        "grp:core",
+        "grp:other",
+        "dir:src",
+        "grp:tests",
+        "grp:mixed",
+        "sym:src/b.ts#B.go",
+        "file:src/a.ts",
+      ],
       model,
       record,
-      (id) => files[id] ?? ["src/a.ts"],
+      (id) => code[id] ?? [],
     );
     expect(Object.fromEntries(marks)).toEqual({
       "grp:core": "changed",
       "dir:src": "changed",
+      "grp:tests": "new",
+      "grp:mixed": "changed",
       "file:src/a.ts": "changed",
     });
-    // without `filesOf`, as before: only files and symbols
+    // without `codeOf`, as before: only files and symbols
     expect([...changeMarks(["grp:core"], model, record).keys()]).toEqual([]);
   });
 

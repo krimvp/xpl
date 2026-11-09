@@ -36,10 +36,11 @@ test.describe("the zoom toolbar never covers a box of a fitted map (D6)", () => 
       await page.setViewportSize({ width, height: width === 390 ? 844 : 700 });
       const check = async () => {
         await expect(page.locator(".pz-svg .nodes g[data-element-id]").first()).toBeVisible();
-        // the first view, then "Fit all" (when it is offered: a fitted map offers "Readable size")
+        // the first view, then "Fit all"
         await expect.poll(() => boxesUnderToolbar(page)).toEqual([]);
         const fit = page.getByTestId("pz-fit");
-        if ((await fit.textContent())?.startsWith("Fit all")) await fit.click();
+        await expect(fit).toHaveText(/^Fit all/);
+        await fit.click();
         await expect.poll(() => boxesUnderToolbar(page)).toEqual([]);
       };
       await page.goto(`${TS_BUNDLE.href}?perspective=map`);
@@ -442,7 +443,7 @@ test.describe("the phone caption's disclosure (R4-21, R4-22)", () => {
     const about = page.getByRole("button", { name: "About this map" });
     await expect(about).toHaveAttribute("aria-expanded", "false");
     const controls = await about.getAttribute("aria-controls");
-    expect(await page.locator(`[id="${controls}"]`).count()).toBe(1);
+    await expect(page.locator(`[id="${controls}"]`)).toHaveCount(1);
     // the picker is a control, not "about" text: in sight while the details are closed
     await expect(page.getByRole("combobox", { name: "Choose a diagram" })).toBeVisible();
     await expect(page.locator(".view-question")).toBeHidden();

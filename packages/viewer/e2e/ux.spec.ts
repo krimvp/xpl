@@ -251,28 +251,27 @@ test.describe("Present: a flow step", () => {
       // read from the back of the room: the flow starts with its text at 16px
       expect(await smallestDiagramText(page)).toBeGreaterThanOrEqual(15.9);
       await expect.poll(() => selectedInPane(page)).toBe(true);
-      // "Fit all", when it is offered, shows every stage
+      // part of the 8-stage flow is out of sight at 16px: "Fit all" is a cue, and it shows every stage
       const badge = page.getByTestId("pz-fit");
-      if ((await badge.getAttribute("class"))?.includes("is-cue")) {
-        // while part of the flow is out of sight it stays on the slide, alone (D7); the zoom buttons come
-        // with the mouse
-        await expect(badge).toBeVisible();
-        await expect(page.getByRole("button", { name: "Zoom in" })).toBeHidden();
-        await page.mouse.move(size.width / 4, size.height / 3);
-        await expect(page.getByRole("button", { name: "Zoom in" })).toBeVisible();
-        await badge.click();
-        await expect
-          .poll(() =>
-            page.evaluate(() => {
-              const pane = document.querySelector(".panzoom")!.getBoundingClientRect();
-              return [...document.querySelectorAll(".flow-stage")].every((el) => {
-                const r = el.getBoundingClientRect();
-                return r.top >= pane.top - 1 && r.bottom <= pane.bottom + 1;
-              });
-            }),
-          )
-          .toBe(true);
-      }
+      await expect(badge).toHaveClass(/is-cue/);
+      // while part of the flow is out of sight it stays on the slide, alone (D7); the zoom buttons come
+      // with the mouse
+      await expect(badge).toBeVisible();
+      await expect(page.getByRole("button", { name: "Zoom in" })).toBeHidden();
+      await page.mouse.move(size.width / 4, size.height / 3);
+      await expect(page.getByRole("button", { name: "Zoom in" })).toBeVisible();
+      await badge.click();
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const pane = document.querySelector(".panzoom")!.getBoundingClientRect();
+            return [...document.querySelectorAll(".flow-stage")].every((el) => {
+              const r = el.getBoundingClientRect();
+              return r.top >= pane.top - 1 && r.bottom <= pane.bottom + 1;
+            });
+          }),
+        )
+        .toBe(true);
       // one split for the whole tour: a graph step keeps the same columns (the slide does not jump)
       await page.keyboard.press("ArrowLeft");
       await expect(byId(page, "grp:scheduling")).toHaveClass(/is-selected/);

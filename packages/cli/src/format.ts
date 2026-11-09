@@ -1,5 +1,11 @@
 /** Small text helpers shared by the commands. */
-import type { IndexedSymbol, IndexModel, Issue, Range } from "@xpl/core";
+import {
+  symbolKindWord,
+  type IndexedSymbol,
+  type IndexModel,
+  type Issue,
+  type Range,
+} from "@xpl/core";
 
 export function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
@@ -11,14 +17,17 @@ export function withArticle(noun: string): string {
 }
 
 /**
- * The language's own word for a symbol's kind, for text a person reads: a Go struct is `struct` and its fields are
- * `field`. The index and `--json` keep the stored kind (`class`, `variable`), which `--kind` filters take.
+ * The reader's word for a symbol's kind (core `symbolKindWord`): a Go struct is `struct`, a variable declared in a
+ * type is `field`. The index and `--json` keep the stored kind (`class`, `variable`), which `--kind` filters take.
  */
 export function kindWord(model: IndexModel, symbol: IndexedSymbol): string {
-  if (model.file(symbol.file)?.language !== "go") return symbol.kind;
-  if (symbol.kind === "class") return "struct";
-  if (symbol.kind === "variable" && model.parentSymbol(symbol.id)?.kind === "class") return "field";
-  return symbol.kind;
+  return (
+    symbolKindWord(
+      model.file(symbol.file)?.language,
+      symbol.kind,
+      model.parentSymbol(symbol.id)?.kind,
+    ) ?? symbol.kind
+  );
 }
 
 export function formatBytes(bytes: number): string {

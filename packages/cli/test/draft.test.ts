@@ -148,8 +148,8 @@ describe.each(Object.keys(ENTRIES))("xpl draft on %s", (fixture) => {
     expect(system.include).toContain(service.id);
     expect(service.opens).toBe("view:overview");
     expect(patch.tours![0]!.steps![0]!.view).toBe("view:system");
-    // the first step focuses the service (and who starts it, when the code has a main function)
-    expect(patch.tours![0]!.steps![0]!.focus[0]).toBe(service.id);
+    // the first step focuses the service and who starts it (every fixture has a main function)
+    expect(patch.tours![0]!.steps![0]!.focus).toEqual([service.id, "grp:operator"]);
     // level 2: the parts
     const view = patch.views!.find((v) => v.id === "view:overview")!;
     expect(view.type).toBe("graph");

@@ -84,7 +84,7 @@ export function AttentionStatus() {
               )}
               {g.errors.map((message, i) => (
                 <p role="alert" key={i}>
-                  {message} Inspect and repair this guide before export.
+                  {message} Fix this guide before you save it as a page.
                 </p>
               ))}
               <ul>
@@ -100,7 +100,7 @@ export function AttentionStatus() {
                     </p>
                     {g.path === connection.attachment!.guide && (
                       <button className="btn" onClick={() => store.select([element.id])}>
-                        Inspect element
+                        Show it
                       </button>
                     )}
                   </li>

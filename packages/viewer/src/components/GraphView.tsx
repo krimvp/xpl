@@ -89,6 +89,8 @@ const Reader = createContext(false);
  * ids (the live diagram keeps those to itself) and nothing to click or focus.
  */
 const Still = createContext(false);
+/** True on a data map (`GraphView.boxText: "members"`): a type box folds and unfolds its rows by key. */
+const DataMap = createContext(false);
 /** The edge under the pointer (its label is drawn apart from it, and shows while it is hovered). */
 const Hovered = createContext<string | undefined>(undefined);
 const SetHovered = createContext<(id: string | undefined) => void>(() => undefined);
@@ -340,6 +342,8 @@ export function GraphView({
     state.model.view(viewId)?.type === "graph";
 
   const changes = useGraphChanges(graph);
+  const storedView = state.model.view(viewId);
+  const dataMap = storedView?.type === "graph" && storedView.boxText === "members";
   const [layout, setLayout] = useState<GraphLayout | undefined>();
   const [error, setError] = useState<string | undefined>();
   const [moveError, setMoveError] = useState<string>();
@@ -584,6 +588,11 @@ export function GraphView({
         resetKey={resetKey}
         label="Diagram. Drag to pan, scroll to zoom."
         imageName={state.model.view(viewId)?.title ?? viewId}
+        keyboardMore={
+          dataMap
+            ? "On a table: Down goes into its rows, minus folds it to one box, plus shows its rows again."
+            : undefined
+        }
         maxFitZoom={present ? PRESENT_MAX_FIT_ZOOM : undefined}
         fitPadding={present ? PRESENT_FIT_PADDING : undefined}
         minFitZoom={pinned ? GRAPH_READABLE_ZOOM : undefined}
@@ -647,37 +656,41 @@ export function GraphView({
     <Move.Provider value={move}>
       <ReadOnly.Provider value={present}>
         <Reader.Provider value={present || reader}>
-          <BoxNames.Provider value={names}>
-            <SetHovered.Provider value={setHovered}>
-              <Hovered.Provider value={hovered}>
-                <GhostMenuContext.Provider value={menuApi}>
-                  <div
-                    className="graph-host"
-                    ref={host}
-                    onPointerDownCapture={dismiss}
-                    onWheelCapture={menu ? dismissOnWheel : undefined}
-                  >
-                    {keyShows && layout && !present && !matrix && (
-                      <KeyLine
-                        shows={keyShows}
-                        sharedBadge={layout.sharedBadge}
-                        stubLines={allEdgesOf(layout).some((edge) => edge.stub && !quietStub(edge))}
-                      />
-                    )}
-                    {body}
-                    {moveError && (
-                      <p className="placement-error" role="alert">
-                        {moveError}
-                      </p>
-                    )}
-                    {menu && menuGhost?.ghostFold && (
-                      <GhostMenu node={menuGhost} anchor={menu.anchor} onClose={closeMenu} />
-                    )}
-                  </div>
-                </GhostMenuContext.Provider>
-              </Hovered.Provider>
-            </SetHovered.Provider>
-          </BoxNames.Provider>
+          <DataMap.Provider value={dataMap}>
+            <BoxNames.Provider value={names}>
+              <SetHovered.Provider value={setHovered}>
+                <Hovered.Provider value={hovered}>
+                  <GhostMenuContext.Provider value={menuApi}>
+                    <div
+                      className="graph-host"
+                      ref={host}
+                      onPointerDownCapture={dismiss}
+                      onWheelCapture={menu ? dismissOnWheel : undefined}
+                    >
+                      {keyShows && layout && !present && !matrix && (
+                        <KeyLine
+                          shows={keyShows}
+                          sharedBadge={layout.sharedBadge}
+                          stubLines={allEdgesOf(layout).some(
+                            (edge) => edge.stub && !quietStub(edge),
+                          )}
+                        />
+                      )}
+                      {body}
+                      {moveError && (
+                        <p className="placement-error" role="alert">
+                          {moveError}
+                        </p>
+                      )}
+                      {menu && menuGhost?.ghostFold && (
+                        <GhostMenu node={menuGhost} anchor={menu.anchor} onClose={closeMenu} />
+                      )}
+                    </div>
+                  </GhostMenuContext.Provider>
+                </Hovered.Provider>
+              </SetHovered.Provider>
+            </BoxNames.Provider>
+          </DataMap.Provider>
         </Reader.Provider>
       </ReadOnly.Provider>
     </Move.Provider>
@@ -699,7 +712,7 @@ export function useGraphChanges(graph: DerivedGraph): ChangeMarks | undefined {
             graph.nodes.map((node) => node.id),
             index,
             change,
-            (id) => codeFocus([id], state.model).map((range) => range.file),
+            (id) => codeFocus([id], state.model),
           )
         : undefined,
     [graph, change, index, state.model],
@@ -820,6 +833,7 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
   const reader = useContext(Reader);
   const container = node.children.length > 0;
   const still = useContext(Still);
+  const dataMap = useContext(DataMap);
   const select = (event: MouseEvent | KeyboardEvent) => store.click(node.id, additive(event));
   const fullBadge = reader || node.role ? readerBadge(node.badge) : node.badge;
   // a badge every box shares is said once by the key line, not drawn on each box
@@ -834,6 +848,8 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
     node.expandable === true && !container && !still && store.canExpandInPlace(node.id);
   const showCollapse = container && !still && (!readOnly || expandedHere);
   const zoom = () => store.zoomInto(node.id);
+  // a folded table of a data map: "+" shows its rows again
+  const unfoldable = dataMap && !container && !still && !readOnly && store.canDrillIn(node.id);
   const role = node.role ? ` role-${node.role}` : "";
   const textX = 14 + ICON_ROOM;
   const icon = iconName(node);
@@ -898,8 +914,26 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
         if (zoomable) zoom();
         else if (!readOnly) store.drillIn(node.id);
       }}
-      aria-keyshortcuts={node.rows && !still ? "ArrowDown" : undefined}
+      aria-keyshortcuts={
+        still ? undefined : node.rows ? "ArrowDown -" : unfoldable ? "+" : undefined
+      }
       onKeyDown={(event) => {
+        // a table folds with "-" (its fold button is not a Tab stop) and opens again with "+"
+        if (event.target === event.currentTarget && !still) {
+          if (event.key === "-" && node.rows && showCollapse) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (expandedHere) store.toggleExpanded(node.id);
+            else store.collapse(node.id);
+            return;
+          }
+          if ((event.key === "+" || event.key === "=") && unfoldable) {
+            event.preventDefault();
+            event.stopPropagation();
+            store.drillIn(node.id);
+            return;
+          }
+        }
         // a table's rows are not Tab stops: Down (or Home) goes into the first of them
         if (
           node.rows &&
@@ -1331,10 +1365,15 @@ function centerIsCovered(node: LayoutNode): boolean {
   );
 }
 
-/** "New" or "Changed": what the explainer's change did to this box, in plain words. */
-function ChangePill({ x, y, change }: { x: number; y: number; change: "new" | "changed" }) {
+/** The width of the "New" / "Changed" pill. */
+export function changePillWidth(change: "new" | "changed"): number {
+  return badgeWidth(changeText(change));
+}
+
+/** "New" or "Changed": what the explainer's change did to this box or step, in plain words. */
+export function ChangePill({ x, y, change }: { x: number; y: number; change: "new" | "changed" }) {
   const text = changeText(change);
-  const width = badgeWidth(text);
+  const width = changePillWidth(change);
   return (
     <g
       className={`change-pill is-${change}`}

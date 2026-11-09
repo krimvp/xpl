@@ -201,7 +201,7 @@ for (const viewport of viewports) {
       expect(await zoomOf(page)).toBeCloseTo(0.9375, 3);
       await expect(badge(page)).toHaveText(/^Fit all/);
 
-      // A small diagram has no floor to apply and no badge: it is fitted as before.
+      // A small diagram has no floor to apply: a plain Fit all, not marked as a cue; it is fitted as before.
       await page.evaluate(() => window.__xpl!.setView("view:overview"));
       await expect(page.locator('.diagram[data-view-id="view:overview"]')).toBeVisible();
       await expect(byId(page, "grp:scheduling")).toBeVisible();

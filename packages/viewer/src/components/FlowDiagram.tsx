@@ -1,6 +1,14 @@
 import { DiagramText } from "./DiagramText.js";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { processFlow, type ElementId, type ProcessFlow, type SequenceView } from "@xpl/core";
+import {
+  codeFocus,
+  processFlow,
+  type ElementId,
+  type ProcessFlow,
+  type SequenceView,
+} from "@xpl/core";
+import { changeOf, rangesChange } from "../diff.js";
+import { ChangePill, changePillWidth } from "./GraphView.js";
 import { viewReverseIndex } from "../derive.js";
 import { useStore, useViewerState } from "../hooks.js";
 import {
@@ -72,6 +80,16 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
       ),
     [reverse, state.cursor],
   );
+  // In a change guide, a step whose code the change added or edits carries the same pill as a map box.
+  const change = changeOf(state.explainer);
+  const changes = useMemo(() => {
+    const marks = new Map<string, "new" | "changed">();
+    for (const { step } of change ? flow.stages : []) {
+      const status = rangesChange(codeFocus([step.id], state.model), change!);
+      if (status) marks.set(step.id, status);
+    }
+    return marks;
+  }, [flow, change, state.model]);
   // An outline follows what moved last: the caret in the code, or the selection (a click on a step).
   const [followCaret, setFollowCaret] = useState(false);
   useEffect(() => {
@@ -369,6 +387,17 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
                 <text y={4.5}>{numbers.get(step.id)}</text>
               </g>
             )}
+            {changes.get(step.id) &&
+              (() => {
+                const status = changes.get(step.id)!;
+                const pill = changePillWidth(status);
+                // Top right, opposite the step number; in a diamond on its upper right edge.
+                return shape === "decision" ? (
+                  <ChangePill x={(width * 3) / 4 - pill / 2} y={height / 4 - 8} change={status} />
+                ) : (
+                  <ChangePill x={width - pill - 12} y={-8} change={status} />
+                );
+              })()}
             {newFrame && (
               // Above the arrowhead (it ends at the box), on a halo: the dashed line runs behind it.
               <text className="flow-frame" x={width / 2} y="-18" textAnchor="middle">

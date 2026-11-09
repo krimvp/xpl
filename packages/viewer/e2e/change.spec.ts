@@ -388,6 +388,30 @@ test.describe("the change in the reading screens", () => {
     expect(problems).toEqual([]);
   });
 
+  test("a flow step whose code the change rewrites carries the same Changed pill as a box (R5-N3)", async ({
+    page,
+  }) => {
+    const problems = watchProblems(page);
+    // the dispatch sequence drawn as a flow (boxes in order)
+    const { html, bundle } = readEmbeddedBundle(CHANGE_BUNDLE);
+    const data = bundle as any;
+    data.explainer.views.find((view: any) => view.id === "view:dispatch").type = "flow";
+    await page.route("http://xpl.test/**", (route) =>
+      route.fulfill({ contentType: "text/html", body: withBundle(html, data) }),
+    );
+    await page.goto("http://xpl.test/?perspective=flow");
+    await page.waitForFunction(() => window.__xpl !== undefined);
+    // the requeue call (runner.ts head 75-78) was rewritten; pop() and run(job) are untouched lines
+    await expect(byId(page, "dispatch:3").locator(".change-pill text")).toHaveText("Changed");
+    await expect(byId(page, "dispatch:1").locator(".change-pill")).toHaveCount(0);
+    await expect(byId(page, "dispatch:2").locator(".change-pill")).toHaveCount(0);
+    // inside the step's box
+    const box = (await byId(page, "dispatch:3").locator("rect").first().boundingBox())!;
+    const pill = (await byId(page, "dispatch:3").locator(".change-pill").boundingBox())!;
+    expect(pill.x + pill.width).toBeLessThanOrEqual(box.x + box.width);
+    expect(problems).toEqual([]);
+  });
+
   test("the guide lists the files of the change under the summary, and each opens in the Code tab", async ({
     page,
   }) => {

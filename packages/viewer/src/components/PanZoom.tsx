@@ -114,6 +114,8 @@ function zoomAt(t: Transform, factor: number, px: number, py: number): Transform
 type Follow = "start" | "fit" | "free";
 
 export interface PanZoomProps {
+  /** More keys for this diagram, said after the common ones in the keyboard hint. */
+  keyboardMore?: string;
   /** Size of the content in its own coordinates. */
   width: number;
   height: number;
@@ -200,6 +202,7 @@ export function PanZoom({
   children,
   textView,
   imageName,
+  keyboardMore,
 }: PanZoomProps) {
   const wrap = useRef<HTMLDivElement>(null);
   /** The canvas: the pane's size is its size (on a phone the toolbar sits above it, not over it). */
@@ -735,6 +738,7 @@ export function PanZoom({
       <span id={keyboardHelp} className="pz-keyboard-hint">
         Press Enter to move through the diagram. Up and Down: next box. Left and Right: follow its
         arrows. Enter: show its code. Escape: back to the diagram.
+        {keyboardMore && ` ${keyboardMore}`}
       </span>
       {/* Before the canvas: Tab reaches the zoom buttons drawn above the diagram before its boxes (U51). In
           Present they sit in the diagram's title bar (ToolbarSlot), off the picture. */}

@@ -54,7 +54,9 @@ export async function openBundle(
  */
 export async function fitAll(page: Page): Promise<void> {
   const fit = page.getByTestId("pz-fit");
-  // (all of a big diagram in view already: the button offers "Readable size" instead)
+  // Read the label once the pane is measured (before that it always says "Fit all"). All of a big diagram in
+  // view already: the button offers "Readable size" instead.
+  await expect(fit).toHaveText(/^(Fit all|Readable size)/);
   if ((await fit.textContent())?.startsWith("Fit all")) await fit.click();
 }
 

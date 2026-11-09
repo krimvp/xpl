@@ -119,7 +119,7 @@ export function savedPage(
   if (!page) throw new Error("This page has no embedded snapshot to save.");
   const report = snapshotReadiness(bundle, options);
   if (!report.ready && !options.draft)
-    throw new Error("Not ready: repair the findings or save an explicit draft preview.");
+    throw new Error("Not ready: fix the findings, or save a draft preview.");
   const { server: _server, ...offline } = bundle;
   void _server;
   if (

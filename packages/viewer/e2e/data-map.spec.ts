@@ -163,6 +163,24 @@ test("Tab stops once per table, starting at the tour's first table; arrow keys w
   await expect.poll(() => selectionOf(page)).toEqual([`${DEAD}.error`]);
 });
 
+test("a focused table folds with minus and shows its rows again with plus, as the keyboard hint says", async ({
+  page,
+}) => {
+  await openDataMap(page, "mode=explore&tour=tour:data", {}, [DEAD]);
+  await expect(page.locator(".pz-keyboard-hint")).toContainText(
+    "On a table: Down goes into its rows, minus folds it to one box, plus shows its rows again.",
+  );
+  await byId(page, DEAD).focus();
+  await page.keyboard.press("-");
+  await expect(byId(page, `${DEAD}.job`)).toHaveCount(0);
+  await expect(byId(page, DEAD)).not.toHaveClass(/is-table/);
+  await byId(page, DEAD).focus();
+  await page.keyboard.press("+");
+  await expect(byId(page, DEAD)).toHaveClass(/is-table/);
+  await expect(byId(page, `${DEAD}.job`)).toBeVisible();
+  await expect(byId(page, `${DEAD}.error`)).toBeVisible();
+});
+
 // D8/V5-03: Go structs were "class" on the chip, the icon and the Key
 test('a Go struct is a "struct" on its box, its icon and the Key; its fields are fields', async ({
   page,

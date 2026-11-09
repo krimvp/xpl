@@ -240,7 +240,7 @@ test("managed attention distinguishes moved, drifted and missing evidence and of
   expect(recorded.puts).toEqual([]);
   expect(recorded.watchActions).toEqual([]);
   // The inventory ID reaches the same Details target that owns evidence repair.
-  await panel.getByRole("button", { name: "Inspect element" }).nth(1).click();
+  await panel.getByRole("button", { name: "Show it", exact: true }).nth(1).click();
   await expect(page.locator('.details[data-details-id="concept:retry-policy"]')).toBeVisible();
   await panel.locator(".attention-list > summary").click();
   await page.getByTestId("evidence-edit").click();

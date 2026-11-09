@@ -93,21 +93,36 @@ describe("xpl draft data", () => {
   // R4-S1 / V4-04: the attributes `__init__` sets are fields, so the classes that keep the state are tables
   it("maps a Python repo with the classes whose `__init__` sets their fields: Queue holds Job, Runner holds Queue", async () => {
     const { patch, view, r } = await draft("py-jobrunner");
-    expect(types(view)).toEqual(
-      expect.arrayContaining([
-        "sym:jobrunner/runner.py#Runner",
-        "sym:jobrunner/queue.py#Queue",
-        "sym:jobrunner/queue.py#Job",
-        "sym:jobrunner/worker.py#Worker",
-      ]),
-    );
-    expect(view.include).toEqual(
-      expect.arrayContaining([
-        "sym:jobrunner/queue.py#Queue._ready",
-        "sym:jobrunner/queue.py#Queue._inflight",
-        "sym:jobrunner/runner.py#Runner._queue",
-      ]),
-    );
+    expect(types(view)).toEqual([
+      "sym:jobrunner/runner.py#Runner",
+      "sym:jobrunner/config.py#RunnerConfig",
+      "sym:jobrunner/queue.py#Queue",
+      "sym:jobrunner/queue.py#Job",
+      "sym:jobrunner/worker.py#WorkerPool",
+      "sym:jobrunner/worker.py#Worker",
+    ]);
+    // a table's rows follow it, in the order `__init__` sets them
+    const table = (type: string, rows: number) =>
+      view.include.slice(view.include.indexOf(type), view.include.indexOf(type) + rows + 1);
+    expect(table("sym:jobrunner/queue.py#Queue", 6)).toEqual([
+      "sym:jobrunner/queue.py#Queue",
+      "sym:jobrunner/queue.py#Queue.dead",
+      "sym:jobrunner/queue.py#Queue.acked",
+      "sym:jobrunner/queue.py#Queue._ready",
+      "sym:jobrunner/queue.py#Queue._inflight",
+      "sym:jobrunner/queue.py#Queue._max_pending",
+      "sym:jobrunner/queue.py#Queue._next_id",
+    ]);
+    expect(table("sym:jobrunner/runner.py#Runner", 7)).toEqual([
+      "sym:jobrunner/runner.py#Runner",
+      "sym:jobrunner/runner.py#Runner.stats",
+      "sym:jobrunner/runner.py#Runner._queue",
+      "sym:jobrunner/runner.py#Runner._pool",
+      "sym:jobrunner/runner.py#Runner._config",
+      "sym:jobrunner/runner.py#Runner._logger",
+      "sym:jobrunner/runner.py#Runner._running",
+      "sym:jobrunner/runner.py#Runner._task",
+    ]);
     const steps = patch.tours?.[0]?.steps ?? [];
     expect(steps.map((s) => s.note).join("\n")).toContain("(Runner holds it in `_queue`)");
     expect(r.out).not.toContain("no fields the index knows");
@@ -119,14 +134,21 @@ describe("xpl draft data", () => {
     expect(view.scope?.root).toBe("file:jobrunner/config.py");
     expect(view.include.every((id) => id.startsWith("sym:jobrunner/config.py#"))).toBe(true);
     // Config holds the four section types in its fields: each field is a row
-    expect(view.include).toEqual(
-      expect.arrayContaining([
-        "sym:jobrunner/config.py#Config.queue",
-        "sym:jobrunner/config.py#Config.retry",
-        "sym:jobrunner/config.py#QueueConfig",
-        "sym:jobrunner/config.py#MetricsConfig",
-      ]),
-    );
+    expect(types(view)).toEqual([
+      "sym:jobrunner/config.py#Config",
+      "sym:jobrunner/config.py#RetryConfig",
+      "sym:jobrunner/config.py#QueueConfig",
+      "sym:jobrunner/config.py#WorkersConfig",
+      "sym:jobrunner/config.py#MetricsConfig",
+      "sym:jobrunner/config.py#RunnerConfig",
+    ]);
+    expect(view.include.slice(0, 5)).toEqual([
+      "sym:jobrunner/config.py#Config",
+      "sym:jobrunner/config.py#Config.queue",
+      "sym:jobrunner/config.py#Config.workers",
+      "sym:jobrunner/config.py#Config.retry",
+      "sym:jobrunner/config.py#Config.metrics",
+    ]);
   });
 
   it("starts at a Go type entry, takes the types two links from it, and says struct and why an interface has no rows", async () => {
