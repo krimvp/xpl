@@ -242,7 +242,7 @@ describe("a row's long type", () => {
 });
 
 // "WorkerPool.waiting holds Worker" for an array of callbacks that take a Worker: it holds functions
-describe("a field whose type names a type only as a function's parameter", () => {
+describe("a field whose type names a type only as a function's parameter or an indexed access", () => {
   const world = makeWorld({
     files: [
       {
@@ -258,6 +258,12 @@ describe("a field whose type names a type only as a function's parameter", () =>
           "}",
           "class Pool:",
           "    on_free: Callable[[Worker], None]",
+          // ky's NormalizedOptions: `baseUrl: Options['baseUrl']` holds a member's type, not an Options
+          "export class Stats {",
+          "  id: Worker['id'];",
+          '  next: NonNullable<Worker [ "next" ]>;',
+          "  all: Worker[];",
+          "}",
         ].join("\n"),
       },
     ],
@@ -270,15 +276,25 @@ describe("a field whose type names a type only as a function's parameter", () =>
       { id: "src/pool.ts#Pool.notify", kind: "variable", start: 7, end: 7 },
       { id: "src/pool.ts#PyPool", kind: "class", start: 9, end: 10 },
       { id: "src/pool.ts#PyPool.on_free", kind: "variable", start: 10, end: 10 },
+      { id: "src/pool.ts#Stats", kind: "class", start: 11, end: 15 },
+      { id: "src/pool.ts#Stats.id", kind: "variable", start: 12, end: 12 },
+      { id: "src/pool.ts#Stats.next", kind: "variable", start: 13, end: 13 },
+      { id: "src/pool.ts#Stats.all", kind: "variable", start: 14, end: 14 },
     ],
-    refs: ["WorkerPool.idle", "WorkerPool.waiting", "Pool.notify", "PyPool.on_free"].map(
-      (from, i) => ({
-        from: `src/pool.ts#${from}`,
-        to: "src/pool.ts#Worker",
-        kind: "type-ref" as const,
-        line: [3, 4, 7, 10][i]!,
-      }),
-    ),
+    refs: [
+      "WorkerPool.idle",
+      "WorkerPool.waiting",
+      "Pool.notify",
+      "PyPool.on_free",
+      "Stats.id",
+      "Stats.next",
+      "Stats.all",
+    ].map((from, i) => ({
+      from: `src/pool.ts#${from}`,
+      to: "src/pool.ts#Worker",
+      kind: "type-ref" as const,
+      line: [3, 4, 7, 10, 12, 13, 14][i]!,
+    })),
   });
   it("draws no holds arrow for it; a field that holds the type keeps its arrow", () => {
     const ids = [
@@ -290,6 +306,10 @@ describe("a field whose type names a type only as a function's parameter", () =>
       "Pool.notify",
       "PyPool",
       "PyPool.on_free",
+      "Stats",
+      "Stats.id",
+      "Stats.next",
+      "Stats.all",
     ];
     const view: GraphView = {
       id: "view:pool",
@@ -305,6 +325,7 @@ describe("a field whose type names a type only as a function's parameter", () =>
       text: world.getText,
     });
     expect(graph.edges.map((e) => e.id)).toEqual([
+      "edge:references:sym:src/pool.ts#Stats.all->sym:src/pool.ts#Worker",
       "edge:references:sym:src/pool.ts#WorkerPool.idle->sym:src/pool.ts#Worker",
     ]);
   });

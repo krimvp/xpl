@@ -128,7 +128,9 @@ export function viewContentStatuses(model: ExplainerModel): ViewContentStatus[] 
       status.edges = {
         total: graph.edges.length,
         unexplained: graph.edges
-          .filter((e) => !hasText(e.summary))
+          // an arrow lifted from several stored edges (two parts that each read the settings, on a system map
+          // that shows their service) shows no summary: its edges' own summaries are the text
+          .filter((e) => !hasText(e.summary) && !(e.stored && e.count > 1 && isStoredKind(e)))
           .map((e) => ({ id: e.id, stored: e.stored })),
       };
     } else {
@@ -158,6 +160,10 @@ function missingHint(elementId: string, field: string): string {
     return `write the ${field} with \`xpl apply\``;
   return "write this text with `xpl apply`, or take the element off its diagrams";
 }
+
+/** A stored edge's resolution (a stored overlay on a derived edge keeps the derived one, see `DerivedEdge`). */
+const isStoredKind = (e: { resolution: string }): boolean =>
+  e.resolution === "llm" || e.resolution === "user" || e.resolution === "static";
 
 export function checkReadiness(
   explainer: Explainer,

@@ -590,7 +590,7 @@ export function healthCheck(
       "The index is cut down to what a guide shows, so the check for possibly unused files was skipped.",
     );
   } else if (model.refs.length === 0) {
-    notes.push("The index has no references, so the check for possibly unused files was skipped.");
+    notes.push("the index has no references, so xpl did not check for unused files");
   } else {
     used = referencedFiles(model);
   }

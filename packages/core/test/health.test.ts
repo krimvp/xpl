@@ -458,7 +458,7 @@ describe("healthCheck: large and possibly unused files", () => {
     );
     expect(report.findings).toEqual([]);
     expect(report.notes).toEqual([
-      "The index has no references, so the check for possibly unused files was skipped.",
+      "the index has no references, so xpl did not check for unused files",
     ]);
   });
 });

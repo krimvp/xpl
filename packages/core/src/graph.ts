@@ -175,6 +175,14 @@ function withoutFunctions(type: string): string {
   return text;
 }
 
+/**
+ * A type's text without its indexed accesses (each becomes `member`): TypeScript `Options['baseUrl']` is the type of
+ * one member of Options, not an Options. An array type (`Worker[]`) stays.
+ */
+function withoutIndexedAccess(type: string): string {
+  return type.replace(/[\w.$]+(?:<[^<>]*>)?\s*\[\s*[^\]\s][^\]]*\]/g, "member");
+}
+
 /** Where `name` stands in `line` as a whole word (not part of a longer name), or -1. */
 function wordAt(line: string, name: string): number {
   const word = (c: string | undefined) => c !== undefined && /[\w$]/.test(c);
@@ -806,7 +814,8 @@ export function deriveGraph(
   });
 
   // a row whose type names the other type only in a function's signature (`Array<(worker: Worker) => void>`)
-  // holds functions, not that type: no arrow
+  // holds functions, not that type, and one that names it only to take a member's type (`Options['baseUrl']`)
+  // holds that member's type: no arrow
   const holdsNothingOf = (edge: DerivedEdge): boolean => {
     if (edge.kind !== "references" || !rowOf.has(edge.from)) return false;
     const type = typeOf(edge.from);
@@ -815,7 +824,7 @@ export function deriveGraph(
       type !== undefined &&
       name !== undefined &&
       wordAt(type, name) >= 0 &&
-      wordAt(withoutFunctions(type), name) < 0
+      wordAt(withoutIndexedAccess(withoutFunctions(type)), name) < 0
     );
   };
   const outEdges = [...edges.values()]

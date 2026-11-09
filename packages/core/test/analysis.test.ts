@@ -304,3 +304,58 @@ it("says in the summary that arrows are matched by name when every language is r
     lines: ["Java (1 file): names in full; arrows matched by name, so some can be missing."],
   });
 });
+
+it("says every arrow is checked by a language tool, with no warning, when one supported result outranks a partial one", () => {
+  const { index } = makeWorld({ files: [{ path: "src/A.java", language: "java" }] });
+  const result = (status: "partial" | "supported", capabilities: string[], precise = false) => ({
+    capabilities: capabilities as never,
+    status,
+    analyzedFiles: ["src/A.java"],
+    limitations: [],
+    ...(precise && { resolution: "precise" as const }),
+  });
+  index.analysis = [
+    {
+      provider: "java",
+      capabilities: {},
+      files: ["src/A.java"],
+      results: [
+        // a partial read first, then a full one: the full one counts
+        result("partial", ["symbols", "declarationRanges", "nesting"]),
+        result("supported", ["symbols", "declarationRanges", "nesting"]),
+        result(
+          "supported",
+          ["call", "import", "extends", "implements", "type-ref", "read", "write"],
+          true,
+        ),
+      ],
+    },
+  ];
+  expect(readerCoverage(index)).toEqual({
+    summary: "What xpl could read: 1 file.",
+    lines: ["Java (1 file): names in full; arrows checked by a language tool."],
+  });
+});
+
+it("says a language has no names when its symbol pass failed", () => {
+  const { index } = makeWorld({ files: [{ path: "a.py", language: "python" }] });
+  index.analysis = [
+    {
+      provider: "python",
+      capabilities: {},
+      files: ["a.py"],
+      results: [
+        {
+          capabilities: ["symbols", "declarationRanges", "nesting"],
+          status: "failed",
+          analyzedFiles: [],
+          limitations: [],
+        },
+      ],
+    },
+  ];
+  expect(readerCoverage(index)).toEqual({
+    summary: "What xpl could read: 1 file. The analysis failed in part.",
+    lines: ["Python (1 file): no names; no arrows; the analysis failed in part."],
+  });
+});
