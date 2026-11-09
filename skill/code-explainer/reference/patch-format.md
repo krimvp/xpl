@@ -475,7 +475,7 @@ A sequence view appears in the reader's **Flow** tab as a sequence diagram, with
 
 ### 3.8 Sequence view (steps, frames)
 
-Required: `type: "sequence"`, `title`, `participants` (lifelines, left to right), `steps`. Every step needs `id` (`<view-slug>:<n>`), `from`, `to` (both must be participants), `label` (the call text, as written in the code), `kind` (`call` solid arrow, `return` dashed back to the caller, `async` open head), and should have `summary` and anchors: the exact call in the caller (`call-site`) plus the callee's definition. `edge` links a step to the edge it instantiates. A step's `from` may equal `to` (self-call). Frames (`loop`, `alt`, `opt`, `par`) wrap the run `fromStep`..`toStep` (inclusive); nest them or keep them apart (a partial overlap draws a warning). Keep a sequence view to 6 participants at most: a flow with more is two or three views (one per phase or per collaborator group), each readable on its own. **Participants need a summary:** each counts as unexplained (`xpl status`) until its node has one, so put an overlay (3.2) for every participant in the same patch as the view.
+Required: `type: "sequence"`, `title`, `participants` (lifelines, left to right), `steps`. Every step needs `id` (`<view-slug>:<n>`), `from`, `to` (both must be participants), `label` (the call text, as written in the code), `kind` (`call` solid arrow, `return` dashed back to the caller, `async` open head), and should have `summary` and anchors: the exact call in the caller (`call-site`) plus the callee's definition. `edge` links a step to the edge it instantiates. A step's `from` may equal `to` (self-call). Frames (`loop`, `alt`, `opt`, `par`) wrap the run `fromStep`..`toStep` (inclusive); nest them or keep them apart (a partial overlap draws a warning). An `alt` frame may have `arms`, one per alternative ("When to draw a frame", below). Keep a sequence view to 6 participants at most: a flow with more is two or three views (one per phase or per collaborator group), each readable on its own. **Participants need a summary:** each counts as unexplained (`xpl status`) until its node has one, so put an overlay (3.2) for every participant in the same patch as the view.
 
 ```json patch
 {
@@ -598,9 +598,13 @@ Required: `type: "sequence"`, `title`, `participants` (lifelines, left to right)
         {
           "id": "frame:failed-attempt",
           "kind": "alt",
-          "label": "result.ok is false: retry, or give up",
+          "label": "the job failed",
           "fromStep": "dispatch:4",
-          "toStep": "dispatch:5"
+          "toStep": "dispatch:5",
+          "arms": [
+            { "label": "retries left", "fromStep": "dispatch:4", "toStep": "dispatch:4" },
+            { "label": "else", "fromStep": "dispatch:5", "toStep": "dispatch:5" }
+          ]
         }
       ]
     }
@@ -608,7 +612,7 @@ Required: `type: "sequence"`, `title`, `participants` (lifelines, left to right)
 }
 ```
 
-**When to draw a frame.** Mark each loop and each branch on the path. Without frames, the reader sees the steps as one straight run. A `loop` wraps the steps that a `while` or `for` repeats. An `alt` wraps the steps of a branch that has other arms (an `if` with an `else`, a `switch`). An `opt` wraps the steps of an `if` with no `else`. A `par` wraps steps that run at the same time. `xpl draft path` adds these frames from the code, each with a `TODO` label that quotes the condition. A frame has one label and draws no line between the arms of an `alt`. So name each arm and its calls in the label: "ok: ack; retries left: requeue; else: dead-letter". When the choice itself is the point, draw a flow (3.7), with one branch per exit.
+**When to draw a frame.** Mark each loop and each branch on the path. Without frames, the reader sees the steps as one straight run. A `loop` wraps the steps that a `while` or `for` repeats. An `alt` wraps the steps of a branch that has other arms (an `if` with an `else`, a `switch`). An `opt` wraps the steps of an `if` with no `else`. A `par` wraps steps that run at the same time. `xpl draft path` adds these frames from the code, each with a `TODO` label that quotes the condition. Give an `alt` its `arms`: one per alternative, top to bottom, each with a short condition (`label`: "retries left", "else") and its steps (`fromStep`..`toStep`). The arms split the frame's steps with no gap and no overlap, and there are two or more. The diagram draws a dashed line between two arms and each condition in brackets. The frame's `label` then says what it decides ("the job failed"). Without `arms`, an `alt` has one label and no lines, and its steps read as one run. An arm has no anchors: a click on its condition selects its steps, and their code. Another frame inside an `alt` stays inside one arm. `xpl draft path` drafts the arms of each `alt` from the code. When the choice itself is the point, draw a flow (3.7), with one branch per exit.
 
 **Editing one step** (sequence and flow views). To fix a step's summary or anchors, do not resend all the steps: `stepsUpdate` is a list of `{id, ...fields}` merged into the existing steps with those ids. The fields are those of a step (`from`, `to`, `label`, `kind`, `summary`, `anchors`, `edge`, and for a flow `shape`, `next`): `anchors` replace that step's anchors wholesale, `null` clears `summary`, `edge`, `shape` or `next`. The other steps, the frames and the tours that point at them stay as they are, and `changed` lists the view and the ids of the steps it updated. It applies after `steps` when both are sent, only to a view that exists (a new view sends `steps`), and an unknown step id is an error that names the view's steps. Like `steps`, it is skipped with a `protected` warning when the user edited the view's steps.
 

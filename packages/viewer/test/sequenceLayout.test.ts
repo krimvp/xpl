@@ -1,6 +1,7 @@
 import { ExplainerModel, type SequenceView } from "@xpl/core";
 import { describe, expect, it } from "vitest";
-import { frameLabelWidth, layoutSequence } from "../src/layout/sequenceLayout.js";
+import { ARM_TOP, frameLabelWidth, layoutSequence } from "../src/layout/sequenceLayout.js";
+import { textWidth } from "../src/measure.js";
 import { makeBundle } from "./world.js";
 
 const RUN = "sym:src/a.ts#A.run";
@@ -134,6 +135,71 @@ describe("layoutSequence", () => {
     const [frame] = layout.frames;
     expect(frame!.width).toBeGreaterThanOrEqual(frameLabelWidth("alt", label));
     expect(frame!.x + frame!.width).toBeLessThanOrEqual(layout.width);
+  });
+
+  it("splits an alt into its arms: each condition above its rows, clear of the tab and of the arm before", () => {
+    const { model: m, view } = model((v) => {
+      v.steps = [
+        step("flow:1", RUN, "file:src/b.ts", "ack(job)"),
+        step("flow:2", RUN, "file:src/b.ts", "requeue(job)"),
+        step("flow:3", RUN, "file:src/b.ts", "deadLetter(job)"),
+      ];
+      v.frames = [
+        {
+          id: "frame:end",
+          kind: "alt",
+          label: "how the attempt ends",
+          fromStep: "flow:1",
+          toStep: "flow:3",
+          arms: [
+            { label: "ok", fromStep: "flow:1", toStep: "flow:1" },
+            {
+              label: "a very long condition: retries are left",
+              fromStep: "flow:2",
+              toStep: "flow:2",
+            },
+            { label: "else", fromStep: "flow:3", toStep: "flow:3" },
+          ],
+        },
+        // a frame inside the last arm: the arm's condition sits above that frame's tab
+        {
+          id: "frame:last",
+          kind: "opt",
+          label: "dead letters on",
+          fromStep: "flow:3",
+          toStep: "flow:3",
+        },
+      ];
+    });
+    const layout = layoutSequence(view, m);
+    const [frame, inner] = layout.frames;
+    const rows = layout.rows;
+    expect(frame!.arms.map((arm) => [arm.label, arm.steps])).toEqual([
+      ["ok", ["flow:1"]],
+      ["a very long condition: retries are left", ["flow:2"]],
+      ["else", ["flow:3"]],
+    ]);
+    const [ok, retry, rest] = frame!.arms;
+    // the first condition sits under the tab, inside the frame
+    expect(ok!.top).toBeGreaterThanOrEqual(frame!.y + 20);
+    expect(ok!.top + ARM_TOP).toBeLessThanOrEqual(rows[0]!.bandTop);
+    // each later line runs between the arm before and its own condition
+    expect(retry!.top).toBeGreaterThanOrEqual(rows[0]!.bandBottom);
+    expect(retry!.top + ARM_TOP).toBeLessThanOrEqual(rows[1]!.bandTop);
+    expect(rest!.top).toBeGreaterThanOrEqual(rows[1]!.bandBottom);
+    expect(rest!.top + ARM_TOP).toBeLessThanOrEqual(inner!.y);
+    // wide enough for the longest condition, drawn 8 from the left edge
+    expect(frame!.width).toBeGreaterThan(
+      8 + textWidth("[a very long condition: retries are left]", 12, 500),
+    );
+    // without arms, the same frame takes no extra rows
+    const plain = model((v) => {
+      v.steps = view.steps;
+      v.frames = [{ ...view.frames![0]!, arms: undefined }];
+    });
+    expect(layoutSequence(plain.view, plain.model).height).toBeLessThan(
+      layout.height - 3 * ARM_TOP,
+    );
   });
 
   it("wraps a long message over lines of about 40 characters, and says which rows sit in a frame", () => {

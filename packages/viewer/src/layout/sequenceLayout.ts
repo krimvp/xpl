@@ -63,6 +63,17 @@ export interface FrameBox {
   y: number;
   width: number;
   height: number;
+  /** An `alt` frame's arms, top to bottom ([] without them): SequenceView draws a line above all but the first. */
+  arms: ArmBox[];
+}
+
+/** One arm of an `alt` frame: its condition sits at the top left, under the line that starts it. */
+export interface ArmBox {
+  label: string;
+  /** The ids of its steps, top to bottom: a click on the condition selects them. */
+  steps: string[];
+  /** y of the line above the arm, and of the top of its condition's row (`ARM_TOP` high). */
+  top: number;
 }
 
 export interface SequenceLayout {
@@ -96,6 +107,11 @@ export function frameTabWidth(kind: string): number {
   return kind.length * 7.5 + 16;
 }
 
+/** How wide a frame must be to hold an arm's condition in brackets, on one line. */
+function armLabelWidth(label: string): number {
+  return 8 + Math.ceil(textWidth(`[${label}]`, FRAME_FONT, 500)) + 12;
+}
+
 /** How wide a frame must be to hold its tab and its condition in brackets, on one line. */
 export function frameLabelWidth(kind: string, label: string): number {
   return frameTabWidth(kind) + 8 + Math.ceil(textWidth(`[${label}]`, FRAME_FONT, 500)) + 12;
@@ -105,6 +121,8 @@ const FRAME_TOP = 26;
 const FRAME_BOTTOM = 12;
 const FRAME_PAD_X = 16;
 const FRAME_NEST_X = 12;
+/** The row above each arm of an `alt`: the line between two arms, and the arm's condition under it. */
+export const ARM_TOP = 20;
 
 export function layoutSequence(view: SequenceView, model: ExplainerModel): SequenceLayout {
   const participants = participantLabels(view, model);
@@ -180,10 +198,12 @@ export function layoutSequence(view: SequenceView, model: ExplainerModel): Seque
   const frames = resolveFrames(view);
   const startsAt = (i: number) => frames.filter((f) => f.from === i).length;
   const endsAt = (i: number) => frames.filter((f) => f.to === i).length;
+  const armsAt = (i: number) =>
+    frames.reduce((n, f) => n + f.arms.filter((arm) => arm.from === i).length, 0);
   const rows: Row[] = [];
   let y = HEAD_TOP + HEAD_HEIGHT + 22;
   steps.forEach((step, i) => {
-    y += startsAt(i) * FRAME_TOP;
+    y += startsAt(i) * FRAME_TOP + armsAt(i) * ARM_TOP;
     const { from, to, detached } = ends[i]!;
     const self = from !== -1 && from === to;
     const labelW = labelWidths[i]!;
@@ -272,6 +292,21 @@ export function layoutSequence(view: SequenceView, model: ExplainerModel): Seque
         maxY = Math.max(maxY, box.y + box.height + FRAME_BOTTOM - 4);
       }
     }
+    // each arm's condition sits above what the arm holds: its first row, or a frame that starts with it
+    const arms = resolved.arms.map((arm): ArmBox => {
+      let top = rows[arm.from]!.bandTop;
+      for (const inner of innerFirst) {
+        const box = boxes.get(inner.frame);
+        if (box && inner !== resolved && inner.from === arm.from && inner.to <= arm.to)
+          top = Math.min(top, box.y);
+      }
+      return {
+        label: arm.label,
+        steps: rows.slice(arm.from, arm.to + 1).map((row) => row.step.id),
+        top: top - ARM_TOP,
+      };
+    });
+    if (arms.length > 0) minY = Math.min(minY, arms[0]!.top);
     const x = minX - FRAME_PAD_X;
     const top = minY - FRAME_TOP + 4;
     boxes.set(resolved.frame, {
@@ -283,8 +318,10 @@ export function layoutSequence(view: SequenceView, model: ExplainerModel): Seque
       width: Math.max(
         maxX + FRAME_PAD_X - x,
         frameLabelWidth(resolved.frame.kind, resolved.frame.label),
+        ...arms.map((arm) => armLabelWidth(arm.label)),
       ),
       height: maxY + FRAME_BOTTOM - top,
+      arms,
     });
   }
   const frameRight = Math.max(0, ...[...boxes.values()].map((box) => box.x + box.width));

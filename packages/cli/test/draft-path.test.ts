@@ -365,10 +365,20 @@ describe("xpl draft path: loops and branches", () => {
     expect(view.frames![2]!.label).toMatch(
       /^TODO: .*`if \(attempts <= this\.config\.retry\.maxRetries\)`/,
     );
-    // the frame has one label: the notes say so, and the author names each branch in it
-    expect(notes.join("\n")).toContain(
-      "an alt frame has one label and no line between its branches",
-    );
+    // the alt has an arm per branch, each with its own condition to write
+    expect(
+      view.frames![2]!.arms!.map((a) => [
+        a.label.match(/`[^`]+`/)![0],
+        `${label(a.fromStep)}..${label(a.toStep)}`,
+      ]),
+    ).toEqual([
+      [
+        "`if (attempts <= this.config.retry.maxRetries)`",
+        "requeue(job, backoff)..requeue(job, backoff)",
+      ],
+      ["`else`", "deadLetter(job, result.error)..deadLetter(job, result.error)"],
+    ]);
+    expect(notes.join("\n")).not.toContain("an alt frame has one label");
     const tour = patch.tours![0]!.steps!;
     expect(tour.length).toBeLessThanOrEqual(8);
     const branch = tour.find(
@@ -380,7 +390,24 @@ describe("xpl draft path: loops and branches", () => {
     ]);
   });
 
-  it("an if, elif and else with a call in each is one alt frame", async () => {
+  it("a Go call that computes its branch's condition runs before the frame, and a branch with no drawn call has none", async () => {
+    const dir = await indexedFixture("go-jobrunner");
+    expect((await xpl(dir, "new", "d")).code).toBe(0);
+    const { patch } = await drafted(dir, "sym:internal/runner/runner.go#Runner.Dispatch");
+    const view = sequence(patch);
+    const label = (id: string) => view.steps!.find((s) => s.id === id)!.label;
+    // `if err := r.queue.Ack(job); err != nil { return ... }` returns from inside: Ack itself runs whenever the job
+    // worked, so it sits in the `if result.OK()` opt, and the inner `if err` (whose body draws no call) is no frame
+    expect(view.frames!.map((f) => `${f.kind} ${label(f.fromStep)}..${label(f.toStep)}`)).toEqual([
+      "loop Pop()..DeadLetter(job, result.Err)",
+      "opt sleep(ctx, r.cfg.IdleDelay)..sleep(ctx, r.cfg.IdleDelay)",
+      "opt Ack(job)..Ack(job)",
+      "alt Requeue(job, backoff)..DeadLetter(job, result.Err)",
+    ]);
+    expect(view.frames![2]!.label).toContain("`if result.OK()`");
+  });
+
+  it("an if, elif and else with a call in each is one alt frame with three arms", async () => {
     const dir = await repo({
       "jobs.py": [
         "def ack(job):",
@@ -416,6 +443,17 @@ describe("xpl draft path: loops and branches", () => {
         fromStep: view.steps![0]!.id,
         toStep: view.steps![2]!.id,
       }),
+    ]);
+    const [a, b, c] = view.steps!.map((s) => s.id);
+    expect(view.frames![0]!.arms!.map((arm) => [arm.fromStep, arm.toStep])).toEqual([
+      [a, a],
+      [b, b],
+      [c, c],
+    ]);
+    expect(view.frames![0]!.arms!.map((arm) => arm.label.match(/`[^`]+`/)![0])).toEqual([
+      "`if ok:`",
+      "`elif left > 0:`",
+      "`else`",
     ]);
   });
 });

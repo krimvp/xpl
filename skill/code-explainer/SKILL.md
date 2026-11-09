@@ -115,7 +115,7 @@ Some calls do not show in `refs`: through an interface, a variable, a base class
 1. **Entry point:** `search -i` the nouns and verbs of the question, and `outline --depth 2`. Pick the function where the flow starts or the decision happens. A question with two halves takes two entries.
 2. **A choice inside one function** (which item, which branch): draft from its caller, and add a **flow** of that function (`patch-format.md` 3.7). A sequence shows only calls, so it cannot show a guard or a comparison.
 3. **Trace:** `show <entry> --refs`, then the callees that matter. Note every guard on the path (`if`, early `return`, type checks).
-4. **Shape:** keep a frame on each loop and branch, and label it (`patch-format.md` 3.8). Add a flow when the point is a decision. Anchor the target, its direct callers, the callees that change the answer, and the tests that pin it.
+4. **Shape:** keep a frame on each loop and branch, and label it; give each `alt` one labelled arm per alternative (`patch-format.md` 3.8). Add a flow when the point is a decision. Anchor the target, its direct callers, the callees that change the answer, and the tests that pin it.
 
 ## explain repo: the whole project
 

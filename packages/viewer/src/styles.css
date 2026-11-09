@@ -2417,6 +2417,44 @@ code {
   fill: var(--muted);
 }
 
+/* the arms of an alt: a dashed line between two, and each condition a button that selects the arm's steps */
+.frame .frame-divider {
+  stroke: var(--border-strong);
+  stroke-width: 1.2;
+  stroke-dasharray: 6 4;
+}
+.sequence:not(.is-still) .frame .frame-arm .hit {
+  pointer-events: all;
+  cursor: pointer;
+}
+.frame-arm .hit {
+  fill: transparent;
+}
+.frame-arm:hover .hit {
+  fill: var(--hover);
+}
+.frame-arm:focus-visible {
+  outline: none;
+}
+.frame-arm:focus-visible .hit {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.frame-arm .arm-label {
+  fill: var(--fg);
+}
+.frame-arm.is-selected .hit {
+  fill: var(--accent-soft);
+}
+.frame-arm.is-selected .arm-label {
+  font-weight: 700;
+}
+.frame-arm.is-match .hit {
+  fill: var(--match-soft);
+  stroke: var(--match);
+  stroke-width: 1.6;
+}
+
 /* ── Badges, roles ────────────────────────────────────────────────────────────────────────────── */
 
 .badge {

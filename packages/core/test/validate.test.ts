@@ -781,6 +781,68 @@ describe("validateExplainer: references", () => {
     ).toEqual([]);
   });
 
+  it("checks the arms of an alt frame: they split its steps top to bottom", () => {
+    const alt = (arms: unknown, kind = "alt") =>
+      edit((ex) => {
+        seq(ex).frames = [
+          {
+            id: "frame:outcome",
+            kind: kind as "alt",
+            label: "how the attempt ends",
+            fromStep: "dispatch:1",
+            toStep: "dispatch:3",
+            arms: arms as never,
+          },
+        ];
+      });
+    const arm = (label: string, fromStep: string, toStep: string) => ({ label, fromStep, toStep });
+    expect(
+      alt([arm("ok", "dispatch:1", "dispatch:1"), arm("else", "dispatch:2", "dispatch:3")]),
+    ).toEqual([]);
+    const problem = (arms: unknown, kind?: string) => {
+      const issue = only(alt(arms, kind));
+      expect(issue).toMatchObject({ path: "views[1].frames[0].arms", code: "frame" });
+      return issue.message;
+    };
+    // a gap, an overlap, an arm past the frame, too few arms, arms on another kind, an unknown step
+    expect(
+      problem([arm("ok", "dispatch:1", "dispatch:1"), arm("else", "dispatch:3", "dispatch:3")]),
+    ).toContain("must start at dispatch:2");
+    expect(
+      problem([arm("ok", "dispatch:1", "dispatch:2"), arm("else", "dispatch:2", "dispatch:3")]),
+    ).toContain("must start at dispatch:3");
+    expect(
+      problem([arm("ok", "dispatch:1", "dispatch:1"), arm("else", "dispatch:2", "dispatch:2")]),
+    ).toContain("end at dispatch:3");
+    expect(problem([arm("ok", "dispatch:1", "dispatch:3")])).toContain("two or more arms");
+    expect(
+      problem(
+        [arm("ok", "dispatch:1", "dispatch:1"), arm("else", "dispatch:2", "dispatch:3")],
+        "loop",
+      ),
+    ).toContain("only an alt frame has arms");
+    expect(
+      problem([arm("ok", "dispatch:1", "dispatch:1"), arm("else", "dispatch:2", "dispatch:9")]),
+    ).toContain('toStep "dispatch:9" is not a step of view:dispatch');
+    // a frame inside an alt lies inside one arm, or it is drawn across the line between two
+    const nested = (fromStep: string) =>
+      edit((ex) => {
+        seq(ex).frames = [
+          {
+            id: "frame:outcome",
+            kind: "alt",
+            label: "how the attempt ends",
+            fromStep: "dispatch:1",
+            toStep: "dispatch:3",
+            arms: [arm("ok", "dispatch:1", "dispatch:1"), arm("else", "dispatch:2", "dispatch:3")],
+          },
+          { id: "frame:retry", kind: "loop", label: "x", fromStep, toStep: "dispatch:3" },
+        ];
+      });
+    expect(nested("dispatch:2")).toEqual([]);
+    expect(only(nested("dispatch:1"))).toMatchObject({ severity: "warning", code: "frame" });
+  });
+
   it("checks tours: view, focus, primary file", () => {
     expect(only(edit((ex) => (ex.tours[0]!.steps[0]!.view = "view:nope")))).toMatchObject({
       path: "tours[0].steps[0].view",

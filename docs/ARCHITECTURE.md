@@ -294,6 +294,14 @@ Conventions (all packages):
     arrows, for a map too dense to read as a drawing. The reader can switch between the two on a map of 4 or
     more boxes (not in Present) and on any view that sets the field; the field only sets how the view opens, also in a tour step. `null` clears it; any other
     value is a validation error. The guide's still pictures (`GraphPicture`) stay boxes and arrows.
+25. `SequenceFrame` adds `arms?: SequenceArm[]` (`{ label, fromStep, toStep }`), on an `alt` frame only:
+    its alternatives top to bottom, two or more, which split the frame's steps with no gap and no overlap.
+    The sequence diagram draws a dashed line between two arms and each arm's condition in brackets; the
+    frame's `label` then names what it decides. Arms have no id and no anchors, so they add no anchored
+    element kind (drift, resolve, focus and user edits stay as they were): an arm's code is its steps' code.
+    Clicking an arm's condition selects its steps; a cursor in a step's code lights the step and its arm.
+    Without `arms` an `alt` is drawn as before (one label, no lines). Arms are part of `frames`, which a
+    patch sends whole. Before this, alternatives (ack, requeue, dead-letter) read as one straight run.
 
 Patch-side types (never stored) live in `packages/core/src/patch.ts`; its header holds the authoritative
 merge rules and `skill/code-explainer/reference/patch-format.md` is the practical guide. The authoring
@@ -1277,7 +1285,9 @@ patch from. Rules:
   leading `/` or `./`, a backslash); `stubs` is `{ mode?, max? }` (unknown fields are warnings); `layout`
   positions are finite numbers; duplicates are warnings.
 - Sequence and flow views: step `from`/`to` must be participants; frames name steps of their own view,
-  `fromStep` not after `toStep`; partially overlapping frames are a warning; `layout` is `code-first` or
+  `fromStep` not after `toStep`; partially overlapping frames are a warning; an alt frame's `arms` split its
+  steps (`frameArms`: two or more, in order, no gap, no overlap; arms on another kind are an error), and a
+  frame inside an alt that crosses the line between two arms is a warning; `layout` is `code-first` or
   `diagram`. Flow fields: `shape` (`stage`, `decision`, `terminal`), `next` links to steps of the view (a
   `return` link may leave out its step; `kind` `recurse` or `return`; a `recurse` link to a later step is a
   warning), no outgoing links from a terminal but `return` ones. In a flow view, a step whose first current
@@ -1509,8 +1519,9 @@ Reset may clear selected pins or all pins; a later placement edit conflicts rath
   method, and the nearest base method a method overrides, through `extends` references (TS, JS and Python only:
   Go embedding does not dispatch; constructors are not overridden). `xpl refs` uses both to hop through
   interfaces and base classes.
-- `sequence.ts`: step and participant lookups, frames resolved to step ranges with nesting depth
-  (`resolveFrames`), disambiguated lifeline labels. `flow.ts`: `processFlow(view)`, the stages and labelled
+- `sequence.ts`: step and participant lookups, frames resolved to step ranges with nesting depth and the
+  step ranges of an alt's arms (`resolveFrames`, `frameArms`; arms that do not split the frame resolve to
+  none, so the frame is drawn without lines), disambiguated lifeline labels. `flow.ts`: `processFlow(view)`, the stages and labelled
   transitions of a flow view (or a sequence read as a flow, `projected`). `related-files.ts`: `relatedFiles`,
   the config, test and `resources` files linked to a selection. `bundle.ts`: the viewer's data format (§5).
   `index-pack.ts`: `packIndex` / `unpackIndex`, the compact index of a bundle (`xpl-index-pack@1`, §5). Optional
@@ -1835,8 +1846,11 @@ file; `--json` adds the counts and what was left out.
   Frames come from the entry's syntax tree (`control-blocks.ts`, one walk over node types the TS/JS, Python,
   Go, Java and Rust grammars share): a `loop` around the calls in a loop, an `alt` around a branch whose
   calls sit in two or more arms, an `opt` around a branch with calls in one arm, at most 5, outermost first.
-  Each label is a TODO that quotes the deciding code; an `alt` adds a note that the frame has one label and no
-  line between its arms, so the label names each arm.
+  Each label is a TODO that quotes the deciding code. An `alt` gets `arms`, one per arm of the branch that has
+  calls, each with a TODO label that quotes its condition (`ControlBlock.arms[].condition`); an arm runs from
+  its first call to the call before the next arm, so the arms split the frame's steps. An arm starts at the
+  column of its body, so a call that computes the condition on the arm's first line (Go's
+  `if err := r.queue.Ack(job); err != nil {`) runs before the frame; a branch whose arms draw no call has none.
 - `class <entry>` (`draft-class.ts`): the type hierarchy around a class or interface. Up: the targets of the
   entry's `extends` and `implements` references, breadth first, at most 6. Down: the symbols whose `extends` or
   `implements` references point at it, two levels, the map at most 14 boxes. One graph view with `edgeKinds:
@@ -2993,7 +3007,12 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
 - **Sequence view:** lifelines, one row per step (`call` solid, `return` dashed, `async` open head), self-calls
   as loops, frames (`loop`/`alt`/`opt`/`par`) as labelled rectangles around their steps, nested by
   `resolveFrames`, each at least as wide as its tab and its "[condition]" (`frameLabelWidth`); the condition has
-  a halo, so no lifeline runs through it. A message label wraps at about 40 characters (`Row.lines`) and sits on
+  a halo, so no lifeline runs through it. An `alt` with `arms` draws its `label` after the tab without
+  brackets, each arm's "[condition]" at the top left of the arm, and a dashed line (`frame-divider`) above
+  every arm but the first; the layout leaves a row of room above each arm (`FrameBox.arms`). An arm's
+  condition is a button (`data-frame-id` plus `data-arm`): a click selects the arm's steps, so the code shows
+  their anchors; the arm is marked selected when all its steps are selected and matched when the cursor's
+  code matches one of them. A message label wraps at about 40 characters (`Row.lines`) and sits on
   a plate tinted like each frame around it (`Row.depth`). A step's hit area covers its label and arrow. When the view has moved down, a copy of the
   participant names stays at the top of the pane (`sticky-heads`). The Read-mode Flow tab uses this same
   renderer for sequence views, matching the Guide picture and Explore.

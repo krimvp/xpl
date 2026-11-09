@@ -31,7 +31,7 @@ import {
 import { asIndexModel, type IndexModel } from "./index-model.js";
 import { hopRefs, viaHops } from "./graph.js";
 import { ExplainerModel } from "./model.js";
-import { resolveFrames } from "./sequence.js";
+import { frameArms, resolveFrames } from "./sequence.js";
 import { parseGhostKey, STUB_MODES } from "./stubs.js";
 import { reviewShapeIssues } from "./review.js";
 import type {
@@ -1573,6 +1573,9 @@ class Validator {
             id,
             "frame",
           );
+        } else {
+          const arms = frameArms(view, frame, from, to);
+          if (typeof arms === "string") this.error(`${at}.arms`, arms, id, "frame");
         }
       }
     });
@@ -1586,6 +1589,18 @@ class Validator {
           this.warn(
             `${path}.frames`,
             `frames ${x.frame.id} and ${y.frame.id} overlap without nesting; a frame must lie inside another or apart from it`,
+            id,
+            "frame",
+          );
+        } else if (
+          y.from <= x.to &&
+          y.to <= x.to &&
+          x.arms.length > 0 &&
+          !x.arms.some((arm) => arm.from <= y.from && y.to <= arm.to)
+        ) {
+          this.warn(
+            `${path}.frames`,
+            `frame ${y.frame.id} crosses the line between two arms of ${x.frame.id}; a frame inside an alt must lie inside one of its arms`,
             id,
             "frame",
           );

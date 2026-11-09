@@ -610,6 +610,22 @@ export interface SequenceFrame {
   label: string;
   fromStep: string;
   toStep: string;
+  /**
+   * (amended) An `alt` frame only: its alternatives, top to bottom, two or more. They split the frame's steps
+   * with no gap and no overlap: the first starts at `fromStep`, each next one at the step after the one before
+   * ends, and the last ends at `toStep`. The sequence diagram draws a dashed line between two arms and each
+   * arm's condition in brackets; `label` then names what the frame decides. An arm has no id and no anchors:
+   * its code is the code of its steps (a click on its condition selects them). Absent: one label, no lines.
+   */
+  arms?: SequenceArm[];
+}
+
+/** One alternative of an `alt` frame (`SequenceFrame.arms`): when it runs, and its steps (inclusive). */
+export interface SequenceArm {
+  /** The condition, short: "retries left", "else". */
+  label: string;
+  fromStep: string;
+  toStep: string;
 }
 
 export type View = GraphView | SequenceView;

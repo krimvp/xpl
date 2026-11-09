@@ -2,7 +2,8 @@ import { DiagramText } from "./DiagramText.js";
 /**
  * Sequence view: lifelines for the participants (labels from the model), one arrow per step top to
  * bottom (`call` solid, `return` dashed, `async` open arrowhead), self-calls as loops, frames
- * (`loop` / `alt` / `opt` / `par`) as labelled rectangles around their steps.
+ * (`loop` / `alt` / `opt` / `par`) as labelled rectangles around their steps; an `alt` with arms has a dashed
+ * line between two arms and each arm's condition, a button that selects the arm's steps.
  *
  * Steps and lifelines are `<g data-element-id="...">` like graph elements; a step's group carries a
  * transparent hit area covering its label and arrow, so clicking anywhere on the row selects it.
@@ -10,6 +11,7 @@ import { DiagramText } from "./DiagramText.js";
 import type { ExplainerModel, SequenceView as SequenceViewData } from "@xpl/core";
 import { useMemo, type KeyboardEvent, type MouseEvent } from "react";
 import {
+  ARM_TOP,
   frameTabWidth,
   LABEL_LINE,
   layoutSequence,
@@ -134,6 +136,7 @@ export function SequenceView({
             returns: layout.rows.some((row) => row.step.kind === "return"),
             async: layout.rows.some((row) => row.step.kind === "async"),
             frames: layout.frames.length > 0,
+            arms: layout.frames.some((box) => box.arms.length > 0),
           }}
         />
       }
@@ -147,7 +150,7 @@ export function SequenceView({
         {/* Frames over the lifelines (their box is see-through): no dashed line runs through a frame's name. */}
         <g className="frames">
           {layout.frames.map((box) => (
-            <FrameShape key={box.frame.id} box={box} />
+            <FrameShape key={box.frame.id} box={box} selected={selected} matched={matched} />
           ))}
         </g>
         <g className="steps">
@@ -187,7 +190,7 @@ export function SequencePicture({
       </g>
       <g className="frames">
         {layout.frames.map((box) => (
-          <FrameShape key={box.frame.id} box={box} />
+          <FrameShape key={box.frame.id} box={box} selected={selected} still />
         ))}
       </g>
       <g className="steps">
@@ -313,8 +316,21 @@ function plateOf(row: Row) {
   };
 }
 
-function FrameShape({ box }: { box: FrameBox }) {
+function FrameShape({
+  box,
+  selected,
+  matched,
+  still = false,
+}: {
+  box: FrameBox;
+  selected: ReadonlySet<string>;
+  matched?: ReadonlySet<string>;
+  still?: boolean;
+}) {
+  const store = useStore();
   const tab = frameTabWidth(box.frame.kind);
+  // with arms, the label names what the frame decides and each arm has the condition in brackets
+  const arms = box.arms.length > 0;
   return (
     <g className={`frame kind-${box.frame.kind}`} data-frame-id={box.frame.id}>
       <rect
@@ -330,8 +346,60 @@ function FrameShape({ box }: { box: FrameBox }) {
         {box.frame.kind}
       </text>
       <text className="frame-label" x={box.x + tab + 8} y={box.y + 14}>
-        {`[${box.frame.label}]`}
+        {arms ? box.frame.label : `[${box.frame.label}]`}
       </text>
+      {box.arms.map((arm, n) => {
+        const state =
+          (arm.steps.every((id) => selected.has(id)) ? " is-selected" : "") +
+          (arm.steps.some((id) => matched?.has(id)) ? " is-match" : "");
+        const select = (event: MouseEvent | KeyboardEvent) => {
+          event.stopPropagation();
+          if (additive(event)) store.select([...new Set([...selected, ...arm.steps])]);
+          else store.select(arm.steps);
+        };
+        return (
+          <g
+            key={n}
+            className={`frame-arm${state}`}
+            data-arm={still ? undefined : n}
+            role={still ? undefined : "button"}
+            tabIndex={still ? undefined : 0}
+            aria-label={`Branch of ${box.frame.label}: ${arm.label}`}
+            onClick={still ? undefined : select}
+            onKeyDown={
+              still
+                ? undefined
+                : (event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      select(event);
+                    }
+                  }
+            }
+          >
+            {n > 0 && (
+              <line
+                className="frame-divider"
+                x1={box.x}
+                y1={arm.top}
+                x2={box.x + box.width}
+                y2={arm.top}
+              />
+            )}
+            <rect
+              className="hit"
+              x={box.x + 2}
+              y={arm.top + 1}
+              width={box.width - 4}
+              height={ARM_TOP - 2}
+              rx={4}
+            />
+            <text className="frame-label arm-label" x={box.x + 8} y={arm.top + 14}>
+              {`[${arm.label}]`}
+            </text>
+          </g>
+        );
+      })}
     </g>
   );
 }

@@ -1684,6 +1684,41 @@ describe("applyPatch: atomicity and validation", () => {
         ],
       }).issues[0],
     ).toMatchObject({ path: "views[0].frames[0].toStep" });
+    // an alt frame's arms: stored as sent; an arm with a field of its own, or without its steps, is refused
+    const altFrame = (arms: unknown[]) =>
+      apply({
+        views: [
+          {
+            id: "view:dispatch",
+            type: "sequence",
+            frames: [
+              {
+                id: "frame:outcome",
+                kind: "alt",
+                label: "how the attempt ends",
+                fromStep: "dispatch:2",
+                toStep: "dispatch:3",
+                arms: arms as never,
+              },
+            ],
+          },
+        ],
+      });
+    const arms = [
+      { label: "ok", fromStep: "dispatch:2", toStep: "dispatch:2" },
+      { label: "else", fromStep: "dispatch:3", toStep: "dispatch:3" },
+    ];
+    const stored = altFrame(arms);
+    expect(stored.ok, JSON.stringify(stored.issues)).toBe(true);
+    expect((view(stored.explainer, "view:dispatch") as SequenceView).frames![0]!.arms).toEqual(
+      arms,
+    );
+    expect(altFrame([{ ...arms[0], anchors: [] }, arms[1]]).issues[0]).toMatchObject({
+      path: "views[0].frames[0].arms[0].anchors",
+    });
+    expect(altFrame([{ label: "ok", fromStep: "dispatch:2" }, arms[1]]).issues[0]).toMatchObject({
+      path: "views[0].frames[0].arms[0].toStep",
+    });
     expect(
       apply({
         tours: [{ id: "tour:intro", steps: [{ id: "t1", view: "view:dispatch" } as never] }],

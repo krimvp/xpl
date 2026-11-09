@@ -57,6 +57,7 @@ import {
   type PatchTourStep,
   type PatchView,
   type Reference,
+  type SequenceArm,
   type SequenceFrame,
   type TextCache,
 } from "@xpl/core";
@@ -2603,12 +2604,6 @@ function pathSequence(
   });
 
   const frames = pathFrames(entry.blocks ?? [], steps, stepSlug, ids);
-  if (frames.some((f) => f.kind === "alt")) {
-    notes.push(
-      "an alt frame has one label and no line between its branches: name each branch and its calls in the label " +
-        "(for example: ok: ack; retries left: requeue; else: deadLetter)",
-    );
-  }
 
   const view: PatchView & { type: "sequence" } = {
     id: viewId,
@@ -2632,8 +2627,8 @@ const MAX_FRAMES = 5;
 
 /**
  * The frames around the drawn calls: a `loop` around the calls in a loop, an `alt` around the calls of a branch whose
- * calls sit in two or more of its arms, an `opt` around the calls of a branch that has calls in one arm only. Each
- * label is a TODO that quotes the code that decides.
+ * calls sit in two or more of its arms (with an arm per arm that has calls), an `opt` around the calls of a branch
+ * that has calls in one arm only. Each label is a TODO that quotes the code that decides.
  */
 function pathFrames(
   blocks: readonly ControlBlock[],
@@ -2642,8 +2637,14 @@ function pathFrames(
   ids: FreeIds,
 ): SequenceFrame[] {
   const lineOf = (s: { call: Call }) => s.call.ref.site.startLine;
-  const within = (r: { start: number; end: number }) =>
-    steps.filter((s) => lineOf(s) >= r.start && lineOf(s) <= r.end);
+  // a call on an arm's first line counts only from the column where the arm's body starts
+  const within = (r: { start: number; end: number; startCol?: number }) =>
+    steps.filter(
+      (s) =>
+        lineOf(s) <= r.end &&
+        (lineOf(s) > r.start ||
+          (lineOf(s) === r.start && (s.call.ref.site.startCol ?? 1) >= (r.startCol ?? 1))),
+    );
   const frames: SequenceFrame[] = [];
   for (const block of blocks) {
     if (frames.length >= MAX_FRAMES) break;
@@ -2651,19 +2652,35 @@ function pathFrames(
     let kind: SequenceFrame["kind"];
     let inFrame: typeof steps;
     let label: string;
+    let arms: SequenceArm[] | undefined;
     if (block.kind === "loop") {
       inFrame = within(block);
       kind = "loop";
       label = todo(`what repeats and until when, in a few words (the code: ${code})`);
     } else {
-      const arms = block.arms.map(within).filter((list) => list.length > 0);
-      if (arms.length === 0) continue;
-      inFrame = arms.flat();
-      kind = arms.length >= 2 ? "alt" : "opt";
+      const withCalls = block.arms
+        .map((arm) => ({ arm, calls: within(arm) }))
+        .filter((a) => a.calls.length > 0);
+      if (withCalls.length === 0) continue;
+      inFrame = withCalls.flatMap((a) => a.calls);
+      kind = withCalls.length >= 2 ? "alt" : "opt";
       label =
         kind === "alt"
-          ? todo(`each branch and its calls, in a few words (the code: ${code})`)
+          ? todo(`what this branch decides, in a few words (the code: ${code})`)
           : todo(`when these calls run, in a few words (the code: ${code})`);
+      // each arm runs from its first call to the call before the next arm (a call in an `else if` condition
+      // stays with the arm above it): the arms split the frame's steps, as validation wants
+      if (kind === "alt") {
+        const order = steps.map((s) => s.step.id);
+        arms = withCalls.map((a, n) => ({
+          label: todo(`when this arm runs, in a few words (the code: ${tick(a.arm.condition)})`),
+          fromStep: a.calls[0]!.step.id,
+          toStep:
+            n + 1 < withCalls.length
+              ? order[order.indexOf(withCalls[n + 1]!.calls[0]!.step.id) - 1]!
+              : inFrame.at(-1)!.step.id,
+        }));
+      }
     }
     if (inFrame.length === 0) continue;
     frames.push({
@@ -2672,6 +2689,7 @@ function pathFrames(
       label,
       fromStep: inFrame[0]!.step.id,
       toStep: inFrame.at(-1)!.step.id,
+      ...(arms ? { arms } : {}),
     });
   }
   return frames;

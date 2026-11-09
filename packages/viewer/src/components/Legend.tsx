@@ -326,6 +326,8 @@ export interface SequenceKeyShows {
   async: boolean;
   /** Boxes around steps: a loop, a choice, an optional part. */
   frames: boolean;
+  /** An alt box split into its choices by dashed lines. */
+  arms?: boolean;
 }
 
 /** The key of a sequence diagram (SequenceView). */
@@ -365,6 +367,14 @@ export function SequenceKey({ shows }: { shows: SequenceKeyShows }) {
           <g className="frame">
             <rect className="frame-box" x="1" y="2" width="30" height="18" rx="2" />
             <path className="frame-tab" d="M1 2 h12 v5 l-3 3 h-9 z" />
+          </g>
+        </Row>
+      )}
+      {shows.arms && (
+        <Row label="A dashed line in an alt box: one choice above it, another below. Click a [condition] to see its code.">
+          <g className="frame">
+            <rect className="frame-box" x="1" y="2" width="30" height="18" rx="2" />
+            <line className="frame-divider" x1="1" y1="11" x2="31" y2="11" />
           </g>
         </Row>
       )}

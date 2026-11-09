@@ -33,7 +33,8 @@ Write every authored text before ready export, including frame labels, transitio
 | box `label` on an architecture map | what the part is to a reader ("Payments", "Orders database"), not its folder or class              | 1-3 words                       | plain           |
 | box `tech`                         | the technology ("PostgreSQL", "REST API", "Go service")                                            | 1-3 words                       | plain           |
 | arrow label to an outside box      | what passes ("stores orders", "charges cards", "sends receipts")                                   | 1-4 words                       | plain           |
-| frame `label`                      | when the steps inside run ("attempts left", "for each route")                                      | a short condition, may be code  | plain           |
+| frame `label`                      | when the steps inside run ("attempts left", "for each route"); with arms, what the `alt` decides   | a short condition, may be code  | plain           |
+| arm `label` (of an `alt` frame)    | when this arm runs ("retries left", "else")                                                        | a short condition, may be code  | plain           |
 
 **Formats.** _Markdown_ fields render markdown. Headings and links go only in a note body or a `detail`. _Inline markdown_ fields render code spans and emphasis (`` `Queue.requeue` ``, `**Changed:**`), but no headings or links. _Plain_ fields are shown as written, so `**Changed:**` appears with its asterisks: write no markup there. Backticks around identifiers are fine everywhere. The reply to the user is not a field: SKILL.md, "Workflow", says what it holds.
 

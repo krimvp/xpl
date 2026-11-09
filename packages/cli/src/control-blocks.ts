@@ -20,7 +20,17 @@ export interface ControlBlock extends LineRange {
   /** The code that decides: the loop or `if` header, or the switch value (one line, cut when long). */
   condition: string;
   /** A branch's arms, in source order; an `if` without `else` has one. */
-  arms: LineRange[];
+  arms: Arm[];
+}
+
+/**
+ * One arm of a branch: its lines, and the code that picks it (`if (x)`, `elif y:`, `else`, `case "a":`). The arm
+ * starts at its body (`startCol`, 1-based, on line `start`), so a call that computes the condition on the same line
+ * (Go's `if err := q.Ack(job); err != nil {`) runs before the arm, not inside it.
+ */
+export interface Arm extends LineRange {
+  startCol: number;
+  condition: string;
 }
 
 const LOOP =
@@ -36,6 +46,9 @@ const range = (node: SyntaxNode): LineRange => ({
   end: node.endPosition.row + 1,
 });
 
+/** The lines of an arm's body, from the column where the body starts. */
+const body = (node: SyntaxNode) => ({ ...range(node), startCol: node.startPosition.column + 1 });
+
 /** The first line of a node, whitespace folded, at most 60 characters. */
 function header(node: SyntaxNode): string {
   const text = node.text
@@ -47,10 +60,10 @@ function header(node: SyntaxNode): string {
 }
 
 /** The arms of an `if`: its consequence, then each `elif`, `else if` and `else`, flattened. */
-function ifArms(node: SyntaxNode): LineRange[] {
-  const arms: LineRange[] = [];
+function ifArms(node: SyntaxNode): Arm[] {
+  const arms: Arm[] = [];
   const consequence = node.childForFieldName("consequence");
-  if (consequence) arms.push(range(consequence));
+  if (consequence) arms.push({ ...body(consequence), condition: header(node) });
   for (const alt of node.childrenForFieldName("alternative")) {
     if (!alt) continue;
     if (IF.test(alt.type)) {
@@ -59,24 +72,23 @@ function ifArms(node: SyntaxNode): LineRange[] {
     }
     const nested = alt.namedChildren.filter((c) => c !== null);
     if (alt.type === "elif_clause") {
-      const body = alt.childForFieldName("consequence");
-      arms.push(range(body ?? alt));
+      arms.push({ ...body(alt.childForFieldName("consequence") ?? alt), condition: header(alt) });
     } else if (nested.length === 1 && IF.test(nested[0]!.type)) {
       arms.push(...ifArms(nested[0]!)); // `else if`: one more arm of the same branch
     } else {
-      arms.push(range(alt));
+      arms.push({ ...body(alt), condition: "else" });
     }
   }
   return arms;
 }
 
 /** The case nodes of a switch, not those of a switch nested in one of them. */
-function caseArms(node: SyntaxNode): LineRange[] {
-  const arms: LineRange[] = [];
+function caseArms(node: SyntaxNode): Arm[] {
+  const arms: Arm[] = [];
   const walk = (n: SyntaxNode) => {
     for (const child of n.namedChildren) {
       if (!child) continue;
-      if (CASE.test(child.type)) arms.push(range(child));
+      if (CASE.test(child.type)) arms.push({ ...body(child), condition: header(child) });
       else if (!SWITCH.test(child.type)) walk(child);
     }
   };
