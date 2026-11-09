@@ -464,17 +464,24 @@ test.describe("the Guide", () => {
       "run(job)",
       "requeue(job, backoff)",
     ]);
-    await expect(sequence.locator(".frame-kind")).toHaveText("loop");
-    await expect(sequence.locator(".frame-label")).toHaveText("[while the runner is running]");
-    const retry = sequence.locator('[data-frame-id="frame:retry"] .frame-box');
-    const loop = (await retry.boundingBox())!;
-    const pop = (await sequence.locator('[data-element-id="dispatch:1"] .label').boundingBox())!;
-    expect(pop.y + pop.height).toBeLessThan(loop.y);
-    for (const id of ["dispatch:2", "dispatch:3"]) {
-      const call = (await sequence.locator(`[data-element-id="${id}"] .label`).boundingBox())!;
-      expect(call.y).toBeGreaterThan(loop.y);
-      expect(call.y + call.height).toBeLessThan(loop.y + loop.height);
-    }
+    await expect(sequence.locator(".frame-kind")).toHaveText(["loop", "opt"]);
+    await expect(sequence.locator(".frame-label")).toHaveText([
+      "[while the runner is running]",
+      "[the attempt failed and retries are left]",
+    ]);
+    // pop() is the first call inside the loop; only a failed attempt with retries left is requeued
+    const inside = async (frame: string) =>
+      (await sequence.locator(`[data-frame-id="${frame}"] .frame-box`).boundingBox())!;
+    const label = async (id: string) =>
+      (await sequence.locator(`[data-element-id="${id}"] .label`).boundingBox())!;
+    const within = (box: { y: number; height: number }, call: { y: number; height: number }) =>
+      call.y > box.y && call.y + call.height < box.y + box.height;
+    const loop = await inside("frame:dispatch-loop");
+    const retry = await inside("frame:retry");
+    for (const id of ["dispatch:1", "dispatch:2", "dispatch:3"])
+      expect(within(loop, await label(id)), id).toBe(true);
+    expect(within(retry, await label("dispatch:3"))).toBe(true);
+    expect(within(retry, await label("dispatch:2"))).toBe(false);
     await expect(sequence.locator('[data-element-id="dispatch:3"]')).toHaveClass(/is-selected/);
 
     await page
