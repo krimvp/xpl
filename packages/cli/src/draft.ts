@@ -1636,6 +1636,84 @@ export function draftRepo(input: DraftInput): Draft {
     }
   }
 
+  // ── Who starts a program that no web or command-line framework names: a person at its `main` function. And
+  // the settings files the code loads (index `resources`): one box, anchored at the file and the line that loads it.
+  const entrySym =
+    inbound.length === 0 && !library
+      ? model.files
+          .map((f) => f.path)
+          .filter((f) => isCode(f) && unitOfFile.has(f))
+          .sort()
+          .flatMap((f) => model.topLevelSymbols(f))
+          .find((sym) => sym.kind === "function" && sym.path === "main")
+      : undefined;
+  const entryUnit = entrySym ? unitOfFile.get(entrySym.file) : undefined;
+  const operatorId = entryUnit ? reuse("grp", "operator") : undefined;
+  if (entrySym && entryUnit && operatorId && !stored.has(operatorId)) {
+    nodes.push({
+      id: operatorId,
+      label: "Operator",
+      role: "person",
+      parent: "repo",
+      summary: todo(
+        `one line: who starts the program and how (it starts at ${tick(entrySym.path)} in ${entrySym.file}). Rename the box if a program, not a person, starts it.`,
+      ),
+      anchors: [definition(entrySym)],
+    });
+    edges.push({
+      id: ids.get("edge", `operator-${slugOf(entryUnit.path)}`),
+      from: operatorId,
+      to: entryUnit.id,
+      kind: "custom",
+      label: todo("1-4 words: how they start it (for example: runs the program)"),
+      anchors: [definition(entrySym)],
+    });
+  }
+  const loads: { unit: Unit; anchor: AnchorInput; files: string[] }[] = [];
+  for (const resource of model.index.resources ?? []) {
+    if (resource.kind !== "loads" && resource.kind !== "configures") continue;
+    const from = model.fileOfSymbolId(resource.from);
+    const unit = from ? unitOfFile.get(from) : undefined;
+    const files = resource.files.filter((f) => !isCode(f) && !outside(f));
+    if (!from || !unit || files.length === 0 || loads.some((l) => l.unit === unit)) continue;
+    const anchor = fileLines(texts, from, resource.site.startLine, resource.site.endLine, "usage");
+    if (anchor) loads.push({ unit, anchor, files });
+  }
+  const settingsFiles = [...new Set(loads.flatMap((l) => l.files))].sort();
+  const settingsId = loads.length > 0 ? reuse("grp", "settings") : undefined;
+  if (settingsId && !stored.has(settingsId)) {
+    const kinds = [
+      ...new Set(settingsFiles.map((f) => (model.file(f)?.language ?? "text").toUpperCase())),
+    ].filter((k) => k !== "TEXT");
+    nodes.push({
+      id: settingsId,
+      label: settingsFiles.length === 1 ? "Settings file" : "Settings files",
+      role: "storage",
+      ...(kinds.length > 0 ? { tech: kinds.join(", ") } : {}),
+      parent: "repo",
+      summary: todo(
+        `one line: what the settings decide, in plain words (found: ${nameList(settingsFiles, 3)}).`,
+      ),
+      anchors: [
+        ...settingsFiles.slice(0, L.codeRanges).map((file) => ({ file, role: "config" as const })),
+        loads[0]!.anchor,
+      ],
+    });
+    for (const { unit, anchor } of loads) {
+      edges.push({
+        id: ids.get("edge", `${slugOf(unit.path)}-settings`),
+        from: unit.id,
+        to: settingsId,
+        kind: "custom",
+        label: todo("1-4 words: what it reads (for example: reads the settings)"),
+        anchors: [anchor],
+      });
+    }
+    notes.push(
+      `settings the code loads (from the index): ${nameList(settingsFiles, 5)}; check that each is read at run time`,
+    );
+  }
+
   const languageOf = (files: readonly string[]): string | undefined => {
     const count = new Map<string, number>();
     for (const f of files) {
@@ -1714,9 +1792,11 @@ export function draftRepo(input: DraftInput): Draft {
     ),
     scope: { root: "repo", depth: 1 },
     include: [
+      ...(operatorId ? [operatorId] : []),
       ...inbound.map((s) => systemIds.get(s.slug)!),
       ...insides.map((i) => i.service),
       ...outbound.map((s) => systemIds.get(s.slug)!),
+      ...(settingsId ? [settingsId] : []),
     ],
     excludeFiles: [...OVERVIEW_EXCLUDE],
     stubs: { mode: "none" },
@@ -1814,7 +1894,7 @@ export function draftRepo(input: DraftInput): Draft {
       model,
       nextId(),
       systemViewId,
-      appId ? [main.service, appId] : [main.service],
+      [main.service, ...(appId ? [appId] : []), ...(operatorId ? [operatorId] : [])],
       note(
         todo("what the project is, as a plain statement anyone can follow"),
         todo("its language, its kind and what it is for, from the README; no code names."),
@@ -1825,7 +1905,11 @@ export function draftRepo(input: DraftInput): Draft {
             )
           : appId
             ? todo("how an app uses it (Your app): what the app calls, in one sentence.")
-            : todo("who uses it and how, in one sentence."),
+            : operatorId
+              ? todo(
+                  "who starts the program (Operator) and what they get from it, in one sentence.",
+                )
+              : todo("who uses it and how, in one sentence."),
         otherServices.length > 0
           ? todo(
               `what each of the other services does, one short sentence each: ${nameList(otherServices, 10)}.`,
@@ -1835,27 +1919,38 @@ export function draftRepo(input: DraftInput): Draft {
       [about, mainTop ? definition(mainTop) : undefined],
     ),
   );
-  if (outbound.length > 0) {
+  if (outbound.length > 0 || settingsId) {
+    const relied = [
+      ...outbound.map((s) => ({ id: systemIds.get(s.slug)!, label: s.label })),
+      ...(settingsId ? [{ id: settingsId, label: "the settings" }] : []),
+    ];
     steps.push(
       tourStep(
         model,
         nextId(),
         systemViewId,
-        outbound.map((s) => systemIds.get(s.slug)!),
+        relied.map((r) => r.id),
         note(
           todo("what the project relies on outside its own code, as a plain statement"),
           todo(
             `one short sentence per box, in plain words: what it keeps or does for the project (${plainList(
-              outbound.map((s) => s.label),
+              relied.map((r) => r.label),
               10,
             )}).`,
           ),
-          todo("merge boxes that are the same system, and drop one the code only imports."),
-          todo(
-            "for each imported system, whether the default runtime path uses it or it is an optional integration.",
-          ),
+          outbound.length > 0
+            ? todo("merge boxes that are the same system, and drop one the code only imports.")
+            : "",
+          outbound.length > 0
+            ? todo(
+                "for each imported system, whether the default runtime path uses it or it is an optional integration.",
+              )
+            : "",
         ),
-        outbound.slice(0, L.codeRanges).map((s) => reach.get(s.slug)![0]!.anchor),
+        [
+          ...outbound.map((s) => reach.get(s.slug)![0]!.anchor),
+          ...(settingsId ? [loads[0]!.anchor] : []),
+        ].slice(0, L.codeRanges),
       ),
     );
   }
@@ -1920,6 +2015,22 @@ export function draftRepo(input: DraftInput): Draft {
       ),
     );
   }
+
+  steps.push(
+    tourStep(
+      model,
+      nextId(),
+      systemViewId,
+      [main.service],
+      note(
+        "Where to go next",
+        todo(
+          "the 2-3 parts or questions this tour skipped, and what each answers, one short sentence each.",
+        ),
+      ),
+      [],
+    ),
+  );
 
   const patch: ExplainerPatch = {
     nodes,
@@ -2528,16 +2639,75 @@ export function draftPath(input: DraftInput, entries: readonly PathEntry[]): Dra
 
   const first = sequences[0]!;
   const tourSlug = first.view.id.slice("view:".length);
+
+  // Where the path sits: when it crosses files, a small map of them comes first (the big picture before the calls).
+  const files = [
+    ...new Set(
+      sequences.flatMap((seq) =>
+        seq.participants
+          .map((id) => model.fileOfSymbolId(id.slice("sym:".length)))
+          .filter((f): f is string => f !== undefined && !isTestFile(f)),
+      ),
+    ),
+  ];
+  const views: PatchView[] = sequences.map((s) => s.view);
+  const fileIds = files.map((f) => `file:${f}`);
+  let mapId: string | undefined;
+  if (files.length >= 2) {
+    mapId = ids.get("view", `${tourSlug}-files`);
+    views.push({
+      id: mapId,
+      type: "graph",
+      title: todo(
+        "where this path runs, in plain words (for example: the files a job passes through)",
+      ),
+      scope: { root: "repo", depth: Math.max(...files.map((f) => f.split("/").length)) },
+      include: fileIds,
+      stubs: { mode: "none" },
+    });
+    tourSteps.unshift(
+      tourStep(
+        model,
+        "t0",
+        mapId,
+        fileIds,
+        note(
+          todo("where this path runs in the project, as a plain statement"),
+          todo(
+            "what each file is for, in one short sentence each, in the order the path crosses them.",
+          ),
+        ),
+        [definition(first.entry.symbol)],
+      ),
+    );
+  }
+  tourSteps.push(
+    tourStep(
+      model,
+      "t-next",
+      mapId ?? first.view.id,
+      mapId ? fileIds : [first.entryId],
+      note(
+        "Where to go next",
+        todo(
+          "the 2-3 calls or questions this tour skipped, and what each answers, one short sentence each.",
+        ),
+      ),
+      [],
+    ),
+  );
+  tourSteps.forEach((step, i) => (step.id = `t${i + 1}`));
+
   const patch: ExplainerPatch = {
     nodes,
-    views: sequences.map((s) => s.view),
+    views,
     tours: [
       {
         id: ids.get("tour", tourSlug),
         title: todo("the question this tour answers, in about 8 plain words"),
         summary: [
-          todo("the answer in one or two sentences, naming the key functions."),
-          todo("what the tour leaves out."),
+          todo("the answer in one sentence, in plain words."),
+          todo("then up to four reasons, and what the tour leaves out."),
         ].join(" "),
         steps: tourSteps,
       },

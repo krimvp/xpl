@@ -34,7 +34,8 @@ export function describeReadiness(report: ReadinessReport): string {
         ]
       : []),
     ...report.findings.map(
-      (f) => `${f.severity} ${f.elementId}.${f.field} (${f.code}): ${f.message} ${f.hint}`,
+      (f) =>
+        `${f.severity} ${f.elementId}.${f.field} (${f.code}): ${f.message.replace(/\.$/, "")}${f.hint ? `; fix: ${f.hint}` : ""}`,
     ),
     ...(report.decisionNote ? [`Author decision: ${report.decisionNote}`] : []),
   ].join("\n");

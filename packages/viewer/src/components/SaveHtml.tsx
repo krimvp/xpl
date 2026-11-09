@@ -88,8 +88,8 @@ export function SaveHtml({
           : "Checks only the embedded source snapshot. This offline page cannot check whether the repository changed later."}
       </p>
       <p>
-        Source links and required text are checked. Prose claims and complete runtime coverage need
-        author judgment.
+        xpl checks that every code link and every required text is there. It does not check that the
+        text is true: you do.
       </p>
       <label>
         <input
@@ -112,8 +112,8 @@ export function SaveHtml({
         Require a current review of all stored content (team policy)
       </label>
       <p>
-        Optional and off by default. Named omissions remain author judgment. Turning it on requires
-        a current all-content inspection, without changing source or text checks.
+        Off by default. When on, the page saves as finished only after someone has reviewed all of
+        its current content.
       </p>
       {busy && <p role="status">Checking readiness…</p>}
       {error && <p role="alert">{error}</p>}

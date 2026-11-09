@@ -473,7 +473,7 @@ function headerOf(e: ElementReport): string {
 
 export const anchorsCommand: CommandSpec = {
   name: "anchors",
-  usage: "xpl anchors <explainer> [id...] [--full] [--max-lines n]",
+  usage: "xpl anchors <explainer> [<id> ...] [--full] [--max-lines <n>]",
   summary: "Each anchor of an element with its resolved lines and code",
   details: [
     "Verifies what an explainer points at. For every element with stored anchors (node overlays, edges, concepts,",

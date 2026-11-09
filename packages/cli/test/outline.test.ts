@@ -126,7 +126,7 @@ describe("xpl outline", () => {
     const hidden = await xpl(dir, "outline", "--under", "file:config/default.yaml", "--depth", "3");
     expect(hidden.out).toContain("[16 keys hidden]");
     expect(hidden.out).not.toContain("retry.maxRetries");
-    expect(hidden.out).toContain("use --keys");
+    expect(hidden.out).toContain("--keys lists them");
 
     const shown = await xpl(
       dir,

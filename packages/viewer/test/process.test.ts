@@ -12,7 +12,7 @@ import {
 import { makeBundle, TEXTS } from "./world.js";
 import { workspaceMap, workspaceView } from "../src/workspace.js";
 import { ViewerStore } from "../src/store.js";
-import { repeatsShownCode } from "../src/relatedCards.js";
+import { mergeSameCards, repeatsShownCode } from "../src/relatedCards.js";
 
 describe("process flows and related files", () => {
   it("supports explicit decisions, labeled branches, terminal outcomes and code anchors", () => {
@@ -156,6 +156,24 @@ describe("process flows and related files", () => {
     expect(repeatsShownCode(config, shown)).toBe(true);
     // a card from an edge or the index says how the files connect: kept
     expect(repeatsShownCode({ ...config, id: "edge:x" }, shown)).toBe(false);
+  });
+
+  it("two links to the same file of the same kind are one card, with both places in the code", () => {
+    const card = (id: string, line: number) => ({
+      id,
+      kind: "loads" as const,
+      label: "package.json",
+      files: ["package.json"],
+      evidence: [{ file: "src/cli.ts", line }],
+      resolution: "static" as const,
+    });
+    const other = { ...card("c", 9), label: "config.yaml", files: ["config.yaml"] };
+    const merged = mergeSameCards([card("a", 3), other, card("b", 7), card("d", 3)]);
+    expect(merged.map((link) => link.id)).toEqual(["a", "c"]);
+    expect(merged[0]!.evidence).toEqual([
+      { file: "src/cli.ts", line: 3 },
+      { file: "src/cli.ts", line: 7 },
+    ]);
   });
 
   it("does not truncate annotated file collections at the editor focus limit", () => {

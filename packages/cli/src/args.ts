@@ -115,10 +115,14 @@ export function parseCommandArgs(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const unknown = /Unknown option '([^']+)'/.exec(message);
+    if (!unknown)
+      throw new UsageError(message.replace(/\. To specify a positional argument.*$/s, ""));
+    const typed = unknown[1]!.replace(/^-+/, "");
+    const near = Object.keys(all).filter((name) => editDistance(name, typed) <= 2);
     throw new UsageError(
-      unknown
-        ? `unknown option ${unknown[1]} (a value that starts with "-" must come after "--")`
-        : message.replace(/\. To specify a positional argument.*$/s, ""),
+      near.length > 0
+        ? `unknown option ${unknown[1]}. Did you mean ${near.map((n) => `"--${n}"`).join(" or ")}?`
+        : `unknown option ${unknown[1]} (a value that starts with "-" must come after "--")`,
     );
   }
   const given = parsed.positionals;
@@ -132,4 +136,19 @@ export function parseCommandArgs(
     throw new UsageError(`unexpected argument "${given[positionals.length]}"`);
   }
   return new Args(parsed.values as Record<string, Value>, given);
+}
+
+/** Levenshtein distance, for "did you mean" suggestions of commands and options. */
+export function editDistance(a: string, b: string): number {
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i];
+    for (let j = 1; j <= b.length; j++) {
+      row.push(
+        Math.min(prev[j]! + 1, row[j - 1]! + 1, prev[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1)),
+      );
+    }
+    prev = row;
+  }
+  return prev[b.length]!;
 }

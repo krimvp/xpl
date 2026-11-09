@@ -156,10 +156,10 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
         </button>
       </header>
       <p className="tp-intro">
-        Ask a question for a source-linked answer from the connected local worker. Answers never
-        edit the guide. Saving for the next revision pass does not start generation. Offline, export
-        the JSON, run <code>xpl feedback &lt;guide&gt; --import feedback.json</code> locally, then
-        invoke <code>/code-explainer feedback</code> in your chosen agent.
+        Ask a question: Claude answers with links to the code. An answer never changes the guide.
+        &ldquo;Save for later&rdquo; keeps your request and starts nothing. Without xpl running,
+        export the file, run <code>xpl feedback &lt;guide&gt; --import feedback.json</code>, then{" "}
+        <code>/code-explainer feedback</code> in Claude Code.
       </p>
       <p>
         {id ? (
@@ -167,13 +167,13 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
             Selected: <strong>{state.model.label(id)}</strong>
           </>
         ) : (
-          "Select an element or code lines to attach feedback."
+          "Pick a box, a step or lines of code to attach your note to."
         )}
         {state.cursor && (
           <>
             {" "}
             · {state.cursor.file}:{state.cursor.fromLine}–{state.cursor.toLine} (
-            {state.cursor.side === "base" ? "before" : "current"} source)
+            {state.cursor.side === "base" ? "before the change" : "current code"})
           </>
         )}
       </p>
@@ -213,8 +213,8 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
                 const reason = await store.askQuestion(id, note);
                 setMessage(
                   reason
-                    ? `Saved as pending feedback. ${reason} Export feedback JSON, import with xpl feedback <guide> --import feedback.json, then run /code-explainer feedback for the next explicit pass.`
-                    : "Question submitted. Progress and the answer stay with this feedback.",
+                    ? `Saved for later. ${reason} Export the feedback JSON, run xpl feedback <guide> --import feedback.json, then /code-explainer feedback in Claude Code.`
+                    : "Question sent. Its answer shows here when it is ready.",
                 );
                 setNote("");
               })
@@ -235,19 +235,19 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
               setNote("");
               setMessage(
                 state.serverMode
-                  ? "Saved to disk for the next explicit pass."
+                  ? "Saved. The author sees it the next time they run /code-explainer feedback."
                   : "Saved in this browser. Export feedback JSON to carry it to your repository.",
               );
             } catch (error) {
               setMessage(
-                `Disk save failed: ${messageOf(error)}. The request remains in this page; export it for retry.`,
+                `Could not save: ${messageOf(error)}. Your request is still in this page; export it to keep it.`,
               );
             } finally {
               setBusy(false);
             }
           }}
         >
-          Save for the next revision pass
+          Save for later
         </button>
         <button
           className="btn"
@@ -281,7 +281,7 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
               void act(async () => {
                 await store.importFeedback(JSON.parse(await file.text()));
                 setMessage(
-                  "Imported feedback. Existing request IDs, answers and newer outcomes are preserved.",
+                  "Imported feedback. Requests already here, their answers and newer results are kept.",
                 );
               });
           }}

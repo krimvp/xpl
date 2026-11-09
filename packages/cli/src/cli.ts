@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { GRAMMAR_IDS, createParser, getWasmDir, initParser, type GrammarId } from "@xpl/indexer";
 import pkg from "../package.json" with { type: "json" };
-import { GLOBAL_OPTIONS, parseCommandArgs, type OptionDefs } from "./args.js";
+import { editDistance, GLOBAL_OPTIONS, parseCommandArgs, type OptionDefs } from "./args.js";
 import type { CommandSpec } from "./command.js";
 import { anchorsCommand } from "./commands/anchors.js";
 import { applyCommand } from "./commands/apply.js";
@@ -83,18 +83,101 @@ const defaultIo: Io = {
 
 const DOCS_REFERENCE = "Docs: https://krimvp.github.io/xpl/docs/reference/";
 
+const HELP_WIDTH = 110;
+
+/**
+ * Wraps one help line at HELP_WIDTH columns. A continuation lines up under the text it continues: the
+ * second column of a table row (`  --flag <x>  text`, `  name  text`), the text of a `- ` bullet, or the
+ * line's own indent.
+ */
+function wrapHelpLine(line: string, hang?: number): string[] {
+  if (line.length <= HELP_WIDTH) return [line];
+  const table = /^ *\S(?:\S| (?! ))* {2,}/.exec(line)?.[0].length;
+  const column = table !== undefined && table <= 60 ? table : undefined;
+  const bullet = /^( *- )/.exec(line)?.[1]!.length;
+  const indent = " ".repeat(hang ?? column ?? bullet ?? /^ */.exec(line)![0].length);
+  const lines: string[] = [];
+  let rest = line;
+  while (rest.length > HELP_WIDTH) {
+    const cut = rest.lastIndexOf(" ", HELP_WIDTH);
+    if (cut <= indent.length) break;
+    lines.push(rest.slice(0, cut).trimEnd());
+    rest = indent + rest.slice(cut + 1).trimStart();
+  }
+  return [...lines, rest];
+}
+
+/**
+ * Wraps hand-wrapped help paragraphs: what does not fit on a line moves to the start of the next line when
+ * that one continues the same text (same indent, not an option, a bullet or a table row), so a paragraph
+ * reflows instead of leaving one word on a line of its own.
+ */
+function wrapHelp(lines: readonly string[]): string[] {
+  const out: string[] = [];
+  const todo = [...lines];
+  const indentOf = (line: string) => /^ */.exec(line)![0].length;
+  const continuation = (line: string | undefined): line is string =>
+    line !== undefined &&
+    /^ *[^\s-]/.test(line) &&
+    !/^ *Exit codes?:/.test(line) &&
+    !/^ *\S(?:\S| (?! ))* {2,}/.test(line);
+  for (let i = 0; i < todo.length; i++) {
+    const line = todo[i]!;
+    const next = todo[i + 1];
+    // `Head: text` over indented lines that continue it: wrap the head under that indent too.
+    const hang = continuation(next) && indentOf(next) > indentOf(line) ? indentOf(next) : undefined;
+    const pieces = wrapHelpLine(line, hang);
+    const last = pieces[pieces.length - 1]!;
+    const continues = pieces.length > 1 && continuation(next) && indentOf(next) === indentOf(last);
+    if (continues) {
+      todo[i + 1] = `${last} ${next.trimStart()}`;
+      pieces.pop();
+    }
+    out.push(...pieces);
+  }
+  return out;
+}
+
+/**
+ * `Usage: xpl x ...`, one alternative (`a | xpl x b`) per line, each wrapped under its arguments and
+ * never inside a `[...]` or `<...>` group.
+ */
+function usageLines(usage: string): string[] {
+  return usage.split(" | xpl ").flatMap((form, i) => {
+    const words: string[] = [];
+    let depth = 0;
+    for (const part of (i === 0 ? form : `xpl ${form}`).split(" ")) {
+      if (depth > 0) words[words.length - 1] += ` ${part}`;
+      else words.push(part);
+      depth += (part.match(/[[<]/g)?.length ?? 0) - (part.match(/[\]>]/g)?.length ?? 0);
+    }
+    const head = i === 0 ? "Usage:" : "      ";
+    // Continuations line up under the first argument: after `xpl <command> `.
+    const hang = " ".repeat(head.length + words[0]!.length + (words[1]?.length ?? 0) + 3);
+    const lines = [`${head} ${words.shift()} ${words.shift() ?? ""}`.trimEnd()];
+    for (const word of words) {
+      const line = `${lines[lines.length - 1]} ${word}`;
+      if (line.length <= HELP_WIDTH) lines[lines.length - 1] = line;
+      else lines.push(hang + word);
+    }
+    return lines;
+  });
+}
+
 function optionRows(options: OptionDefs): string[] {
   const rows = Object.entries(options).map(([name, def]) => {
     const flag = `${def.short ? `-${def.short}, ` : ""}--${name}${def.arg ? ` ${def.arg}` : ""}`;
     return { flag, desc: def.desc };
   });
   const width = Math.max(0, ...rows.map((row) => row.flag.length));
-  return rows.map((row) => `  ${row.flag.padEnd(width)}  ${row.desc}`);
+  return wrapHelp(rows.map((row) => `  ${row.flag.padEnd(width)}  ${row.desc}`));
 }
 
 function helpText(): string {
   const width = Math.max(...COMMANDS.map((command) => command.name.length));
-  const rows = COMMANDS.map((command) => `  ${command.name.padEnd(width)}  ${command.summary}`);
+  const rows = wrapHelp(
+    COMMANDS.map((command) => `  ${command.name.padEnd(width)}  ${command.summary}`),
+  );
   return [
     `xpl ${pkg.version} - code explainer`,
     "",
@@ -107,9 +190,11 @@ function helpText(): string {
     ...optionRows(GLOBAL_OPTIONS),
     "",
     "<id> arguments accept sym:..., file:..., dir:..., src/a.ts#A.b and src/a.ts.",
+    "<explainer> arguments name a guide: <name> for the file .explainer/<name>.explainer.json.",
     "Environment: XPL_VIEWER_HTML=<file> overrides the viewer page (view, bundle); XPL_SKIP_STALE_CHECK=1 skips",
-    "the comparison of the index with the working tree (about a second per 5000 files); XPL_WASM_DIR, XPL_DEBUG.",
-    "Setup: xpl doctor; xpl skill install; xpl doctor --agent claude. Offline indexing: xpl index --precise off.",
+    "the comparison of the index with the working tree (about a second per 5000 files); XPL_WASM_DIR, XPL_DEBUG,",
+    "XPL_CLI, XPL_NO_UPDATE_CHECK and XPL_SCIP_TIMEOUT_MS are described in the CLI reference.",
+    "Setup: xpl skill install; xpl doctor --agent claude. Offline indexing: xpl index --precise off.",
     "First guide: xpl start <name> --question <question> --audience <reader>; then xpl view <name>.",
     "Repeat use: xpl index; xpl outline; xpl show <id> --refs; xpl new <name>; xpl apply <name> patch.json;",
     "xpl lint <name>; xpl view <name>. Exit codes: 0 ok, 1 rejected or failed, 2 usage error.",
@@ -120,10 +205,10 @@ function helpText(): string {
 
 function commandHelp(command: CommandSpec): string {
   return [
-    `Usage: ${command.usage}`,
+    ...usageLines(command.usage),
     "",
-    command.summary,
-    ...(command.details ? ["", ...command.details] : []),
+    ...wrapHelpLine(command.summary),
+    ...(command.details ? ["", ...wrapHelp(command.details)] : []),
     ...(Object.keys(command.options).length > 0
       ? ["", "Options:", ...optionRows(command.options)]
       : []),
@@ -178,28 +263,15 @@ function wantsJson(argv: readonly string[]): boolean {
   return (end === -1 ? argv : argv.slice(0, end)).includes("--json");
 }
 
-function editDistance(a: string, b: string): number {
-  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
-  for (let i = 1; i <= a.length; i++) {
-    const row = [i];
-    for (let j = 1; j <= b.length; j++) {
-      row.push(
-        Math.min(prev[j]! + 1, row[j - 1]! + 1, prev[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1)),
-      );
-    }
-    prev = row;
-  }
-  return prev[b.length]!;
-}
-
 function unknownCommand(name: string): UsageError {
   const near = COMMANDS.filter(
     (c) => c.name.startsWith(name) || name.startsWith(c.name) || editDistance(c.name, name) <= 2,
   );
+  const mean = near.map((c) => `"${c.name}"`).join(" or ");
   return new UsageError(
-    `unknown command "${name}"` +
-      (near.length > 0 ? `. Did you mean: ${near.map((c) => c.name).join(", ")}?` : "") +
-      `. Run "xpl --help" for the list of commands.`,
+    `unknown command "${name}".` +
+      (near.length > 0 ? ` Did you mean ${mean}?` : "") +
+      ` Run "xpl --help" for the list of commands.`,
   );
 }
 

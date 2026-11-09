@@ -16,7 +16,8 @@ export const DEFAULT_REF_LIMIT = 200;
 
 export const refsCommand: CommandSpec = {
   name: "refs",
-  usage: "xpl refs <id> [--in|--out] [--kind k] [--depth n] [--max-children n]",
+  usage:
+    "xpl refs <id> [--in|--out] [--kind <k>] [--depth <n>] [--max-children <n>] [--limit <n>] [--tests]",
   summary: "Call/reference hierarchy with sites",
   details: [
     "Lists the references that leave (--out, the default) or enter (--in) an element. Each line is",
@@ -25,12 +26,12 @@ export const refsCommand: CommandSpec = {
     "it is not the element itself: outgoing references of a file, directory or class), so a call-site",
     "anchor's span is +34..36 -> span {from: 34, to: 36}. Kinds: call, import, extends, implements,",
     "type-ref, read, write, request (a web request to the handler of the server route whose method and path",
-    "match, always heuristic). heuristic references are hints, not proof.",
+    "match, always heuristic). Heuristic references are hints, not proof.",
     "--depth n expands each other end in turn (a call hierarchy); an element is expanded once, repeats are marked",
     "(expanded above) or (cycle), so no subtree is printed twice (one met on the last levels first is expanded again,",
     "deeper, when it turns up nearer the top; an element with nothing below it is never marked). At most",
     "--max-children n (default 15, 0 = all) references are listed under a line, the rest are counted",
-    "(`... +5 more`); in a hierarchy that includes the subject's own list, while the flat list of a plain `refs`",
+    "(`... +5 more`). In a hierarchy this also applies to the subject's own list; the flat list of a plain `refs`",
     "(depth 1) is cut by --limit alone. For files and directories the references that stay inside them are left out.",
     "Interfaces are transparent. Under a call (or type use) of an interface or one of its methods, --out lists",
     "the implementations as `impl  <id>  (<file>:<lines>, <resolution>)` lines (from `implements` references:",

@@ -1,5 +1,5 @@
 import { DiagramText } from "./DiagramText.js";
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { processFlow, type ElementId, type ProcessFlow, type SequenceView } from "@xpl/core";
 import { viewReverseIndex } from "../derive.js";
 import { useStore, useViewerState } from "../hooks.js";
@@ -78,6 +78,14 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
   useEffect(() => {
     setFollowCaret(false);
   }, [state.selection]);
+  // An outline beside the code opens on its first step, with that step's code: the code pane is not empty.
+  const opened = useRef<string | undefined>(undefined);
+  const firstStep = flow.stages[0]?.step.id;
+  useEffect(() => {
+    if (!outline || snapshot || !layout || opened.current === view.id) return;
+    opened.current = view.id;
+    if (firstStep && state.selection.length === 0 && !state.cursor) store.select([firstStep]);
+  }, [outline, snapshot, layout, view.id, firstStep, state.selection.length, state.cursor, store]);
   useEffect(() => {
     let cancelled = false;
     setError(undefined);
@@ -141,6 +149,11 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
   }
   const nodes = new Map(placed.map(({ node }) => [node.id, node] as const));
   const stageLabels = new Map(flow.stages.map(({ step }) => [step.id, step.label] as const));
+  // Each step's number: the one the text view, the parts list and the prose use.
+  const numbers = new Map(flow.stages.map(({ step }, i) => [step.id, i + 1] as const));
+  // Nothing picked: the flow is read from its first step, so a flow too big to show whole starts there (its
+  // top-left corner can be empty: a wide flow centres its first step).
+  const first = originals[0]?.node;
   const focus: Focus | undefined =
     focused.length > 0
       ? {
@@ -150,7 +163,15 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
             return node ? [boxOf(node)] : [];
           }),
         }
-      : undefined;
+      : first
+        ? {
+            boxes: [boxOf(first)],
+            neighbours: (layout.edges ?? []).flatMap((edge) => {
+              const next = edge.from === first.id && edge.to ? nodes.get(edge.to) : undefined;
+              return next ? [boxOf(next)] : [];
+            }),
+          }
+        : undefined;
   // An outline follows the caret: the step whose code the caret is in, kept in view as the caret moves.
   const caretStage =
     outline && followCaret ? originals.find(({ node }) => matches.has(node.id)) : undefined;
@@ -286,7 +307,7 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
             data-stage-id={step.id}
             role={snapshot ? undefined : "button"}
             tabIndex={snapshot ? undefined : node.copyOf ? -1 : 0}
-            aria-label={snapshot ? undefined : step.label}
+            aria-label={snapshot ? undefined : `${numbers.get(step.id)}. ${step.label}`}
             onClick={(event) => {
               event.stopPropagation();
               select(step.id, event.shiftKey);
@@ -331,6 +352,20 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
               >
                 {actor}
               </text>
+            )}
+            {!snapshot && (
+              <g
+                className="flow-step-number"
+                aria-hidden="true"
+                transform={
+                  shape === "decision"
+                    ? `translate(${width / 4 - 2} ${height / 4 - 2})`
+                    : `translate(${shape === "terminal" ? 22 : 12} 0)`
+                }
+              >
+                <circle r={11} />
+                <text y={4.5}>{numbers.get(step.id)}</text>
+              </g>
             )}
             {newFrame && (
               // Above the arrowhead (it ends at the box), on a halo: the dashed line runs behind it.

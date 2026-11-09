@@ -30,7 +30,7 @@ test("disconnected reader captures selected source, reloads and exports the orig
   const panel = page.getByRole("dialog", { name: "Reader feedback" });
   await panel.getByLabel("Request kind").selectOption("correct");
   await panel.getByLabel("Feedback note").fill("Explain the retry limit here.");
-  await panel.getByRole("button", { name: "Save for the next revision pass", exact: true }).click();
+  await panel.getByRole("button", { name: "Save for later", exact: true }).click();
   await expect(panel.getByRole("status")).toContainText("Saved in this browser");
   const file = await exported(page);
   expect(file.schema).toBe("code-explainer/feedback@1");
@@ -65,7 +65,7 @@ test("feedback captured after an offline view edit survives reload with its edit
   await page.getByRole("button", { name: /^Feedback/ }).click();
   const panel = page.getByRole("dialog", { name: "Reader feedback" });
   await panel.getByLabel("Feedback note").fill("Explain the newly added bus.");
-  await panel.getByRole("button", { name: "Save for the next revision pass", exact: true }).click();
+  await panel.getByRole("button", { name: "Save for later", exact: true }).click();
   await expect(panel.getByRole("status")).toContainText("Saved in this browser");
   const original = await exported(page);
   expect(original.requests).toHaveLength(1);
@@ -110,7 +110,7 @@ test("two tabs retain both requests when each save reads the same pre-write snap
   await other.getByLabel("Feedback note").fill("Second tab request.");
   await Promise.all(
     [page, other].map((tab) =>
-      tab.getByRole("button", { name: "Save for the next revision pass", exact: true }).click(),
+      tab.getByRole("button", { name: "Save for later", exact: true }).click(),
     ),
   );
   const first = (await exported(page)).requests;
@@ -206,11 +206,11 @@ test("saved-page feedback retains terminal outcomes and reports changed explanat
     route.fulfill({ contentType: "text/html", body: saved }),
   );
   await page.goto("http://feedback.test/");
-  await expect(page.getByTestId("draft-banner")).toBeVisible();
+  await expect(page.getByTestId("draft-pill")).toBeVisible();
   await page.evaluate(() => window.__xpl!.select(["concept:retry-policy"]));
   await page.getByRole("button", { name: /^Feedback \(1\)/ }).click();
   await panel.getByLabel("Feedback note").fill("Explain retries in this draft.");
-  await panel.getByRole("button", { name: "Save for the next revision pass", exact: true }).click();
+  await panel.getByRole("button", { name: "Save for later", exact: true }).click();
   await expect(panel.getByRole("status")).toContainText("Saved in this browser");
   const requests = (await exported(page)).requests;
   expect(requests).toHaveLength(2);
@@ -336,7 +336,7 @@ test("before-source feedback keeps the selected range when browser storage refus
   await page.getByRole("button", { name: /^Feedback/ }).click();
   const panel = page.getByRole("dialog", { name: "Reader feedback" });
   await panel.getByLabel("Feedback note").fill("Why did the old retry use exponential delay?");
-  await panel.getByRole("button", { name: "Save for the next revision pass", exact: true }).click();
+  await panel.getByRole("button", { name: "Save for later", exact: true }).click();
   await expect(panel.getByRole("alert")).toContainText("Browser storage unavailable");
   const file = await exported(page);
   expect(file.requests).toHaveLength(1);

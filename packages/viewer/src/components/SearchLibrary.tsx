@@ -252,7 +252,7 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
         <div className="search-layout">
           <div className="search-main">
             <label className="search-label">
-              Search guide snapshots
+              Search this guide
               <input
                 ref={input}
                 type="search"
@@ -265,10 +265,10 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
                 placeholder="A symbol, source text or phrase from a guide"
               />
             </label>
-            <p className="search-scope">
-              Snapshot <code>{index.commit}</code> · {included} of {index.files.length} indexed
-              files supplied in the current guide. Search covers source, symbols and text in{" "}
-              {embedded.length} contained {embedded.length === 1 ? "guide" : "guides"}.
+            <p className="search-scope" title={`Code as of ${index.commit}`}>
+              This page holds {included} of {index.files.length} files of code. Search looks in the
+              code, its names and the text of {embedded.length}{" "}
+              {embedded.length === 1 ? "guide" : "guides"}.
             </p>
             <div className="search-limits">
               {embedded
@@ -309,7 +309,7 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
                 </p>
               )}
               {!index.analysis?.length && (
-                <p>Analysis unavailable: this snapshot records no analysis coverage.</p>
+                <p>Analysis unavailable: this page does not say which code xpl could analyse.</p>
               )}
               <details>
                 <summary>Analysis coverage and limits</summary>
@@ -322,11 +322,11 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
             </div>
             <p role="status" className="search-status">
               {busy
-                ? "Searching supplied snapshots…"
+                ? "Searching…"
                 : result
                   ? result.total
-                    ? `${result.total} matches across result groups`
-                    : "No matches in the supplied snapshots."
+                    ? `${result.total} ${result.total === 1 ? "match" : "matches"}`
+                    : "No matches in this page."
                   : "Type to search source, symbols, concepts and tour steps."}
             </p>
             {error && <p role="alert">{error}</p>}
@@ -340,30 +340,33 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
                       {group.offset + 1}–{group.offset + group.hits.length} of {group.total} matches
                     </span>
                   </header>
-                  <div className="search-pages">
-                    <button
-                      type="button"
-                      className="btn"
-                      aria-label={`Previous ${group.title} results`}
-                      disabled={busy || group.offset === 0}
-                      onClick={() =>
-                        setPages((p) => ({ ...p, [group.id]: (p[group.id] ?? 0) - 1 }))
-                      }
-                    >
-                      Previous
-                    </button>
-                    <button
-                      type="button"
-                      className="btn"
-                      aria-label={`Next ${group.title} results`}
-                      disabled={busy || group.offset + group.hits.length >= group.total}
-                      onClick={() =>
-                        setPages((p) => ({ ...p, [group.id]: (p[group.id] ?? 0) + 1 }))
-                      }
-                    >
-                      Next
-                    </button>
-                  </div>
+                  {/* one page of results: no Previous and Next */}
+                  {group.total > group.hits.length && (
+                    <div className="search-pages">
+                      <button
+                        type="button"
+                        className="btn"
+                        aria-label={`Previous ${group.title} results`}
+                        disabled={busy || group.offset === 0}
+                        onClick={() =>
+                          setPages((p) => ({ ...p, [group.id]: (p[group.id] ?? 0) - 1 }))
+                        }
+                      >
+                        Previous
+                      </button>
+                      <button
+                        type="button"
+                        className="btn"
+                        aria-label={`Next ${group.title} results`}
+                        disabled={busy || group.offset + group.hits.length >= group.total}
+                        onClick={() =>
+                          setPages((p) => ({ ...p, [group.id]: (p[group.id] ?? 0) + 1 }))
+                        }
+                      >
+                        Next
+                      </button>
+                    </div>
+                  )}
                   <ul className="search-results">
                     {group.hits.map((hit, i) => {
                       const guide = hit.guide;

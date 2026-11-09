@@ -1,7 +1,9 @@
 /**
  * `xpl lint`: deterministic checks of the text a reader sees in an explainer. They apply the plain-language and
- * structure rules of the skill (reference/writing.md): a summary first, plain titles, short sentences that name
- * their subject, no marketing words, no absolute claims without evidence, say it once, top-down order.
+ * structure rules of the skill (reference/writing.md), after Orwell and ASD-STE100: a summary first, plain titles,
+ * short summaries, notes and paragraphs, short sentences in the active voice that name their subject, no "we", no
+ * words of the tool in a tour, no marketing or wordy phrases, no absolute claims without evidence, say it once,
+ * top-down order.
  *
  * The text checks read the explainer only (no index): titles (the explainer's, the tours', the views', the
  * `### heading` line of a tour note, group and concept labels), tour summaries, tour notes, flow and sequence
@@ -18,6 +20,8 @@
  *
  * Order checks look at each tour as a whole: the first step shows the big picture (not a test, a concept alone or
  * an edge case), a small map is covered by the steps, and a tour has at most `LINT_LIMITS.tourSteps` steps.
+ * Structure checks look at the explainer as a whole: every view is on a tour step or opened by a box, there are few
+ * concepts, and no tour copies a note of another.
  *
  * Reader checks look at what the viewer will show: a step it has to title itself (`untitled-step`), changed files
  * no step shows the code of (`change-not-shown`), more far-apart places of a step in one file than a slide has panes for (`far-ranges`), a talk note set in
@@ -31,7 +35,8 @@
  * A `TODO` left in any of these texts (or in a view's `scope.question`, which the viewer shows under its title) is
  * the one error-level finding (`todo-left`): `xpl draft` fills every text a person must write with `TODO: ...`.
  *
- * The thresholds and the word lists live here, in one place (`LINT_LIMITS`, `FILLER_WORDS`, `ABSOLUTE_WORDS`).
+ * The thresholds and the word lists live here, in one place (`LINT_LIMITS`, `FILLER_WORDS`, `ABSOLUTE_WORDS`,
+ * `TOOL_WORDS`).
  */
 import { deriveGraph, type DerivedGraph } from "./graph.js";
 import { isBaseAnchor } from "./anchors.js";
@@ -49,6 +54,9 @@ export type LintRule =
   | "tour-first-step"
   | "tour-covers-map"
   | "tour-length"
+  | "unused-view"
+  | "many-concepts"
+  | "duplicate-step"
   | "note-heading"
   | "code-title"
   | "placeholder-title"
@@ -56,9 +64,14 @@ export type LintRule =
   | "long-average"
   | "bare-it"
   | "filler-word"
+  | "passive-voice"
+  | "we-voice"
+  | "tool-word"
   | "absolute-word"
   | "repeats-summary"
   | "long-note"
+  | "long-summary"
+  | "long-detail"
   | "code-heavy"
   | "flow-label-code"
   | "markdown-in-plain"
@@ -78,16 +91,24 @@ export const LINT_RULES: Record<LintRule, string> = {
   "tour-first-step": "tour that does not start with the big picture",
   "tour-covers-map": "map box the tour never visits",
   "tour-length": "tour with too many steps",
+  "unused-view": "diagram no tour step shows and no box opens",
+  "many-concepts": "explainer with too many concepts",
+  "duplicate-step": "tour step copied from another tour",
   "note-heading": 'note without a "### title" line',
   "code-title": "title that looks like code",
   "placeholder-title": "placeholder title",
   "long-sentence": "sentence over 25 words",
   "long-average": "field with long sentences on average",
-  "bare-it": 'sentence that starts with a bare "It" or "This"',
+  "bare-it": 'sentence that starts with a bare "It", "This", "They" or "There is"',
   "filler-word": "marketing or filler word",
+  "passive-voice": "field with passive clauses that hide who acts",
+  "we-voice": 'text that says "we" or "our"',
+  "tool-word": "word of the tool (node, edge, anchor) in a tour",
   "absolute-word": "absolute word that needs evidence",
   "repeats-summary": "note that repeats a summary",
   "long-note": "note that is too long to take in at a glance",
+  "long-summary": "element summary over 2 sentences or 45 words",
+  "long-detail": "detail paragraph over 80 words",
   "code-heavy": "text that leans on code names instead of ideas",
   "flow-label-code": "flow step label written as code",
   "markdown-in-plain": "markdown in a title or label",
@@ -155,7 +176,22 @@ export const LINT_LIMITS = {
   /** ...and it has at least this many content words (a shorter one must match the whole summary sentence). */
   repeatMinWords: 4,
   /** A note body (the text under its `### title`) of more words than this is a finding (the skill: 1-3 sentences). */
-  noteWords: 60,
+  noteWords: 50,
+  /**
+   * The summary of a node, edge, concept, flow or sequence step says what the thing is for: at most this many
+   * sentences...
+   */
+  elementSummarySentences: 2,
+  /** ...and this many words (`long-summary`). */
+  elementSummaryWords: 45,
+  /** A paragraph (or list item) of a `detail` of more words than this is a finding (`long-detail`). */
+  detailParagraphWords: 80,
+  /** A field with at least this many passive clauses is a finding (`passive-voice`); one is often fine. */
+  passiveClauses: 2,
+  /** An explainer of more concepts than this is a finding (`many-concepts`; the skill asks for 0-3). */
+  concepts: 5,
+  /** `duplicate-step` compares notes of at least this many different content words (a short note may recur). */
+  duplicateMinWords: 8,
   /** Different code names (code spans) a note body may use... */
   noteCodeNames: 3,
   /** ...a note on an architecture map (a view with a box that has a `role`): the idea first, the code on the right... */
@@ -240,6 +276,78 @@ export const FILLER_WORDS: Readonly<Record<string, string>> = {
   "it's worth noting": "drop it and state the fact",
   "it is worth noting": "drop it and state the fact",
   "in a nutshell": "drop it",
+  // wordy phrases (Orwell: never use a long word or phrase where a short one will do)
+  "in order to": 'write "to"',
+  "a number of": 'write "some", or give the number',
+  "is able to": 'write "can"',
+  "are able to": 'write "can"',
+  "make use of": 'write "use"',
+  "makes use of": 'write "uses"',
+  "prior to": 'write "before"',
+  "due to the fact that": 'write "because"',
+  "in the event that": 'write "if"',
+  "with respect to": 'write "about"',
+  "with regard to": 'write "about"',
+  regarding: 'write "about"',
+  "note that": "drop it and state the fact",
+  "keep in mind": "drop it and state the fact",
+  "at this point in time": 'write "now"',
+  numerous: 'write "many"',
+  utilized: 'write "used"',
+  utilizing: 'write "using"',
+  commence: 'write "start"',
+  commences: 'write "starts"',
+  terminate: 'write "end" or "stop"',
+  terminates: 'write "ends" or "stops"',
+  obtain: 'write "get"',
+  obtains: 'write "gets"',
+  // weak intensifiers
+  very: "drop it, or give the number",
+  really: "drop it",
+  actually: "drop it",
+  extremely: "drop it, or give the number",
+  truly: "drop it",
+  // stale metaphors (Orwell: never use a figure of speech you are used to seeing in print)
+  "heavy lifting": "say what work it does",
+  "the heart of": 'name the part ("the main loop of")',
+  "the brain of": 'name the part ("the part that decides")',
+  "at its core": "drop it",
+  "in essence": "drop it",
+  "boils down to": 'write "is" or "comes to"',
+  "first-class": "say what it can do",
+  "out of the box": 'write "by default", or "with no setup"',
+  "battle-tested": "say where it has run, or drop it",
+  "moving parts": 'write "parts", or name them',
+  "deep dive": 'write "a closer look", or "in detail"',
+  "bells and whistles": "name the features, or drop it",
+  // tics of machine-written text
+  ultimately: "drop it",
+  notably: "drop it and state the fact",
+  importantly: "drop it, or say why it matters",
+  nuanced: "say what the cases are",
+  landscape: "name what you mean",
+};
+
+/**
+ * Words of the tool (xpl's own names for the parts of an explainer), each with the reader's word. A tour that
+ * explains code says "box" and "arrow", not "node" and "edge". Matched in lower case only (so `Node.js` and an
+ * `LLM` pass), as whole words, outside code spans, in tour titles, summaries and notes. A word the explainer uses
+ * in the label or id of a box or a concept, or in a path a view shows, is the code's own word there (a parser's
+ * syntax nodes, `anchors.ts`), so it passes.
+ */
+export const TOOL_WORDS: Readonly<Record<string, string>> = {
+  node: 'write "box" (on a map), or name the part',
+  nodes: 'write "boxes" (on a map), or name the parts',
+  edge: 'write "arrow", or say what it means ("calls", "imports")',
+  edges: 'write "arrows", or say what they mean ("calls", "imports")',
+  anchor: 'write "code link", or "the linked code"',
+  anchors: 'write "code links", or "the linked code"',
+  anchored: 'write "linked to the code"',
+  evidence: 'name the code that shows it ("the test in `retry_test.go` shows ...")',
+  upsert: 'write "add or update"',
+  upserts: 'write "adds or updates"',
+  llm: 'write "Claude", or drop it',
+  provenance: 'say who wrote it ("you", "Claude")',
 };
 
 /** Absolute words: each is a claim about every case, which needs evidence (or a narrower word). */
@@ -445,6 +553,31 @@ const TABLE_RULE = /^\|[\s:|-]+\|$/;
  * under the header row is left out.
  */
 function sentences(masked: string): string[] {
+  const out: string[] = [];
+  for (const block of paragraphs(masked)) {
+    let start = 0;
+    const end = /[.!?]+["')\]*_]*(?=\s|$)/g;
+    for (let m = end.exec(block); m; m = end.exec(block)) {
+      const before = /([A-Za-z.]+)\.*$/.exec(
+        block.slice(start, m.index + 1).replace(/[.!?]+$/, ""),
+      );
+      const word = (before?.[1] ?? "").toLowerCase();
+      if (m[0].startsWith(".") && ABBREVIATIONS.has(word.replace(/\.$/, ""))) continue;
+      const sentence = block.slice(start, m.index + m[0].length).trim();
+      if (sentence) out.push(sentence);
+      start = m.index + m[0].length;
+    }
+    const rest = block.slice(start).trim();
+    if (rest) out.push(rest);
+  }
+  return out;
+}
+
+/**
+ * The paragraphs of a masked text, each on one line: blocks between blank lines, each list item and each table
+ * cell on its own; headings and the rule under a table's header row left out.
+ */
+function paragraphs(masked: string): string[] {
   const blocks: string[] = [];
   let current: string[] = [];
   const flush = () => {
@@ -473,24 +606,7 @@ function sentences(masked: string): string[] {
     }
   }
   flush();
-  const out: string[] = [];
-  for (const block of blocks) {
-    let start = 0;
-    const end = /[.!?]+["')\]*_]*(?=\s|$)/g;
-    for (let m = end.exec(block); m; m = end.exec(block)) {
-      const before = /([A-Za-z.]+)\.*$/.exec(
-        block.slice(start, m.index + 1).replace(/[.!?]+$/, ""),
-      );
-      const word = (before?.[1] ?? "").toLowerCase();
-      if (m[0].startsWith(".") && ABBREVIATIONS.has(word.replace(/\.$/, ""))) continue;
-      const sentence = block.slice(start, m.index + m[0].length).trim();
-      if (sentence) out.push(sentence);
-      start = m.index + m[0].length;
-    }
-    const rest = block.slice(start).trim();
-    if (rest) out.push(rest);
-  }
-  return out;
+  return blocks;
 }
 
 /** Words of a masked sentence: tokens with a letter or digit; a code span counts as one word. */
@@ -523,6 +639,9 @@ function wordPattern(phrase: string): RegExp {
   const body = phrase.split(/\s+/).map(escapeRegExp).join("\\s+");
   return new RegExp(`(?<![\\p{L}\\p{N}_'-])${body}(?![\\p{L}\\p{N}_'-])`, "giu");
 }
+
+/** Fillers only at the start of a clause: "Note that ..." is filler, "a note that lists them" is not. */
+const CLAUSE_START_FILLERS = new Set(["note that", "keep in mind"]);
 
 const FILLER_PATTERNS = Object.keys(FILLER_WORDS)
   // longer phrases first, so "delve into" wins over "delve"
@@ -687,9 +806,25 @@ function looksLikeVerb(word: string, subject: string): boolean {
   return subject === "It" && /^[a-z]{3,}ed$/.test(word);
 }
 
-/** "It" or "This" when the sentence starts with that word and a verb ("It calls", "This is", "It's"), else undefined. */
+/** Plural auxiliaries and modals: "These are", "Those can". */
+const PLURAL_VERBS = new Set(
+  "are were have had do did can could will would should must may might aren't weren't don't can't won't".split(
+    " ",
+  ),
+);
+
+/**
+ * The bare subject a sentence starts with, or undefined: "It" or "This" and a verb ("It calls", "This is",
+ * "It's"), "They" and a word ("They check"), "These" or "Those" and an auxiliary ("These are"), or an empty
+ * "There is" / "There are" (returned as that phrase). "These files hold ..." names its subject.
+ */
 function bareSubject(masked: string): string | undefined {
   const text = withoutCode(masked).replace(/^[\s"'(*_]+/, "");
+  const there = /^There(?:['’]s|\s+(is|are|was|were|isn't|aren't))(?![\w'])/.exec(text);
+  if (there) return `There ${there[1] ?? "is"}`;
+  if (/^They(?:['’](?:re|ve|ll|d))?\s+[a-z]/.test(text)) return "They";
+  const these = /^(These|Those)\s+([A-Za-z']+)/.exec(text);
+  if (these && PLURAL_VERBS.has(these[2]!.toLowerCase())) return these[1];
   if (/^(?:It|This)['’]s\s/.test(text)) return text.startsWith("It") ? "It" : "This";
   const m = /^(It|This)\s+([A-Za-z']+)(?:\s+([A-Za-z']+))?/.exec(text);
   if (!m) return undefined;
@@ -700,6 +835,65 @@ function bareSubject(masked: string): string | undefined {
   }
   return undefined;
 }
+
+/** Forms of "be" that make a passive with a past participle ("is written", "were not shown"). */
+const BE = "am|is|are|was|were|be|been|being|isn't|aren't|wasn't|weren't";
+/** Adverbs that may stand between "be" and its participle ("is not shown", "are then written"). */
+const PASSIVE_ADVERBS =
+  "not|never|also|only|then|still|always|first|already|usually|often|now|later|again|automatically|both|each|all";
+const PASSIVE = new RegExp(
+  String.raw`(?<![\p{L}\p{N}_'-])(?:${BE})\s+(?:(?:${PASSIVE_ADVERBS})\s+)?([a-z]+)(?![\p{L}\p{N}_'-])`,
+  "giu",
+);
+/** Irregular past participles; regular ones end in -ed. */
+const IRREGULAR_PARTICIPLES = new Set(
+  (
+    "built made kept shown drawn written given taken found held run seen sent read left put known thrown " +
+    "chosen broken hidden bound brought caught fed told thought understood meant paid said sold shut split " +
+    "spent stuck taught lost led laid hit cut dealt grown begun overridden overwritten rewritten redrawn " +
+    "rebuilt rerun withheld forgotten forbidden driven ridden spoken stolen frozen woken torn worn sworn " +
+    "shaken mistaken undertaken arisen fallen sought lent lit shed"
+  ).split(" "),
+);
+/** Words in -ed that are adjectives after "be" ("based on", "tired"), or not participles at all ("need"). */
+const NOT_PARTICIPLES = new Set(
+  (
+    "based supposed interested tired concerned pleased detailed advanced experienced complicated " +
+    "sophisticated dedicated varied need speed seed feed bleed breed embed hundred kindred naked wicked " +
+    "sacred rugged shred unchanged"
+  ).split(" "),
+);
+
+/** The passive clauses of a sentence (code spans left out): `be` + a past participle, as written. */
+function passives(masked: string): string[] {
+  const text = withoutCode(masked);
+  const out: string[] = [];
+  PASSIVE.lastIndex = 0;
+  for (let m = PASSIVE.exec(text); m; m = PASSIVE.exec(text)) {
+    const word = m[1]!;
+    if (word !== word.toLowerCase() || NOT_PARTICIPLES.has(word)) continue;
+    if (IRREGULAR_PARTICIPLES.has(word) || /^[a-z]{2,}ed$/.test(word))
+      out.push(m[0].replace(/\s+/g, " "));
+  }
+  return out;
+}
+
+/** "we", "our", "us", "let's" and their forms: the explainer speaking as a team the reader is not part of. */
+const WE_WORDS =
+  /(?<![\p{L}\p{N}_'’-])(?:we|we're|we've|we'll|we'd|our|ours|ourselves|us|let's|let’s)(?![\p{L}\p{N}_'’-])/giu;
+
+/** Quoted text (a comment, an error message) is the code's words, not the explainer's. */
+function withoutQuotes(text: string): string {
+  return text.replace(/"[^"\n]*"|“[^”\n]*”/g, (q) => " ".repeat(q.length));
+}
+
+const TOOL_PATTERNS = Object.keys(TOOL_WORDS).map((word) => ({
+  word,
+  pattern: new RegExp(wordPattern(word).source, "gu"),
+}));
+/** Words around "edge" that make it plain English: an edge case, the leading edge. */
+const EDGE_AFTER = /^[\s-]*cases?(?![\p{L}])/u;
+const EDGE_BEFORE = new Set(["leading", "trailing", "cutting", "rising", "falling", "sharp"]);
 
 /**
  * Why `title` looks like code, or undefined: a call (`f(`), an identifier with `_`, a dotted name (`a.b`), a
@@ -877,6 +1071,12 @@ class Linter {
   readonly findings: LintFinding[] = [];
   checked = 0;
 
+  /**
+   * @param ownWords stems of the words in the labels and ids of the explainer's boxes and concepts and of what its
+   *   views show: a tool word among them is the code's own word (`tool-word`).
+   */
+  constructor(private readonly ownWords: ReadonlySet<string> = new Set()) {}
+
   add(where: Where, rule: LintRule, quote: string, message: string, hint: string): void {
     this.findings.push({ rule, ...where, quote, message, hint });
   }
@@ -901,10 +1101,13 @@ class Linter {
         const from = m.index;
         const to = m.index + m[0].length;
         if (taken.some(([a, b]) => from < b && to > a)) continue;
+        if (CLAUSE_START_FILLERS.has(phrase) && tokenBefore(text, from).kind !== "start") continue;
         taken.push([from, to]);
         fillers.push({ phrase, index: from });
       }
     }
+    this.weVoice(where, text, quoteAt);
+    if (where.kind === "tour" || where.kind === "tour-step") this.toolWords(where, text, quoteAt);
     if (fillers.length > 0) {
       fillers.sort((a, b) => a.index - b.index);
       const unique = [...new Set(fillers.map((f) => f.phrase))];
@@ -955,6 +1158,49 @@ class Linter {
           : "check every case in the code and anchor it (an element with anchors may say it), or narrow the claim (name the places, add the condition)",
       );
     }
+  }
+
+  /** `we-voice`: "we", "our", "us" or "let's" outside code spans and quotes ("US" is a place). */
+  private weVoice(where: Where, text: string, quoteAt: (index: number) => string): void {
+    const found = [...withoutQuotes(text).matchAll(WE_WORDS)].filter((m) => m[0] !== "US");
+    if (found.length === 0) return;
+    const unique = [...new Set(found.map((m) => m[0].toLowerCase().replace("’", "'")))];
+    this.add(
+      where,
+      "we-voice",
+      quoteAt(found[0]!.index!),
+      `${unique.map((w) => `"${w}"`).join(", ")}: the guide speaks as a team the reader is not part of`,
+      'name who does it ("the runner retries", "the authors chose ..."), or write to the reader as "you"',
+    );
+  }
+
+  /** `tool-word`: xpl's own words in a tour, unless the explainer's boxes or concepts name the code that way. */
+  private toolWords(where: Where, text: string, quoteAt: (index: number) => string): void {
+    const found: { word: string; index: number }[] = [];
+    for (const { word, pattern } of TOOL_PATTERNS) {
+      if (this.ownWords.has(stem(word))) continue;
+      pattern.lastIndex = 0;
+      for (let m = pattern.exec(text); m; m = pattern.exec(text)) {
+        if (word.startsWith("edge")) {
+          const before = tokenBefore(text, m.index);
+          if (EDGE_AFTER.test(text.slice(m.index + m[0].length))) continue;
+          if (before.kind === "word" && EDGE_BEFORE.has(before.word)) continue;
+        }
+        found.push({ word, index: m.index });
+      }
+    }
+    if (found.length === 0) return;
+    found.sort((a, b) => a.index - b.index);
+    const unique = [...new Set(found.map((f) => f.word))];
+    this.add(
+      where,
+      "tool-word",
+      quoteAt(found[0]!.index),
+      unique.length === 1
+        ? `"${unique[0]}": a word of the tool, not of the code`
+        : `${unique.map((w) => `"${w}"`).join(", ")}: words of the tool, not of the code`,
+      unique.map((w) => `"${w}": ${TOOL_WORDS[w]}`).join("; "),
+    );
   }
 
   /**
@@ -1025,6 +1271,51 @@ class Linter {
   }
 
   /**
+   * `long-summary`: the summary of an element or a step over `elementSummarySentences` sentences or
+   * `elementSummaryWords` words. A draft's TODO is judged once it is written.
+   */
+  summaryLength(where: Where, value: unknown): void {
+    if (typeof value !== "string" || value.trim() === "" || /\bTODO\b/.test(value)) return;
+    const masked = mask(value);
+    const count = sentences(masked.text).length;
+    const wordCount = words(masked.text).length;
+    if (
+      count <= LINT_LIMITS.elementSummarySentences &&
+      wordCount <= LINT_LIMITS.elementSummaryWords
+    ) {
+      return;
+    }
+    this.add(
+      where,
+      "long-summary",
+      excerpt(value),
+      `${plural(count, "sentence")}, ${wordCount} words (a summary takes at most ${LINT_LIMITS.elementSummarySentences} sentences and ${LINT_LIMITS.elementSummaryWords} words)`,
+      "say what the part is for in 1-2 sentences; move the cases into `detail`, a concept or a tour step. " +
+        "Rewrite the summary whole when the code changes: do not append a sentence per change",
+    );
+  }
+
+  /** `long-detail`: a paragraph (or list item) of a `detail` over `detailParagraphWords` words. */
+  detailLength(where: Where, value: unknown): void {
+    if (typeof value !== "string" || value.trim() === "" || /\bTODO\b/.test(value)) return;
+    const masked = mask(value);
+    const long = paragraphs(masked.text)
+      .map((text) => ({ text, count: words(text).length }))
+      .filter((p) => p.count > LINT_LIMITS.detailParagraphWords);
+    if (long.length === 0) return;
+    const longest = Math.max(...long.map((p) => p.count));
+    this.add(
+      where,
+      "long-detail",
+      excerpt(unmask(long[0]!.text, masked.spans)),
+      long.length === 1
+        ? `a paragraph of ${longest} words (more than ${LINT_LIMITS.detailParagraphWords})`
+        : `${long.length} paragraphs of more than ${LINT_LIMITS.detailParagraphWords} words (the longest: ${longest})`,
+      "give each paragraph one point (a blank line between them), or make a list",
+    );
+  }
+
+  /**
    * The `summary` of an element or a step: inline markdown (code spans, bold, emphasis) is fine, a heading line or
    * a link is not.
    */
@@ -1064,7 +1355,15 @@ class Linter {
         );
       }
       const subject = bareSubject(sentence);
-      if (subject !== undefined) {
+      if (subject !== undefined && subject.startsWith("There ")) {
+        this.add(
+          where,
+          "bare-it",
+          excerpt(unmask(sentence, masked.spans)),
+          `starts with an empty "${subject}"`,
+          'make the thing the subject: "Each worker has one queue", not "There is one queue per worker"',
+        );
+      } else if (subject !== undefined) {
         this.add(
           where,
           "bare-it",
@@ -1074,6 +1373,22 @@ class Linter {
         );
       }
     });
+    const passive = list.flatMap((sentence) => passives(sentence));
+    if (passive.length >= LINT_LIMITS.passiveClauses && !/\bTODO\b/.test(value)) {
+      const shown = [...new Set(passive)].slice(0, 3);
+      this.add(
+        where,
+        "passive-voice",
+        excerpt(
+          unmask(
+            list.find((sentence) => passives(sentence).length > 0)!,
+            masked.spans,
+          ),
+        ),
+        `${passive.length} passive clauses (${shown.map((p) => `"${p}"`).join(", ")}${passive.length > 3 ? ", ..." : ""}): who does it?`,
+        'name who does it: "The CLI writes the accepted changes", not "Accepted changes are written"',
+      );
+    }
     const counted = counts.filter((n) => n > 0);
     if (counted.length >= 2) {
       const average = counted.reduce((a, b) => a + b, 0) / counted.length;
@@ -1747,6 +2062,83 @@ function mapChecks(
   }
 }
 
+/**
+ * The shape of the explainer as a whole: `unused-view` (a view no tour step shows and no box opens, when there is
+ * a tour), `many-concepts` (more than `LINT_LIMITS.concepts`), `duplicate-step` (a note copied into another tour).
+ */
+function structureChecks(lint: Linter, explainer: Explainer): void {
+  const tours = list<unknown>(explainer.tours).map(record);
+  const steps = tours.flatMap((tour) =>
+    list<unknown>(tour.steps).map((step) => ({
+      tourId: str(tour.id) ?? "(tour)",
+      step: record(step),
+    })),
+  );
+  if (tours.length > 0) {
+    const used = new Set<string>();
+    for (const { step } of steps) if (typeof step.view === "string") used.add(step.view);
+    for (const node of list<unknown>(explainer.nodes)) {
+      const opens = str(record(node).opens);
+      if (opens !== undefined) used.add(opens);
+    }
+    for (const view of list<unknown>(explainer.views).map(record)) {
+      const id = str(view.id);
+      if (id === undefined || used.has(id)) continue;
+      lint.add(
+        { elementId: id, kind: "view", field: "tours" },
+        "unused-view",
+        excerpt(str(view.title) ?? id),
+        "no tour step shows this view and no box opens it",
+        "show it on a tour step, open it from a box (`opens`), or drop it: a reader reaches a diagram from the tour or from a box",
+      );
+    }
+  }
+
+  const concepts = list<unknown>(explainer.concepts)
+    .map((concept) => str(record(concept).id))
+    .filter((id): id is string => id !== undefined);
+  if (concepts.length > LINT_LIMITS.concepts) {
+    const focused = new Set(steps.flatMap(({ step }) => list<unknown>(step.focus)));
+    const unfocused = concepts.filter((id) => !focused.has(id));
+    lint.findings.push({
+      rule: "many-concepts",
+      elementId: "(explainer)",
+      kind: "explainer",
+      field: "concepts",
+      quote: excerpt(unfocused.join(", ") || concepts.join(", ")),
+      message: `${concepts.length} concepts (more than ${LINT_LIMITS.concepts}); ${unfocused.length} of them no tour step focuses`,
+      hint: "keep the few ideas a reader needs (the skill asks for 0-3): merge concepts that make the same point, turn a case into a `detail` line, or drop the ones no step uses",
+      ids: unfocused,
+    });
+  }
+
+  // say it once: a note copied from a step of another tour (S-03)
+  const seen: { id: string; tourId: string; words: string[] }[] = [];
+  for (const { tourId, step } of steps) {
+    const note = str(step.note);
+    if (note === undefined || /\bTODO\b/.test(note)) continue;
+    const masked = mask(note);
+    const words = contentWords(masked.text, masked.spans);
+    const id = `${tourId}/${str(step.id) ?? "?"}`;
+    if (new Set(words).size >= LINT_LIMITS.duplicateMinWords) {
+      const copy = seen.find(
+        (other) =>
+          other.tourId !== tourId && repeats(words, other.words) && repeats(other.words, words),
+      );
+      if (copy) {
+        lint.add(
+          { elementId: id, kind: "tour-step", field: "note" },
+          "duplicate-step",
+          excerpt(noteTitle(note) || note),
+          `the same note as ${copy.id}`,
+          `say it once: keep the step in one tour, and let this tour say what it adds (or point the reader to ${copy.tourId})`,
+        );
+      }
+    }
+    seen.push({ id, tourId, words });
+  }
+}
+
 /** Structural metadata is not authored prose. New string fields are checked unless explicitly structural. */
 const STRUCTURAL_TEXT_FIELDS = new Set([
   "schema",
@@ -1833,7 +2225,17 @@ function placeholderChecks(lint: Linter, explainer: Explainer): void {
 
 /** The checks of `xpl lint` on one explainer, in document order (see the file comment). */
 export function lintExplainer(explainer: Explainer, model?: ExplainerModel): LintResult {
-  const lint = new Linter();
+  // the code's own words: the labels and ids of boxes and concepts, and the boxes and lifelines views show
+  const own = [...list(explainer.nodes), ...list(explainer.concepts)].flatMap((item) => [
+    str(record(item).label) ?? "",
+    str(record(item).id) ?? "",
+  ]);
+  for (const view of list(explainer.views)) {
+    for (const id of [...list(record(view).include), ...list(record(view).participants)]) {
+      if (typeof id === "string") own.push(id);
+    }
+  }
+  const lint = new Linter(new Set(own.flatMap((text) => stems(text))));
   const summaries = storedSummaries(explainer);
   const byId = lookup(explainer);
 
@@ -2034,6 +2436,7 @@ export function lintExplainer(explainer: Explainer, model?: ExplainerModel): Lin
       lint.plain(at("label"), step.label, true);
       lint.prose(at("summary"), step.summary, { evidence: { anchored: hasAnchors(step) } });
       lint.summaryMarks(at("summary"), step.summary);
+      lint.summaryLength(at("summary"), step.summary);
     }
   }
 
@@ -2048,12 +2451,15 @@ export function lintExplainer(explainer: Explainer, model?: ExplainerModel): Lin
     lint.plain({ elementId: id, kind, field: "label" }, item.label, !titled);
     lint.prose({ elementId: id, kind, field: "summary" }, item.summary, { evidence });
     lint.summaryMarks({ elementId: id, kind, field: "summary" }, item.summary);
+    lint.summaryLength({ elementId: id, kind, field: "summary" }, item.summary);
     lint.prose({ elementId: id, kind, field: "detail" }, item.detail, { evidence });
+    lint.detailLength({ elementId: id, kind, field: "detail" }, item.detail);
   };
   for (const node of list(explainer.nodes)) element("node", node);
   for (const edge of list(explainer.edges)) element("edge", edge);
   for (const concept of list(explainer.concepts)) element("concept", concept);
 
+  structureChecks(lint, explainer);
   mapChecks(lint, explainer, byId, model);
   changeChecks(lint, explainer, byId);
   placeholderChecks(lint, explainer);

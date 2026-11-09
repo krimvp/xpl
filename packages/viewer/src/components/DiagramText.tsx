@@ -3,10 +3,11 @@ import type { DerivedGraph, ProcessFlow } from "@xpl/core";
 import type { SequenceLayout } from "../layout/sequenceLayout.js";
 import { drawnEdges } from "../drawnEdges.js";
 import { useStore, useViewerState } from "../hooks.js";
+import { mapEdgeSource } from "../readerWords.js";
 
 type Props = { graph: DerivedGraph } | { sequence: SequenceLayout } | { flow: ProcessFlow };
 
-/** The same visible elements as the diagram, with native lists and source-linked buttons. */
+/** What the diagram draws, as lists: each box and arrow is a button that shows its code. */
 export function DiagramText(props: Props) {
   const store = useStore();
   const trustId = useId();
@@ -18,14 +19,14 @@ export function DiagramText(props: Props) {
   let heading: string;
   if ("graph" in props) {
     const { graph } = props;
-    heading = "Nodes";
+    heading = "Boxes";
     nodes = graph.nodes;
     const names = new Map(nodes.map((node) => [node.id, node.label]));
     relationships = drawnEdges(graph.edges).map((edge) => ({
       id: edge.id,
       select: edge.id,
       label: `${names.get(edge.from)} to ${names.get(edge.to)}: ${edge.label ?? `${edge.kind} ×${edge.count}`}`,
-      trust: edge.resolution === "mixed" ? "mixed precise and heuristic" : edge.resolution,
+      trust: mapEdgeSource(edge),
     }));
     relationships.push(
       ...graph.stubs.map((stub) => ({
@@ -35,7 +36,7 @@ export function DiagramText(props: Props) {
           stub.direction === "out"
             ? `${names.get(stub.inside)} to ${stub.ghostLabel} (outside this map): ${stub.kinds.join(", ")} ×${stub.count}`
             : `${stub.ghostLabel} (outside this map) to ${names.get(stub.inside)}: ${stub.kinds.join(", ")} ×${stub.count}`,
-        trust: "boundary evidence; inspect the source",
+        trust: "outside this map",
       })),
     );
   } else if ("sequence" in props) {
@@ -45,17 +46,17 @@ export function DiagramText(props: Props) {
       id: step.id,
       select: step.id,
       label: `${model.label(step.from)} to ${model.label(step.to)}: ${step.label} (${step.kind})`,
-      trust: "authored sequence",
+      trust: "drawn by the author",
     }));
   } else {
-    heading = "Stages";
+    heading = "Steps";
     nodes = props.flow.stages.map(({ step }) => ({ id: step.id, label: step.label }));
     const names = new Map(nodes.map((node) => [node.id, node.label]));
     relationships = props.flow.transitions.map((edge) => ({
       id: edge.id,
       select: edge.id,
       label: `${names.get(edge.from)} to ${edge.to === undefined ? "caller" : names.get(edge.to)}${edge.label ? `: ${edge.label}` : ""}${edge.kind ? ` (${edge.kind})` : ""}`,
-      trust: props.flow.projected ? "sequence order" : "authored flow",
+      trust: props.flow.projected ? "in the order of the sequence" : "drawn by the author",
     }));
   }
   return (
@@ -74,10 +75,10 @@ export function DiagramText(props: Props) {
           </li>
         ))}
       </ul>
-      <h3>Relationships</h3>
-      {"flow" in props && <p>Choose a relationship to show its endpoints' code.</p>}
-      {relationships.length === 0 && <p>No relationships are shown in this view.</p>}
-      <ul aria-label="Relationships">
+      <h3>Arrows</h3>
+      {"flow" in props && <p>Pick an arrow to see the code at both of its ends.</p>}
+      {relationships.length === 0 && <p>This diagram has no arrows.</p>}
+      <ul aria-label="Arrows">
         {relationships.map((edge, index) => (
           <li key={edge.id}>
             <button

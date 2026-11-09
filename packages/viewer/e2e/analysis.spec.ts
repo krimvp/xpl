@@ -1,12 +1,15 @@
 import { expect, test } from "@playwright/test";
-import { openBundle, openVariant, watchProblems } from "./helpers.js";
+import { openVariant, watchProblems } from "./helpers.js";
 
-test("the exported viewer labels analysis sources without command or diagnostic details", async ({
+test("analysis coverage is in About this guide; a bar only when code was left out", async ({
   page,
 }) => {
   const problems = watchProblems(page);
-  await openBundle(page);
-  const notice = page.getByTestId("analysis-coverage");
+  await openVariant(page, () => undefined);
+  // TypeScript calls matched by name, JSON and YAML with no calls: nothing a reader must be warned about
+  await expect(page.getByTestId("analysis-coverage")).toHaveCount(0);
+  await page.getByTestId("explanation-info").locator(":scope > summary").click();
+  const notice = page.getByTestId("analysis-details");
   await expect(notice.locator("summary")).toHaveText(
     "Analysis coverage: 12 files; some analysis is limited or unavailable.",
   );
@@ -25,10 +28,13 @@ test("legacy coverage stays unknown and failed analysis is visible", async ({ pa
   await openVariant(page, (bundle) => {
     delete bundle.index.analysis;
   });
+  await expect(page.getByTestId("analysis-coverage")).toHaveCount(0);
+  await page.getByTestId("explanation-info").locator(":scope > summary").click();
+  const details = page.getByTestId("analysis-details");
+  await expect(details.locator("summary")).toHaveText("Analysis coverage unknown (legacy index).");
+  await details.locator("summary").click();
+  await expect(details).toContainText("an empty result does not establish complete analysis");
   const notice = page.getByTestId("analysis-coverage");
-  await expect(notice.locator("summary")).toHaveText("Analysis coverage unknown (legacy index).");
-  await notice.locator("summary").click();
-  await expect(notice).toContainText("an empty result does not establish complete analysis");
   await openVariant(page, (bundle) => {
     bundle.index.analysis.push({
       provider: "test-tool",

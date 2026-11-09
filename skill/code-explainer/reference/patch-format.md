@@ -2,7 +2,7 @@
 
 Everything you write goes into a JSON **patch**. `xpl apply <name> patch.json` (or `-` for stdin) merges it into `.explainer/<name>.explainer.json`, fills in hashes and resolved ranges, validates the result, and either writes everything or nothing.
 
-A draft (`xpl draft`) is a patch in this format: start from it, and use these templates for what you add. **Read only what the task needs.** Always: section 1 (anchors) and 2 (ids). Then the template of each element you write: 3.1 groups, 3.2 overlays (summaries of files and symbols), 3.3-3.4 edges, 3.5 concepts, 3.6 graph views, 3.7 flow views, 3.8 sequence views, 3.9 tours. The rest is for when a command points you there: 4 merge rules (what a resend replaces), 5 provenance (a `protected` warning), 6 the apply output, 7 rejection messages, 8 repair after the code changed.
+A draft (`xpl draft`) is a patch in this format: start from it, and use these templates for what you add. **Read only what the task needs.** Always: section 1 (anchors) and 2 (ids). Then the template of each element you write: 3.1 groups, 3.2 overlays (summaries of files and symbols), 3.3-3.4 edges, 3.5 concepts, 3.6 graph views, 3.7 flow views, 3.8 sequence views, 3.9 tours. Read 3.10-3.12 for architecture maps, `title` and `scope`, and sketch boxes. The rest is for when a command points you there: 4 merge rules (what a resend replaces), 5 provenance (a `protected` warning), 6 the apply output, 7 rejection messages, 8 repair after the code changed, 9 editor completion.
 
 ```json
 {
@@ -17,31 +17,9 @@ A draft (`xpl draft`) is a patch in this format: start from it, and use these te
 }
 ```
 
-Every key is optional; any other top-level key is rejected. User patches also accept `review` (below); LLM patches must omit it. The authoritative merge rules are in the header of `packages/core/src/patch.ts`; this file is the practical version of them, and every JSON block below marked `patch` is real: applied in order to a fresh explainer on the TypeScript fixture it passes `xpl validate` (a test of the repository does exactly that). `xpl apply --help` prints a compact summary of the format. What to write in the text fields (titles, summaries, notes) is in `writing.md`.
-
-`reference/patch.schema.json` ships with the skill (and in the npm package at `skill/code-explainer/reference/patch.schema.json`). Associate it with patch files in your editor for field and value completion. For VS Code, add this to workspace settings when using a source checkout:
-
-```text
-{
-  "json.schemas": [
-    { "fileMatch": ["**/*.patch.json"], "url": "./skill/code-explainer/reference/patch.schema.json" }
-  ]
-}
-```
-
-For an installed skill, replace `url` with the absolute path to its `reference/patch.schema.json`. The default location is `~/.claude/skills/code-explainer` for Claude, `~/.agents/skills/code-explainer` for Codex, Pi and Droid, or the project's `.agents/skills/code-explainer` for Devin. Do not add a `$schema` key to a patch: `xpl apply` rejects unknown top-level fields. The schema catches JSON shape errors; `xpl apply` still checks source anchors, IDs, review fingerprints and user-owned fields against the repository.
+Every key is optional; any other top-level key is rejected. User patches also accept `review` (section 5); an `llm` patch must omit it. The header of `packages/core/src/patch.ts` holds the binding merge rules; this file is the practical version. Every JSON block below marked `patch` is real. A test of the repository applies them in order to a fresh explainer on the TypeScript fixture, and the result passes `xpl validate`. `xpl apply --help` prints a short summary of the format. What to write in the text fields (titles, summaries, notes) is in `writing.md`.
 
 An anchor may use `span` or `find`, never both. Span offsets start at 0. A copied stored anchor may carry `hash` and `resolved`; `xpl apply` checks the hash and recomputes `resolved`. The schema cannot compare `span.to` with `span.from`, so `xpl apply` checks their order and whether the range exists in the source.
-
-### Author review (user patches only)
-
-`xpl apply --actor user` accepts `review: { reviewer, reviewedAt, scope, omissions, fingerprint }`, or `review: null` to remove the record. The reviewer name is self-reported; `reviewedAt` is a UTC ISO timestamp such as `2026-10-04T12:00:00Z`. `omissions` names behavior outside the inspection (`[]` means none named). Apply fills `sourceCommit` from the index. LLM patches must never carry `review`, including null: they are rejected atomically. Ordinary generated patches preserve the record.
-
-Scope is `{ content: "all" | [stored IDs], source: "anchored" | "repository", files?: [paths] }`. IDs select exactly stored nodes, edges, concepts, views or tours, without their dependencies. A view includes its own steps and a tour its own notes/code overrides; included nodes and focused elements need their own IDs to cover their prose and anchors. `all` also covers title, audience, repository name/URL and change metadata. Derived graph content and runtime paths outside those records are outside the review.
-
-`anchored` checks attached evidence from the selected records; `files` adds named whole indexed files. `repository` also checks every indexed file, so unrelated indexed edits invalidate that broader scope. Narrow anchored scopes survive unrelated file edits, edits outside the selected spans and exact code moves. Prose/evidence edits or unavailable source make the review out of date. This state is independent of anchor validity.
-
-Core `reviewFingerprint(explainer, index, texts, scope)` computes `{ version: "xpl-review@1", contentHash, evidenceHash }` from the inspected snapshot. Supply that exact fingerprint; do not invent hashes. Apply compares it after merging the patch and refuses if content or evidence changed. Fingerprints exclude review metadata, provenance, index commits and moved anchor offsets/caches. Before-source needs a `TextCache` with a base-text reader. Legacy explainers are unchecked. Review remains optional; this contract does not require approval for ordinary export.
 
 ## 1. Anchors (`AnchorInput`)
 
@@ -217,7 +195,7 @@ Event bus, DI, HTTP, queues, config keys read by name. An HTTP call with a liter
 
 ### 3.4 Overlay on a derived (static) edge
 
-Calls, imports and inheritance appear in graph views on their own. To label or explain one, store an edge whose id is the derived id; `kind`, `from`, `to` come from the id and must not contradict it. It is still an `llm` edge, so it needs anchors at both ends, and give it a `label` (an empty one warns). The ends of a derived id are what the view shows, so they change when the view's `include` changes: after adding `sym:internal/worker/worker.go#Worker` to the `include` of the go-jobrunner view, the call to `Worker.Run` is `edge:calls:file:internal/runner/runner.go->sym:internal/worker/worker.go#Worker`, and an overlay left on the old `...->file:internal/worker/worker.go` id now sits on an edge that stands for other references. Write these overlays after the `include` list is final and copy the id from `xpl status <name> --json` (`views[].edges.unexplained[].id`).
+Calls, imports and inheritance appear in graph views on their own. To label or explain one, store an edge whose id is the derived id; `kind`, `from`, `to` come from the id and must not contradict it. It is still an `llm` edge, so it needs anchors at both ends, and give it a `label` (an empty one warns). The ends of a derived id are what the view shows, so they change when the view's `include` changes. Example: add `sym:internal/worker/worker.go#Worker` to the `include` of the go-jobrunner view. The call to `Worker.Run` is then `edge:calls:file:internal/runner/runner.go->sym:internal/worker/worker.go#Worker`. An overlay left on the old `...->file:internal/worker/worker.go` id now sits on an edge that stands for other references. Write these overlays after the `include` list is final and copy the id from `xpl status <name> --json` (`views[].edges.unexplained[].id`).
 
 ```json patch
 {
@@ -370,7 +348,7 @@ Pins travel in live saves and offline exports. Leave user-owned `layout` unchang
 `layout: null` resets placement only when the user explicitly asks for it. Opening another level, pan and
 zoom remain navigation. Each map uses its own pins, including when another map is opened inside it.
 
-**Code first.** In Read and Explore, a flow with at least three steps, each with current-code anchors all in one file, defaults to code first: the code is the main pane and a narrow process outline follows the caret. `"layout": "diagram"` keeps the diagram as the main pane; `"layout": "code-first"` requests code first for any flow; `null` restores the default.
+**Code first.** In Read and Explore, some flows open code first: the code is the main pane, and a narrow outline of the steps follows the caret. A flow does this when it has at least three steps, and all their current-code anchors are in one file. `"layout": "diagram"` keeps the diagram as the main pane; `"layout": "code-first"` requests code first for any flow; `null` restores the default.
 
 Read always keeps a sequence in the diagram pane, even when its code is all in one file or its `layout` is `"code-first"`. **Show source** opens the linked code beside it. Explore uses a narrow diagram column and a larger code pane for a sequence only with explicit `"layout": "code-first"`; it still draws lifelines, arrows and frames, without a caret-following process outline. A one-file sequence otherwise keeps Explore's usual diagram layout.
 
@@ -491,7 +469,7 @@ Read always keeps a sequence in the diagram pane, even when its code is all in o
 }
 ```
 
-A sequence view appears in the reader's **Flow** tab as a sequence diagram, with the same lifelines, call arrows and frames as its Guide picture and Explore. Write a flow view when stages, decisions and branches are the point.
+A sequence view appears in the reader's **Flow** tab as a sequence diagram, with the same lifelines, call arrows and frames as in the tour and in Explore. Write a flow view when stages, decisions and branches are the point.
 
 **Supporting files.** For configuration and files that code loads by name, use configuration-key anchors (`role: "config"`) and edges with `kind: "loads"`, `"discovers"`, `"configures"` or `"overrides"`, anchored at both ends. A loader points to the loaded file or plugin directory (or group); configuration points to the code that reads it; an overriding file points to the file it overrides. Say the conditions and the order of precedence in the edge summary, as the code shows them: file names and reading order do not prove precedence. Index `resources` records resolve literal paths and supported globs, with `static` or `inferred` labels; a matching file does not prove that it is loaded at runtime.
 
@@ -658,15 +636,15 @@ Required: `type: "sequence"`, `title`, `participants` (lifelines, left to right)
 }
 ```
 
-### 3.9 Tour (the guide)
+### 3.9 Tour
 
 The tour is what the reader sees first: its `title`, its `summary`, then its steps in order. Required: `title`, `steps`. Optional: `summary` (markdown; `null` clears it). Write one on every tour (`writing.md`, section 4).
 
 A tour step has:
 
-- `id` (`t1`, `t2`, ...; unique in the tour, never renumbered) and `view` (the picture the step shows);
+- `id` (`t1`, `t2`, ...; unique in the tour, never renumbered) and `view` (the diagram the step shows);
 - `focus`: element ids to highlight. A flow or sequence step id must belong to that tour step's `view`, else a warning;
-- `note` (markdown): the first line is `### <plain title>`, which the viewer shows as the step title and does not repeat; then the body (`writing.md`, sections 1 and 3). The body may end with a small table for a comparison: a header row, a rule row (`| --- | --- |`, with `:--`, `:-:` or `--:` to align a column), then one row per item, each row starting and ending with `|`, after a blank line. In JSON the rows are joined with `\n`: `"### Two ways to wait\n\nThe fixed policy never grows the delay.\n\n| Policy | Third retry waits |\n| --- | --: |\n| fixed | 500 ms |\n| backoff | 2 s |"`. `xpl lint` reads each cell on its own (no row is one long sentence), and the cells count toward the note's 60 words;
+- `note` (markdown): the first line is `### <plain title>`, which the viewer shows as the step title and does not repeat; then the body (`writing.md`, sections 1 and 3). The body may end with a small table for a comparison (`writing.md`, section 1, "Tables"). In JSON the rows are joined with `\n`: `"### Two ways to wait\n\nThe fixed policy never grows the delay.\n\n| Policy | Third retry waits |\n| --- | --: |\n| fixed | 500 ms |\n| backoff | 2 s |"`. `xpl lint` reads each cell on its own (no row is one long sentence), and the cells count toward the note's 50 words;
 - `code`: `AnchorInput[]` that replaces the code the focus would show (base anchors too). Without it, a group, file or directory focus shows whole files (focusing `grp:retry-engine` alone shows runner.go 1-146, queue.go 1-154 and deadletter.go 1-35);
 - `editor`: `primary` (the file shown first), `dimOthers`, `hideFileTree`.
 
@@ -768,7 +746,7 @@ To change some steps of a tour, send `stepsUpdate` instead of the whole `steps`:
 }
 ```
 
-A tour has provenance like an element: what the user edits in the tour panel (`title`, `summary`, `steps`) becomes theirs (section 5), and an `llm` patch can then neither change those fields nor remove the tour. A `stepsUpdate` of a tour whose steps the user edited is skipped with a `protected` warning, like `steps`.
+A tour has provenance like an element. What the user edits in the tour panel (`title`, `summary`, `steps`) becomes theirs (section 5). An `llm` patch can then neither change those fields nor remove the tour. A `stepsUpdate` of a tour whose steps the user edited is skipped with a `protected` warning, like `steps`.
 
 ### 3.10 Architecture maps (system map, inside a service)
 
@@ -776,7 +754,7 @@ An overview reads top-down, like the C4 model: first a **system map** (the servi
 
 - `role`: what the box is. `person`, `system`, `service`, `component`, `database`, `cache`, `queue`, `storage` or `external`. The viewer gives each its own shape (a cylinder for a database, a dashed box for something outside the repo) and names the role or the `tech` on the box instead of the kind of code.
 - `tech`: the technology in 1-3 words ("PostgreSQL", "REST API", "Go service").
-- `opens`: the view that shows what is inside the box. The reader zooms in with the button on the box (or a double-click), and a trail above the map leads back up. When that view is a map, the reader can also show its boxes inside this one, on the same map ("Show the inside here"): the parts of a service are drawn in its box, with their arrows to the outside systems. Nothing is stored, so one system map serves both the executive picture and the nested one.
+- `opens`: the view that shows what is inside the box. The reader zooms in with the button on the box (or a double-click), and a trail above the map leads back up. When that view is a map, the reader can also show its boxes inside this one ("Show the inside here"). The parts of a service are then drawn in its box, with their arrows to the outside systems. Nothing is stored, so one system map serves both the top-level map and the nested one.
 
 A box for something outside the repo is a group with a `role` and **no `members`**: it is not code of the repo. Anchor it at the code that talks to it (where its client is built, where its address is configured). An `llm` edge to it counts that code as the evidence at its end, so one anchor can be the evidence at both ends. `role`, `tech` and `opens` also go on overlays (`dir:`, `file:`): `{"id": "dir:services/api", "role": "service", "opens": "view:api-inside"}`. `null` clears each.
 
@@ -877,9 +855,13 @@ A box for something outside the repo is a group with a `role` and **no `members`
 
 On the system map the service is one box, so the arrows of its parts are drawn there as one arrow per outside box (with the anchors of all; when their labels differ the arrow shows none). Write a tour that goes down a level at a time: a step on the system map, then the inside, then the code (SKILL.md, "explain repo"). Keep 3-7 boxes on a system map. The parts on the map of a service's inside are its `component`s (`xpl draft repo` sets the role): with the role icons, the reader always sees which level a map is at (system, service, component, then code). Boxes on maps of code need no role: the viewer shows their kind (folder, file, class, function) with an icon of its own.
 
+### 3.11 `title`, `scope` and `remove`
+
+`"title"` renames the explainer. `"scope": {"audience": "…"}` is one short line (at most 120 characters) that the viewer shows under the title: who the page is for and how deep it goes, such as `"Overview, for anyone new to ky"` or `"In detail, for engineers working on chi's router"`. `{"audience": null}` or `"scope": null` removes it. `"remove"` deletes elements, views, tours and steps by id; an unknown id is a warning, not an error. Removing what something else points at (a step a frame or tour uses, a group a view includes, a concept a tour focuses) is rejected until the same patch fixes the pointer. An `llm` patch cannot remove what the user owns: an element, view or tour with `origin: "user"` or with any `userFields` (they edited part of it), nor a single step of a view whose `steps` they edited; those ids are skipped with a `protected` warning.
+
 ### 3.12 Sketch boxes (the big picture, linked to no code)
 
-A **sketch box** is an idea of the big picture: what the user described before there is code to read, or what you understood from reading that no one place of code shows. It is a group with `"sketch": true`, **no `members` and no `anchors`**: a box that points at code is not a sketch (drop `sketch`, with `"sketch": null`, to make it one). The viewer draws it dotted, with a "sketch" badge, and the map's Key says it is not linked to code. An `llm` edge needs no evidence at an end that is a sketch box; an end that is code still needs its anchor. Keep sketch boxes on a view of their own (`view:sketch`), say in its title that it is a sketch, and replace a box with code as soon as you can anchor it.
+A **sketch box** is an idea of the big picture. It shows what the user described before there is code to read, or what you understood that no one place of code shows. It is a group with `"sketch": true`, **no `members` and no `anchors`**: a box that points at code is not a sketch (drop `sketch`, with `"sketch": null`, to make it one). The viewer draws it dotted, with a "sketch" badge, and the map's Key says it is not linked to code. An `llm` edge needs no evidence at an end that is a sketch box; an end that is code still needs its anchor. Keep sketch boxes on a view of their own (`view:sketch`), and say in its title that it is a sketch. Replace a box with code as soon as you can anchor it.
 
 ```json patch
 {
@@ -919,10 +901,6 @@ A **sketch box** is an idea of the big picture: what the user described before t
   ]
 }
 ```
-
-### 3.11 `title`, `scope` and `remove`
-
-`"title"` renames the explainer. `"scope": {"audience": "…"}` is one short line (at most 120 characters) that the viewer shows under the title: who the page is for and how deep it goes, such as `"Overview, for anyone new to ky"` or `"Deep dive, for engineers working on chi's router"`. `{"audience": null}` or `"scope": null` removes it. `"remove"` deletes elements, views, tours and steps by id; an unknown id is a warning, not an error. Removing what something else points at (a step a frame or tour uses, a group a view includes, a concept a tour focuses) is rejected until the same patch fixes the pointer. An `llm` patch cannot remove what the user owns: an element, view or tour with `origin: "user"` or with any `userFields` (they edited part of it), nor a single step of a view whose `steps` they edited; those ids are skipped with a `protected` warning.
 
 ## 4. Merge semantics
 
@@ -970,6 +948,16 @@ Edits made in the viewer count as the user's too. After the user drilled into a 
 Tours follow the same rules. A tour you create gets `{origin: "llm", commit}`; once the user edits it in the tour panel its provenance lists what they touched, e.g. `{"origin": "llm", "commit": "97f70e7", "userFields": ["steps"]}` (or `title`). An `llm` patch that resends those fields gets `warning tours[0].steps [tour:retries]: steps of tour:retries was edited by the user and is kept as it is`; a `remove` of the tour is skipped (`tour:retries has fields edited by the user (steps); an llm patch cannot remove it (skipped)`); and when that was all the patch did, `apply` exits 1. A tour without provenance (an older file) counts as `llm`. To add to a talk the user has reworked, make a new tour (new slug) or ask.
 
 **When everything is protected.** A patch whose every change was skipped because the user owns it is not "applied": `xpl apply` exits 1, names the protected ids and what to do (new view, `includeAdd`, ask the user). A patch with only some parts skipped exits 0 and ends its output with `skipped as protected (<ids>): …`. Both are correct behaviour: never work around them by re-creating the element under another id.
+
+### Author review (user patches only)
+
+`xpl apply --actor user` accepts `review: { reviewer, reviewedAt, scope, omissions, fingerprint }`, or `review: null` to remove the record. The reviewer name is self-reported; `reviewedAt` is a UTC ISO timestamp such as `2026-10-04T12:00:00Z`. `omissions` names behaviour outside the inspection (`[]` means none named). Apply fills `sourceCommit` from the index. LLM patches must never carry `review`, including null: they are rejected atomically. Ordinary generated patches preserve the record.
+
+Scope is `{ content: "all" | [stored IDs], source: "anchored" | "repository", files?: [paths] }`. IDs select exactly stored nodes, edges, concepts, views or tours, without their dependencies. A view includes its own steps and a tour its own notes/code overrides; included nodes and focused elements need their own IDs to cover their prose and anchors. `all` also covers title, audience, repository name/URL and change metadata. Derived graph content and runtime paths outside those records are outside the review.
+
+`anchored` checks attached evidence from the selected records; `files` adds named whole indexed files. `repository` also checks every indexed file, so unrelated indexed edits invalidate that broader scope. Narrow anchored scopes survive unrelated file edits, edits outside the selected spans and exact code moves. Prose/evidence edits or unavailable source make the review out of date. This state is independent of anchor validity.
+
+Core `reviewFingerprint(explainer, index, texts, scope)` computes `{ version: "xpl-review@1", contentHash, evidenceHash }` from the inspected snapshot. Supply that exact fingerprint; do not invent hashes. Apply compares it after merging the patch and refuses if content or evidence changed. Fingerprints exclude review metadata, provenance, index commits and moved anchor offsets/caches. Before-source needs a `TextCache` with a base-text reader. Legacy explainers are unchecked. Review remains optional; this contract does not require approval for ordinary export.
 
 ## 6. Reading the result
 
@@ -1036,10 +1024,24 @@ A rejection lists **every** error of the patch at once (anchors, ids and referen
 
 ## 8. Repairing after code changes
 
-`xpl resolve <name> --write` (after `xpl index`) marks every anchor `ok`, `moved` (span updated automatically), `drifted` (text changed) or `missing`. A drifted anchor stays drifted until you resend it: re-read the code (`xpl anchors <name> <id>` shows what the anchor points at now), resend the element with fresh anchors (no `hash`) and a summary that matches the new code. A missing anchor means the symbol is gone or renamed: its message says where the code went when it can tell (`the anchored lines now sit in sym:… (anchor: file: …, symbol: …, span: {from, to})`, or a same-sized symbol as a `did you mean`); report it to the user and ask before re-anchoring or removing; never drop one silently or retarget it to something merely similar. Never change a field listed in `userFields`, and never touch `origin: "user"` elements: `xpl status` counts their drift apart, for the user. Ids that vanished from a view (`xpl status`: broken references) are fixed with `includeRemove`, or by resending `members` / `participants` / `steps` without them. To repair **one step**, use `stepsUpdate` (3.8): the other steps stay as they are.
+`xpl resolve <name> --write` (after `xpl index`) marks every anchor `ok`, `moved` (span updated automatically), `drifted` (text changed) or `missing`. A drifted anchor stays drifted until you resend it. Re-read the code (`xpl anchors <name> <id>` shows what the anchor points at now). Then resend the element with fresh anchors (no `hash`). Rewrite its summary whole when the code says something new, so the summary still says what the part is for; never append a sentence. A missing anchor means the symbol is gone or renamed: its message says where the code went when it can tell (`the anchored lines now sit in sym:… (anchor: file: …, symbol: …, span: {from, to})`, or a same-sized symbol as a `did you mean`); report it to the user and ask before re-anchoring or removing; never drop one silently or retarget it to something merely similar. Never change a field listed in `userFields`, and never touch `origin: "user"` elements: `xpl status` counts their drift apart, for the user. Ids that vanished from a view (`xpl status`: broken references) are fixed with `includeRemove`, or by resending `members` / `participants` / `steps` without them. To repair **one step**, use `stepsUpdate` (3.8): the other steps stay as they are.
 
 1. `xpl anchors <name> dispatch:4` shows what the step's anchors point at now (`xpl status` names the drifted steps);
-2. rewrite the drifted or missing anchors from `xpl show` output (`find` or `span`, no `hash`), and the summary if the new code says something else;
+2. rewrite the drifted or missing anchors from `xpl show` output (`find` or `span`, no `hash`), and rewrite the summary whole if the new code says something else;
 3. send `{"views": [{"id": "view:…", "type": "sequence", "stepsUpdate": [{"id": "dispatch:4", "summary": "…", "anchors": [ … ]}]}]}`. The `anchors` replace the step's, so list every one you keep, the unchanged ones too (without `hash`, or as `find`/`span`).
 
 Resend a view's `steps` whole only when the list itself changes (a step added, removed or reordered).
+
+## 9. Editor completion
+
+`reference/patch.schema.json` ships with the skill (and in the npm package at `skill/code-explainer/reference/patch.schema.json`). Associate it with patch files in your editor for field and value completion. For VS Code, add this to workspace settings when using a source checkout:
+
+```text
+{
+  "json.schemas": [
+    { "fileMatch": ["**/*.patch.json"], "url": "./skill/code-explainer/reference/patch.schema.json" }
+  ]
+}
+```
+
+For an installed skill, replace `url` with the absolute path to its `reference/patch.schema.json`. The default location is `~/.claude/skills/code-explainer` for Claude, `~/.agents/skills/code-explainer` for Codex, Pi and Droid, or the project's `.agents/skills/code-explainer` for Devin. Do not add a `$schema` key to a patch: `xpl apply` rejects unknown top-level fields. The schema catches JSON shape errors; `xpl apply` still checks source anchors, IDs, review fingerprints and user-owned fields against the repository.

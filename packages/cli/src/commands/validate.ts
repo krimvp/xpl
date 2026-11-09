@@ -6,7 +6,7 @@ import { loadReadExplainer, openWorkspace } from "../repo.js";
 export const validateCommand: CommandSpec = {
   name: "validate",
   usage: "xpl validate [explainer] [--lenient]",
-  summary: "Check an explainer against the index",
+  summary: "Check a guide against the index",
   details: [
     "Checks ids, references, anchors (they must still resolve: ok or moved) and the evidence rule for",
     "llm edges against the index and the working-tree text. Strict by default; --lenient (use it after",
@@ -14,7 +14,7 @@ export const validateCommand: CommandSpec = {
     "Strict validation also requires an index that matches the working tree. Reindex and resolve before",
     "validating changed code. --lenient reports a stale index as a warning for repair workflows.",
     "Omit the explainer when the repository has exactly one; otherwise supply its name.",
-    "Exit codes: 0 no errors (warnings allowed), 1 errors.",
+    "Exit codes: 0 no errors (warnings allowed), 1 errors, 2 usage error.",
   ],
   options: {
     lenient: {

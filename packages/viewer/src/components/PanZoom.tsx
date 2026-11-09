@@ -174,6 +174,8 @@ export function PanZoom({
   imageName,
 }: PanZoomProps) {
   const wrap = useRef<HTMLDivElement>(null);
+  /** The canvas: the pane's size is its size (on a phone the toolbar sits above it, not over it). */
+  const canvas = useRef<SVGSVGElement>(null);
   const content = useRef<SVGGElement>(null);
   const [textMode, setTextMode] = useState(false);
   const textId = useId();
@@ -188,9 +190,13 @@ export function PanZoom({
   const suppressClick = useRef(false);
 
   useLayoutEffect(() => {
-    const el = wrap.current;
+    const el = canvas.current;
     if (!el) return;
-    const measure = () => setSize({ w: el.clientWidth, h: el.clientHeight });
+    // (hidden in the text view: the size it had stays)
+    const measure = () => {
+      if (el.clientWidth > 0 || el.clientHeight > 0)
+        setSize({ w: el.clientWidth, h: el.clientHeight });
+    };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(el);
@@ -271,7 +277,7 @@ export function PanZoom({
     const onWheel = (event: WheelEvent) => {
       if (event.target instanceof Element && event.target.closest(".diagram-text-view")) return;
       event.preventDefault();
-      const rect = el.getBoundingClientRect();
+      const rect = (canvas.current ?? el).getBoundingClientRect();
       const delta = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
       // a trackpad pinch arrives as a wheel with ctrlKey and small deltas
       const factor = Math.exp(-delta * (event.ctrlKey ? 0.01 : 0.0018));
@@ -554,6 +560,7 @@ export function PanZoom({
         Escape: canvas.
       </span>
       <svg
+        ref={canvas}
         className="pz-svg"
         width="100%"
         height="100%"
@@ -566,6 +573,7 @@ export function PanZoom({
         {overlay?.(t, size)}
       </svg>
       {!textMode && !short && cues}
+      {/* After the canvas: Tab from the canvas reaches its boxes first (on a phone the bar is drawn above it). */}
       <div className="pz-toolbar" onPointerDown={(event) => event.stopPropagation()}>
         {!textMode && (
           <>

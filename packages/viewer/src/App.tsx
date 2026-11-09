@@ -143,16 +143,20 @@ function Shell() {
           <AttentionStatus />
           <JobsPanel />
         </div>
-        <AnalysisCoverage />
-        {state.exportInfo?.status === "draft" && (
-          <div className="drift-banner" role="status" data-testid="draft-banner">
-            <p>
-              <strong>Draft preview.</strong> This snapshot is for review and repair. It has{" "}
-              {state.exportInfo.report.errors} readiness errors and{" "}
-              {state.exportInfo.report.warnings} reader warnings.
-            </p>
-          </div>
-        )}
+        {/* Notes for the author, not the audience: not on a slide. A draft with nothing to fix is a pill in
+            the header (Header.tsx), not a bar. */}
+        {state.mode !== "present" && <AnalysisCoverage />}
+        {state.mode !== "present" &&
+          state.exportInfo?.status === "draft" &&
+          state.exportInfo.report.errors + state.exportInfo.report.warnings > 0 && (
+            <div className="drift-banner" role="status" data-testid="draft-banner">
+              <p>
+                <strong>Draft.</strong> {count(state.exportInfo.report.errors, "problem")} to fix
+                before this page is finished, and{" "}
+                {count(state.exportInfo.report.warnings, "warning")} for readers.
+              </p>
+            </div>
+          )}
         {state.sourceWarning && (
           <div className="drift-banner" role="alert" data-testid="source-warning">
             <p>
@@ -179,6 +183,8 @@ function Shell() {
     </div>
   );
 }
+
+const count = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 const clamp = (value: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, value));
 

@@ -107,7 +107,9 @@ test("a flow of one file reads code first: the code is the main pane, the flow a
   await expect(page.locator(".workspace.is-code-first")).toBeVisible();
   await expect(page.locator(".workspace-source .code-area")).toBeVisible();
   await expect(page.locator(".flow-diagram.is-outline")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Show source" })).toHaveCount(0);
+  await expect(
+    page.locator(".workspace-location").getByRole("button", { name: "Show code", exact: true }),
+  ).toHaveCount(0);
   const outline = (await page.locator(".workspace-primary").boundingBox())!;
   const source = (await page.locator(".workspace-source").boundingBox())!;
   expect(outline.width).toBeLessThan(source.width / 2);

@@ -160,14 +160,14 @@ export function Guide({
       <div className="guide-fallback">
         {staleLink && (
           <p className="guide-link-notice" role="alert" tabIndex={-1} ref={staleNotice}>
-            This linked guide is no longer available. Choose a topic below.
+            This link points at a tour that is no longer here. Pick a diagram below.
           </p>
         )}
         <p className="eyebrow">Start here</p>
         <h2>{state.explainer.title}</h2>
         <Audience />
         <ExplanationInfo />
-        <p>Choose a topic below, or open the map to see the parts of the code.</p>
+        <p>Pick a diagram below, or open the map to see the parts of the code.</p>
         {state.model.views.map((view) => (
           <section className="guide-section" key={view.id}>
             <h3>{view.title}</h3>
@@ -187,11 +187,11 @@ export function Guide({
                 store.setPerspective(view.type === "graph" ? "map" : "flow");
               }}
             >
-              Show this topic
+              Open this diagram
             </button>
           </section>
         ))}
-        {state.model.views.length === 0 && <p>This explainer has no topics yet.</p>}
+        {state.model.views.length === 0 && <p>This guide has no diagrams yet.</p>}
       </div>
     );
 
@@ -200,8 +200,8 @@ export function Guide({
     typeof tour.summary === "string" && tour.summary.trim() ? tour.summary : undefined;
   return (
     <div className="guide-layout" data-testid="guide">
-      <nav className="guide-contents" aria-label="Guide contents">
-        <p className="eyebrow">In this guide</p>
+      <nav className="guide-contents" aria-label="Tour steps">
+        <p className="eyebrow">In this tour</p>
         {tour.steps.map((step, index) => (
           <button
             key={step.id}
@@ -217,8 +217,8 @@ export function Guide({
       <div className="guide-body" ref={body}>
         {staleLink && (
           <p className="guide-link-notice" role="alert" tabIndex={-1} ref={staleNotice}>
-            This linked step is no longer in this guide. Start at the guide's beginning or choose a
-            step below.
+            This link points at a step that is no longer in this tour. Start at the first step or
+            pick one below.
           </p>
         )}
         {/* A phone: the steps as one picker that scrolls away with the text (the list above is hidden). */}
@@ -372,6 +372,13 @@ function GuideSection({
       ? [{ id, from: element.step.from, label: element.step.label }]
       : [];
   });
+  // The two ends of each call the section shows: a "Parts" card does not list them a second time.
+  const callEnds = new Set(
+    step.focus.flatMap((id) => {
+      const element = state.model.element(id);
+      return element?.type === "step" ? [element.step.from, element.step.to] : [];
+    }),
+  );
   // a11y: every step has the same buttons and lists; their names say which step they belong to
   const where = `step ${index + 1}: ${title}`;
   const link = new URL(location.href);
@@ -390,12 +397,12 @@ function GuideSection({
         <h3 tabIndex={-1}>{title}</h3>
       )}
       <div className="guide-section-actions">
-        <a href={link.href} aria-label={`Link to ${where}`}>
+        <a className="btn" href={link.href} aria-label={`Link to ${where}`}>
           Link to this step
         </a>
         {linked && (
           <button type="button" className="btn" onClick={() => store.present(tourId, index)}>
-            Continue from this step
+            Present from this step
           </button>
         )}
       </div>
@@ -419,16 +426,16 @@ function GuideSection({
               ) : null;
             })}
         </div>
-        <GuideSource step={step} tourId={tourId} index={index} />
+        {/* The picture beside the text it explains (under it on a narrow screen); the code comes after. */}
+        {view && (
+          <Snapshot
+            view={view}
+            focus={step.focus}
+            onOpen={() => show(view.type === "graph" ? "map" : "flow")}
+            context={where}
+          />
+        )}
       </div>
-      {view && (
-        <Snapshot
-          view={view}
-          focus={step.focus}
-          onOpen={() => show(view.type === "graph" ? "map" : "flow")}
-          context={where}
-        />
-      )}
       {step.focus.map((id) => {
         const element = state.model.element(id);
         const members =
@@ -495,11 +502,12 @@ function GuideSection({
             </figure>
           );
         }
-        return members.length > 0 && !onlyTests ? (
+        const fresh = members.filter((member) => !callEnds.has(member));
+        return fresh.length > 0 && !onlyTests ? (
           <figure className="guide-mini" key={id}>
             <figcaption>{element?.type === "concept" ? "Where this applies" : "Parts"}</figcaption>
             <div className="guide-mini-row">
-              {members.map((member) => (
+              {fresh.map((member) => (
                 <button
                   className="guide-mini-node"
                   key={member}
@@ -512,6 +520,7 @@ function GuideSection({
           </figure>
         ) : null;
       })}
+      <GuideSource step={step} tourId={tourId} index={index} />
       {tests.length > 0 && (
         <section
           className="guide-tests"
@@ -571,8 +580,8 @@ function GuideSection({
         </section>
       )}
       <div className="section-actions">
-        <button className="btn" aria-label={`Show the code, ${where}`} onClick={() => show("code")}>
-          Show the code
+        <button className="btn" aria-label={`Show code, ${where}`} onClick={() => show("code")}>
+          Show code
         </button>
       </div>
     </section>

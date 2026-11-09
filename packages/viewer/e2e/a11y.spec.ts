@@ -143,7 +143,7 @@ test.describe("the keyboard on a map", () => {
       );
     expect(names.length).toBeGreaterThan(2);
     expect(new Set(names).size).toBe(names.length);
-    expect(names[0]).toMatch(/^(Open in Map|Open in Flow|Show the code), step 1: /);
+    expect(names[0]).toMatch(/^(Open in Map|Open in Flow|Show code), step 1: /);
   });
 });
 

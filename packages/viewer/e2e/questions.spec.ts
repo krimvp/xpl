@@ -113,7 +113,7 @@ test("an offline element question remains pending, reloads and imports without d
   const panel = page.getByRole("dialog", { name: "Reader feedback" });
   await panel.getByLabel("Feedback note").fill("Why does dispatch wait for a free worker?");
   await panel.getByRole("button", { name: "Ask a question", exact: true }).click();
-  await expect(panel.getByRole("status")).toContainText("pending feedback");
+  await expect(panel.getByRole("status")).toContainText("Saved for later");
   await expect(panel.getByRole("status")).toContainText("/code-explainer feedback");
   await expect(panel.locator(".feedback-list > li")).toHaveCount(1);
   const downloading = page.waitForEvent("download");
@@ -336,7 +336,7 @@ test("an unavailable managed backend saves the question on disk for the explicit
     await expect(page.getByTestId("connection-status")).toContainText("Connected");
     await panel.getByLabel("Feedback note").fill("How does this queue hold jobs?");
     await panel.getByRole("button", { name: "Ask a question", exact: true }).click();
-    await expect(panel.getByRole("status")).toContainText("pending feedback");
+    await expect(panel.getByRole("status")).toContainText("Saved for later");
     await expect(panel.getByRole("status")).toContainText("/code-explainer feedback");
     expect(readRequests(app.root).requests).toHaveLength(1);
     expect(readRequests(app.root).requests[0]?.outcome.status).toBe("pending");
@@ -393,7 +393,7 @@ test("a disconnected service keeps the question in browser feedback through relo
       .getByLabel("Feedback note")
       .fill("What happens while this service is disconnected?");
     await panel.getByRole("button", { name: "Ask a question", exact: true }).click();
-    await expect(panel.getByRole("status")).toContainText("pending feedback");
+    await expect(panel.getByRole("status")).toContainText("Saved for later");
     await expect(panel.getByRole("status")).toContainText("--import feedback.json");
     const exported = JSON.parse(await exportFeedback(page));
     expect(exported.requests[0]).toMatchObject({
@@ -459,7 +459,7 @@ for (const side of ["head", "base"] as const)
     const panel = page.getByRole("dialog", { name: "Reader feedback" });
     await panel.getByLabel("Feedback note").fill("Why did this retry wait?");
     await panel.getByRole("button", { name: "Ask a question", exact: true }).click();
-    await expect(panel.getByRole("status")).toContainText("pending feedback");
+    await expect(panel.getByRole("status")).toContainText("Saved for later");
     const feedback = JSON.parse(await exportFeedback(page));
     expect(feedback.requests[0].range).toEqual({
       file: "src/runner.ts",

@@ -51,8 +51,8 @@ export function AttentionStatus() {
         </summary>
         <div className="service-disclosure">
           <p>
-            Locations follow unchanged code. Watching never rewrites prose, accepts proposals or
-            removes feedback.
+            Code links move with code that moved. Watching never changes text, accepts changes or
+            deletes feedback.
           </p>
           {watch?.stale && (
             <p>

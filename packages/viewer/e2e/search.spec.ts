@@ -48,7 +48,7 @@ test("offline library searches supplied source and prose, opens exact links and 
     await page.goto(url);
     await page.getByRole("button", { name: "Search and guides" }).click();
     const panel = page.getByRole("dialog", { name: "Search and guides" });
-    const input = panel.getByRole("searchbox", { name: "Search guide snapshots" });
+    const input = panel.getByRole("searchbox", { name: "Search this guide" });
     await input.fill("needle-search-literal");
     const longLine = panel.locator('[data-kind="source"]').first();
     await expect(longLine).toContainText("needle-search-literal");
@@ -86,7 +86,7 @@ test("offline library searches supplied source and prose, opens exact links and 
     await expect(panel).toContainText("pruned");
     await expect(panel).toContainText("not included in this export");
     await input.fill("no-such-phrase-12345");
-    await expect(panel.getByRole("status")).toContainText("No matches in the supplied snapshots");
+    await expect(panel.getByRole("status")).toContainText("No matches in this page");
     await expect(panel).toContainText("Analysis unavailable");
     await panel.getByRole("button", { name: "Close search" }).click();
     await (await openEditMenu(page)).getByTestId("edit-save-html").click();
@@ -433,7 +433,7 @@ for (const lazy of [false, true]) {
       );
     }
     await page.getByRole("button", { name: "Search and guides" }).click();
-    await page.getByRole("searchbox", { name: "Search guide snapshots" }).fill("needle A");
+    await page.getByRole("searchbox", { name: "Search this guide" }).fill("needle A");
     await page.locator('a[data-kind="source"]').click();
     const editor = page.locator('[data-file="src/metrics.ts"] .cm-content').first();
     await expect(editor).toContainText("needle A");
@@ -480,7 +480,7 @@ test("a source link rejects changed text when the index commit stays the same", 
   );
   await page.goto("http://xpl.test/");
   await page.getByRole("button", { name: "Search and guides" }).click();
-  await page.getByRole("searchbox", { name: "Search guide snapshots" }).fill("needle A");
+  await page.getByRole("searchbox", { name: "Search this guide" }).fill("needle A");
   await page.locator('a[data-kind="source"]').click();
   await expect(page.locator('[data-file="src/metrics.ts"] .cm-content').first()).toContainText(
     "needle A",
@@ -523,7 +523,7 @@ test("a source link can move to a change's Before file and survive reload", asyn
   );
   await page.goto("http://xpl.test/");
   await page.getByRole("button", { name: "Search and guides" }).click();
-  await page.getByRole("searchbox", { name: "Search guide snapshots" }).fill("needle A");
+  await page.getByRole("searchbox", { name: "Search this guide" }).fill("needle A");
   await page.locator('a[data-kind="source"]').click();
   await expect(page.locator('[data-file="src/metrics.ts"] .cm-content').first()).toContainText(
     "needle A",

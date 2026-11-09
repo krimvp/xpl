@@ -271,7 +271,7 @@ async function background(ctx: Ctx, argv: string[], dir: string): Promise<void> 
 export const serviceCommand: CommandSpec = {
   name: "service",
   usage:
-    "xpl service <start|pause|resume|stop|status> [explainer] [--background] [--port p] [--backend none|claude] [--skill-dir folder] [--job-timeout seconds] [--recover] [--watch]",
+    "xpl service start|pause|resume|stop|status [explainer] [--background] [--port <port>] [--backend none|claude] [--skill-dir <folder>] [--job-timeout <seconds>] [--recover] [--watch] [--precise auto|off|require] [--scip <artifact|manifest.json>]",
   summary: "Control a repository's optional local viewer service and source watch",
   details: [
     "--watch opts this start into metadata polling (500 ms, then a quiet interval). It builds a full",
@@ -283,7 +283,7 @@ export const serviceCommand: CommandSpec = {
     "Pause drains the watch and retains a stale snapshot; resume checks again. Jobs and the service stay running.",
     "The managed viewer reports moved/drifted/missing evidence and offers an explicit xpl revise command.",
     "Stop drains the service and jobs. No watch control accepts revisions or clears feedback.",
-    "Start runs in the foreground (Ctrl-C to stop); --background detaches the installed CLI and logs to",
+    "Start runs in the foreground (Ctrl+C to stop); --background detaches the installed CLI and logs to",
     ".explainer/service/service.log. The listener is always 127.0.0.1; no external address is accepted.",
     "The selected guide, port and backend label persist under the canonical repository root. A later start",
     "without a guide reuses that context. Stop the service before selecting another guide; use --root to",
@@ -317,7 +317,7 @@ export const serviceCommand: CommandSpec = {
     },
     precise: {
       type: "string",
-      arg: "<off|auto|require>",
+      arg: "auto|off|require",
       desc: "With --watch: reference resolution (default off)",
     },
     scip: {
@@ -328,12 +328,12 @@ export const serviceCommand: CommandSpec = {
     background: { type: "boolean", desc: "Start a detached installed CLI process" },
     port: {
       type: "string",
-      arg: "<p>",
+      arg: "<port>",
       desc: "Port (saved port, else 4747 with fallback; 0 = any free port)",
     },
     backend: {
       type: "string",
-      arg: "<none|claude>",
+      arg: "none|claude",
       desc: "Select none or the installed Claude Code proposal runner",
     },
     "skill-dir": {

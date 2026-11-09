@@ -97,13 +97,13 @@ test.describe("architecture maps", () => {
     await page.getByTestId("guide-tour-picker").selectOption("tour:completion-path");
     await expect(page.getByTestId("guide-tour-picker")).toHaveValue("tour:completion-path");
     await expect(
-      page.getByRole("navigation", { name: "Guide contents" }).getByRole("button"),
+      page.getByRole("navigation", { name: "Tour steps" }).getByRole("button"),
     ).toHaveCount(2);
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(ARCHITECTURE_BUNDLE.href + "?mode=read&perspective=map&view=view:overview");
     await page.waitForFunction(() => window.__xpl !== undefined);
-    const topic = page.getByRole("combobox", { name: "Choose a topic" });
+    const topic = page.getByRole("combobox", { name: "Choose a diagram" });
     await topic.selectOption("view:completion-path");
     await expect(
       page.getByRole("heading", { name: "Worker setup and success events" }),
@@ -123,7 +123,7 @@ test.describe("architecture maps", () => {
     );
     await page.goto(TS_BUNDLE.href + "?perspective=flow&view=view:dispatch");
     await page.waitForFunction(() => window.__xpl !== undefined);
-    await expect(page.locator(".workspace-caption .eyebrow")).toHaveText("Sequence");
+    await expect(page.locator(".workspace-caption .eyebrow")).toHaveText("Flow");
     await expect(page.locator(".workspace-caption")).toContainText(
       "How does a job get from the queue to a worker?",
     );
@@ -138,9 +138,9 @@ test.describe("architecture maps", () => {
     const connections = page.getByTestId("map-connections");
     await expect(connections).toBeVisible();
     await expect(connections.locator("li button")).toHaveText([
-      /From Startup\s+calls ×2 · derived · heuristic/,
-      /From Scheduling\s+calls ×4 · derived · heuristic/,
-      /To Events and metrics\s+job.completed · authored/,
+      /From Startup\s+calls ×2 · heuristic: matched by name/,
+      /From Scheduling\s+calls ×4 · heuristic: matched by name/,
+      /To Events and metrics\s+job.completed · added by the author/,
     ]);
     const event = connections.getByRole("button", { name: /To Events and metrics.*job.completed/ });
     await event.focus();
@@ -299,7 +299,7 @@ test.describe("architecture maps", () => {
       await expect(expand).toBeVisible();
       if (perspective === "map") {
         await expect(expand).toHaveText("Show parts");
-        const topic = page.locator(caption).getByRole("combobox", { name: "Choose a topic" });
+        const topic = page.locator(caption).getByRole("combobox", { name: "Choose a diagram" });
         await expect
           .poll(async () => {
             const actionBounds = (await expand.boundingBox())!;

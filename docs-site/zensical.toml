@@ -4,7 +4,7 @@
 [project]
 site_name = "xpl docs"
 site_url = "https://krimvp.github.io/xpl/docs/"
-site_description = "How to install xpl, make a checked code explainer, and read, revise and share it."
+site_description = "How to install xpl, make a checked guide to your code, and read, revise and share it."
 repo_url = "https://github.com/krimvp/xpl"
 repo_name = "krimvp/xpl"
 docs_dir = "pages"
@@ -20,11 +20,11 @@ nav = [
   { "Workflows" = [
     "workflows/explain.md",
     "workflows/change.md",
-    "workflows/feedback.md",
-    "workflows/edit-and-review.md",
-    "workflows/service.md",
-    "workflows/pull-requests.md",
     "workflows/find-and-share.md",
+    "workflows/edit-and-review.md",
+    "workflows/feedback.md",
+    "workflows/pull-requests.md",
+    "workflows/service.md",
   ] },
   { "CLI reference" = [
     "reference/index.md",
@@ -33,6 +33,7 @@ nav = [
   { "The skill" = [
     "skill/index.md",
     "skill/create.md",
+    "skill/writing.md",
     "skill/revise.md",
     "skill/patch-format.md",
   ] },

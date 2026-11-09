@@ -194,7 +194,7 @@ async function creation() {
         id: "tour:recorded-change",
         title: "Review the changed exports",
         summary:
-          "The return value changes, one export is added, one is removed and a function moves to a new file. External importers may fail after the deletion; this fixture contains no tests.",
+          "The change edits the return value, adds one export, removes one and moves a function to a new file. External importers may fail after the deletion; this fixture contains no tests.",
         steps: [
           {
             id: "app",

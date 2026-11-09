@@ -206,6 +206,20 @@ test.describe("graph view", () => {
     expect(problems).toEqual([]);
   });
 
+  test("on the Map tab, double-click opens a box for this reading only: nothing is marked unsaved", async ({
+    page,
+  }) => {
+    await page.goto(TS_BUNDLE.href + "?perspective=map");
+    const group = byId(page, "grp:scheduling");
+    await group.dblclick();
+    await expect(group).toHaveClass(/is-container/);
+    // A reader looked inside a box; they did not edit the guide.
+    await expect(page.locator(".save-status")).toHaveCount(0);
+    await group.locator(':scope > [data-collapse-id="grp:scheduling"]').click();
+    await expect(group).not.toHaveClass(/is-container/);
+    await expect(page.locator(".save-status")).toHaveCount(0);
+  });
+
   test("the edge kind toggles change which derived edges are drawn (and are recorded on the view)", async ({
     page,
   }) => {

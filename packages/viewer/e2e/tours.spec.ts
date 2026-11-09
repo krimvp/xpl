@@ -109,7 +109,10 @@ test("reload keeps an applied step's code override after switching to Map", asyn
     "?perspective=guide&tour=tour:intro&step-id=t2",
   );
   await page.getByRole("button", { name: "Map", exact: true }).click();
-  await page.getByRole("button", { name: "Show source", exact: true }).click();
+  await page
+    .locator(".workspace-location")
+    .getByRole("button", { name: "Show code", exact: true })
+    .click();
   await expect(page.locator('[data-file="config/default.yaml"]')).toBeVisible();
   await expect
     .poll(() => stateOf(page))
@@ -128,7 +131,10 @@ test("reload keeps an applied step's code override after switching to Map", asyn
       stepId: "t2",
       focusFiles: ["config/default.yaml"],
     });
-  await page.getByRole("button", { name: "Show source", exact: true }).click();
+  await page
+    .locator(".workspace-location")
+    .getByRole("button", { name: "Show code", exact: true })
+    .click();
   await expect(page.locator('[data-file="config/default.yaml"]')).toBeVisible();
 });
 
@@ -218,7 +224,7 @@ test.describe("tour:intro of the TS fixture", () => {
     await expect(page.locator(".view-tabs")).toHaveCount(0);
     await expect(page.getByTestId("present-exit")).toBeVisible();
     await expect(page.getByTestId("mode-present")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Download explainer JSON" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Download the guide as JSON" })).toHaveCount(0);
     // and the address bar names the slide (this is a file:// page)
     await expect
       .poll(() => navigationOf(page))
@@ -464,7 +470,7 @@ test.describe("the address bar", () => {
     const target = page.locator('[data-section-id="t2"]');
     await expect(target).toBeInViewport();
     await expect(target.locator("h3")).toBeFocused();
-    await expect(target.getByRole("button", { name: "Continue from this step" })).toBeVisible();
+    await expect(target.getByRole("button", { name: "Present from this step" })).toBeVisible();
     const stepLink = target.getByRole("link", { name: /Link to step 2: Where failures go/ });
     const link = new URL((await stepLink.getAttribute("href"))!);
     expect(link.searchParams.get("perspective")).toBe("guide");
@@ -475,7 +481,7 @@ test.describe("the address bar", () => {
     await expect(page.locator(".header .title")).toHaveText("Retry subsystem");
     await expect(target).toBeInViewport();
     await expect(target.locator("h3")).toBeFocused();
-    await target.getByRole("button", { name: "Continue from this step" }).click();
+    await target.getByRole("button", { name: "Present from this step" }).click();
     await expect(present(page)).toBeVisible();
     await expect(counter(page)).toHaveText("2 / 2");
   });
@@ -484,7 +490,10 @@ test.describe("the address bar", () => {
     await open(page, "?perspective=guide&tour=tour:intro&step-id=t2");
     const target = page.locator('[data-section-id="t2"]');
     await expect(target.locator("h3")).toBeFocused();
-    await page.getByRole("button", { name: "Show source" }).click();
+    await page
+      .locator(".workspace-location")
+      .getByRole("button", { name: "Show code", exact: true })
+      .click();
     const file = page.locator('.tree-row.is-file[data-path="src/queue.ts"]');
     await file.click();
     await expect(file).toBeFocused();
@@ -493,7 +502,7 @@ test.describe("the address bar", () => {
 
   test("a stale linked step explains the fallback to the Guide", async ({ page }) => {
     await open(page, "?perspective=guide&tour=tour:intro&step-id=removed-step&step=2");
-    await expect(page.getByRole("alert")).toContainText("linked step is no longer in this guide");
+    await expect(page.getByRole("alert")).toContainText("step that is no longer in this tour");
     await expect(page.getByRole("alert")).toBeFocused();
     await expect(page.getByTestId("guide")).toBeVisible();
     await expect(page.locator('[data-section-id="t2"]')).not.toBeInViewport();
@@ -512,7 +521,7 @@ test.describe("the address bar", () => {
       },
       "?perspective=guide&tour=tour:intro&step-id=removed-step",
     );
-    await expect(page.getByRole("alert")).toContainText("linked step is no longer in this guide");
+    await expect(page.getByRole("alert")).toContainText("step that is no longer in this tour");
     await page.getByTestId("guide-tour-picker").selectOption("tour:other");
     await expect(page.getByRole("heading", { name: "Other tour" })).toBeVisible();
     await expect(page.getByRole("alert")).toHaveCount(0);
@@ -528,7 +537,7 @@ test.describe("the address bar", () => {
       },
       "?perspective=guide&tour=tour:removed&step-id=t2",
     );
-    await expect(page.getByRole("alert")).toContainText("linked guide is no longer available");
+    await expect(page.getByRole("alert")).toContainText("tour that is no longer here");
     await expect(page.getByRole("alert")).toBeFocused();
   });
 
@@ -536,14 +545,12 @@ test.describe("the address bar", () => {
     await open(page, "?perspective=guide");
     await page.getByRole("button", { name: "Search and guides" }).click();
     const panel = page.getByRole("dialog", { name: "Search and guides" });
-    await panel
-      .getByRole("searchbox", { name: "Search guide snapshots" })
-      .fill("Where failures go");
+    await panel.getByRole("searchbox", { name: "Search this guide" }).fill("Where failures go");
     await panel.locator('[data-kind="step"]').first().click();
     await expect(page).toHaveURL(/step-id=t2/);
     const target = page.locator('[data-section-id="t2"]');
     await expect(target.locator("h3")).toBeFocused();
-    await expect(target.getByRole("button", { name: "Continue from this step" })).toBeVisible();
+    await expect(target.getByRole("button", { name: "Present from this step" })).toBeVisible();
   });
 
   test("?mode=present&tour=<id>&step=<n> opens that step; the URL follows the steps and Esc", async ({

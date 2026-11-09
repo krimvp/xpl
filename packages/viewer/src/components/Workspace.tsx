@@ -4,7 +4,7 @@ import { viewReverseIndex } from "../derive.js";
 import { sharedActor } from "../layout/flowLayout.js";
 import { describeElement } from "../details.js";
 import { renderInline } from "../markdown.js";
-import { looksLikeCode } from "../readerWords.js";
+import { leadSentences, looksLikeCode } from "../readerWords.js";
 import { stepTitle } from "../stepTitle.js";
 import { useDerived, useStore, useViewerState } from "../hooks.js";
 import {
@@ -23,6 +23,7 @@ import { FlowDiagram } from "./FlowDiagram.js";
 import { FoldBackAction } from "./FoldBackAction.js";
 import { GraphView } from "./GraphView.js";
 import { Guide } from "./Guide.js";
+import { PartsPanel } from "./PartsPanel.js";
 import { RelatedFiles } from "./RelatedFiles.js";
 import { SequenceView } from "./SequenceView.js";
 import { Splitter } from "./Splitter.js";
@@ -104,6 +105,13 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
     state.perspective === "map"
       ? map.graph.nodes.filter((node) => store.canZoomInto(node.id)).slice(0, 3)
       : [];
+  // The diagrams the caption's picker offers: none to pick between, no picker.
+  const diagramChoices =
+    state.model.views.filter((view) =>
+      state.perspective === "map" ? view.type === "graph" : view.type !== "graph",
+    ).length +
+    (state.perspective === "map" && map.generated ? 1 : 0) +
+    (state.perspective === "flow" && !flow ? 1 : 0);
   const code = state.perspective === "code";
   // The steps of one function: the code is the main pane, the flow a narrow outline beside it.
   const codeFirst = state.perspective === "flow" && flow?.type === "flow" && codeFirstView(flow);
@@ -155,6 +163,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
             type="button"
             className="btn"
             aria-label="Back"
+            title="Back"
             disabled={!state.canGoBack}
             onClick={() => store.back()}
           >
@@ -164,24 +173,25 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
             type="button"
             className="btn"
             aria-label="Forward"
+            title="Forward"
             disabled={!state.canGoForward}
             onClick={() => store.forward()}
           >
             <span className="nav-word">Forward</span> →
           </button>
         </div>
-        <nav className="workspace-breadcrumb" aria-label="Current topic">
+        <nav className="workspace-breadcrumb" aria-label="You are here">
           <button className="link" onClick={() => store.setPerspective("guide")}>
             {state.explainer.title}
           </button>
-          <span aria-hidden="true">/</span>
+          <span aria-hidden="true">›</span>
           {/* Polite live region: a screen reader hears what a click or a scroll brought on screen. */}
           <span data-testid="breadcrumb-topic" aria-live="polite">
             {readingStep
               ? stepTitle(readingStep, state.model)
               : appliedStep
                 ? stepTitle(appliedStep, state.model)
-                : (info?.title ?? tour?.title ?? "Overview")}
+                : (info?.title ?? diagramTitle ?? tour?.title ?? "Overview")}
           </span>
         </nav>
         {/* A double-click that changed the tab says so (always mounted, so a screen reader hears it). */}
@@ -199,7 +209,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
             aria-expanded={sourceOpen}
             onClick={() => setSourceOpen((open) => !open)}
           >
-            {sourceOpen ? "Hide source" : "Show source"}
+            {sourceOpen ? "Hide code" : "Show code"}
           </button>
         )}
       </div>
@@ -223,20 +233,14 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                 <>
                   <div className="workspace-caption">
                     <div>
-                      <p className="eyebrow">
-                        {state.perspective === "map"
-                          ? "Map"
-                          : flow?.type === "sequence"
-                            ? "Sequence"
-                            : "Flow"}
-                      </p>
+                      <p className="eyebrow">{state.perspective === "map" ? "Map" : "Flow"}</p>
                       <ZoomTrail
                         viewId={state.perspective === "map" ? map.view.id : (flow?.id ?? "")}
                       />
                       <h2>
                         {state.perspective === "map"
                           ? map.view.title
-                          : (flow?.title ?? "The guide's steps")}
+                          : (flow?.title ?? "The tour's steps")}
                       </h2>
                       {viewQuestion && <p className="view-question">{viewQuestion}</p>}
                       {state.perspective === "flow" && flowOwner && (
@@ -266,29 +270,31 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                           <FoldBackAction visibleIds={map.graph.nodes.map((node) => node.id)} />
                         </>
                       )}
-                      <select
-                        aria-label="Choose a topic"
-                        value={state.perspective === "map" ? map.view.id : (flow?.id ?? "")}
-                        onChange={(event) => store.setView(event.target.value)}
-                      >
-                        {state.model.views
-                          .filter((view) =>
-                            state.perspective === "map"
-                              ? view.type === "graph"
-                              : view.type !== "graph",
-                          )
-                          .map((view) => (
-                            <option key={view.id} value={view.id}>
-                              {view.title}
-                            </option>
-                          ))}
-                        {state.perspective === "map" && map.generated && (
-                          <option value={map.view.id}>Map</option>
-                        )}
-                        {state.perspective === "flow" && !flow && (
-                          <option value="">The guide's steps</option>
-                        )}
-                      </select>
+                      {diagramChoices > 1 && (
+                        <select
+                          aria-label="Choose a diagram"
+                          value={state.perspective === "map" ? map.view.id : (flow?.id ?? "")}
+                          onChange={(event) => store.setView(event.target.value)}
+                        >
+                          {state.model.views
+                            .filter((view) =>
+                              state.perspective === "map"
+                                ? view.type === "graph"
+                                : view.type !== "graph",
+                            )
+                            .map((view) => (
+                              <option key={view.id} value={view.id}>
+                                {view.title}
+                              </option>
+                            ))}
+                          {state.perspective === "map" && map.generated && (
+                            <option value={map.view.id}>Map</option>
+                          )}
+                          {state.perspective === "flow" && !flow && (
+                            <option value="">The tour's steps</option>
+                          )}
+                        </select>
+                      )}
                     </div>
                   </div>
                   {state.perspective === "map" ? (
@@ -322,8 +328,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                   ) : (
                     <div className="guide-path">
                       <p>
-                        This explainer has no flow diagram. Here are the guide's steps, in reading
-                        order.
+                        This guide has no flow diagram. Here are the tour's steps, in reading order.
                       </p>
                       {tour?.steps.map((step, index) => (
                         <button
@@ -359,12 +364,30 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
         )}
         {showSource && (
           <section className="workspace-source" aria-label="Source code">
+            {/* Beside the code the right column folds away (below 1680px): what was picked, and its first
+                sentence, stay above the code so the words and the code are on one screen. */}
+            {info && topicShown && !code && (
+              <div className="source-topic" data-testid="source-topic">
+                <span className="eyebrow">{appliedStep ? "In this step" : "Selected"}</span>{" "}
+                <strong className={looksLikeCode(info.title) ? "is-code" : undefined}>
+                  {info.title}
+                </strong>
+                {info.summary && (
+                  <span
+                    className="source-topic-text"
+                    dangerouslySetInnerHTML={{
+                      __html: renderInline(leadSentences(info.summary, 1)),
+                    }}
+                  />
+                )}
+              </div>
+            )}
             <CodeArea tree="collapsible" />
           </section>
         )}
         <aside
           className="workspace-context"
-          aria-label="Topic context"
+          aria-label="Selected"
           ref={context}
           onKeyDown={(event) => {
             if (event.key === "Escape" && contextOpen) {
@@ -378,7 +401,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
               type="button"
               className="context-close"
               data-testid="context-close"
-              aria-label="Close the topic panel"
+              aria-label="Close this panel"
               title="Close (Esc)"
               onClick={() => setContextOpen(false)}
             >
@@ -402,17 +425,15 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
               <p className="eyebrow">This flow</p>
               <h2>{diagramTitle}</h2>
               {flow?.scope?.question && <p>{flow.scope.question}</p>}
-              <p data-testid="topic-around-flow">It all happens inside {info.title}.</p>
+              <p data-testid="topic-around-flow">This flow runs inside {info.title}.</p>
             </section>
           )}
           {info && topicShown && (
             <section className="topic-summary" data-testid="topic-summary">
               {/* While a step is applied the breadcrumb names the step: this is the box picked in it. */}
-              <p className="eyebrow">{appliedStep ? "Picked" : "Current topic"}</p>
+              <p className="eyebrow">{appliedStep ? "In this step" : "Selected"}</p>
               <h2 className={looksLikeCode(info.title) ? "is-code" : undefined}>{info.title}</h2>
-              {info.summary && (
-                <p dangerouslySetInnerHTML={{ __html: renderInline(info.summary) }} />
-              )}
+              {info.summary && <SummaryText key={info.id} text={info.summary} />}
               <TopicFacts
                 key={`${state.perspective === "map" ? map.view.id : state.perspective}:${info.id}`}
                 id={info.id}
@@ -430,6 +451,11 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
               )}
             </section>
           )}
+          {/* Nothing picked: the parts of the diagram on screen, in words (PartsPanel). */}
+          {!active && state.perspective === "map" && (
+            <PartsPanel view={map.view} graph={map.graph} matches={mapMatches} />
+          )}
+          {!active && state.perspective === "flow" && flow && <PartsPanel view={flow} />}
           <RelatedFiles onOpen={() => setSourceOpen(true)} />
           {active && (
             <details className="workspace-inspector">
@@ -444,6 +470,28 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
         </aside>
       </div>
     </main>
+  );
+}
+
+/** A summary in the topic column: its first two sentences, and the rest behind "More". */
+function SummaryText({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const lead = leadSentences(text, 2);
+  const cut = lead.length < text.trim().length;
+  return (
+    <>
+      <p dangerouslySetInnerHTML={{ __html: renderInline(open || !cut ? text : lead) }} />
+      {cut && (
+        <button
+          type="button"
+          className="link summary-more"
+          aria-expanded={open}
+          onClick={() => setOpen((value) => !value)}
+        >
+          {open ? "Less" : "More"}
+        </button>
+      )}
+    </>
   );
 }
 

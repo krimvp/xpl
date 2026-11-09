@@ -386,7 +386,7 @@ describe("xpl view", () => {
     const result = await view.stop();
     expect(result.code).toBe(0);
     expect(result.out).toBe(
-      `serving .explainer/demo.explainer.json at ${view.server.url}  (Ctrl-C to stop)`,
+      `serving .explainer/demo.explainer.json at ${view.server.url}  (Ctrl+C to stop)`,
     );
     await expect(fetch(`${view.url}/api/bundle`)).rejects.toThrow();
   });

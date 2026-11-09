@@ -1,5 +1,6 @@
 import { checkReview, reviewShapeIssues, type PublishedVersion } from "@xpl/core";
 import { snapshotTexts } from "../snapshot.js";
+import { AnalysisDetails } from "./AnalysisCoverage.js";
 import { useStore, useViewerState } from "../hooks.js";
 import { searchFor, versionUrl } from "../url.js";
 
@@ -46,7 +47,7 @@ export function ExplanationInfo() {
   return (
     <details className="guide-about" data-testid="explanation-info">
       <summary>
-        About this explanation <span data-testid="review-status">Author review: {label}</span>
+        About this guide <span data-testid="review-status">Author review: {label}</span>
       </summary>
       {publication && (
         <section aria-label="Staged versions">
@@ -130,41 +131,42 @@ export function ExplanationInfo() {
         </>
       )}
       <p>
-        A review is an author inspection record. Names are not authenticated; a record does not
-        automatically verify prose or runtime coverage. Narrow scopes cover only named stored items
-        and their own anchors, not dependencies.
+        A review records that a person read this guide and its code. xpl does not check the name. A
+        review of some parts covers only those parts and their code links.
       </p>
       <p>
-        This explanation was written by an author. Source anchors check code locations and changes;
-        they do not verify the claims or prove that every execution path is covered. Use the linked
-        code and tests to check important conclusions.
+        xpl checks that each code link points at code that exists. It does not check that the text
+        is true, or that the guide covers every path through the code. Use the linked code and tests
+        to check what matters to you.
       </p>
       {state.exportInfo && (
         <p>
-          Saved as {state.exportInfo.status === "draft" ? "a draft preview" : "ready HTML"}; checked
+          Saved as {state.exportInfo.status === "draft" ? "a draft" : "a finished page"}, checked
           against{" "}
           {state.exportInfo.report.scope === "workspace"
-            ? "the workspace at export time"
-            : "the embedded source snapshot"}
-          . Team review policy:{" "}
+            ? "the code on disk when it was saved"
+            : "the code saved inside this page"}
+          . Team review rule:{" "}
           {state.exportInfo.report.review?.required
-            ? "requires a current all-content review"
+            ? "someone must review all of the current content"
             : "off"}
-          . An offline page cannot detect later repository changes.
+          . A saved page cannot see later changes to the code.
           {state.exportInfo.report.decisionNote && (
             <> Author decision: {state.exportInfo.report.decisionNote}</>
           )}
         </p>
       )}
       <p>
-        Guide tells the story. Map shows relationships. Flow follows steps. Code opens the source.
-        Present walks through a tour. Reference hints can include unresolved or indirect behavior.
+        Tour: the steps, in order. Map: the parts and what each calls. Flow: what runs, in order.
+        Code: the files. Present: the tour as slides. A dashed arrow is matched by name, so it can
+        be wrong.
       </p>
       <p>
         {state.serverMode
-          ? "Explain this queues a request. The author runs /code-explainer feedback in Claude Code; applied changes appear here automatically."
-          : "Explain this gives you a command to run in Claude Code. A saved HTML page stays at the version it was exported from."}
+          ? "\u201cExplain this\u201d saves a request. The author runs /code-explainer feedback in Claude Code, and the changes show here."
+          : "\u201cExplain this\u201d gives you a command to run in Claude Code. A saved HTML page stays at the version it was saved from."}
       </p>
+      <AnalysisDetails />
     </details>
   );
 }

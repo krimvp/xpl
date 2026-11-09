@@ -67,7 +67,7 @@ function parseScope(ws: Workspace, values: readonly string[]): Scope | undefined
 
 export const searchCommand: CommandSpec = {
   name: "search",
-  usage: "xpl search <pattern> [--regex] [-i] [--limit n] [--under <dir|glob>] [--code]",
+  usage: "xpl search <pattern> [--regex] [-i] [--limit <n>] [--under <dir|glob>] [--code]",
   summary: "Text hits with enclosing symbol id and offset",
   details: [
     "Searches the working-tree text of every indexed file, line by line (case-sensitive substring;",

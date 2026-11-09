@@ -42,15 +42,15 @@
   --pill-fg-l: 29%;
 
   --node-bg: #ffffff;
-  --node-border: #b3bdca;
+  --node-border: #848f9c;
   --store-bg: #fdf3e6;
   --container-bg: rgba(43, 106, 224, 0.05);
   --edge: #566270;
-  --edge-heuristic: #a0abb8;
+  --edge-heuristic: #7b8794;
   --edge-llm: #8b4fdc;
   --edge-user: #16994a;
-  --edge-stub: #8b95a3;
-  --ghost-border: #98a3b1;
+  --edge-stub: #7b8794;
+  --ghost-border: #7d8896;
   --frame-bg: rgba(90, 100, 120, 0.05);
 
   --code-font-size: 12.5px;
@@ -149,7 +149,7 @@
 
   --node-bg: #1c2129;
   --store-bg: #2b2319;
-  --node-border: #4a5566;
+  --node-border: #5e6a7b;
   --container-bg: rgba(110, 162, 255, 0.07);
   --edge: #9ba7b6;
   --edge-heuristic: #596574;
@@ -287,6 +287,16 @@ code {
 
 .workspace-warnings:empty {
   display: none;
+}
+
+/* A phone: the notes above the page take at most a strip of it; more scroll inside the strip, so the guide
+   keeps the screen (three notes took 380px of 844). */
+@media (max-width: 760px) {
+  .app:not([data-mode="present"]) > .workspace-warnings {
+    max-height: 96px;
+    overflow-y: auto;
+    border-bottom: 1px solid var(--border-strong);
+  }
 }
 
 .analysis-coverage {
@@ -569,6 +579,17 @@ code {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 16ch;
+}
+
+/* A saved draft: one word beside the title, not a bar across the page. */
+.draft-pill {
+  flex: none;
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
 }
 
 .spacer {
@@ -4819,4 +4840,250 @@ code {
 }
 .panzoom:focus-visible > .pz-keyboard-hint {
   opacity: 1;
+}
+
+/* ── Diagrams (round-1 diagram work): the key line, quiet stubs, the toolbar on a phone, step numbers, the
+   parts panel ("On this map"). ─────────────────────────────────────────────────────────────────────────── */
+
+/* The map's canvas takes what the key line above it leaves. */
+.graph-host {
+  display: flex;
+  flex-direction: column;
+}
+.graph-host > .panzoom {
+  flex: 1 1 0;
+  min-height: 0;
+  height: auto;
+}
+.panzoom {
+  display: flex;
+  flex-direction: column;
+}
+.pz-svg {
+  flex: 1 1 0;
+  min-height: 0;
+  height: auto;
+}
+
+/* The colours of the arrows in one line (Legend.tsx KeyLine), on the canvas' own background. */
+.key-line {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  margin: 0;
+  padding: 5px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--canvas);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.key-line-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+/* a short arrow drawn in CSS, in the colour and dash of the arrows it names */
+.key-swatch {
+  position: relative;
+  display: inline-block;
+  width: 22px;
+  height: 0;
+  border-top: 2px solid var(--edge);
+}
+.key-swatch::after {
+  content: "";
+  position: absolute;
+  right: -1px;
+  top: -5px;
+  border: 4px solid transparent;
+  border-left: 6px solid var(--edge);
+  border-right: 0;
+}
+.key-swatch.is-authored {
+  border-top-color: var(--edge-llm);
+}
+.key-swatch.is-authored::after {
+  border-left-color: var(--edge-llm);
+}
+.key-swatch.is-heuristic {
+  border-top-style: dashed;
+  opacity: 0.7;
+}
+.key-swatch.is-stub {
+  border-top: 1.5px dashed var(--edge-stub);
+}
+.key-swatch.is-stub::after {
+  border-left-color: var(--edge-stub);
+}
+/* a short screen (200% zoom): the map keeps the height; the Key button still says it all */
+@media (max-height: 560px) {
+  .key-line {
+    display: none;
+  }
+}
+
+/* A stub a reader is not looking at (GraphView quietStub): its ghost box stays, the line does not. */
+.edge.is-stub.is-stub-quiet {
+  visibility: hidden;
+}
+
+/* On a phone the zoom buttons sit above the canvas, not over its first boxes. */
+@media (max-width: 640px) {
+  :where(.workspace, .explore) .pz-toolbar {
+    position: static;
+    order: -1;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    border-width: 0 0 1px;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .diagram-text-view {
+    padding-top: 16px;
+  }
+}
+
+/* Sequence: each arrow's words on a plate (no lifeline through them), its number where it starts. */
+.step .label-plate {
+  fill: var(--canvas);
+}
+.step.is-selected .label-plate {
+  fill: var(--accent-soft);
+}
+.step.is-match .label-plate {
+  fill: var(--match-soft);
+}
+.step-number circle {
+  fill: var(--panel);
+  stroke: var(--edge);
+  stroke-width: 1.3;
+}
+.step-number text {
+  font-size: 12px;
+  font-weight: 700;
+  text-anchor: middle;
+  fill: var(--fg);
+}
+.step.is-selected .step-number circle {
+  fill: var(--accent);
+  stroke: var(--accent);
+}
+.step.is-selected .step-number text {
+  fill: var(--accent-fg);
+}
+.flow-step-number circle {
+  fill: var(--panel);
+  stroke: var(--border-strong);
+  stroke-width: 1.3;
+}
+.flow-stage .flow-step-number text {
+  font-size: 13px;
+  font-weight: 700;
+  text-anchor: middle;
+  fill: var(--fg);
+}
+.flow-stage.is-selected .flow-step-number circle {
+  fill: var(--accent);
+  stroke: var(--accent);
+}
+.flow-stage.is-selected .flow-step-number text {
+  fill: var(--accent-fg);
+}
+
+/* "On this map" (PartsPanel.tsx): the diagram's parts as a list of buttons, each picking its element. */
+.parts-panel {
+  margin: 0 0 16px;
+}
+.parts-hint {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.parts-heading {
+  margin: 16px 0 8px;
+  font-size: 13px;
+}
+.parts-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.parts-list > li {
+  margin: 0 0 4px;
+}
+.parts-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 8px;
+  align-items: baseline;
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+}
+.parts-row > :not(.parts-number) {
+  grid-column: 1 / -1;
+}
+.is-steps .parts-row > :not(.parts-number) {
+  grid-column: 2;
+}
+.parts-row:hover {
+  border-color: var(--border);
+  background: var(--panel-2);
+}
+.parts-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.parts-row.is-match {
+  border-color: var(--match);
+  background: var(--match-soft);
+}
+.parts-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.parts-kind,
+.parts-ends,
+.parts-links {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.parts-summary {
+  color: var(--fg);
+}
+.parts-number {
+  grid-row: 1 / span 3;
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--panel);
+  font-size: 11px;
+  font-weight: 700;
+}
+.parts-outside {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* a short screen (200% zoom): the diagram keeps the height; its Text view lists the same parts */
+@media (max-height: 560px) {
+  .parts-panel {
+    display: none;
+  }
 }

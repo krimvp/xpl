@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { relatedFiles, type RelatedFileSet } from "@xpl/core";
 import { useDerived, useStore, useViewerState } from "../hooks.js";
-import { repeatsShownCode } from "../relatedCards.js";
+import { mergeSameCards, repeatsShownCode } from "../relatedCards.js";
 
 const LABELS: Record<RelatedFileSet["kind"], string> = {
   loads: "Reads",
@@ -24,9 +24,11 @@ export function RelatedFiles({ onOpen }: { onOpen: () => void }) {
   const guide = state.perspective === "guide";
   const links = useMemo(
     () =>
-      relatedFiles(state.selection, state.model, derived.selection.focus).filter(
-        (link) =>
-          !(guide && link.kind === "test") && !repeatsShownCode(link, derived.selection.focus),
+      mergeSameCards(
+        relatedFiles(state.selection, state.model, derived.selection.focus).filter(
+          (link) =>
+            !(guide && link.kind === "test") && !repeatsShownCode(link, derived.selection.focus),
+        ),
       ),
     [state.selection, state.model, derived.selection.focus, guide],
   );
@@ -61,7 +63,7 @@ export function RelatedFiles({ onOpen }: { onOpen: () => void }) {
             ? "Found in the code"
             : link.resolution === "inferred"
               ? "Likely, from how the code is written: check the lines below"
-              : "Added by the explainer's author";
+              : "Added by the author";
         return (
           <details className="resource-set" key={link.id} open={link.files.length === 1}>
             <summary title={link.resolution === "inferred" ? undefined : trust}>
@@ -115,7 +117,10 @@ export function RelatedFiles({ onOpen }: { onOpen: () => void }) {
               ))}
             </ul>
             <details className="resource-evidence">
-              <summary>Where the code makes this link</summary>
+              <summary>
+                Where the code makes this link
+                {link.evidence.length > 1 ? ` (${link.evidence.length} places)` : ""}
+              </summary>
               {link.evidence.map((site, index) => (
                 <button
                   type="button"

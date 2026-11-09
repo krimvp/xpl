@@ -9,7 +9,7 @@ import { selectRevision, continueRevision } from "../revision.js";
 export const reviseCommand: CommandSpec = {
   name: "revise",
   usage:
-    "xpl revise <explainer> --select <id,id> [--include <id,id>] [-o review.json] | --run <id> [--proposal file | --decisions file | --accept]",
+    "xpl revise <explainer> --select <id,id> [--include <id,id>] [-o <file>] | xpl revise <explainer> --run <id> [--proposal <file> | --decisions <file> | --accept] [-o <file>]",
   summary: "Select feedback, inspect bounded proposals and accept a recoverable next revision",
   details: [
     "Select immutable feedback IDs after xpl index. The guide is preserved; anchors are resolved in memory.",
@@ -38,23 +38,23 @@ export const reviseCommand: CommandSpec = {
   options: {
     select: {
       type: "string",
-      arg: "id,id",
+      arg: "<id,id>",
       desc: "Start a durable run with these immutable feedback IDs",
     },
     include: {
       type: "string",
-      arg: "id,id",
+      arg: "<id,id>",
       desc: "Extra IDs; qualify local steps as <view-or-tour-id>/<step-id>",
     },
-    run: { type: "string", arg: "id", desc: "Inspect or continue an existing revision run" },
+    run: { type: "string", arg: "<id>", desc: "Inspect or continue an existing revision run" },
     proposal: {
       type: "string",
-      arg: "file",
+      arg: "<file>",
       desc: "Review recorded ordinary patches; changes no artifact",
     },
     decisions: {
       type: "string",
-      arg: "file",
+      arg: "<file>",
       desc: "Review the exact author-selected candidate; commit nothing",
     },
     accept: {
@@ -64,7 +64,7 @@ export const reviseCommand: CommandSpec = {
     out: {
       type: "string",
       short: "o",
-      arg: "file",
+      arg: "<file>",
       desc: "Write explanation/source review JSON outside the repo",
     },
   },

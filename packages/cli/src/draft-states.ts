@@ -43,7 +43,7 @@ import {
   type Draft,
   type DraftInput,
 } from "./draft.js";
-import { plural } from "./format.js";
+import { plural, withArticle } from "./format.js";
 
 export const STATES_LIMITS = {
   /** States on the flow. */
@@ -334,7 +334,9 @@ export function draftStates(input: DraftInput, entry: IndexedSymbol): Draft {
     match = "bare";
   }
   if (!states || states.length < 2) {
-    throw new Error(`${symId(entry)} (a ${entry.kind}) does not enumerate states: ${ENTRY_KINDS}`);
+    throw new Error(
+      `${symId(entry)} (${withArticle(entry.kind)}) does not enumerate states: ${ENTRY_KINDS}. \`xpl outline --kind enum,type\` lists candidates`,
+    );
   }
   const limits: string[] = [];
   if (states.length > STATES_LIMITS.states) {

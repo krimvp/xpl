@@ -104,14 +104,14 @@ export async function openEditMenu(page: Page): Promise<Locator> {
   return menu;
 }
 
-/** Opens the tour editor (Edit > Edit the guide's steps). */
+/** Opens the tour editor (Edit > Edit the tour). */
 export async function openTourEditor(page: Page): Promise<void> {
   if ((await page.getByTestId("tour-panel").count()) > 0) return;
   await (await openEditMenu(page)).getByTestId("edit-tours").click();
   await expect(page.getByTestId("tour-panel")).toBeVisible();
 }
 
-/** Edit > Download explainer JSON; resolves to the download. */
+/** Edit > Download the guide as JSON; resolves to the download. */
 export async function downloadJson(page: Page) {
   const menu = await openEditMenu(page);
   const [download] = await Promise.all([

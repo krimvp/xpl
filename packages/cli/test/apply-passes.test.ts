@@ -277,7 +277,7 @@ describe("xpl apply: which stream says what", () => {
     const missing = await invoke(["apply", "demo", "nope.json"], { cwd: dir });
     expect(missing.code).toBe(1);
     expect(missing.out).toBe("");
-    expect(missing.err).toMatch(/^error: cannot read patch file/);
+    expect(missing.err).toMatch(/^error: cannot read patch file .*nope\.json: no such file$/m);
     const noExplainer = await invoke(["apply", "nope", "broken.json"], { cwd: dir });
     expect(noExplainer.code).toBe(1);
     expect(noExplainer.out).toBe("");

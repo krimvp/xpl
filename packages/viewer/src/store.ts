@@ -1057,7 +1057,7 @@ export class ViewerStore {
     const view = this.graphView();
     if (!view) return;
     const next = expandStubView(view, stub);
-    if (next !== view) this.editView(view.id, { include: next.include });
+    if (next !== view) this.editView(view.id, { include: next.include }, this.authoring());
   }
 
   /** Includes the children of a node (a group's members): it becomes a container. */
@@ -1066,7 +1066,7 @@ export class ViewerStore {
     const view = this.graphView();
     if (!view) return;
     const next = drillInView(view, id, this.state.model);
-    if (next !== view) this.editView(view.id, { include: next.include });
+    if (next !== view) this.editView(view.id, { include: next.include }, this.authoring());
   }
 
   /**
@@ -1142,7 +1142,7 @@ export class ViewerStore {
     const view = this.graphView();
     if (!view) return;
     const next = collapseView(view, id, this.state.model);
-    if (next !== view) this.editView(view.id, { include: next.include });
+    if (next !== view) this.editView(view.id, { include: next.include }, this.authoring());
   }
 
   /** True when double-clicking `id` would add something to the current graph view. */
@@ -1184,20 +1184,29 @@ export class ViewerStore {
         : undefined;
   }
 
-  private editView(viewId: string, fields: Record<string, unknown>): void {
+  /**
+   * True in Explore, where a change to a diagram is an edit of the guide. On the reading tabs (Tour, Map,
+   * Flow, Code) opening or folding a box only changes what this reader sees: it is not saved, and the page
+   * does not say "Unsaved".
+   */
+  private authoring(): boolean {
+    return this.state.perspective === "explore";
+  }
+
+  private editView(viewId: string, fields: Record<string, unknown>, save = true): void {
     if (this.state.editBusy || this.state.readOnlyGuide) return;
     const explainer = withViewFields(this.state.explainer, viewId, fields);
     if (explainer === this.state.explainer) return;
     const model = this.modelOf(explainer);
     const selection = this.stillShown(model, viewId, this.state.selection);
-    this.queueSave(viewId, fields);
+    if (save) this.queueSave(viewId, fields);
     this.set({
       explainer,
       model,
       ...(selection.length !== this.state.selection.length
         ? { selection, applied: undefined }
         : {}),
-      ...(this.api ? { save: { status: "saving" } as SaveState } : {}),
+      ...(this.api && save ? { save: { status: "saving" } as SaveState } : {}),
     });
   }
 

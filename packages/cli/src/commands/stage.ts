@@ -6,7 +6,7 @@ import { stagePreview, stageVersion } from "../stage.js";
 export const stageCommand: CommandSpec = {
   name: "stage",
   usage:
-    "xpl stage <explainer> --dir <outside-folder> [--preview] [--files referenced|boundary|all] [--note reason] [--require-review] [--pr-result result.json]",
+    "xpl stage <explainer> --dir <outside-folder> [--preview] [--files referenced|boundary|all] [--note <reason>] [--require-review] [--pr-result <result.json>]",
   summary: "Preview included source and stage a local immutable ready version",
   details: [
     "--dir is required and must be outside the source checkout, including through symlink ancestors.",

@@ -154,24 +154,25 @@ test.describe("one header in every mode", () => {
         "Present",
         "edit",
       ]);
-      for (const gone of ["Tours", "Read", "Explore", "Download explainer JSON"])
+      for (const gone of ["Tours", "Read", "Explore", "Download the guide as JSON"])
         await expect(header.getByRole("button", { name: gone, exact: true })).toHaveCount(0);
       await expect(page.locator(".diagram-caption .stubs-control")).toHaveCount(0);
       // the view's toggles are in the Edit menu, under "This view"
       const menu = await openEditMenu(page);
       await expect(menu.getByRole("menuitem")).toHaveText([
         /Back to reading/,
-        /Edit the guide's steps/,
-        /Record author review/,
+        /Edit the tour/,
+        /Mark as reviewed/,
         /Save as HTML/,
-        /Download explainer JSON/,
+        /Download the guide as JSON/,
       ]);
       await expect(menu.getByRole("group", { name: "This view" })).toContainText("Stubs");
       await expect(menu.locator("[data-edge-kind]")).toHaveCount(8); // one per derived edge kind, requests included
       await page.keyboard.press("Escape");
       await fits();
 
-      // Present: the tour picker and the step progress, then Exit and Edit
+      // Present: the tour picker and the step progress, then Exit and Edit (Search and Feedback are for a
+      // reader at their own pace, not for a room)
       await page.getByTestId("mode-present").click();
       await expect(header).toHaveAttribute("data-mode", "present");
       expect(await headerControls(page)).toEqual([
@@ -179,8 +180,6 @@ test.describe("one header in every mode", () => {
         "tour",
         "progress",
         "theme",
-        "Search",
-        "Feedback",
         "Exit",
         "edit",
       ]);
@@ -454,7 +453,10 @@ test.describe("the Guide", () => {
     }
     await expect(sequence.locator('[data-element-id="dispatch:3"]')).toHaveClass(/is-selected/);
 
-    await page.getByRole("button", { name: "Show source", exact: true }).click();
+    await page
+      .locator(".workspace-location")
+      .getByRole("button", { name: "Show code", exact: true })
+      .click();
     await sequence.locator('[data-element-id="dispatch:2"] .label').click();
     await sequence.locator('[data-element-id="dispatch:3"] .label').click();
     const runner = page.locator('.workspace-source .pane[data-file="src/runner.ts"]');
@@ -467,7 +469,10 @@ test.describe("the Guide", () => {
       sequence.locator('[data-element-id="sym:src/runner.ts#Runner.dispatch"]'),
     ).toHaveClass(/is-match/);
 
-    await page.getByRole("button", { name: "Hide source", exact: true }).click();
+    await page
+      .locator(".workspace-location")
+      .getByRole("button", { name: "Hide code", exact: true })
+      .click();
     await page.setViewportSize({ width: 390, height: 844 });
     const pane = (await page.locator(".workspace-diagram .panzoom").boundingBox())!;
     await expect
@@ -599,7 +604,7 @@ test.describe("Save as HTML", () => {
     );
     await page.goto("http://xpl.test/?mode=present&tour=tour:intro&step=1");
     await page.waitForFunction(() => window.__xpl !== undefined);
-    await expect(page.getByTestId("draft-banner")).toContainText("Draft preview");
+    await expect(page.getByTestId("draft-pill")).toHaveText("Draft");
     await expect(page.getByTestId("tour-title")).toHaveText("Said in the meeting");
     await expect(page.getByTestId("tour-note")).toHaveText("A new note.");
     expect((await stateOf(page)).dirty).toBe(false);

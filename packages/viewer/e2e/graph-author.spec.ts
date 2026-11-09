@@ -556,7 +556,10 @@ for (const width of [1440, 390])
         .poll(async () => (await focusOf(page)).map((f) => f.file))
         .toContain("jobrunner/worker.py");
       await expect(page.locator(".move-handle")).toHaveCount(0);
-      await page.getByRole("button", { name: "Show source", exact: true }).click();
+      await page
+        .locator(".workspace-location")
+        .getByRole("button", { name: "Show code", exact: true })
+        .click();
       await expect(page.locator(".cm-editor").first()).toBeVisible();
       if (view === "view:code") await expect(page.locator(".cm-line.xpl-hl").first()).toBeVisible();
     }

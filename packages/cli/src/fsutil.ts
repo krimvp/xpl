@@ -71,11 +71,20 @@ export function jsonFile(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
+/** Words for the common file errors (`no such file`), else the system message. */
+export function fileErrorText(error: unknown): string {
+  const code = (error as { code?: unknown } | null)?.code;
+  if (code === "ENOENT") return "no such file";
+  if (code === "EACCES" || code === "EPERM") return "permission denied";
+  if (code === "EISDIR") return "it is a directory";
+  return errorMessage(error);
+}
+
 export function readTextFile(path: string, what: string): string {
   try {
     return readFileSync(path, "utf8");
   } catch (error) {
-    throw new CliError(`cannot read ${what} ${path}: ${errorMessage(error)}`);
+    throw new CliError(`cannot read ${what} ${path}: ${fileErrorText(error)}`);
   }
 }
 

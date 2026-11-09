@@ -16,7 +16,7 @@ export const DEFAULT_OUTLINE_LINES = 400;
 
 export const outlineCommand: CommandSpec = {
   name: "outline",
-  usage: "xpl outline [--under <id>] [--depth n] [--kind k,...] [--keys]",
+  usage: "xpl outline [--under <id>] [--depth <n>] [--kind <k,...>] [--keys] [--limit <n>]",
   summary: "Dir/file/symbol tree with kind, lines, fan-in/fan-out",
   details: [
     "One line per element: <id>  <kind>  <first>-<last line>  in=<fan-in> out=<fan-out>.",
@@ -91,7 +91,7 @@ export const outlineCommand: CommandSpec = {
       );
     }
     if (notes.hiddenKeys) {
-      legend.push("[n keys hidden]: config keys are hidden, use --keys to list them");
+      legend.push("[n keys hidden]: config keys are hidden; --keys lists them");
     }
     if (kinds) {
       // the root may be the match itself (a method asked for by id)

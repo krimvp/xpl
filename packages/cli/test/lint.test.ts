@@ -148,7 +148,7 @@ describe("lintExplainer", () => {
         ],
         views: [
           {
-            id: "view:flow",
+            id: "view:v",
             type: "flow",
             title: "What happens to a job",
             participants: [],
@@ -871,13 +871,14 @@ describe("lintExplainer", () => {
       edges: "nope",
     } as unknown as Partial<Explainer>;
     const { findings } = lintExplainer(explainer(odd));
-    // the second tour: no summary, and three steps without a note (untitled)
+    // the second tour: no summary, and three steps without a note (untitled); no step shows the view
     expect(rules(findings)).toEqual([
       "tour-summary",
       "tour-summary",
       "untitled-step",
       "untitled-step",
       "untitled-step",
+      "unused-view",
     ]);
   });
 });
@@ -1696,6 +1697,304 @@ describe("lintExplainer: reader checks", () => {
   });
 });
 
+// ─── Length, voice and words: the Orwell and ASD-STE100 checks ─────────────────────────────────
+
+/** A concept with the given summary (and detail), for the element text checks. */
+const conceptWith = (id: string, summary: string, detail?: string) => ({
+  id,
+  label: "Retry policy",
+  summary,
+  ...(detail !== undefined ? { detail } : {}),
+  anchors: [],
+});
+
+describe("lintExplainer: length, voice and words", () => {
+  it("long-summary: an element summary of more than 2 sentences or 45 words; a TODO waits", () => {
+    const changelog =
+      "The queue keeps jobs. Each attempt records its worker before launch. One cleanup step owns the files.";
+    const wordy = Array.from({ length: 12 }, () => "the queue keeps jobs").join(" and ") + ".";
+    const { findings } = lintExplainer(
+      explainer({
+        concepts: [
+          conceptWith("concept:short", "The queue keeps jobs. A worker takes the oldest one."),
+          conceptWith("concept:changelog", changelog),
+          conceptWith("concept:wordy", wordy),
+          conceptWith("concept:todo", `TODO: ${changelog}`),
+        ],
+        nodes: [{ id: "file:src/queue.ts", label: "queue.ts", summary: changelog, anchors: [] }],
+      }),
+    );
+    expect(only(findings, "long-summary").map((f) => [f.elementId, f.message])).toEqual([
+      [
+        "file:src/queue.ts",
+        "3 sentences, 17 words (a summary takes at most 2 sentences and 45 words)",
+      ],
+      [
+        "concept:changelog",
+        "3 sentences, 17 words (a summary takes at most 2 sentences and 45 words)",
+      ],
+      ["concept:wordy", "1 sentence, 59 words (a summary takes at most 2 sentences and 45 words)"],
+    ]);
+    expect(only(findings, "long-summary")[0]!.hint).toContain("do not append");
+  });
+
+  it("long-summary: the summary of a flow or sequence step counts too", () => {
+    const { findings } = lintExplainer(
+      explainer({
+        views: [
+          {
+            id: "view:s",
+            type: "sequence",
+            title: "A job runs",
+            participants: [],
+            steps: [
+              {
+                id: "s:1",
+                from: "a",
+                to: "b",
+                label: "Take a job",
+                kind: "call",
+                anchors: [],
+                summary: "The runner asks. The queue answers. The worker starts.",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(only(findings, "long-summary").map((f) => [f.elementId, f.kind, f.view])).toEqual([
+      ["s:1", "step", "view:s"],
+    ]);
+  });
+
+  it("long-detail: a detail paragraph over 80 words; short paragraphs and list items pass", () => {
+    const sentence = "The queue keeps each job until a worker takes it.";
+    const paragraph = (n: number) => Array.from({ length: n }, () => sentence).join(" ");
+    const { findings } = lintExplainer(
+      explainer({
+        concepts: [
+          // 9 sentences of 10 words: 90 words in one paragraph
+          conceptWith("concept:wall", "The queue keeps jobs.", paragraph(9)),
+          // the same words in three paragraphs, or as a list
+          conceptWith(
+            "concept:split",
+            "The queue keeps jobs.",
+            `${paragraph(3)}\n\n${paragraph(3)}\n\n${paragraph(3)}`,
+          ),
+          conceptWith(
+            "concept:list",
+            "The queue keeps jobs.",
+            Array.from({ length: 9 }, () => `- ${sentence}`).join("\n"),
+          ),
+        ],
+      }),
+    );
+    expect(only(findings, "long-detail").map((f) => [f.elementId, f.field, f.message])).toEqual([
+      ["concept:wall", "detail", "a paragraph of 90 words (more than 80)"],
+    ]);
+  });
+
+  it("passive-voice: two passive clauses in a field; one, adjectives and code do not count", () => {
+    const { findings } = lintExplainer(
+      explainer({
+        concepts: [
+          conceptWith(
+            "concept:two",
+            "Accepted changes are written to disk. Protected ones are skipped.",
+          ),
+          conceptWith("concept:irregular", "The map is drawn first. Then the boxes are not shown."),
+          conceptWith("concept:one", "The file is written once. The CLI reports it."),
+          conceptWith("concept:adjective", "The id is based on the path. The run is done."),
+          conceptWith("concept:code", "The `is written` flag and the `are skipped` list stay."),
+          conceptWith(
+            "concept:active",
+            "The CLI writes the accepted changes. It skips protected ones.",
+          ),
+        ],
+      }),
+    );
+    expect(only(findings, "passive-voice").map((f) => [f.elementId, f.message])).toEqual([
+      ["concept:two", '2 passive clauses ("are written", "are skipped"): who does it?'],
+      ["concept:irregular", '2 passive clauses ("is drawn", "are not shown"): who does it?'],
+    ]);
+    expect(only(findings, "passive-voice")[0]!.hint).toContain("name who does it");
+  });
+
+  it('bare-it: "They", "These are", "There is" start a sentence without a subject', () => {
+    const summaries = [
+      "They check the ids.",
+      "These are the queues.",
+      "Those were the old rules.",
+      "There is one queue per worker.",
+      "There are two queues.",
+      "These files hold the queue.",
+      "Theirs is the queue.",
+    ];
+    const { findings } = lintExplainer(
+      explainer({ concepts: summaries.map((s, i) => conceptWith(`concept:c${i + 1}`, s)) }),
+    );
+    expect(only(findings, "bare-it").map((f) => [f.elementId, f.message])).toEqual([
+      ["concept:c1", 'starts with a bare "They"'],
+      ["concept:c2", 'starts with a bare "These"'],
+      ["concept:c3", 'starts with a bare "Those"'],
+      ["concept:c4", 'starts with an empty "There is"'],
+      ["concept:c5", 'starts with an empty "There are"'],
+    ]);
+  });
+
+  it('we-voice: "we", "our", "us" and "let\'s" in reader text, not in code, quotes or "US"', () => {
+    const notes = [
+      "### The queue\n\nWe keep jobs in our queue.",
+      "### The retry\n\nLet's look at the retry. It gives us a second chance.",
+      '### The queue\n\nThe `we` flag and the comment "we retry here" stay. The US region runs it.',
+    ];
+    const { findings } = lintExplainer(explainer({ tours: [tour(notes)] }));
+    expect(only(findings, "we-voice").map((f) => [f.elementId, f.message])).toEqual([
+      ["tour:t/t1", '"we", "our": the guide speaks as a team the reader is not part of'],
+      ["tour:t/t2", '"let\'s", "us": the guide speaks as a team the reader is not part of'],
+    ]);
+  });
+
+  it("tool-word: xpl's own words in tour text; edge cases, code and the guide's own boxes pass", () => {
+    const notes = [
+      "### The runner\n\nThe runner node has two edges, and its anchors are the evidence.",
+      "### Edge cases\n\nAn edge case: an empty queue. The `node` field and an llm patch.",
+      "### The tree\n\nEach syntax node holds its children.",
+    ];
+    const { findings } = lintExplainer(
+      explainer({
+        tours: [
+          tour(notes, {
+            summary: "A job goes from the queue to a worker node. Failed jobs come back later.",
+          }),
+        ],
+      }),
+    );
+    expect(only(findings, "tool-word").map((f) => [f.elementId, f.message])).toEqual([
+      ["tour:t", '"node": a word of the tool, not of the code'],
+      ["tour:t/t1", '"node", "edges", "anchors", "evidence": words of the tool, not of the code'],
+      ["tour:t/t2", '"llm": a word of the tool, not of the code'],
+      ["tour:t/t3", '"node": a word of the tool, not of the code'],
+    ]);
+    expect(only(findings, "tool-word")[1]!.hint).toContain('"edges": write "arrows"');
+    // a guide whose boxes are named after the word explains that word: it is the code's word then
+    const tree = lintExplainer(
+      explainer({
+        nodes: [{ id: "file:src/node.ts", label: "Syntax nodes", anchors: [] }],
+        tours: [tour([notes[2]!])],
+      }),
+    );
+    expect(only(tree.findings, "tool-word")).toEqual([]);
+    // element summaries describe code, which may have nodes and edges of its own
+    const element = lintExplainer(
+      explainer({ concepts: [conceptWith("concept:g", "The graph keeps nodes and edges.")] }),
+    );
+    expect(only(element.findings, "tool-word")).toEqual([]);
+  });
+
+  it("filler-word: wordy phrases, weak intensifiers, stale metaphors and long words for short ones", () => {
+    const summaries = [
+      "The runner retries in order to recover.",
+      "The queue is very fast.",
+      "The queue does the heavy lifting.",
+      "The runner utilizes a pool prior to the start.",
+      "At its core, the queue keeps jobs.",
+      // a phrase that is filler only where it opens a clause
+      "Note that the queue keeps jobs.",
+      "The panel shows a note that lists the files.",
+    ];
+    const { findings } = lintExplainer(
+      explainer({ concepts: summaries.map((s, i) => conceptWith(`concept:c${i + 1}`, s)) }),
+    );
+    expect(only(findings, "filler-word").map((f) => [f.elementId, f.message])).toEqual([
+      ["concept:c1", '"in order to": marketing or filler'],
+      ["concept:c2", '"very": marketing or filler'],
+      ["concept:c3", '"heavy lifting": marketing or filler'],
+      ["concept:c4", '"utilizes", "prior to": marketing or filler'],
+      ["concept:c5", '"at its core": marketing or filler'],
+      ["concept:c6", '"note that": marketing or filler'],
+    ]);
+    expect(only(findings, "filler-word")[0]!.hint).toBe('"in order to": write "to"');
+  });
+});
+
+describe("lintExplainer: structure", () => {
+  const graph = (id: string) => ({ id, type: "graph", title: `The map ${id}`, include: [] });
+
+  it("unused-view: a view no tour step shows and no box opens; none when there is no tour", () => {
+    const parts = {
+      nodes: [{ id: "grp:core", label: "Core", members: [], opens: "view:inside", anchors: [] }],
+      views: [graph("view:v"), graph("view:inside"), graph("view:lost")],
+    };
+    const { findings } = lintExplainer(
+      explainer({ ...parts, tours: [tour(["### The queue\n\nThe queue keeps jobs."])] }),
+    );
+    expect(only(findings, "unused-view").map((f) => [f.elementId, f.kind, f.message])).toEqual([
+      ["view:lost", "view", "no tour step shows this view and no box opens it"],
+    ]);
+    expect(only(lintExplainer(explainer(parts)).findings, "unused-view")).toEqual([]);
+  });
+
+  it("many-concepts: more than 5 concepts, listing the ones no tour step focuses", () => {
+    const concepts = (n: number) =>
+      Array.from({ length: n }, (_, i) =>
+        conceptWith(`concept:c${i + 1}`, "The queue keeps jobs."),
+      );
+    const focused = tour(["### The queue\n\nThe queue keeps jobs."]);
+    focused.steps[0]!.focus = ["concept:c1"] as never;
+    expect(
+      only(
+        lintExplainer(explainer({ concepts: concepts(5), tours: [focused] })).findings,
+        "many-concepts",
+      ),
+    ).toEqual([]);
+    const many = only(
+      lintExplainer(explainer({ concepts: concepts(6), tours: [focused] })).findings,
+      "many-concepts",
+    );
+    expect(many.map((f) => [f.elementId, f.message, f.ids])).toEqual([
+      [
+        "(explainer)",
+        "6 concepts (more than 5); 5 of them no tour step focuses",
+        ["concept:c2", "concept:c3", "concept:c4", "concept:c5", "concept:c6"],
+      ],
+    ]);
+  });
+
+  it("duplicate-step: a note copied into another tour; short or different notes and TODOs pass", () => {
+    const copied =
+      "### One file holds the guide\n\nThe bundle writes the index, the text of each file and the viewer into one page.";
+    const other =
+      "### The viewer reads the page\n\nThe viewer reads the index and draws the map from the boxes it lists.";
+    const short = "### The queue\n\nThe queue keeps jobs.";
+    const todo =
+      "### TODO: a title\n\nTODO: say what the bundle writes into the page for the reader.";
+    const { findings } = lintExplainer(
+      explainer({
+        tours: [
+          tour([copied, other, short, todo]),
+          tour([short, copied, todo], { id: "tour:quick", title: "The short way" }),
+        ],
+      }),
+    );
+    expect(only(findings, "duplicate-step").map((f) => [f.elementId, f.message])).toEqual([
+      ["tour:quick/t2", "the same note as tour:t/t1"],
+    ]);
+  });
+
+  it("long-note: a note body over 50 words", () => {
+    const body = (n: number) => Array.from({ length: n }, () => "jobs").join(" ") + ".";
+    const { findings } = lintExplainer(
+      explainer({
+        tours: [tour([`### The queue\n\n${body(50)}`, `### The queue\n\n${body(51)}`])],
+      }),
+    );
+    expect(only(findings, "long-note").map((f) => [f.elementId, f.message])).toEqual([
+      ["tour:t/t2", "51 words (more than 50)"],
+    ]);
+  });
+});
+
 describe("xpl lint", () => {
   let demo: string;
 
@@ -1895,7 +2194,9 @@ describe("xpl lint", () => {
     expect(missing.err).toContain('no explainer "nope"');
     const help = await invoke(["lint", "--help"]);
     expect(help.code).toBe(0);
-    expect(help.out).toContain("Usage: xpl lint [explainer] [--patch <file|->] [--warn-only]");
+    expect(help.out).toContain(
+      "Usage: xpl lint [explainer] [--patch <file|->] [--warn-only] [--strict]",
+    );
     for (const rule of ["repeats-summary", "markdown-in-plain", "markdown-in-summary"]) {
       expect(help.out).toContain(rule);
     }

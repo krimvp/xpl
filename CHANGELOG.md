@@ -1,6 +1,67 @@
 # Changelog
 
-User-facing changes are listed here. Versions link to their GitHub releases.
+User-facing changes are listed here. Versions link to their changes on GitHub.
+
+## [Unreleased]
+
+New commands and drafts:
+
+- `xpl draft map` drafts a quick map of every code file, one map per folder, with a plain name and one
+  sentence per box. Run again, it drafts only new files and keeps the text already written. With a change
+  recorded, it adds a tour of the changed files. A folder map with more than 30 boxes groups the files that
+  use each other. (#231, #235)
+- `xpl update <guide> --since <rev>` brings a map up to date in one run: it indexes, re-resolves the code
+  links, records the change and drafts the map again. (#235)
+- `xpl draft class <guide> <type>` maps what a class or interface extends and implements, and what extends or
+  implements it. (#233)
+- `xpl draft states <guide> <type>` drafts a flow of the states of a status type (a TypeScript enum or union
+  of string literals, a Python Enum, a Go const block) and the functions that move it between them. (#237)
+- `xpl health` lists committed secrets, secrets in variables sent to the browser, committed `.env` files,
+  code files over 1,000 lines and files nothing uses. It never prints a secret and exits 0 with or without
+  findings. (#236)
+
+Guides and the viewer:
+
+- Sketch boxes show an idea or a plan before there is code. They are drawn dotted, labelled "sketch" and
+  linked to no code. (#233)
+- Select a box and choose "What it leads to" or "What leads to it" to light up every box reached along its
+  arrows. (#233)
+- A map can show each box's one-sentence summary on the box. The header has a theme button: Auto, Light or
+  Dark. (#231)
+- "Save image" downloads a diagram as a PNG, as it looks on screen, in either theme. (#239)
+- A tour summary gives the answer first, then up to four reasons; `xpl lint` checks for it. A tour note can
+  hold a small table. (#239)
+- An answer from the local service offers "Show on the map", which selects the boxes whose code holds the
+  answer. (#235)
+
+Indexing:
+
+- Web requests (`fetch`, axios, `requests`, `httpx`, Go `net/http`) link to the route that answers them in
+  Express, Koa, Hono, Fastify, Next.js, FastAPI, Flask, net/http, chi, gin and echo. Maps draw these links
+  as `requests` arrows. They are always heuristic. (#238)
+- A request path built from a file's string constant reads the constant's value. `xpl draft map` leaves out
+  code files that define and use nothing. (#240)
+
+Command-line messages:
+
+- Help text wraps at 110 columns. An unknown command or option suggests the nearest name, for example
+  `Did you mean "--depth"?`. `xpl ready` prints each finding as the problem, then "fix:" and the fix.
+  Errors use the right article ("an interface", "an enum"). The `xpl draft states` error names the command
+  that lists candidates.
+
+Docs:
+
+- The README starts with what xpl does and a picture, then a short quick start. "Try it without Claude" now
+  works for an npm install: it points to the published examples and to `xpl start`. The fixture command is
+  for a source checkout only.
+- The README, Getting started and the landing page show the two install commands and link to the
+  [install options](skill/code-explainer/reference/create.md#install). The landing page shows the default
+  agent, Claude Code.
+- The README and the docs site use one word for each thing: guide, tour, diagram (map, flow, sequence), box,
+  arrow and code link. The workflow pages own their text, and the explain and change pages have a picture.
+  The docs site adds the writing guide and orders the workflows as a newcomer meets them.
+- SECURITY.md names the supported line (0.3.x) and says that only `xpl view` takes `--host`. The README and
+  the docs list every supported language, including Rust, and give the exit codes of `xpl health`.
 
 ## [0.3.0]
 
@@ -52,6 +113,7 @@ First npm release of the xpl CLI, viewer, tree-sitter grammars, and code-explain
 - Node 22.12 or newer is required. The packaged artifact was exercised on Linux x64 under WSL2 with Node
   22.23.1; other platforms were not verified.
 
+[Unreleased]: https://github.com/krimvp/xpl/compare/v0.3.0...HEAD
 [0.3.0]: https://github.com/krimvp/xpl/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/krimvp/xpl/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/krimvp/xpl/compare/v0.2.0...v0.2.1

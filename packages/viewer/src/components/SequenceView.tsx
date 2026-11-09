@@ -18,7 +18,7 @@ import {
 } from "../layout/sequenceLayout.js";
 import { useStore } from "../hooks.js";
 import { arrowHeadPath, openArrowHeadPath, roundedPath, type Box } from "../svg.js";
-import { unionBox } from "../viewport.js";
+import { READABLE_ZOOM, unionBox } from "../viewport.js";
 import { SequenceKey } from "./Legend.js";
 import {
   PanZoom,
@@ -120,7 +120,8 @@ export function SequenceView({
       imageName={view.title}
       maxFitZoom={present ? PRESENT_MAX_FIT_ZOOM : undefined}
       fitPadding={present ? PRESENT_FIT_PADDING : undefined}
-      readableZoom={present ? PRESENT_READABLE_ZOOM : undefined}
+      // Whole only when its words read at 10px or more (13.5 units at 0.75); else framed on the step.
+      readableZoom={present ? PRESENT_READABLE_ZOOM : READABLE_ZOOM}
       focus={startBoxes.length > 0 ? { boxes: startBoxes, core: startCore } : undefined}
       keepInView={startCore}
       overlay={(t, size) => <StickyHeads lifelines={layout.lifelines} t={t} paneWidth={size.w} />}
@@ -136,14 +137,15 @@ export function SequenceView({
       }
     >
       <g className="sequence">
-        <g className="frames">
-          {layout.frames.map((box) => (
-            <FrameShape key={box.frame.id} box={box} />
-          ))}
-        </g>
         <g className="lifelines">
           {layout.lifelines.map((lifeline) => (
             <LifelineShape key={lifeline.id} lifeline={lifeline} classes={states(lifeline.id)} />
+          ))}
+        </g>
+        {/* Frames over the lifelines (their box is see-through): no dashed line runs through a frame's name. */}
+        <g className="frames">
+          {layout.frames.map((box) => (
+            <FrameShape key={box.frame.id} box={box} />
           ))}
         </g>
         <g className="steps">
@@ -171,11 +173,6 @@ export function SequencePicture({
   const states = (id: string) => (selected.has(id) ? " is-selected" : "");
   return (
     <g className="sequence is-still">
-      <g className="frames">
-        {layout.frames.map((box) => (
-          <FrameShape key={box.frame.id} box={box} />
-        ))}
-      </g>
       <g className="lifelines">
         {layout.lifelines.map((lifeline) => (
           <LifelineShape
@@ -184,6 +181,11 @@ export function SequencePicture({
             classes={states(lifeline.id)}
             still
           />
+        ))}
+      </g>
+      <g className="frames">
+        {layout.frames.map((box) => (
+          <FrameShape key={box.frame.id} box={box} />
         ))}
       </g>
       <g className="steps">
@@ -361,7 +363,7 @@ function StepShape({
       data-navigation-to={still ? undefined : step.to}
       role={still ? undefined : "button"}
       tabIndex={still ? undefined : 0}
-      aria-label={`${kind} ${step.label ?? ""}`}
+      aria-label={`${row.index + 1}. ${kind} ${step.label ?? ""}`}
       onClick={(event) => {
         event.stopPropagation();
         select(event);
@@ -383,9 +385,25 @@ function StepShape({
       />
       <path className="line" d={path} />
       <path className="head" d={head} />
+      {/* On a plate of the canvas' colour: no lifeline runs through the words. */}
+      <rect
+        className="label-plate"
+        x={(row.labelAnchor === "middle" ? row.labelX - row.labelWidth / 2 : row.labelX) - 4}
+        y={row.labelY - 14}
+        width={row.labelWidth + 8}
+        height={19}
+        rx={4}
+      />
       <text className="label" x={row.labelX} y={row.labelY} textAnchor={row.labelAnchor}>
         {step.label ?? ""}
       </text>
+      {/* Its number, where it starts: the number the text view, the parts list and the prose use. */}
+      <g className="step-number" aria-hidden="true">
+        <circle cx={row.x1} cy={row.y} r={10} />
+        <text x={row.x1} y={row.y + 4}>
+          {row.index + 1}
+        </text>
+      </g>
     </g>
   );
 }

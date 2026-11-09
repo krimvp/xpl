@@ -14,7 +14,7 @@ test("opens a readable guide with optional synchronized map, flow and source", a
   await page.goto(TS_BUNDLE.href);
   await expect(page.getByTestId("guide")).toBeVisible();
   await expect(page.locator(".editor-host")).toHaveCount(0);
-  await page.getByRole("navigation", { name: "Guide contents" }).getByRole("button").nth(1).click();
+  await page.getByRole("navigation", { name: "Tour steps" }).getByRole("button").nth(1).click();
   const selection = await selectionOf(page);
   await page.getByTestId("perspective-map").click();
   await expect(page.locator(".workspace-diagram svg")).toBeVisible();
@@ -41,7 +41,7 @@ test("shows configuration keys, opens supporting files and restores the topic on
   const problems = watchProblems(page);
   await page.goto(TS_BUNDLE.href);
   await expect(page.getByTestId("guide")).toBeVisible();
-  await page.getByRole("navigation", { name: "Guide contents" }).getByRole("button").nth(1).click();
+  await page.getByRole("navigation", { name: "Tour steps" }).getByRole("button").nth(1).click();
   await expect(page.getByRole("region", { name: "Related files" })).toContainText(
     "config/default.yaml",
   );
@@ -137,21 +137,23 @@ for (const scheme of ["light", "dark"] as const) {
     await page.goto(TS_BUNDLE.href);
     await expect(page.getByTestId("guide")).toBeVisible();
     await page.screenshot({ path: screenshotPath(`workspace-guide-${scheme}`) });
-    await page
-      .getByRole("navigation", { name: "Guide contents" })
-      .getByRole("button")
-      .nth(1)
-      .click();
+    await page.getByRole("navigation", { name: "Tour steps" }).getByRole("button").nth(1).click();
     await page.getByTestId("perspective-flow").click();
     await expect(page.locator(".workspace-diagram .step").first()).toBeVisible();
     await page.screenshot({ path: screenshotPath(`workspace-flow-${scheme}`) });
-    await page.getByRole("button", { name: "Show source", exact: true }).click();
+    await page
+      .locator(".workspace-location")
+      .getByRole("button", { name: "Show code", exact: true })
+      .click();
     await page.evaluate(() => window.__xpl!.setCursor("src/runner.ts", 76));
     await expect(page.locator('[data-element-id="dispatch:3"]')).toHaveClass(/is-match/);
     await page.screenshot({ path: screenshotPath(`workspace-source-${scheme}`) });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByTestId("perspective-guide").click();
-    await page.getByRole("button", { name: "Hide source", exact: true }).click();
+    await page
+      .locator(".workspace-location")
+      .getByRole("button", { name: "Hide code", exact: true })
+      .click();
     await expect(page.getByTestId("perspective-code")).toBeVisible();
     await expect(page.locator('.guide-section[data-section-id="t2"]')).toBeInViewport();
     await expect(page.locator(".header")).toBeInViewport();
@@ -254,7 +256,7 @@ test("Related files: the triangle sits in the heading, a file's path shows once"
 }) => {
   await page.goto(TS_BUNDLE.href);
   await expect(page.getByTestId("guide")).toBeVisible();
-  await page.getByRole("navigation", { name: "Guide contents" }).getByRole("button").nth(1).click();
+  await page.getByRole("navigation", { name: "Tour steps" }).getByRole("button").nth(1).click();
   const card = page.getByRole("region", { name: "Related files" }).locator(".resource-set").first();
   const chevron = (await card.locator(".resource-chevron").boundingBox())!;
   const kind = (await card.locator(".resource-kind").boundingBox())!;

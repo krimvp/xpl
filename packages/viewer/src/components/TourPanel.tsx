@@ -134,7 +134,7 @@ export function TourPanel({ onClose }: { onClose: () => void }) {
         title={
           view
             ? "Append a step for the current view and selection"
-            : "This explainer has no view to add"
+            : "This guide has no diagram to add"
         }
         onClick={add}
       >

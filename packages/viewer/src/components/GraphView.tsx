@@ -60,8 +60,9 @@ import { useStore, useViewerState } from "../hooks.js";
 import { mapKeyShows } from "../keyMarks.js";
 import { boxName, readingOrder } from "../mapOrder.js";
 import { readerBadge } from "../readerWords.js";
+import { READABLE_ZOOM } from "../viewport.js";
 import { GhostTargetList } from "./GhostTargets.js";
-import { Legend } from "./Legend.js";
+import { KeyLine, Legend } from "./Legend.js";
 import { BoxIcon, iconName } from "./icons.js";
 import {
   PanZoom,
@@ -424,8 +425,28 @@ export function GraphView({
   const dismissOnWheel = (event: WheelEvent<HTMLDivElement>) => {
     if (!(event.target as Element).closest(".ghost-menu")) setMenu(undefined);
   };
+  // A reader sees the lines out of the map only for what they look at: a picked or matched box, the
+  // ghost under the pointer, or a picked stub. All of them at once bury the map's own arrows.
+  const quietStub = (edge: LayoutEdge): boolean =>
+    (present || reader) &&
+    edge.stub &&
+    ![edge.id, edge.from, edge.to].some(
+      (id) =>
+        id === hovered || marks.selected.has(id) || marks.matches.has(id) || marks.related.has(id),
+    );
   const menuGhost = menu ? layout?.nodes.find((n) => n.id === menu.id) : undefined;
   const names = useMemo(() => boxNames(layout?.nodes ?? []), [layout]);
+
+  const keyShows = useMemo(
+    () =>
+      layout &&
+      mapKeyShows(layout.nodes, layout.edges, {
+        canZoomInto: (id) => store.canZoomInto(id),
+        canExpandInPlace: (id) => store.canExpandInPlace(id),
+        changed: (changes?.size ?? 0) > 0,
+      }),
+    [layout, store, changes, state.model],
+  );
 
   let body;
   if (error) body = <div className="diagram-message is-error">Layout failed: {error}</div>;
@@ -448,20 +469,22 @@ export function GraphView({
         maxFitZoom={present ? PRESENT_MAX_FIT_ZOOM : undefined}
         fitPadding={present ? PRESENT_FIT_PADDING : undefined}
         minFitZoom={pinned ? GRAPH_READABLE_ZOOM : undefined}
-        readableZoom={present ? PRESENT_READABLE_ZOOM : pinned ? GRAPH_READABLE_ZOOM : undefined}
+        // A reader's map starts whole only when its labels read at 10px or more (13-14 unit text at 0.75):
+        // a map that grew (a box opened in place) is framed on what was picked rather than shrunk to 8px.
+        readableZoom={
+          present
+            ? PRESENT_READABLE_ZOOM
+            : pinned
+              ? GRAPH_READABLE_ZOOM
+              : reader
+                ? READABLE_ZOOM
+                : undefined
+        }
         readableMin={pinned ? GRAPH_READABLE_ZOOM : undefined}
         focus={focus}
         keepInView={preview ? undefined : selectionBox}
         onBackgroundClick={() => store.clearSelection()}
-        tools={
-          <Legend
-            shows={mapKeyShows(layout.nodes, layout.edges, {
-              canZoomInto: (id) => store.canZoomInto(id),
-              canExpandInPlace: (id) => store.canExpandInPlace(id),
-              changed: (changes?.size ?? 0) > 0,
-            })}
-          />
-        }
+        tools={<Legend shows={keyShows!} />}
       >
         <g
           className="graph"
@@ -472,7 +495,13 @@ export function GraphView({
           {/* Nodes are drawn above the edges of their level: a click on a box is never taken by an edge. */}
           <g className="edges">
             {layout.edges.map((edge) => (
-              <EdgeShape key={edge.id} edge={edge} marks={marks} focusable={false} />
+              <EdgeShape
+                key={edge.id}
+                edge={edge}
+                marks={marks}
+                focusable={false}
+                quiet={quietStub(edge)}
+              />
             ))}
           </g>
           <EdgeLabels edges={layout.edges} marks={marks} />
@@ -505,6 +534,7 @@ export function GraphView({
                     onPointerDownCapture={dismiss}
                     onWheelCapture={menu ? dismissOnWheel : undefined}
                   >
+                    {keyShows && !present && <KeyLine shows={keyShows} />}
                     {body}
                     {moveError && (
                       <p className="placement-error" role="alert">
@@ -1131,6 +1161,7 @@ function GhostShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
   const readOnly = useContext(ReadOnly);
   const still = useContext(Still);
   const menu = useContext(GhostMenuContext);
+  const hover = useContext(SetHovered);
   const fold = node.ghostFold;
   const open = fold !== undefined && menu.openId === node.id;
   // One element: add it. Several: choose (the menu). While presenting, nothing happens.
@@ -1154,6 +1185,10 @@ function GhostShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
       aria-label={still ? undefined : label}
       aria-haspopup={fold && !readOnly ? "menu" : undefined}
       aria-expanded={fold && !readOnly ? open : undefined}
+      onPointerEnter={() => hover(node.id)}
+      onPointerLeave={() => hover(undefined)}
+      onFocus={() => hover(node.id)}
+      onBlur={() => hover(undefined)}
       onClick={(event) => {
         event.stopPropagation();
         expand(event.currentTarget.getBoundingClientRect());
@@ -1349,11 +1384,14 @@ const EdgeShape = memo(function EdgeShape({
   edge,
   marks,
   focusable = true,
+  quiet = false,
 }: {
   edge: LayoutEdge;
   marks: Marks;
   /** False when EdgeKey gives the keyboard its way to the edge (the top level). */
   focusable?: boolean;
+  /** A stub a reader is not looking at: not drawn (its ghost box still is). */
+  quiet?: boolean;
 }) {
   const store = useStore();
   const reader = useContext(Reader);
@@ -1371,7 +1409,7 @@ const EdgeShape = memo(function EdgeShape({
   const select = (event: MouseEvent | KeyboardEvent) => store.click(edge.id, additive(event));
   return (
     <g
-      className={edgeClasses(edge, marks, reader)}
+      className={edgeClasses(edge, marks, reader) + (quiet ? " is-stub-quiet" : "")}
       onPointerEnter={edge.label ? () => hover(edge.id) : undefined}
       onPointerLeave={edge.label ? () => hover(undefined) : undefined}
       data-element-id={still ? undefined : edge.id}

@@ -231,8 +231,8 @@ describe("xpl change", () => {
 
     const help = await invoke(["change", "--help"]);
     expect(help.out).toContain("class counts too");
-    expect(help.out).toContain("A missing reference does not mean the behavior has no test");
-    expect(help.out).toContain("changed test files are listed separately");
+    expect(help.out).toContain("A missing test reference does not mean the behaviour has no test");
+    expect(help.out).toContain("changed test files, listed apart from the per-symbol matches");
 
     const drafted = await xplJson<{ patch: ExplainerPatch }>(dir, "draft", "change", "demo");
     expect(drafted.code).toBe(0);

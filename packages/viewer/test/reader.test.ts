@@ -5,7 +5,13 @@
 import { describe, expect, it } from "vitest";
 import { ExplainerModel, processFlow, type SequenceView, type TourStep } from "@xpl/core";
 import { placedStages } from "../src/layout/flowLayout.js";
-import { looksLikeCode, mapEdgeSource, readerBadge, roleWords } from "../src/readerWords.js";
+import {
+  firstContentLine,
+  looksLikeCode,
+  mapEdgeSource,
+  readerBadge,
+  roleWords,
+} from "../src/readerWords.js";
 import {
   MAX_SENTENCE_TITLE,
   noteParts,
@@ -143,16 +149,38 @@ describe("process flow of another view (Read > Flow, the topic select)", () => {
 });
 
 describe("plain words for readers", () => {
-  it("map sources keep authored overlays, derived precision and indexed facts distinct", () => {
-    expect(mapEdgeSource({ stored: false, resolution: "heuristic" })).toBe("derived · heuristic");
+  it("map sources name the trust label and what it means, and an author's note on top", () => {
+    expect(mapEdgeSource({ stored: false, resolution: "heuristic" })).toBe(
+      "heuristic: matched by name",
+    );
     expect(mapEdgeSource({ stored: true, resolution: "precise" })).toBe(
-      "authored overlay · derived · precise",
+      "author's note · precise: checked by a language tool",
     );
     expect(mapEdgeSource({ stored: true, resolution: "mixed" })).toBe(
-      "authored overlay · derived · mixed precision",
+      "author's note · partly precise, partly heuristic",
     );
-    expect(mapEdgeSource({ stored: true, resolution: "llm" })).toBe("authored");
-    expect(mapEdgeSource({ stored: true, resolution: "static" })).toBe("from index");
+    expect(mapEdgeSource({ stored: true, resolution: "llm" })).toBe("added by the author");
+    expect(mapEdgeSource({ stored: true, resolution: "static" })).toBe("from the code");
+  });
+
+  it("a step's code excerpt starts after the imports at the top of a file", () => {
+    const ts = [
+      'import { a } from "./a.ts";',
+      "import {",
+      "  b,",
+      '} from "./b.ts";',
+      "",
+      "export class Runner {}",
+    ];
+    expect(firstContentLine(ts, { startLine: 1, endLine: 6 })).toBe(6);
+    const go = ["package jobs", "", "import (", '\t"fmt"', ")", "", "func Run() {}"];
+    expect(firstContentLine(go, { startLine: 1, endLine: 7 })).toBe(7);
+    const py = ["from os import path", "import sys", "", "def run():"];
+    expect(firstContentLine(py, { startLine: 1, endLine: 4 })).toBe(4);
+    // a range of nothing but imports has no excerpt
+    expect(firstContentLine(py, { startLine: 1, endLine: 3 })).toBeUndefined();
+    // a range in the middle of a file starts where it starts
+    expect(firstContentLine(ts, { startLine: 3, endLine: 6 })).toBe(3);
   });
 
   it("anchor roles say what the lines are", () => {

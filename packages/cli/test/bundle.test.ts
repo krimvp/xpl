@@ -613,7 +613,8 @@ describe("xpl bundle: what the reader would see by mistake", () => {
     const r = await bundle(dir, "-o", out);
     expect(r.code).toBe(1);
     expect(r.err).toContain("todo-left");
-    expect(r.err).toContain("concept:todo.summary");
+    // One line per finding: the message, then the fix, never glued together.
+    expect(r.err).toMatch(/concept:todo\.summary \(todo-left\): [^\n]+; fix: [^\n]+/);
     expect(existsSync(out)).toBe(false);
     const draft = await bundle(dir, "-o", out, "--draft");
     expect(draft.code).toBe(0);
@@ -697,7 +698,7 @@ describe("xpl ready", () => {
       scope: "workspace",
       decisionNote: "This is an unfinished draft.",
     });
-    expect(checked.json.findings.filter((f: any) => f.code === "todo-left")).toHaveLength(28);
+    expect(checked.json.findings.filter((f: any) => f.code === "todo-left")).toHaveLength(31);
     const out = join(scratch, "ready.html");
     const exported = await invoke(["bundle", "path", "-o", out, "--json"], {
       cwd: dir,

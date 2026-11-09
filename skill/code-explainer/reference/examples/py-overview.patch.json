@@ -373,7 +373,7 @@
           "id": "t0",
           "view": "view:system",
           "focus": ["grp:job-runner"],
-          "note": "### A program that runs jobs in the background\n\nAn operator starts the job runner from the command line. The two arrows show who starts the program and which settings it reads. Zoom into the box to see its five parts.",
+          "note": "### A program that runs jobs in the background\n\nAn operator starts the job runner from the command line. The two arrows show who starts the program and which settings file it reads. Zoom into the box to see its five parts.",
           "code": [
             {
               "file": "jobrunner/__main__.py",
@@ -393,7 +393,7 @@
           "id": "t1",
           "view": "view:overview",
           "focus": ["file:jobrunner/__main__.py"],
-          "note": "### One function connects the five parts\n\n`run` in `__main__.py` creates each part and hands it to the parts that need it. The call arrows show code links, not the order they run. For example, `Runner` gets the queue and the worker pool.",
+          "note": "### One function connects the five parts\n\nAt startup, `run` creates each part and hands it to the parts that need it. The call arrows show code links, not the order they run. For example, the runner gets the queue and the worker pool.",
           "code": [
             {
               "file": "jobrunner/__main__.py",
@@ -413,7 +413,7 @@
           "id": "t2",
           "view": "view:overview",
           "focus": ["grp:configuration"],
-          "note": "### Settings are read and checked first\n\n`load_config` raises `ConfigError` for a malformed line, a missing setting, or a number or flag of the wrong type. `run` loads the settings before it creates the other parts.",
+          "note": "### Settings are read and checked first\n\n`load_config` raises an error for a malformed line, a missing setting, or a number or flag of the wrong type. Startup loads the settings before it creates the other parts.",
           "code": [
             {
               "file": "jobrunner/config.py",
@@ -459,7 +459,7 @@
           "id": "t4",
           "view": "view:overview",
           "focus": ["file:jobrunner/worker.py"],
-          "note": "### A worker reports failures, it does not raise them\n\nWhen a handler raises an `Exception` or times out, `Worker.run` returns a result with `ok=False`. The loop reads that result and decides what to do next.",
+          "note": "### A worker reports failures, it does not raise them\n\nWhen a handler raises an exception or times out, the worker returns a failed result instead. The loop reads that result and decides what to do next.",
           "code": [
             {
               "file": "jobrunner/worker.py",
@@ -555,13 +555,13 @@
     {
       "id": "tour:completion-path",
       "title": "How successful attempts reach metrics",
-      "summary": "Start with the five-part map, then inspect startup wiring and the successful completion event. Scheduling and dispatch remain on the five-part map.",
+      "summary": "When a worker finishes a job without an error, it announces `job.completed` on the event bus, and the metrics count it. Startup connects the metrics to the bus only when metrics are on in the settings. The worker and the metrics code do not import each other.",
       "steps": [
         {
           "id": "completion:overview",
           "view": "view:overview",
           "focus": ["file:jobrunner/__main__.py"],
-          "note": "### Start with five parts\n\nStartup reads settings and connects Scheduling, Workers, and Events and metrics. The arrows show code links, not a job traveling between parts. Scheduling and dispatch remain on this map.",
+          "note": "### Startup connects the workers to the metrics\n\nStartup reads the settings and connects Scheduling, Workers, and Events and metrics. The arrows show code links, not a job that moves between parts.",
           "code": [
             {
               "file": "jobrunner/__main__.py",
@@ -581,7 +581,7 @@
           "id": "completion:event",
           "view": "view:completion-path",
           "focus": ["edge:job-completed"],
-          "note": "### A worker announces success\n\nAfter a successful attempt, Workers send `job.completed` to Events and metrics. The direct Startup arrow shows metrics wiring, not a second completion event. This map leaves out Scheduling and dispatch; the five-part map shows them.",
+          "note": "### A worker announces each success\n\nAfter a successful attempt, the worker sends `job.completed` to Events and metrics. The arrow from Startup shows where startup connects the metrics, not a second event. The five-part map shows the scheduling parts that this map leaves out.",
           "code": [
             {
               "file": "jobrunner/worker.py",

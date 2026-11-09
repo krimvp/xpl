@@ -26,8 +26,8 @@ are the gate for pull requests.
 - Do not hand-edit `*.explainer.json`. Use `xpl apply` or `xpl change`.
 - Changes to code described by xpl's own explainer may require updating its anchors. The
   `packages/cli/test/self-explainer.test.ts` test identifies stale references.
-- Tree-sitter grammar versions must match the pinned `web-tree-sitter` ABI. Playwright is pinned to the
-  preinstalled browser version; do not run `playwright install` locally.
+- Tree-sitter grammar versions must match the pinned `web-tree-sitter` ABI. Playwright is pinned to 1.56.1.
+  Use the browsers of that version. In a sandbox that already has them, do not run `playwright install`.
 
 ## Pull requests
 

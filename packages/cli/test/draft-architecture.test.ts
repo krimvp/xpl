@@ -210,6 +210,40 @@ describe("xpl draft repo: one service and what it relies on", () => {
   });
 });
 
+describe("xpl draft repo: a program without a web or command-line framework", () => {
+  it("adds who starts it at its main function and the settings file it loads, each anchored", async () => {
+    const { patch, notes } = await drafted(copyFixture("ts-jobrunner"));
+    const service = patch.nodes!.find((node) => node.role === "service")!;
+    expect(graph(patch, "view:system")?.include).toEqual([
+      "grp:operator",
+      service.id,
+      "grp:settings",
+    ]);
+    const node = (id: string) => patch.nodes!.find((n) => n.id === id)!;
+    expect(node("grp:operator")).toMatchObject({ role: "person" });
+    expect(node("grp:operator").anchors).toEqual([
+      { file: "src/main.ts", symbol: "main", role: "definition" },
+    ]);
+    expect(node("grp:settings")).toMatchObject({ role: "storage", tech: "YAML" });
+    // the file itself, and the line of the code that loads it (never a test)
+    expect(node("grp:settings").anchors).toEqual([
+      { file: "config/default.yaml", role: "config" },
+      { file: "src/main.ts", span: { from: 39, to: 39 }, role: "usage" },
+    ]);
+    const edges = patch.edges!.map((e) => `${e.from} -> ${e.to}`);
+    expect(edges).toEqual(
+      expect.arrayContaining([
+        "grp:operator -> file:src/main.ts",
+        "file:src/main.ts -> grp:settings",
+      ]),
+    );
+    expect(patch.edges!.find((e) => e.to === "grp:settings")?.anchors).toEqual([
+      { file: "src/main.ts", span: { from: 39, to: 39 }, role: "usage" },
+    ]);
+    expect(notes.join("\n")).toContain("config/default.yaml");
+  });
+});
+
 describe("xpl draft repo: several services", () => {
   const dir = makeTempDir("xpl-arch-multi-");
   writeFile(dir, "README.md", "# shop\n\nTwo services: an API and a worker.\n");

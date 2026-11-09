@@ -15,8 +15,8 @@ function humanize(name: string): string {
 
 export const newCommand: CommandSpec = {
   name: "new",
-  usage: "xpl new <name> [--title t] [--repo r] [--url u]",
-  summary: "Create .explainer/<name>.explainer.json bound to the index",
+  usage: "xpl new <name> [--title <title>] [--repo <name>] [--url <url>]",
+  summary: "Create an empty guide, .explainer/<name>.explainer.json, bound to the index",
   details: [
     "Creates an empty explainer (no nodes, edges, concepts, views or tours) bound to the selected index.",
     "Refuses to overwrite an existing file. Fill it with `xpl apply <name> patch.json`.",
@@ -25,7 +25,7 @@ export const newCommand: CommandSpec = {
     "name. --url records where the repository lives (never taken from the git remote: it may hold credentials).",
   ],
   options: {
-    title: { type: "string", arg: "<t>", desc: "Explainer title (default: the name, humanized)" },
+    title: { type: "string", arg: "<title>", desc: "Guide title (default: the name, humanized)" },
     repo: {
       type: "string",
       arg: "<name>",

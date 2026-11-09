@@ -1,14 +1,14 @@
 # explain change: a PR, an MR or a branch diff
 
-Use this guide when the user wants to understand or review a change: "explain PR 42", "what does this branch change", "walk me through `main..feature`", "explain my uncommitted changes". The result is an explainer written for a reviewer: what changes for users first, then where, then who else is affected, then the tests and the risks.
+Use this guide when the user wants to understand or review a change: "explain PR 42", "what does this branch change", "walk me through `main..feature`", "explain my uncommitted changes". The result is a guide for a reviewer. It says what changes for users first, then where, then who else is affected, then the tests and the risks.
 
-Reviewers rely most on two kinds of claim: what the code did **before**, and what **every caller** does now. In earlier explainers these were the claims that were wrong. This guide is mostly about checking them.
+Reviewers rely most on two kinds of claim: what the code did **before**, and what **every caller** does now. In earlier guides, these were the claims that were wrong. This guide is mostly about checking them.
 
 The examples use an invented change to `fixtures/ts-jobrunner` in the xpl repo: `loadConfig` now rejects a config whose `retry.maxDelayMs` is lower than `retry.baseDelayMs`.
 
 ## 1. Rules
 
-- **Read-only** (SKILL.md, hard rule 3). For a change this means no `git push`, `gh pr comment`, `gh pr review`, `glab mr note` or other API call that writes, and no `checkout`, `switch`, `stash` (push or pop), `reset` or `gh pr checkout` in the user's working tree.
+- **Read-only** (SKILL.md, hard rule 3). For a change, this means no `git push`, `gh pr comment`, `gh pr review`, `glab mr note` or other API call that writes. It also means no `checkout`, `switch`, `stash` (push or pop), `reset` or `gh pr checkout` in the user's working tree.
 - **Fetch only when asked.** For a requested GitHub PR, use `xpl pr prepare <url>` (or `owner/repo <number>`) with an outside `--cache-dir`. It uses existing `gh`/git access, resolves full base/head commits and prepares a separate detached repository; never fetch into the developer's tree. For a GitLab MR, fetch `merge-requests/<n>/head` only in a separate scratch clone. Otherwise ask for a local base and head.
 - **Reading the base is always fine:** `xpl show --at base`, `git show <base>:<path>`, `git diff`, `git log`, `git grep <pattern> <base>`.
 - **A quick run on the base is fine without asking**, in a copy outside the repo: `git archive <base> <paths> | tar -x -C <scratch dir>`, then run a script or one test there. Do the same for the head when you need both. Test dependencies may come from a throwaway environment outside the repo (`uv run --no-project --with pytest ...`, or `npx` in the scratch dir). Never install into the repo or write inside it (`.explainer/` aside).
@@ -16,14 +16,7 @@ The examples use an invented change to `fixtures/ts-jobrunner` in the xpl repo: 
 
 ## 2. Record the change
 
-For a GitHub creation handoff, read `handoff.json` and invoke its explicit installed skill prompt.
-Use its safe `command` prefix for authoring, the returned owned `repository` root and the immutable
-`input.json` full `pr.base.sha..pr.head.sha` range. The head index, guide/change record and outside draft
-already exist; read and complete them rather than running `new` again. `xpl pr finish <input-directory>`
-uses the installed ready/export flow and rechecks both commits before marking a local result ready.
-A base/head mismatch retains a superseded historical result; explicitly create the updated PR. No
-current link or publishing workflow is started. Input-only `pr prepare` also remains available; it
-makes no ready/current claim. Cleanup removes the input and its history; stop consumers first.
+For a GitHub PR handoff, follow `create.md`, "Author through the installed commands". Put the `command` prefix of `handoff.json` in front of every authoring command. Use the `repository` root it returns and the range `pr.base.sha..pr.head.sha` from `input.json`. The head index, the guide, the change record and the draft exist already: complete them, and do not run `new` again. End with `xpl pr finish <input-directory>`.
 
 `xpl change <name> <base>..<head>` needs an index built from the head commit. Find the base and the head:
 
@@ -38,7 +31,14 @@ makes no ready/current claim. Cleanup removes the input and its history; stop co
 - **The head is checked out:** `xpl index`, then `xpl change`. When the head is not checked out, `xpl change` stops and says so. Do not check it out yourself: clone the repo into the scratch dir (`git clone -q <repo> <dir>`, then `git -C <dir> checkout -q <head commit id>`) and run every `xpl` command with `--root <dir>`, or ask the user.
 - **Uncommitted changes:** `git stash create` prints the id of a commit that holds the tracked changes. It adds no stash entry and leaves the files as they are. Then `xpl index --commit <that sha>` and `xpl change <name> HEAD..<that sha>`. New files that git does not track are not in that commit: name them in the reply.
 
-`xpl change` prints the changed files with `+/-` counts, the **changed symbols** (`new` or `changed`), the **direct callers** of each outside tests, the **tests** that reference each, symbols with **no indexed test reference**, and the changed lines outside any symbol. `xpl change <name>` prints it again. Read the intent too: `git log --format='%h %s%n%b' <base>..<head>`, and the PR or MR description when the user gave one. The text may say why the change was made only from these sources, and says so ("The commit message says ...").
+`xpl change` prints:
+
+- the changed files, with `+/-` counts;
+- the **changed symbols** (`new` or `changed`), and the **direct callers** of each outside tests;
+- the **tests** that reference each symbol, and the symbols with **no indexed test reference**;
+- the changed lines outside any symbol.
+
+`xpl change <name>` prints it again. Read the intent too: `git log --format='%h %s%n%b' <base>..<head>`, and the PR or MR description when the user gave one. Say why the change was made only when one of these sources says it, and name the source ("The commit message says ...").
 
 Then `xpl draft change <name> -o change.json`. The draft holds the map, the tour in review order (section 7, steps `t10`, `t20`, ...) and an anchor in every changed file.
 
@@ -50,7 +50,7 @@ Read each changed symbol at head (`xpl show <id> --refs`) and at base (`xpl show
 
 A "before" claim is any sentence about the old code: "used to", "no longer", "already", "now", "instead of", "before this change".
 
-- **Read what decided the old behaviour,** not only the removed lines: the callers (`git grep -n <name> <base> -- <dir>`), the defaults, the exception paths, and the library calls that can fail. In the example, the hunk only adds a check to `loadConfig`. What happened before is in `backoffDelay`, which the diff does not touch: `Math.min(baseDelayMs * 2 ** (attempt - 1), maxDelayMs)` returned `maxDelayMs` for every retry.
+- **Read what decided the old behaviour,** not only the removed lines. Read the callers (`git grep -n <name> <base> -- <dir>`), the defaults, the exception paths, and the library calls that can fail. In the example, the hunk only adds a check to `loadConfig`. What happened before is in `backoffDelay`, which the diff does not touch: `Math.min(baseDelayMs * 2 ** (attempt - 1), maxDelayMs)` returned `maxDelayMs` for every retry.
 - **Never infer old behaviour from the hunk alone.** Removed lines show what the old code said, not what it did for every input. A removed `split(":")[0]` cuts at the first `:`, not the last. An old lookup may have raised an exception that a caller turned into a 500. Run the base when the result depends on a library or on input values (section 1).
 - **Anchor it in the base.** A base anchor points at the old lines of a modified, renamed or deleted file: `{"file": "src/config.ts", "at": "base", "find": "<text from the old file>", "role": "usage"}`, or a `span` counted from line 1 of the old file (the offsets `xpl show --at base` prints). No `symbol`: the base is not indexed. Put it next to the head anchor of the same claim, in the order of SKILL.md, "The tour" (range order). Code that the change does not touch is anchored without `at`: its old code is its current code. Format: `patch-format.md` section 1.
 - **Write it "Before: ... Now: ..."**, with the input that shows the difference: "Before: `maxDelayMs: 100` with `baseDelayMs: 500` made each retry wait 100 ms. Now: `loadConfig` throws `config: retry.maxDelayMs must be at least retry.baseDelayMs`."
@@ -72,7 +72,7 @@ Unchanged code that you show for context is described as unchanged: "Unchanged: 
 
 - `xpl change` lists the tests that reference each changed symbol. A reference is not a check: read what each test asserts before you say what it covers.
 - For each behaviour change and each new branch (every `if`, early return or skip condition the change adds or moves), name the test that covers it, new or old. Name each branch that no test covers ("no test sends a non-HTTP scope through the new check"). Check a gap with `search` in the tests before you claim it.
-- A missing indexed test reference does not prove the behavior has no test. For constructors and instance-call methods, a test reference to the class counts too. Changed test files are listed separately; check whether they exercise the behavior through other code.
+- A missing indexed test reference does not prove that no test covers the behaviour. For constructors and instance-call methods, a test reference to the class counts too. Changed test files are listed separately; check whether they test the behaviour through other code.
 - A test that also passes on the base **does not show the old bug**. It can still guard the new code: say what it checks. Do not call a test useless or redundant without evidence, such as a change to the new code that the test does not catch.
 - The draft anchors every changed file, test files too. Keep at least one anchor in each when you edit the draft. A tour step must show the code of each changed code file (a range in its `code`, or a symbol in its focus; a one-line change is a one-line range): naming a code file in a note does not pass `change-not-shown`. Docs (readme, `*.md`), tests, lock files and renames may instead be named in a note.
 
@@ -95,7 +95,7 @@ Keep the first step and the last in place. To fit a small change, merge the rest
 - Two small pieces that change for the same reason share one step.
 - "Who else is affected" and "tests and gaps" may share a step when both are short.
 
-**The risk** names the worst realistic failure the change can cause, with the input that triggers it, checked against the code: what a caller or a wrapper of the changed code does that now fails, hangs or behaves differently. Do not narrow it to tests when real callers can hit it too, and do not inflate it beyond what the code allows. The tour summary, the last step and the reply carry it.
+**The risk** names the worst realistic failure the change can cause, and the input that triggers it. Check it against the code: what does a caller or a wrapper of the changed code do that now fails, hangs or behaves differently? Do not narrow it to tests when real callers can hit it too. Do not make it bigger than the code allows. The tour summary, the last step and the reply carry it.
 
 **Views.** The draft's map, "What this change touches", holds the changed symbols, their direct callers and one group box for the tests. Its box summaries start with `New:`, `Changed:` or `Unchanged:`; keep that word and write the rest. Add **a flow** of the new behaviour only when the change adds or moves a decision. Label its boxes with plain stage names ("Check the retry delays", "Reject the config"). A branch that belongs to one caller says so in its label.
 

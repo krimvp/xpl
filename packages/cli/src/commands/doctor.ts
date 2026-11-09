@@ -12,6 +12,7 @@ import {
   verifySkill,
   type SkillAgent,
 } from "../setup.js";
+import { fileErrorText } from "../fsutil.js";
 
 const execute = promisify(execFile);
 const REGISTRY_LATEST = "https://registry.npmjs.org/@krimvp%2Fxpl/latest";
@@ -49,7 +50,7 @@ export const doctorCommand: CommandSpec = {
     "An older skill needs xpl skill install; a newer skill needs a matching CLI. Checks npm for a newer xpl version when reachable. Set XPL_NO_UPDATE_CHECK=1 to skip this network check.",
     "Go uses the installed toolchain with user configuration and telemetry disabled; Git tracing is disabled.",
     "Use xpl index --precise off offline. Auto precise mode may download tools/dependencies; require fails if unavailable.",
-    "Agent authentication and provider access are not checked. Devin cloud skill loading is not locally verifiable. Generation is user-invoked.",
+    "Agent authentication and provider access are not checked. Generation is user-invoked.",
   ],
   options: {
     agent: {
@@ -88,7 +89,7 @@ export const doctorCommand: CommandSpec = {
           id,
           required,
           status: error instanceof SkillVersionError ? error.status : "missing",
-          detail: errorMessage(error),
+          detail: fileErrorDetail(error),
           recovery: error instanceof SkillVersionError ? error.recovery : recovery,
         });
       }
@@ -278,3 +279,10 @@ export const doctorCommand: CommandSpec = {
     return ok ? 0 : 1;
   },
 };
+
+/** `no such file: /path` for a file system error, else the error's own message. */
+function fileErrorDetail(error: unknown): string {
+  const path = (error as { path?: unknown } | null)?.path;
+  const text = fileErrorText(error);
+  return typeof path === "string" && text !== errorMessage(error) ? `${text}: ${path}` : text;
+}

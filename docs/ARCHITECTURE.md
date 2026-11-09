@@ -1883,7 +1883,7 @@ why the code is as it is are left to Claude.
 **`xpl lint`** reads the explainer (and the index when there is one, for map counts) and checks the text a reader sees, against the skill's writing rules
 (`reference/writing.md`). Code spans are left out of the word checks. Each finding names the element, the
 field, a short quote and a fix. Rules (thresholds and word lists live in `LINT_LIMITS`, `FILLER_WORDS`,
-`ABSOLUTE_WORDS` in `packages/core/src/lint.ts`):
+`ABSOLUTE_WORDS`, `TOOL_WORDS` in `packages/core/src/lint.ts`):
 
 - `todo-left`: a `TODO` in any authored string, including frame/transition labels, audience, technology
   and view questions. A recursive pass checks text by default, excluding IDs, paths, anchors and other
@@ -1894,17 +1894,24 @@ field, a short quote and a fix. Rules (thresholds and word lists live in `LINT_L
   `tour-first-step` (the first step focuses a test, a concept that lights up nothing, or a flow when the tour
   has a map, or its title says "edge case"),
   `tour-covers-map` (a box of a used map of at most 10 boxes that no step focuses and no note names),
-  `tour-length` (more than 12 steps), `note-heading` (a note without a `### title` line).
+  `tour-length` (more than 12 steps), `note-heading` (a note without a `### title` line), `unused-view` (a
+  view no tour step shows and no box `opens`, when there is a tour), `many-concepts` (more than 5; `ids` lists
+  the ones no step focuses), `duplicate-step` (a note with the same content words as a note of another tour).
 - Titles: `code-title` (a title that looks like code), `placeholder-title` ("Fix 1", "Note", "Step 3").
 - Sentences: `long-sentence` (over 25 words), `long-average` (a field averaging over 20), `bare-it` ("It" or
-  "This" and a verb), `filler-word`, `absolute-word` ("all", "never", "only" … that needs evidence; idioms
-  such as "at all" and narrowing uses such as "compares only the host part" do not count, nor a claim next to
-  its evidence: the text of an element with anchors, a note sentence that names a part the step shows; each
-  cell of a markdown table row is read on its own, and the rule under its header is left out),
-  `repeats-summary` (a note sentence that repeats a focused element's summary), `long-note` (a note body over
-  60 words), `code-heavy` (more different code spans than 3 in a note, 1 in a note on an architecture map, a
-  graph view with a box that has a `role`, or 2 in a tour summary; example values such as `503` or `/admin/*`
-  do not count). Neither judges text that still holds a `TODO`. `tour-covers-map` matches names by word stems.
+  "This" and a verb, "They", "These are", "There is"), `filler-word` (marketing words, wordy phrases,
+  intensifiers, stale metaphors), `passive-voice` (two or more forms of "be" with a past participle in a
+  field), `we-voice` ("we", "our", "us" outside code and quotes), `tool-word` (node, edge, anchor, evidence,
+  upsert, llm, provenance in tour text, unless a box, concept or view path of the explainer uses the word),
+  `absolute-word` ("all", "never", "only" … that needs evidence; idioms such as "at all" and narrowing uses
+  such as "compares only the host part" do not count, nor a claim next to its evidence: the text of an element
+  with anchors, a note sentence that names a part the step shows; each cell of a markdown table row is read on
+  its own, and the rule under its header is left out), `repeats-summary` (a note sentence that repeats a
+  focused element's summary), `long-note` (a note body over 50 words), `long-summary` (an element or step
+  summary over 2 sentences or 45 words), `long-detail` (a `detail` paragraph over 80 words), `code-heavy` (more
+  different code spans than 3 in a note, 1 in a note on an architecture map, a graph view with a box that has a
+  `role`, or 2 in a tour summary; example values such as `503` or `/admin/*` do not count). Neither judges text
+  that still holds a `TODO`. `tour-covers-map` matches names by word stems.
 - Form: `flow-label-code` (a flow stage label written as code), `markdown-in-plain` (markdown in a title or
   label), `markdown-in-summary` (a heading or link in a summary; inline markdown is fine there).
 - What readers will see: `untitled-step` (no note, or no heading and a first sentence too long for a title),
@@ -2715,14 +2722,23 @@ ready pages and draft previews; an export decision never retargets a request to 
   supplied and says "Sequence" for a sequence view, so the reader can tell a structural question from a
   time-ordered one. Without a graph view the Map is generated from the flow's participants (else the top
   level of the repo); without a flow, Flow lists the guide's steps in order. Count labels on edges (`calls ×N`,
-  stubs) are quiet: shown on hover or when an edge or one of its ends is selected.
-  Reader boxes drop the group, directory and symbol badges.
+  stubs) are quiet: shown on hover or when an edge or one of its ends is selected. A stub's dashed line is
+  drawn only while its box or its ghost is picked, matched or hovered (its ghost box always is). A line under
+  the caption (`Legend.tsx` `KeyLine`) names the arrow colours the map draws. Reader boxes drop the group,
+  directory and symbol badges. A reader map starts whole only when that reads at zoom 0.75 or more; else it starts
+  on its focus at that zoom, with "Fit all". A flow with nothing picked starts on its first step; a
+  code-first outline also picks that step, so the code pane shows its code.
 - **Code**: the editors and the file tree. On the other tabs "Show source" opens the code beside them.
 
 Beside the tabs: a breadcrumb (the explainer title, then the open step's title or the selected element), Back
 and Forward through what was read, "Read its explanation" (jumps to the guide step that best covers the
 selection), and a right rail: the selected element's summary ("Current topic", hidden while a guide section
-is the topic); on a map, a selected box lists the visible incoming and outgoing arrows, including dashed
+is the topic). With nothing picked the rail shows "On this map" (`PartsPanel.tsx`, rows from `parts.ts`):
+the map's boxes in include order with the first sentence of their summary and "uses N / used by M", the arrows
+with an author's label, or the numbered steps of a flow or sequence. A row picks its element; a caret in its
+code marks the row (`is-match`). On a phone it sits under the diagram. Sequence arrows and flow steps carry
+their number (a circle at the arrow's start, on the step's corner): the one the parts list uses. On a phone
+the zoom toolbar sits above the canvas, not over it. On a map, a selected box lists the visible incoming and outgoing arrows, including dashed
 arrows to boxes outside the view, with their other end, relationship label or kind and aggregated count.
 Fully shown arrows distinguish authored text, overlays on precise/heuristic references, and indexed facts;
 boundary arrows say that the other end is outside this map. The list shows six rows before "Show more";
@@ -2799,9 +2815,12 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
   Automatic levels of at most 150 boxes and edges spread ports over 15–85% of a box side when this adds no
   crossing arrow pairs or edge-box intersections. They shorten a longer route only when the new path clears other
   boxes by at least 8 diagram units and avoids other arrows.
-  Its label follows the chosen path. At levels with at most 150 edges, a label that meets another route's
-  orthogonal segment tries positions on its own route with four units of clearance from those segments
-  and other labels. It stays inside its level and outside boxes; if none fits, it keeps the earlier position.
+  An edge that would leave a container on the side away from its other end is laid out again with that port
+  on the other side (a second pass), so no route runs back through the container. A label sits on a level
+  run of its own route long enough to hold it clear of the bends, else beside a run, touching it, on a side
+  its line does not turn to (`labelOnRoute`, `labelSpans`); only then at dagre's point. At levels with at most 150 edges, a label that meets another route's
+  orthogonal segment (stubs do not count) tries the same spans, then any point of its route, with four units
+  of clearance from those segments and other labels. It stays inside its level and outside boxes; if none fits, it keeps the earlier position.
   Larger levels keep prior label placement to bound layout time; larger and pinned levels keep port spacing
   and routing rules.
   `GraphView.layout` replaces automatic positions at each

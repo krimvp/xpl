@@ -244,7 +244,7 @@ describe("xpl refs --max-children", () => {
     const dir = await indexedFixture();
     const DISPATCH = "sym:src/runner.ts#Runner.dispatch";
     const help = await xpl(dir, "refs", "--help");
-    expect(help.out).toContain("[--max-children n]");
+    expect(help.out).toContain("[--max-children <n>]");
     expect(help.out).toContain("--max-children <n>");
     const capped = await xpl(
       dir,

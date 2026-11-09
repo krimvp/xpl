@@ -260,7 +260,7 @@ export function completionCommand(commands: () => readonly CommandSpec[]): Comma
     async run(ctx, args) {
       const shell = args.positionals[0];
       if (shell !== "bash" && shell !== "zsh" && shell !== "fish")
-        throw new UsageError("<shell> must be bash, zsh, or fish");
+        throw new UsageError("<shell> must be bash, zsh or fish");
       const script = ({ bash, zsh, fish } satisfies Record<Shell, typeof bash>)[shell](commands());
       if (ctx.json) ctx.emit({ shell, script });
       else ctx.out(script);

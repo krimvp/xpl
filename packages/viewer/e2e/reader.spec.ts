@@ -93,7 +93,7 @@ test.describe("bugs of the review", () => {
     await openVariant(page, withTwoFlows, "?perspective=flow&view=view:dispatch");
     await expect(page.getByTestId("process-flow")).toBeVisible();
     await expect(page.locator(".flow-stage")).toHaveCount(3);
-    const select = page.getByRole("combobox", { name: "Choose a topic" });
+    const select = page.getByRole("combobox", { name: "Choose a diagram" });
     for (const [view, first] of [
       ["view:retry", "retry:dispatch:1"],
       ["view:dispatch", "dispatch:1"],
@@ -234,7 +234,7 @@ test.describe("bugs of the review", () => {
     });
     const guide = page.getByTestId("guide");
     await expect(guide).toBeVisible();
-    const contents = page.getByRole("navigation", { name: "Guide contents" }).getByRole("button");
+    const contents = page.getByRole("navigation", { name: "Tour steps" }).getByRole("button");
     await expect(contents).toHaveText([
       "1Fix 1: the scheduler picks the job",
       "2Where failures go: requeue with backoff",
@@ -526,10 +526,8 @@ test.describe("the reader's screen", () => {
         size,
       );
       const header = page.locator(".header");
-      const tabs = page
-        .getByRole("navigation", { name: "Read the explanation" })
-        .getByRole("button");
-      await expect(tabs).toHaveText(["Guide", "Map", "Flow", "Code"]);
+      const tabs = page.getByRole("navigation", { name: "Read the guide" }).getByRole("button");
+      await expect(tabs).toHaveText(["Tour", "Map", "Flow", "Code"]);
       const controls = [
         ...(await tabs.all()),
         page.getByTestId("mode-present"),
@@ -546,7 +544,7 @@ test.describe("the reader's screen", () => {
         expect(await control.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
       }
       // the author tools are not on the reader's screen
-      for (const hidden of ["Download explainer JSON", "Tours", "Explore", "Read"]) {
+      for (const hidden of ["Download the guide as JSON", "Tours", "Explore", "Read"]) {
         await expect(header.getByRole("button", { name: hidden, exact: true })).toHaveCount(0);
       }
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
@@ -564,10 +562,10 @@ test.describe("the reader's screen", () => {
     const menu = page.getByTestId("edit-menu");
     await expect(menu.getByRole("menuitem")).toHaveText([
       /Explore the diagrams/,
-      /Edit the guide's steps/,
-      /Record author review/,
+      /Edit the tour/,
+      /Mark as reviewed/,
       /Save as HTML/,
-      /Download explainer JSON/,
+      /Download the guide as JSON/,
     ]);
     await expect(menu.getByRole("menuitem").first()).toBeFocused();
     await page.keyboard.press("Escape");

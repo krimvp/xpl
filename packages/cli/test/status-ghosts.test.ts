@@ -103,7 +103,7 @@ describe("xpl status: ghosts and stubs", () => {
     // 14 leaf files and the rest of hub.ts; the default policy keeps 8 and folds the others into one ghost
     expect(out).toContain("view:crowd (graph): Around run");
     const line = out.split("\n").find((l) => l.startsWith("  ghosts:"))!;
-    expect(line).toMatch(/^  ghosts: 9 \(\d+ stubs?; stubs: top 8\), most referenced: /);
+    expect(line).toMatch(/^  ghosts: 9 boxes for \d+ stubs? \(policy: top 8\), most referenced: /);
     // by references, the most referenced first: leaf07 is called 7 times
     expect(line).toContain("most referenced: ghost:file:src/leaf07.ts ×7, ");
     expect(line).toContain("... +4 more (--json lists all, and the stub ids)");
@@ -202,7 +202,7 @@ describe("xpl status: ghosts and stubs", () => {
     editView(dir, { stubs: { mode: "all" } });
     const { out } = await ok(dir, "status", "crowd");
     const line = out.split("\n").find((l) => l.startsWith("  ghosts:"))!;
-    expect(line).toMatch(/^  ghosts: 16 \(\d+ stubs; stubs: all\), most referenced: /);
+    expect(line).toMatch(/^  ghosts: 16 boxes for \d+ stubs \(policy: all\), most referenced: /);
     expect(out).toContain(
       "warning: 16 ghosts: this view stops in too many places to read (more than 12)",
     );

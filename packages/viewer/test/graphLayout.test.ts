@@ -342,6 +342,27 @@ describe("layoutGraph", () => {
     expect(stub.points.at(-1)!.x).toBeCloseTo(ghost.x, 0);
   });
 
+  it("names every kind of reference on a ghost, so its count always has a verb", async () => {
+    const stub = (inside: string, kinds: DerivedEdge["kind"][], count: number) => ({
+      id: `stub:in:${inside}->ghost:file:test.ts`,
+      direction: "in" as const,
+      inside,
+      ghost: "file:test.ts",
+      ghostLabel: "test.ts",
+      targets: [],
+      kinds,
+      count,
+    });
+    const graph: DerivedGraph = {
+      nodes: [{ id: "a", label: "a.ts", kind: "file", container: false }],
+      edges: [],
+      stubs: [stub("a", ["calls", "extends"], 13)],
+      ghosts: [],
+    };
+    const layout = await layoutGraph(graph);
+    expect(layout.nodes.find((n) => n.ghost)!.detail).toBe("calls & extends ×13");
+  });
+
   it("draws a ghost that folds several elements as one box that carries its pick-list", async () => {
     // A.stop calls A.run: the rest of a.ts (a file shown in part) is one ghost, not one per symbol
     const { graph } = graphOf(["sym:src/a.ts#A.run"]);
@@ -770,6 +791,154 @@ describe("what a map draws", () => {
     }
   });
 
+  it("takes an arrow out of a group on the side that faces its other end, and never back through the group", async () => {
+    // xpl's own overview: cli (in a group with skill) serves the viewer, which is laid out above the group.
+    const box = (id: string, parent?: string) => ({
+      id,
+      label: id,
+      kind: "group" as const,
+      container: id === "tools",
+      ...(parent ? { parent } : {}),
+    });
+    const said = (from: string, to: string, label?: string) =>
+      derived({ id: `edge:${from}-${to}`, from, to, ...(label ? { label, stored: true } : {}) });
+    const graph: DerivedGraph = {
+      nodes: [
+        box("tools"),
+        box("skill", "tools"),
+        box("cli", "tools"),
+        box("viewer"),
+        box("indexer"),
+        box("core"),
+      ],
+      edges: [
+        said("skill", "cli", "runs the cli"),
+        said("cli", "viewer", "viewer page"),
+        said("viewer", "cli", "HTTP /api"),
+        said("cli", "core"),
+        said("cli", "indexer"),
+        said("indexer", "core"),
+        said("viewer", "core"),
+      ],
+      stubs: [],
+      ghosts: [],
+    };
+    for (const direction of ["DOWN", "RIGHT"] as const) {
+      const layout = await layoutGraph(graph, { direction });
+      const group = absoluteBoxes(layout.nodes).get("tools")!;
+      const inGroup = (p: { x: number; y: number }) =>
+        p.x > group.x + 1 &&
+        p.x < group.x + group.width - 1 &&
+        p.y > group.y + 1 &&
+        p.y < group.y + group.height - 1;
+      for (const edge of layout.edges) {
+        // walk the route in 2px steps: it goes in (or out of) the group once at most
+        let changes = 0;
+        let was: boolean | undefined;
+        for (let i = 1; i < edge.points.length; i++) {
+          const a = edge.points[i - 1]!,
+            b = edge.points[i]!;
+          const steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 2));
+          for (let s = 0; s <= steps; s++) {
+            const now = inGroup({
+              x: a.x + ((b.x - a.x) * s) / steps,
+              y: a.y + ((b.y - a.y) * s) / steps,
+            });
+            if (was !== undefined && now !== was) changes++;
+            was = now;
+          }
+        }
+        expect({ direction, edge: edge.id, changes }).toEqual({
+          direction,
+          edge: edge.id,
+          changes: edge.from === "cli" || edge.to === "cli" ? 1 : 0,
+        });
+      }
+    }
+  });
+
+  it("puts each label on or against a straight part of its own line, not on a bend", async () => {
+    // the shape of the job runner's overview: one authored label and counted calls between files
+    const files = ["main", "scheduling", "worker", "metrics", "bus", "queue"];
+    const call = (from: string, to: string, label?: string) =>
+      derived({
+        id: `edge:${from}-${to}`,
+        from,
+        to,
+        count: 3,
+        ...(label ? { label, stored: true, resolution: "llm" as const } : {}),
+      });
+    const graph: DerivedGraph = {
+      nodes: files.map((id) => ({
+        id,
+        label: `${id}.ts`,
+        kind: "file" as const,
+        container: false,
+      })),
+      edges: [
+        call("main", "scheduling"),
+        call("main", "worker"),
+        call("main", "metrics"),
+        call("scheduling", "worker"),
+        call("scheduling", "queue"),
+        call("worker", "metrics", "job.completed"),
+        call("worker", "bus"),
+        call("metrics", "bus"),
+      ],
+      stubs: [],
+      ghosts: [],
+    };
+    for (const direction of ["DOWN", "RIGHT"] as const) {
+      const layout = await layoutGraph(graph, { direction });
+      for (const edge of layout.edges) {
+        const label = edge.label!;
+        // on its line, or beside it and touching it
+        const corners = [0, 1].flatMap((i) =>
+          [0, 1].map((j) => ({ x: label.x + i * label.width, y: label.y + j * label.height })),
+        );
+        const near = edge.points.slice(1).some((p, i) => {
+          const a = edge.points[i]!;
+          const crosses =
+            Math.max(a.x, p.x) >= label.x &&
+            Math.min(a.x, p.x) <= label.x + label.width &&
+            Math.max(a.y, p.y) >= label.y &&
+            Math.min(a.y, p.y) <= label.y + label.height;
+          return (
+            crosses ||
+            corners.some((c) => distanceToSegment(c, a, p) <= 4) ||
+            (a.y === p.y &&
+              Math.min(Math.abs(a.y - label.y), Math.abs(a.y - label.y - label.height)) <= 4 &&
+              Math.max(a.x, p.x) > label.x &&
+              Math.min(a.x, p.x) < label.x + label.width)
+          );
+        });
+        // a bend turns the line (a jog of a few px between two tracks, or a point on a straight line, is none)
+        type P = { x: number; y: number };
+        const turns = (a: P, p: P, b: P) =>
+          Math.hypot(a.x - p.x, a.y - p.y) >= 4 &&
+          Math.hypot(b.x - p.x, b.y - p.y) >= 4 &&
+          Math.abs((p.x - a.x) * (b.y - p.y) - (p.y - a.y) * (b.x - p.x)) >
+            0.1 * Math.hypot(a.x - p.x, a.y - p.y) * Math.hypot(b.x - p.x, b.y - p.y);
+        const bends = edge.points
+          .slice(1, -1)
+          .filter((p, i) => turns(edge.points[i]!, p, edge.points[i + 2]!))
+          .filter(
+            (p) =>
+              p.x > label.x &&
+              p.x < label.x + label.width &&
+              p.y > label.y &&
+              p.y < label.y + label.height,
+          );
+        expect({ direction, edge: edge.id, onLine: near, bends }).toEqual({
+          direction,
+          edge: edge.id,
+          onLine: true,
+          bends: [],
+        });
+      }
+    }
+  });
+
   it("spreads labels that would overlap, along their own lines", () => {
     const label = (x: number, y: number) => ({ text: "calls ×5", x, y, width: 60, height: 18 });
     const edges = [
@@ -792,8 +961,9 @@ describe("what a map draws", () => {
     const [a, b] = edges.map((e) => e.label);
     const apart = a!.x + a!.width <= b!.x || b!.x + b!.width <= a!.x;
     expect(apart).toBe(true);
-    // still on its line
-    expect(b!.y).toBe(3);
+    // still at its line (on it, or beside it and touching it, where the other line does not run through it)
+    expect(b!.y <= 12 + 2 && b!.y + b!.height >= 12 - 2).toBe(true);
+    expect(routeHitsLabel(edges[0]!.points, b!)).toBe(false);
   });
 
   it("keeps the Go overview event label off unrelated incoming routes", () => {

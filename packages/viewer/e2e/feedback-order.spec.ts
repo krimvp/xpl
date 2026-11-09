@@ -61,10 +61,8 @@ test("a delayed disk refresh cannot replace a newer outcome in the panel, browse
     await page.getByRole("button", { name: /^Feedback/ }).click();
     const panel = page.getByRole("dialog", { name: "Reader feedback" });
     await panel.getByLabel("Feedback note").fill("Explain the retry limit.");
-    await panel
-      .getByRole("button", { name: "Save for the next revision pass", exact: true })
-      .click();
-    await expect(panel.getByRole("status")).toContainText("Saved to disk");
+    await panel.getByRole("button", { name: "Save for later", exact: true }).click();
+    await expect(panel.getByRole("status")).toContainText("Saved. The author sees it");
     const original = JSON.parse(await xpl(["feedback", "demo", "--json"])).requests[0];
     const updates = join(tmpdir(), `xpl-outcomes-${original.id}.json`);
     const record = async (reason: string) => {

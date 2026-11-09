@@ -399,8 +399,8 @@ function ExplainNote({ phase }: { phase: ExplainPhase }) {
     case "queued":
       return (
         <p className="note explain-note" role="status">
-          Queued for the next explicit pass. Run <code>/code-explainer feedback</code> in your
-          chosen agent. Saving feedback does not start generation.
+          Saved for later. Run <code>/code-explainer feedback</code> in Claude Code to answer it.
+          Saving starts nothing by itself.
         </p>
       );
     case "error":
@@ -519,9 +519,9 @@ function MapConnections({ id, graph }: { id: string; graph: DerivedGraph }) {
     <section
       className="map-connections"
       data-testid="map-connections"
-      aria-label="Connections on this map"
+      aria-label="Arrows on this map"
     >
-      <h3>Connections on this map</h3>
+      <h3>Arrows on this map</h3>
       <TraceButtons id={id} graph={graph} />
       <ul>
         {shown.map((arrow) => (
@@ -635,11 +635,14 @@ export function CallerRows({ callers }: { callers: readonly Caller[] }) {
             ) : (
               <>
                 <code className="caller-name">{caller.label}</code>
-                <span className="where">{caller.file.slice(caller.file.lastIndexOf("/") + 1)}</span>
+                <span className="where">
+                  in {caller.file.slice(caller.file.lastIndexOf("/") + 1)}
+                </span>
               </>
             )}
             <span className="lines">
-              {(caller.recursion ?? [caller.line]).map((line) => `L${line}`).join(", ")}
+              {(caller.recursion ?? [caller.line]).length > 1 ? "lines " : "line "}
+              {(caller.recursion ?? [caller.line]).join(", ")}
             </span>
           </button>
         </li>

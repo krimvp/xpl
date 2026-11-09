@@ -135,11 +135,10 @@ export function Review({ onClose }: { onClose: () => void }) {
       aria-labelledby="review-title"
       onCancel={onClose}
     >
-      <h2 id="review-title">Record author review</h2>
+      <h2 id="review-title">Mark as reviewed</h2>
       <p>
-        Inspect the explanation and linked code before recording. This is your judgment of the
-        captured snapshot. A name is self-reported; anchors do not verify prose or complete runtime
-        coverage.
+        Read the text and its code before you record a review. The review says that you checked this
+        version. xpl does not check your name or the truth of the text.
       </p>
       <label>
         Reviewer name (self-reported)
@@ -247,8 +246,8 @@ export function Review({ onClose }: { onClose: () => void }) {
           <details>
             <summary>Read available captured source</summary>
             <p>
-              Only attached anchors and explicitly scoped files are fingerprinted. Other available
-              source gives context.
+              xpl records a hash of the linked code and of the files you listed. Other code is here
+              for context only.
             </p>
             {Object.entries(inspection.bundle.files).map(([path, text]) => (
               <details key={path}>

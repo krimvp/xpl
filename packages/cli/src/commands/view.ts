@@ -70,7 +70,7 @@ export async function listen(
 
 export const viewCommand: CommandSpec = {
   name: "view",
-  usage: "xpl view <explainer> [--port p] [--host 127.0.0.1] [--no-open]",
+  usage: "xpl view <explainer> [--port <port>] [--host <host>] [--no-open]",
   summary: "Serve the viewer locally with live repo access",
   details: [
     `Serves the viewer on http://127.0.0.1:<port>/ (default port ${DEFAULT_PORT}, or a free one if taken) and`,
@@ -79,7 +79,7 @@ export const viewCommand: CommandSpec = {
     '(layout, expanded nodes) are saved to the explainer as user edits; "explain this" clicks are queued in',
     ".explainer/requests.json (see `xpl status`). The explainer is re-read from disk on every request.",
     "The page polls for explanation, source and index changes and refreshes them without a reload.",
-    "Source edits show a warning until you reindex. Unsaved viewer edits are preserved. Stop with Ctrl-C.",
+    "Source edits show a warning until you reindex. Unsaved viewer edits are preserved. Stop with Ctrl+C.",
     "Anchors are re-resolved against the index and the working tree, as for `xpl bundle`. Unlike bundle, view",
     "does not refuse an explainer whose anchors drifted or are missing: it warns, and the page says which parts",
     "may be out of date.",
@@ -89,7 +89,7 @@ export const viewCommand: CommandSpec = {
   options: {
     port: {
       type: "string",
-      arg: "<p>",
+      arg: "<port>",
       desc: `Port (default ${DEFAULT_PORT}, else any free port; 0 = any)`,
     },
     host: { type: "string", arg: "<host>", desc: "Address to bind (default 127.0.0.1)" },
@@ -119,7 +119,7 @@ export const viewCommand: CommandSpec = {
     if (ctx.json) {
       ctx.emit({ url: server.url, host: server.host, port: server.port, explainer: loaded.rel });
     } else {
-      ctx.out(`serving ${loaded.rel} at ${server.url}  (Ctrl-C to stop)`);
+      ctx.out(`serving ${loaded.rel} at ${server.url}  (Ctrl+C to stop)`);
     }
     if (!args.flag("no-open")) openBrowser(server.url);
     ctx.io.onServer?.(server);

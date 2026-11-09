@@ -30,6 +30,8 @@ export interface LegendShows {
   expandHere?: boolean;
   /** Lines labelled with a count the viewer made up ("calls ×3"). */
   counts?: boolean;
+  /** Lines found in the code (not drawn by the author, not out of the map). */
+  found?: boolean;
 }
 
 /** An icon as a box draws it: the classes give it the colour of its kind. */
@@ -69,6 +71,7 @@ export function mapKeyShows(
     zoom: false,
     expandHere: false,
     counts: false,
+    found: false,
   };
   const icons = new Map<string, KeyIcon>();
   const allEdges: LayoutEdge[] = [...edges];
@@ -98,6 +101,7 @@ export function mapKeyShows(
   for (const edge of allEdges) {
     if (edge.stub) shows.outside = true;
     else if (edge.resolution === "llm" || edge.resolution === "user") shows.authored = true;
+    else shows.found = true;
     if (edge.resolution === "heuristic" || edge.resolution === "mixed") shows.heuristic = true;
     if (edge.counted && edge.label) shows.counts = true;
   }

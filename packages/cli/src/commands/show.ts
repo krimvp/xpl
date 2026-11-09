@@ -427,7 +427,8 @@ async function showBase(ctx: Ctx, args: Args, options: CodeOptions): Promise<num
 
 export const showCommand: CommandSpec = {
   name: "show",
-  usage: "xpl show <id> [--refs] [--context n] | xpl show --at base <path> [--lines a-b]",
+  usage:
+    "xpl show <id> [--refs] [--context <n>] [--lines <a-b>] [--max-lines <n>] | xpl show --at base <path> [--lines <a-b>] [--explainer <name>]",
   summary: "Code with 0-based offsets relative to the symbol (what spans use), plus refs",
   details: [
     "Header: <id> (<kind>) <file>:<first>-<last> <hash>. Then one line per code line:",
@@ -465,12 +466,12 @@ export const showCommand: CommandSpec = {
     at: {
       type: "string",
       arg: "base",
-      desc: "base: the file before the change the explainer records (see xpl change)",
+      desc: "base: the file before the change the guide records (see xpl change)",
     },
     explainer: {
       type: "string",
       arg: "<name>",
-      desc: "With --at base: the explainer whose change to use (default: the only one with a change)",
+      desc: "With --at base: the guide whose change to use (default: the only one with a change)",
     },
   },
   positionals: [{ name: "id" }],

@@ -348,15 +348,19 @@ func (j *Job) Finish() {
     );
     writeFile(dir, "src/job.ts", TS_JOB);
     writeFile(dir, "src/kinds.ts", 'export type Kind = "a" | Other;\nexport type Other = "b";\n');
+    writeFile(dir, "src/shape.ts", "export interface Shape {\n  name: string;\n}\n");
     expect((await xpl(dir, "index", "--precise", "off")).code).toBe(0);
     expect((await xpl(dir, "new", "s")).code).toBe(0);
     const cls = await xpl(dir, "draft", "states", "s", "sym:src/job.ts#Job");
     expect([cls.code, cls.err.trim()]).toEqual([
       1,
-      "error: nothing to draft: sym:src/job.ts#Job (a class) does not enumerate states: the entry must be a TypeScript enum or union of string literals, a Python Enum class, or a Go type with a const block of its values",
+      "error: nothing to draft: sym:src/job.ts#Job (a class) does not enumerate states: the entry must be a TypeScript enum or union of string literals, a Python Enum class, or a Go type with a const block of its values. `xpl outline --kind enum,type` lists candidates",
     ]);
     const union = await xpl(dir, "draft", "states", "s", "sym:src/kinds.ts#Kind");
     expect(union.code).toBe(1);
     expect(union.err).toContain("sym:src/kinds.ts#Kind (a type) does not enumerate states");
+    const shape = await xpl(dir, "draft", "states", "s", "sym:src/shape.ts#Shape");
+    expect(shape.err).toContain("sym:src/shape.ts#Shape (an interface) does not enumerate states");
+    expect(shape.err).toContain("`xpl outline --kind enum,type` lists candidates");
   });
 });

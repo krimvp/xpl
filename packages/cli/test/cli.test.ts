@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { COMMANDS } from "../src/cli.js";
 import { indexedFixture, invoke, makeTempDir, xpl } from "./helpers.js";
 
 describe("xpl cli", () => {
@@ -32,7 +33,7 @@ describe("xpl cli", () => {
   it("<command> --help and `help <command>` print that command's options", async () => {
     const viaFlag = await invoke(["show", "--help"]);
     expect(viaFlag.code).toBe(0);
-    expect(viaFlag.out).toContain("Usage: xpl show <id> [--refs] [--context n]");
+    expect(viaFlag.out).toContain("Usage: xpl show <id> [--refs] [--context <n>]");
     expect(viaFlag.out).toContain("--context <n>");
     expect(viaFlag.out).toContain("--root <dir>");
     expect(viaFlag.out).toContain("Docs: https://krimvp.github.io/xpl/docs/reference/");
@@ -47,9 +48,39 @@ describe("xpl cli", () => {
     const { code, err } = await invoke(["frobnicate"]);
     expect(code).toBe(2);
     expect(err).toContain('unknown command "frobnicate"');
-    const typo = await invoke(["serch", "x"]);
+    const typo = await invoke(["indx"]);
     expect(typo.code).toBe(2);
-    expect(typo.err).toContain("Did you mean: search");
+    expect(typo.err.trim()).toBe(
+      'error: unknown command "indx". Did you mean "index"? Run "xpl --help" for the list of commands.',
+    );
+  });
+
+  it("an unknown option names the closest option of the command", async () => {
+    const typo = await invoke(["outline", "--depht", "3"]);
+    expect(typo.code).toBe(2);
+    expect(typo.err).toContain('unknown option --depht. Did you mean "--depth"?');
+    expect(typo.err).not.toContain("must come after");
+  });
+
+  it("every help page wraps at 110 columns, names every option in its usage line, and orders --precise one way", async () => {
+    const pages = [(await invoke(["--help"])).out];
+    for (const command of COMMANDS) {
+      const help = (await invoke([command.name, "--help"])).out;
+      pages.push(help);
+      const usage = help.split("\n\n")[0]!;
+      for (const [name, def] of Object.entries(command.options)) {
+        const named = new RegExp(`--${name}\\b`).test(usage);
+        const short =
+          def.short !== undefined && new RegExp(`(^|[\\s[|])-${def.short}\\b`).test(usage);
+        expect.soft(named || short, `xpl ${command.name}: usage omits --${name}`).toBe(true);
+      }
+    }
+    for (const page of pages) {
+      for (const line of page.split("\n")) {
+        expect.soft(line.length, line).toBeLessThanOrEqual(110);
+      }
+      expect.soft(page).not.toMatch(/off\|auto\|require/);
+    }
   });
 
   it("usage errors: missing argument, unknown option, bad value, extra argument", async () => {

@@ -43,6 +43,10 @@
   gap: 5px;
   flex-shrink: 0;
 }
+/* Back and Forward are arrows (the browser has the same words): the room goes to where the reader is. */
+.navigation-history .nav-word {
+  display: none;
+}
 .workspace-breadcrumb {
   display: flex;
   align-items: center;
@@ -412,6 +416,11 @@
   margin: 0 0 18px;
   font-size: 13px;
 }
+/* "Link to this step" is a link, drawn like the button beside it. */
+.guide-section-actions a.btn {
+  color: var(--fg);
+  text-decoration: none;
+}
 .guide-link-notice {
   max-width: 680px;
   margin: 0 0 20px;
@@ -439,10 +448,14 @@
   border-radius: 8px;
   background: var(--panel-2);
 }
-.guide-mini figcaption {
-  font-size: 10px;
+/* One caption style for every small figure of a step (This call, Parts, Tests, the code excerpt). */
+.guide-mini figcaption,
+.guide-tests h4,
+.guide-source-caption {
+  font-size: 12px;
+  font-weight: 600;
   color: var(--muted);
-  margin-bottom: 12px;
+  margin: 0 0 10px;
 }
 .guide-mini-row {
   display: flex;
@@ -715,14 +728,7 @@
 .guide-tests {
   margin: 18px 0 0;
 }
-.guide-tests h4 {
-  margin: 0 0 8px;
-  font-size: 12px;
-  font-weight: 650;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
+
 .guide-tests ul {
   margin: 0;
   padding: 0;
@@ -839,7 +845,40 @@
   min-width: 0;
   min-height: 0;
   display: flex;
+  flex-direction: column;
   border-left: 1px solid var(--border);
+}
+.workspace-source .code-area {
+  min-height: 0;
+}
+/* What was picked, above the code while the right column is folded away. */
+.source-topic {
+  flex: none;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.source-topic .eyebrow {
+  margin-right: 4px;
+}
+.source-topic strong.is-code {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+.source-topic-text {
+  display: block;
+  color: var(--muted);
+}
+@media (max-width: 1100px), (min-width: 1680px) {
+  .source-topic {
+    display: none;
+  }
+}
+.summary-more {
+  margin: -6px 0 10px;
+  font-size: 13px;
 }
 .workspace-source .code-area {
   flex: 1;
@@ -916,9 +955,8 @@
 .resource-kind {
   /* r3-copy: card text at 12px at least (designer V15) */
   font-size: 12px;
+  font-weight: 600;
   line-height: 16px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
   color: var(--related);
 }
 .resource-label {
@@ -1332,6 +1370,10 @@
   }
 }
 /* Optional reading guidance stays compact until a reader asks for it. */
+/* The lead: no one-word last line. */
+.guide-summary p {
+  text-wrap: pretty;
+}
 .guide-about {
   margin: 12px 0 20px;
   padding: 10px 14px;
@@ -1361,15 +1403,18 @@
   border-radius: 8px;
   background: var(--bg);
 }
-.guide-source h4 {
-  margin: 0 0 8px;
+.guide-source {
+  margin: 0 0 18px;
 }
 .guide-source p {
   margin: 6px 0;
   font-size: 12px;
 }
-.guide-source-file {
+.guide-source-caption {
   overflow-wrap: anywhere;
+}
+.guide-source-caption code {
+  font-weight: 600;
 }
 .guide-source pre {
   overflow: auto;
@@ -1378,16 +1423,30 @@
   line-height: 1.65;
   tab-size: 2;
 }
+/* A long line wraps under itself (after its number), so no code is cut off at the right edge. */
+.guide-source-line {
+  display: block;
+  padding-left: 5ch;
+  text-indent: -5ch;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .guide-source-number {
   display: inline-block;
   width: 4ch;
   margin-right: 1ch;
+  text-indent: 0;
   color: var(--muted);
   user-select: none;
 }
-@container (min-width: 760px) {
-  .guide-explanation {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+/* The step's picture beside its text on a wide screen; under it on a narrow one. The code comes after. */
+.guide-explanation > .guide-snapshot {
+  margin: 0;
+}
+@container (min-width: 900px) {
+  .guide-explanation:has(> .guide-snapshot) {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    align-items: start;
   }
 }
 

@@ -54,7 +54,7 @@ export function renderResolveReport(report: ResolveReport): string[] {
 
 export const resolveCommand: CommandSpec = {
   name: "resolve",
-  usage: "xpl resolve <explainer> [--write]",
+  usage: "xpl resolve <explainer> [--write] [--allow-stale]",
   summary: "Re-resolve anchors; report drifted llm elements and missing anchors",
   details: [
     "Re-resolves every anchor (elements, sequence steps, tour code overrides) against the index of the",
@@ -69,7 +69,7 @@ export const resolveCommand: CommandSpec = {
     "run `xpl index` first, so the ranges it saves are the current ones (--allow-stale overrides).",
   ],
   options: {
-    write: { type: "boolean", desc: "Save the re-resolved explainer (default: report only)" },
+    write: { type: "boolean", desc: "Save the re-resolved guide (default: report only)" },
     "allow-stale": {
       type: "boolean",
       desc: "With --write: save even though the index does not match the working tree",

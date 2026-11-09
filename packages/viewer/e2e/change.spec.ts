@@ -514,7 +514,10 @@ test.describe("reading a changed file", () => {
   }) => {
     await page.setViewportSize({ width: 900, height: 700 });
     await open(page, "?perspective=map");
-    await page.getByRole("button", { name: "Show source" }).click();
+    await page
+      .locator(".workspace-location")
+      .getByRole("button", { name: "Show code", exact: true })
+      .click();
     await page.evaluate(() => window.__xpl!.setCursor("src/runner.ts", 75));
     const runner = pane(page, "src/runner.ts");
     const header = runner.locator(".pane-header");
@@ -751,7 +754,10 @@ test.describe("who calls this, and what the change did to it", () => {
     const problems = watchProblems(page);
     await page.setViewportSize({ width: 1440, height: 900 });
     await open(page, "?perspective=map");
-    await page.getByRole("button", { name: "Show source" }).click();
+    await page
+      .locator(".workspace-location")
+      .getByRole("button", { name: "Show code", exact: true })
+      .click();
     await page.evaluate(() => window.__xpl!.setCursor("src/runner.ts", 32));
     const line = pane(page, "src/runner.ts").locator('.cm-line[data-line="32"]');
     await expect(line).toBeVisible();

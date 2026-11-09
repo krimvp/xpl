@@ -460,8 +460,8 @@ function buildModel(graph: DerivedGraph, changes: ChangeMarks | undefined): Mode
                 ...(ghost.kind === "rest" ? { file: parseFile(ghost.key) } : {}),
               },
             }),
-        // One kind is named; several are left to the tooltip and the details panel.
-        detail: `${kinds.length === 1 ? `${kinds[0]} ` : ""}×${ghost.count}`,
+        // Always a verb (two kinds at most; more are left to the tooltip and the details panel).
+        detail: `${kinds.slice(0, 2).join(" & ")}${kinds.length > 2 ? " …" : ""} ×${ghost.count}`,
         hint: `${kinds.join(", ")} ×${ghost.count}`,
       });
       roots.push(box);
@@ -776,7 +776,175 @@ function crossesBox(points: readonly Point[], box: Box, gap: number): boolean {
   return false;
 }
 
-function labelCentre(points: Point[]): Point | undefined {
+/** Room kept between a label and a bend of its line, px: a label on a corner reads as two lines. */
+const LABEL_BEND_GAP = 4;
+
+/** A turn shorter than this, px, is a jog between two tracks: a label may sit across it. */
+const JOG = 4;
+
+/** One straight run of a right-angled route (see `straightRuns`). */
+interface Run {
+  along: "x" | "y";
+  lo: number;
+  hi: number;
+  /** The segments along the run's axis (between them, jogs): the line's position under a point of the run. */
+  pieces: [Point, Point][];
+  /** Where the line goes past each end of the run (undefined: it ends there, at a box). */
+  beforeLo?: Point;
+  beforeHi?: Point;
+}
+
+/** The straight runs of a right-angled route: each follows one axis, across jogs shorter than `JOG`. */
+function straightRuns(points: readonly Point[]): Run[] {
+  const runs: { run: Run; first: number; last: number }[] = [];
+  let current: (typeof runs)[number] | undefined;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1]!,
+      b = points[i]!;
+    const flat = Math.abs(a.y - b.y) < 0.5;
+    const upright = Math.abs(a.x - b.x) < 0.5;
+    if (!flat && !upright) {
+      current = undefined;
+      continue;
+    }
+    const along = flat ? "x" : "y";
+    if (current && current.run.along !== along) {
+      // a turn: a short one is a jog inside the run, a long one ends it
+      if (Math.abs(b[along] - a[along]) < JOG) continue;
+      current = undefined;
+    }
+    if (!current) {
+      current = { run: { along, lo: Infinity, hi: -Infinity, pieces: [] }, first: i - 1, last: i };
+      runs.push(current);
+    }
+    current.run.lo = Math.min(current.run.lo, a[along], b[along]);
+    current.run.hi = Math.max(current.run.hi, a[along], b[along]);
+    current.run.pieces.push([a, b]);
+    current.last = i;
+  }
+  return runs.map(({ run, first, last }) => {
+    const start = points[first]!,
+      end = points[last]!;
+    const before = points[first - 1],
+      after = points[last + 1];
+    const [atLo, atHi] = start[run.along] <= end[run.along] ? [before, after] : [after, before];
+    return {
+      ...run,
+      ...(atLo ? { beforeLo: atLo } : {}),
+      ...(atHi ? { beforeHi: atHi } : {}),
+    };
+  });
+}
+
+/** The line under `at` along a run: the piece that spans it (the first one at a jog). */
+function lineAt(run: Run, at: number): number {
+  const across = run.along === "x" ? "y" : "x";
+  const piece =
+    run.pieces.find(
+      ([a, b]) =>
+        at >= Math.min(a[run.along], b[run.along]) && at <= Math.max(a[run.along], b[run.along]),
+    ) ?? run.pieces[0]!;
+  return piece[0][across];
+}
+
+/**
+ * Where a label of `size` may sit along its route: a stretch its centre slides along, on a straight run long
+ * enough to hold it clear of the bends (`beside` false), or beside a level run, touching it, on a side the
+ * line does not turn to (`beside` true: a bend at an end of the run that turns to that side bounds the label
+ * there; one that turns away does not, and the label may reach past it by up to half its width).
+ */
+interface LabelSpan {
+  along: "x" | "y";
+  lo: number;
+  hi: number;
+  beside: boolean;
+  /** The centre's other coordinate, at `at` along the span. */
+  across(at: number): number;
+}
+
+function labelSpans(
+  points: readonly Point[],
+  size: { width: number; height: number },
+): LabelSpan[] {
+  const spans: LabelSpan[] = [];
+  const runs = straightRuns(points);
+  // On a level run (an upright line under a wide label would hide in it, and its neighbours with it).
+  for (const run of runs) {
+    if (run.along !== "x") continue;
+    const half = size.width / 2 + LABEL_BEND_GAP;
+    const lo = run.lo + half;
+    const hi = run.hi - half;
+    if (lo <= hi)
+      spans.push({ along: "x", lo, hi, beside: false, across: (at) => lineAt(run, at) });
+  }
+  // Beside a run: above or below a level one, left or right of an upright one.
+  for (const run of runs) {
+    const cross = run.along === "x" ? "y" : "x";
+    const along = run.along === "x" ? size.width : size.height;
+    const away = (run.along === "x" ? size.height : size.width) / 2 + LABEL_BESIDE_GAP;
+    const half = along / 2 + LABEL_BEND_GAP;
+    // (the line under the label: the run's first piece; a jog moves it by less than `JOG`)
+    const line = run.pieces[0]![0][cross];
+    for (const side of [-1, 1] as const) {
+      const towards = (bend: Point | undefined) =>
+        !bend || Math.sign(bend[cross] - line) === side || Math.abs(bend[cross] - line) < 0.5;
+      const lo = (towards(run.beforeLo) ? run.lo : run.lo - along / 2) + half;
+      const hi = (towards(run.beforeHi) ? run.hi : run.hi + along / 2) - half;
+      if (lo > hi) continue;
+      spans.push({
+        along: run.along,
+        lo,
+        hi,
+        beside: true,
+        across: (at) => lineAt(run, clampTo(at, run.lo, run.hi)) + side * away,
+      });
+    }
+  }
+  return spans;
+}
+
+const spanPoint = (span: LabelSpan, at: number): Point => {
+  const along = clampTo(at, span.lo, span.hi);
+  return span.along === "x"
+    ? { x: along, y: span.across(along) }
+    : { x: span.across(along), y: along };
+};
+
+/**
+ * Where a label of `size` sits on its route (its centre): on a straight run, clear of the bends, as near
+ * `hint` (dagre's label position) as it can; when no run is long enough, beside a level run (`labelSpans`);
+ * else at `hint`.
+ */
+export function labelOnRoute(
+  points: readonly Point[],
+  size: { width: number; height: number },
+  hint: Point | undefined,
+): Point | undefined {
+  const spans = labelSpans(points, size);
+  for (const beside of [false, true]) {
+    let best: Point | undefined;
+    let bestDistance = Infinity;
+    for (const span of spans) {
+      if (span.beside !== beside) continue;
+      const point = spanPoint(span, hint ? hint[span.along] : (span.lo + span.hi) / 2);
+      // without a hint, the longest stretch (below a line before above it)
+      const distance = hint ? Math.hypot(point.x - hint.x, point.y - hint.y) : span.lo - span.hi;
+      if (distance < bestDistance) {
+        best = point;
+        bestDistance = distance;
+      }
+    }
+    if (best) return best;
+  }
+  return hint ?? labelCentre(points);
+}
+
+/** Room between a label set beside its line and the line, px. */
+const LABEL_BESIDE_GAP = 2;
+
+const clampTo = (value: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, value));
+
+function labelCentre(points: readonly Point[]): Point | undefined {
   let centre: Point | undefined,
     longest = -1;
   for (let i = 1; i < points.length; i++) {
@@ -797,7 +965,19 @@ function labelCentre(points: Point[]): Point | undefined {
  * the container that holds it: dagre's points between the two boxes of that level its ends are drawn in, and
  * right-angled ends on the boxes it actually joins, which may sit deeper inside them.
  */
-function layeredLayout(model: Model, direction: Direction, pins: GraphView["layout"]): GraphLayout {
+/**
+ * `turned`: the border crossings (`${container}\0${edge id}`) whose port goes on the other side of the container
+ * than the edge's direction suggests (the second pass of `layoutGraph`). `facingAway`, when given, is filled
+ * with the crossings whose port ended up on the side away from the edge's other end: such an edge would leave
+ * the container, then run back across it to reach that end.
+ */
+function layeredLayout(
+  model: Model,
+  direction: Direction,
+  pins: GraphView["layout"],
+  turned: ReadonlySet<string> = new Set(),
+  facingAway?: Set<string>,
+): GraphLayout {
   const cross = direction === "RIGHT" ? "y" : "x";
   const ancestors = (id: string, holder: string): string[] => {
     const out: string[] = [];
@@ -861,12 +1041,16 @@ function layeredLayout(model: Model, direction: Direction, pins: GraphView["layo
       const last = Math.max(0, ...layers.values());
       const ports: LayeredNode[] = [];
       const inner: LayeredEdge[] = [];
+      // An edge into the container enters at its start side, one out of it leaves at its end side; a turned
+      // one the other way round (its other end lies on that side).
+      const atStart = (edge: EdgeMeta, end: "from" | "to") =>
+        (end === "to") !== turned.has(`${holder}\0${edge.id}`);
       for (const { edge, end } of crossings) {
         const box = liftTo(model, edge[end], holder);
         const layer = layers.get(box) ?? 0;
         ports.push({ id: portId(edge), width: 2, height: 2 });
         inner.push(
-          end === "to"
+          atStart(edge, end)
             ? { id: innerId(edge), from: portId(edge), to: box, minlen: layer + 1 }
             : { id: innerId(edge), from: box, to: portId(edge), minlen: last - layer + 1 },
         );
@@ -875,8 +1059,10 @@ function layeredLayout(model: Model, direction: Direction, pins: GraphView["layo
       const own = new Map<string, { side: Side; cross: number }>();
       for (const { edge, end } of crossings) {
         const port = result.boxes.get(portId(edge))!;
+        // (dagre routed a turned edge against the arrow: its track is read backwards)
+        if (atStart(edge, end) !== (end === "to")) result.routes.get(innerId(edge))?.via.reverse();
         own.set(edge.id, {
-          side: end === "to" ? "start" : "end",
+          side: atStart(edge, end) ? "start" : "end",
           cross: cross === "y" ? port.y + port.height / 2 : port.x + port.width / 2,
         });
       }
@@ -1183,12 +1369,31 @@ function layeredLayout(model: Model, direction: Direction, pins: GraphView["layo
       points,
       anchor: points[0] ?? { x: 0, y: 0 },
     };
-    const centre = route.level.routes.get(edge.id)?.label ?? labelCentre(points);
-    if (!edge.stub && centre) {
-      const box = labelBox(edge.label);
+    const box = edge.stub ? undefined : labelBox(edge.label);
+    const centre = box && labelOnRoute(points, box, route.level.routes.get(edge.id)?.label);
+    if (box && centre) {
       laidOut.label = { ...box, x: centre.x - box.width / 2, y: centre.y - box.height / 2 };
     }
     (holder ? holder.edges : canvasEdges).push(laidOut);
+  }
+  if (facingAway) {
+    // A port on the side of its container away from the edge's other end: the next pass turns it.
+    const main = direction === "RIGHT" ? "x" : "y";
+    const size = main === "x" ? "width" : "height";
+    for (const [container, own] of entries) {
+      const outside = boxIn(container, undefined);
+      for (const [edgeId, { side }] of own) {
+        const edge = model.edges.find((item) => item.id === edgeId);
+        if (!edge) continue;
+        const inside = (id: string) => id === container || ancestors(id, "").includes(container);
+        const far = inside(edge.from) ? edge.to : edge.from;
+        if (!nodeOf.has(far)) continue;
+        const other = boxIn(far, undefined);
+        const middle = other[main] + other[size] / 2;
+        if (side === "end" ? middle < outside[main] : middle > outside[main] + outside[size])
+          facingAway.add(`${container}\0${edgeId}`);
+      }
+    }
   }
   const width = top.result.width;
   const height = top.result.height;
@@ -1291,7 +1496,7 @@ const overlap = (a: Box, b: Box, gap: number) =>
  * routes, labels and boxes inside the level, the first pass's position stays.
  */
 export function spreadLabels(
-  edges: readonly Pick<LayoutEdge, "points" | "label">[],
+  edges: readonly (Pick<LayoutEdge, "points" | "label"> & { stub?: boolean })[],
   boxes: readonly Box[] = [],
   bounds?: Box,
 ): void {
@@ -1325,7 +1530,8 @@ export function spreadLabels(
       const back = hit[along] - LABEL_GAP - extent(label, along) - label[along];
       const fits = (shift: number) => {
         const middle = label[along] + shift + extent(label, along) / 2;
-        return middle >= lo && middle <= hi;
+        const moved = { ...label, [along]: label[along] + shift };
+        return middle >= lo && middle <= hi && !boxes.some((box) => overlap(moved, box, 0));
       };
       const options = [forward, back].filter(fits).sort((a, b) => Math.abs(a) - Math.abs(b));
       if (options.length > 0) label[along] += options[0]!;
@@ -1342,7 +1548,8 @@ export function spreadLabels(
   for (const edge of edges) {
     const label = edge.label;
     if (!label) continue;
-    const foreign = edges.filter((other) => other !== edge);
+    // (a stub's dashed line is drawn only for what a reader looks at: a label need not clear it)
+    const foreign = edges.filter((other) => other !== edge && !other.stub);
     if (!foreign.some((other) => crossesBox(other.points, label, 0))) continue;
     const centre = { x: label.x + label.width / 2, y: label.y + label.height / 2 };
     const otherLabels = placed.filter((other) => other !== label);
@@ -1357,36 +1564,40 @@ export function spreadLabels(
       withinLevel(candidate) &&
       !otherLabels.some((other) => overlap(candidate, other, LABEL_GAP)) &&
       !foreign.some((other) => crossesBox(other.points, candidate, LABEL_GAP));
-    const positions = edge.points.slice(1).flatMap((end, i) => {
+    // Where it may go: along its spans (on a straight run or beside a level one, never on a bend), at
+    // their ends, in their middle, and just past each other label; nearest first, on the line before beside.
+    const spots = labelSpans(edge.points, label).flatMap((span) => {
+      const at = [
+        centre[span.along],
+        span.lo,
+        span.hi,
+        (span.lo + span.hi) / 2,
+        ...otherLabels.flatMap((other) => [
+          other[span.along] - LABEL_GAP - extent(label, span.along) / 2,
+          other[span.along] + extent(other, span.along) + LABEL_GAP + extent(label, span.along) / 2,
+        ]),
+      ];
+      return at.map((value) => ({ point: spanPoint(span, value), beside: span.beside }));
+    });
+    const cost = (spot: (typeof spots)[number]) =>
+      Math.hypot(spot.point.x - centre.x, spot.point.y - centre.y) + (spot.beside ? 24 : 0);
+    // When none of those is clear: on any point of the line, a bend too, shifted by a few px across it.
+    // A bend under a label reads worse than a straight run, a foreign line through it worse still.
+    const anywhere = edge.points.slice(1).flatMap((end, i) => {
       const start = edge.points[i]!;
-      const axis = start.x === end.x ? "y" : "x";
-      const between = (value: number) =>
-        value >= Math.min(start[axis], end[axis]) && value <= Math.max(start[axis], end[axis]);
-      const beside = otherLabels.flatMap((other) =>
-        [
-          other[axis] - LABEL_GAP - extent(label, axis) / 2,
-          other[axis] + extent(other, axis) + LABEL_GAP + extent(label, axis) / 2,
-        ]
-          .filter(between)
-          .map((value) => ({ ...start, [axis]: value })),
-      );
-      const across = axis === "y" ? "x" : "y";
-      return [
-        start,
-        { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 },
-        end,
-        ...beside,
-      ].flatMap((point) =>
+      const across = start.x === end.x ? "x" : "y";
+      return [start, { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 }, end].flatMap((point) =>
         [0, 1, -1, 2, -2, 3, -3, 4, -4].map((offset) => ({
           ...point,
           [across]: point[across] + offset,
         })),
       );
     });
-    positions.sort(
-      (a, b) =>
-        Math.hypot(a.x - centre.x, a.y - centre.y) - Math.hypot(b.x - centre.x, b.y - centre.y),
-    );
+    const distance = (point: Point) => Math.hypot(point.x - centre.x, point.y - centre.y);
+    const positions = [
+      ...spots.sort((a, b) => cost(a) - cost(b)).map((spot) => spot.point),
+      ...anywhere.sort((a, b) => distance(a) - distance(b)),
+    ];
     for (const point of positions) {
       const candidate = {
         x: point.x - label.width / 2,
@@ -1518,7 +1729,11 @@ export async function layoutGraph(
 ): Promise<GraphLayout> {
   const model = buildModel(graph, changes);
   try {
-    return layeredLayout(model, options.direction ?? "RIGHT", options.pins);
+    const direction = options.direction ?? "RIGHT";
+    // A second pass when an edge leaves (or enters) a group on the side away from its other end.
+    const away = new Set<string>();
+    const first = layeredLayout(model, direction, options.pins, undefined, away);
+    return away.size === 0 ? first : layeredLayout(model, direction, options.pins, away);
   } catch (error) {
     console.warn("xpl: layout failed, using a grid", error);
     return fallbackLayout(model, options.pins);

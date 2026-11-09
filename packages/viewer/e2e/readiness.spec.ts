@@ -64,7 +64,7 @@ test("Save as HTML reports unfinished fields before download and labels an offli
     route.fulfill({ contentType: "text/html", body: html }),
   );
   await page.goto("http://xpl.test/");
-  await expect(page.getByTestId("draft-banner")).toContainText("Draft preview");
+  await expect(page.getByTestId("draft-pill")).toHaveText("Draft");
   await (await openEditMenu(page)).getByTestId("edit-save-html").click();
   await expect(page.getByRole("dialog")).toContainText(
     "cannot check whether the repository changed later",
@@ -79,9 +79,7 @@ test("a complete snapshot saves ready HTML with source, provenance, identity and
   await page.getByRole("button", { name: /^Feedback/ }).click();
   const feedback = page.getByRole("dialog", { name: "Reader feedback" });
   await feedback.getByLabel("Feedback note").fill("Explain the queue wait.");
-  await feedback
-    .getByRole("button", { name: "Save for the next revision pass", exact: true })
-    .click();
+  await feedback.getByRole("button", { name: "Save for later", exact: true }).click();
   await expect(feedback.getByRole("status")).toContainText("Saved in this browser");
   await feedback.getByRole("button", { name: "Close feedback" }).click();
   await (await openEditMenu(page)).getByTestId("edit-save-html").click();
@@ -129,9 +127,7 @@ test("a complete snapshot saves ready HTML with source, provenance, identity and
   await page.evaluate(() => window.__xpl!.select(["sym:src/runner.ts#Runner.dispatch"]));
   await page.getByRole("button", { name: /^Feedback \(1\)/ }).click();
   await feedback.getByLabel("Feedback note").fill("Explain the ready snapshot too.");
-  await feedback
-    .getByRole("button", { name: "Save for the next revision pass", exact: true })
-    .click();
+  await feedback.getByRole("button", { name: "Save for later", exact: true }).click();
   await expect(feedback.getByRole("status")).toContainText("Saved in this browser");
   await feedback.getByRole("button", { name: "Close feedback" }).click();
   await (await openEditMenu(page)).getByTestId("edit-save-html").click();
@@ -285,7 +281,7 @@ test("offline all-content review survives HTML reopening and explicitly gates te
   await expect(page.locator(".readiness-findings")).toContainText("review-required");
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await (await openEditMenu(page)).getByTestId("edit-review").click();
-  const dialog = page.getByRole("dialog", { name: "Record author review" });
+  const dialog = page.getByRole("dialog", { name: "Mark as reviewed" });
   await dialog.getByLabel("Reviewer name (self-reported)").fill("Ada");
   await dialog
     .getByLabel("Named omissions (one per line)")
@@ -340,7 +336,7 @@ test("offline all-content review survives HTML reopening and explicitly gates te
     .first()
     .fill("### Changed explanation\n\nThe runner starts another dispatch pass.");
   await page.getByRole("button", { name: "Close the tour panel" }).click();
-  await page.getByRole("button", { name: "Guide", exact: true }).click();
+  await page.getByRole("button", { name: "Tour", exact: true }).click();
   await expect(page.getByTestId("review-status")).toHaveText("Author review: out of date");
   await (await openEditMenu(page)).getByTestId("edit-save-html").click();
   await expect(page.getByTestId("save-review-status")).toHaveText("Author review: out of date");
@@ -392,7 +388,7 @@ test("live author recording sends only a review user edit and refuses changes si
   });
   await page.goto("http://xpl.test/");
   await (await openEditMenu(page)).getByTestId("edit-review").click();
-  const dialog = page.getByRole("dialog", { name: "Record author review" });
+  const dialog = page.getByRole("dialog", { name: "Mark as reviewed" });
   await dialog.getByLabel("Reviewer name (self-reported)").fill("Grace");
   await expect(dialog.getByRole("button", { name: "Record inspected review" })).toBeEnabled();
   bundle.explainer.title = "Dispatching jobs after inspection";
@@ -419,7 +415,7 @@ test("selected review requires reinspection, survives unrelated tour edits and c
 }) => {
   await openVariant(page, complete);
   await (await openEditMenu(page)).getByTestId("edit-review").click();
-  const dialog = page.getByRole("dialog", { name: "Record author review" });
+  const dialog = page.getByRole("dialog", { name: "Mark as reviewed" });
   await dialog.getByLabel("Reviewer name (self-reported)").fill("Ada");
   await dialog.getByLabel("Content scope", { exact: true }).selectOption("selected");
   await dialog.getByLabel("Stored items", { exact: true }).selectOption(["concept:retry-policy"]);
@@ -435,7 +431,7 @@ test("selected review requires reinspection, survives unrelated tour edits and c
     .first()
     .fill("### Another tour introduction\n\nThe runner starts scheduling jobs.");
   await page.getByRole("button", { name: "Close the tour panel" }).click();
-  await page.getByRole("button", { name: "Guide", exact: true }).click();
+  await page.getByRole("button", { name: "Tour", exact: true }).click();
   await expect(page.getByTestId("review-status")).toHaveText("Author review: reviewed");
   await (await openEditMenu(page)).getByTestId("edit-save-html").click();
   await expect(page.getByTestId("save-html-ready")).toBeEnabled();

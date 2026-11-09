@@ -531,7 +531,7 @@ it("prints skipped user-field warnings and readiness repair findings in plain re
   expect
     .soft(review.out)
     .toContain(
-      "error sym:src/runner.ts#Runner.dispatch.summary (todo-left): 1 TODO placeholder left: text nobody has written yet write what the TODO asks for, check it against the code, and remove the TODO",
+      "error sym:src/runner.ts#Runner.dispatch.summary (todo-left): 1 TODO placeholder left: text nobody has written yet; fix: write what the TODO asks for, check it against the code, and remove the TODO",
     );
 });
 

@@ -99,12 +99,15 @@ function checkShape(patch: ExplainerPatch): void {
   const tour = patch.tours![0]!;
   expect(tour.title).toMatch(/^TODO: /);
   expect(tour.summary).toMatch(/^TODO: /);
-  for (const step of tour.steps!) {
+  // a closing "Where to go next" step (repo and path drafts) points away from the code shown so far: no code of
+  // its own. A change tour ends on its risks instead.
+  const closing = /^### Where to go next\n\nTODO: /.test(tour.steps!.at(-1)!.note ?? "");
+  for (const step of closing ? tour.steps!.slice(0, -1) : tour.steps!) {
     expect(step.note).toMatch(/^### TODO: .+\n\n.*TODO: /);
     expect((step.code ?? []).length).toBeLessThanOrEqual(DRAFT_LIMITS.codeRanges);
     expect((step.code ?? []).length).toBeGreaterThan(0);
-    expect(step.focus.length).toBeGreaterThan(0);
   }
+  for (const step of tour.steps!) expect(step.focus.length).toBeGreaterThan(0);
   for (const view of patch.views ?? []) {
     if (view.type === "graph") {
       expect(view.stubs).toEqual({ mode: "none" });
@@ -143,7 +146,8 @@ describe.each(Object.keys(ENTRIES))("xpl draft on %s", (fixture) => {
     expect(system.include).toContain(service.id);
     expect(service.opens).toBe("view:overview");
     expect(patch.tours![0]!.steps![0]!.view).toBe("view:system");
-    expect(patch.tours![0]!.steps![0]!.focus).toEqual([service.id]);
+    // the first step focuses the service (and who starts it, when the code has a main function)
+    expect(patch.tours![0]!.steps![0]!.focus[0]).toBe(service.id);
     // level 2: the parts
     const view = patch.views!.find((v) => v.id === "view:overview")!;
     expect(view.type).toBe("graph");
@@ -157,6 +161,9 @@ describe.each(Object.keys(ENTRIES))("xpl draft on %s", (fixture) => {
     for (const box of view.include!) expect(focused).toContain(box);
     // the first step shows what the project is: the README
     expect(patch.tours![0]!.steps![0]!.code![0]!.file).toBe("README.md");
+    // the last step says where to go next, back on the system map
+    expect(patch.tours![0]!.steps!.at(-1)).toMatchObject({ view: "view:system" });
+    expect(patch.tours![0]!.steps!.at(-1)!.note).toContain("Where to go next");
   });
 
   it("draft path: the calls of the entry in source order, one tour step each after the big picture", async () => {
@@ -184,11 +191,24 @@ describe.each(Object.keys(ENTRIES))("xpl draft on %s", (fixture) => {
       expect.stringMatching(/^requeue\(/),
     );
     const tour = patch.tours![0]!.steps!;
-    expect(tour[0]!.focus).toEqual([ENTRIES[fixture]]);
-    expect(tour.length).toBeLessThanOrEqual(DRAFT_LIMITS.pathSteps + 1);
-    for (const step of tour.slice(1)) {
+    // first where the path sits: a small map of the files its participants live in, every box focused
+    const files = [
+      ...new Set(view.participants!.map((p) => `file:${p.slice("sym:".length).split("#")[0]}`)),
+    ];
+    const where = patch.views!.find((v) => v.id === tour[0]!.view)!;
+    expect(where.type).toBe("graph");
+    if (where.type !== "graph") return;
+    expect(where.include).toEqual(files);
+    expect(where.stubs).toEqual({ mode: "none" });
+    expect([...tour[0]!.focus].sort()).toEqual([...files].sort());
+    // then the path, call by call
+    expect(tour[1]!.focus).toEqual([ENTRIES[fixture]]);
+    expect(tour.length).toBeLessThanOrEqual(DRAFT_LIMITS.pathSteps + 3);
+    for (const step of tour.slice(2, -1)) {
       expect(steps.map((s) => s.id)).toContain(step.focus[0]);
     }
+    // and last, where to go next
+    expect(tour.at(-1)!.note).toContain("Where to go next");
   });
 });
 

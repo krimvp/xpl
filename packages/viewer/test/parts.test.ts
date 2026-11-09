@@ -1,0 +1,58 @@
+import { deriveGraph, ExplainerModel, type GraphView, type SequenceView } from "@xpl/core";
+import { describe, expect, it } from "vitest";
+import { firstSentence, mapParts, stepParts } from "../src/parts.js";
+import { makeBundle } from "./world.js";
+
+function world() {
+  const bundle = makeBundle();
+  const model = new ExplainerModel(bundle.explainer, bundle.index);
+  const overview = model.view("view:overview") as GraphView;
+  const flow = model.view("view:flow") as SequenceView;
+  return { model, overview, flow };
+}
+
+describe("the parts of a diagram in words", () => {
+  it("lists a map's boxes in the author's order, each with what it is for and its arrows on the map", () => {
+    const { model, overview } = world();
+    const parts = mapParts(deriveGraph(overview, model), overview, model);
+    expect(parts.boxes.map((box) => [box.label, box.depth])).toEqual([
+      ["Core", 0],
+      ["c.yaml", 0],
+    ]);
+    expect(parts.boxes[0]).toMatchObject({ summary: "A and B together.", uses: 1, usedBy: 0 });
+    expect(parts.boxes[1]).toMatchObject({ kind: "file", uses: 0, usedBy: 1 });
+    // an arrow its author named is listed by its words, between the names of its two boxes
+    expect(parts.arrows).toEqual([
+      expect.objectContaining({
+        id: "edge:notifies",
+        from: "Core",
+        to: "c.yaml",
+        label: "notifies",
+      }),
+    ]);
+  });
+
+  it("numbers the steps of a sequence in the order the diagram numbers them, with who calls whom", () => {
+    const { model, flow } = world();
+    expect(stepParts(flow, model).map((step) => [step.number, step.id, step.label])).toEqual([
+      [1, "flow:1", "go(1)"],
+      [2, "flow:2", "ok"],
+    ]);
+    expect(stepParts(flow, model)[0]).toMatchObject({ from: "A.run", to: "b.ts" });
+    // the same steps drawn as a flow: the same numbers, no arrow ends
+    const asFlow = stepParts({ ...flow, type: "flow" }, model);
+    expect(asFlow.map((step) => [step.number, step.id])).toEqual([
+      [1, "flow:1"],
+      [2, "flow:2"],
+    ]);
+    expect(asFlow[0]!.from).toBeUndefined();
+  });
+
+  it("keeps the first sentence of a summary, not a dot inside a name", () => {
+    expect(firstSentence("Reads config.yaml at start. Then it waits.")).toBe(
+      "Reads config.yaml at start.",
+    );
+    expect(firstSentence("  One sentence  ")).toBe("One sentence");
+    expect(firstSentence(undefined)).toBeUndefined();
+  });
+});

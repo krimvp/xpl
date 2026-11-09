@@ -65,9 +65,7 @@ for (const [direction, skew] of [
       await page.getByRole("button", { name: /^Feedback/ }).click();
       const panel = page.getByRole("dialog", { name: "Reader feedback" });
       await panel.getByLabel("Feedback note").fill("Explain this reader's retry limit.");
-      await panel
-        .getByRole("button", { name: "Save for the next revision pass", exact: true })
-        .click();
+      await panel.getByRole("button", { name: "Save for later", exact: true }).click();
       await expect(panel.getByRole("status")).toContainText("Saved in this browser");
       const captured = await feedbackExport(page);
       const original = captured.requests[0];

@@ -130,4 +130,16 @@ describe.each([
     ).toBeGreaterThanOrEqual(4.5);
     expect(contrast(v("--warn"), v("--warn-soft"))).toBeGreaterThanOrEqual(4.5);
   });
+
+  // WCAG 1.4.11: a line or a border that a reader must see to read a diagram needs 3:1 on the canvas. A
+  // box's fill is close to the canvas, so its border is its only edge; a heuristic arrow is told apart by
+  // its dash, not by fading it.
+  it("diagram lines and box borders on the canvas", () => {
+    const canvas = v("--canvas");
+    const low = ["--edge", "--edge-heuristic", "--edge-stub", "--ghost-border", "--node-border"]
+      .map((k) => [k, contrast(v(k), canvas)] as const)
+      .filter(([, ratio]) => ratio < 3)
+      .map(([k, ratio]) => `${k} ${ratio.toFixed(2)}`);
+    expect(low).toEqual([]);
+  });
 });

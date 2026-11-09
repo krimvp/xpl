@@ -116,7 +116,7 @@ export function Legend({ shows }: { shows: LegendShows }) {
         </Row>
       )}
       {shows.authored && (
-        <Row label="A link the explainer's author added: an event, a setting, a request">
+        <Row label="An arrow the guide's author added: an event, a setting, a request">
           <Arrow className="lg-edge is-authored" />
         </Row>
       )}
@@ -142,6 +142,34 @@ export function Legend({ shows }: { shows: LegendShows }) {
         </Row>
       )}
     </KeyButton>
+  );
+}
+
+/**
+ * The colours of a map's arrows in one line under its caption, for the marks the map draws: a reader learns
+ * them without opening the Key. Nothing when every arrow is the plain kind.
+ */
+export function KeyLine({ shows }: { shows: LegendShows }) {
+  const items: { className: string; words: string }[] = [];
+  if (shows.authored)
+    items.push({
+      className: "is-authored",
+      words: "added by the author, checked against the code",
+    });
+  if (shows.found && (shows.authored || shows.heuristic || shows.outside))
+    items.push({ className: "is-found", words: "found in the code" });
+  if (shows.heuristic) items.push({ className: "is-heuristic", words: "matched by name" });
+  if (shows.outside) items.push({ className: "is-stub", words: "leads outside this map" });
+  if (items.length === 0) return null;
+  return (
+    <p className="key-line" data-testid="key-line" aria-label="Arrows on this map">
+      {items.map((item) => (
+        <span key={item.className} className="key-line-item">
+          <span className={`key-swatch ${item.className}`} aria-hidden="true" />
+          {item.words}
+        </span>
+      ))}
+    </p>
   );
 }
 

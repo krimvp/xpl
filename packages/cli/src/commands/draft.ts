@@ -24,7 +24,7 @@ import { CLASS_ENTRY_KINDS, CLASS_LIMITS, draftClass } from "../draft-class.js";
 import { STATES_LIMITS, draftStates } from "../draft-states.js";
 import { CliError, UsageError, errorMessage } from "../errors.js";
 import { resolveCommit } from "../git.js";
-import { plural, renderIssues } from "../format.js";
+import { plural, renderIssues, withArticle } from "../format.js";
 import { atomicWrite, displayPath, jsonFile } from "../fsutil.js";
 import { loadExplainer, openWorkspace } from "../repo.js";
 import { resolveTarget } from "../target.js";
@@ -103,9 +103,10 @@ function summaryLine(kind: DraftKind, name: string, counts: DraftCounts): string
     kind === "states"
       ? `a flow of ${plural(counts.sequenceSteps, "step")} (one per state, one per transition)`
       : kind === "path"
-        ? counts.views > 1
-          ? `${counts.views} sequences of ${plural(counts.sequenceSteps, "call")} in all`
-          : `a sequence of ${plural(counts.sequenceSteps, "call")} between ${plural(counts.participants, "participant")}`
+        ? (counts.views - counts.maps > 1
+            ? `${counts.views - counts.maps} sequences of ${plural(counts.sequenceSteps, "call")} in all`
+            : `a sequence of ${plural(counts.sequenceSteps, "call")} between ${plural(counts.participants, "participant")}`) +
+          (counts.maps > 0 ? ` after a map of the ${plural(counts.boxes, "file")} it crosses` : "")
         : counts.maps > 1
           ? `${counts.maps} maps of ${plural(counts.boxes, "box", "boxes")} in all`
           : `a map of ${plural(counts.boxes, "box", "boxes")}`;
@@ -142,7 +143,8 @@ function pathEntry(model: IndexModel, arg: string): PathEntry {
 
 export const draftCommand: CommandSpec = {
   name: "draft",
-  usage: "xpl draft change|repo|path|map|class|states <explainer> [<entry id> ...] [-o <file>]",
+  usage:
+    "xpl draft change|repo|path|map|class|states <explainer> [<entry id> ...] [--audience <reader>] [--question <question>] [-o <file>]",
   summary:
     "Print a patch skeleton for a change, a repo, a path, a map, a class or the states of a type; you write the TODO text",
   details: [
@@ -158,14 +160,19 @@ export const draftCommand: CommandSpec = {
     `                            risks (at most ${DRAFT_LIMITS.changeSteps} steps). Every changed file is anchored, tests too.`,
     `  repo <explainer>          two levels. A system map: the project as a service box (one per program under`,
     `                            services/, apps/ or cmd/), who reaches it and what it relies on (databases, caches,`,
-    `                            queues, other APIs, found from the import lines). Each service box opens a map of its`,
-    `                            parts: the top-level folders or files (below src in a src layout; at most`,
-    `                            ${DRAFT_LIMITS.mapBoxes} boxes) and the outside systems they use. A tour from the top down.`,
+    `                            queues, other APIs, found from the import lines). A program with a main function and`,
+    `                            no web or command-line framework gets an Operator box at its main; the settings files`,
+    `                            the code loads get one Settings box, anchored at the file and the line that loads it.`,
+    `                            Each service box opens a map of its parts: the top-level folders or files (below src`,
+    `                            in a src layout; at most ${DRAFT_LIMITS.mapBoxes} boxes) and the outside systems they use. A tour from`,
+    `                            the top down that ends on where to go next.`,
     "                            It needs a supported source language; unsupported files stay text and",
     "                            cannot form repository levels. Inspect text with `xpl show file:<path>`.",
     "  path <explainer> <entry> [<entry> ...]",
     "                            a sequence of the calls the entry symbol makes (depth 1, in source order, at most",
-    `                            ${DRAFT_LIMITS.participants} participants and ${DRAFT_LIMITS.pathCalls} calls), and a tour with one step per main call.`,
+    `                            ${DRAFT_LIMITS.participants} participants and ${DRAFT_LIMITS.pathCalls} calls), and a tour: first a map of the files the`,
+    "                            path crosses (when it crosses two or more), then one step per main call, and last",
+    "                            where to go next.",
     "                            Calls to helpers of the entry's own class get a lifeline of their own; recursion is a",
     "                            call to itself; one-line helpers, type conversions and data built from a type are left",
     "                            out (the notes list them), and so are the calls that reach the least code when there",
@@ -179,7 +186,8 @@ export const draftCommand: CommandSpec = {
     `                            Run again after the code changed: only new files are drafted, boxes of files that`,
     `                            are gone are removed, written text stays (a moved file keeps its own), and the map's`,
     `                            tours drop what is gone. Maps over ${MAP_LIMITS.boxes} boxes get a note.`,
-    "  class <explainer> <entry>  the type hierarchy around a class or interface: what it extends and implements (all",
+    "  class <explainer> <entry>",
+    "                            the type hierarchy around a class or interface: what it extends and implements (all",
     "                            the way up) and what extends or implements it (two levels down), on one map of",
     `                            extends and implements arrows (at most ${CLASS_LIMITS.boxes} boxes), each with a summary TODO that`,
     "                            names its kind, links and methods; a tour: the entry, then each type next to it.",
@@ -192,7 +200,7 @@ export const draftCommand: CommandSpec = {
     "                            (both sites anchored). Comments and other strings do not count. The notes name the",
     `                            states never set or tested and the other uses. At most ${STATES_LIMITS.states} states and`,
     `                            ${STATES_LIMITS.transitions} transitions; a tour: the type, then each state.`,
-    'Change and repo maps get `stubs: {mode: "none"}` (a folder map keeps its stubs: what uses it and what it uses);',
+    'Change, repo and path maps get `stubs: {mode: "none"}` (a folder map keeps its stubs: what uses it and what it uses);',
     "tour steps hold at most 2 code ranges. Ids already in the explainer are not reused (`view:change-map-2`; a map",
     "keeps its own view ids and updates them), and nodes it already explains get no new summary.",
     "Prints the patch on stdout (the summary on stderr), or writes it with -o and prints the summary.",
@@ -270,7 +278,7 @@ export const draftCommand: CommandSpec = {
       const sym = target.type === "symbol" ? target.symbol : undefined;
       if (!sym || !CLASS_ENTRY_KINDS.has(sym.kind)) {
         throw new CliError(
-          `the entry must be a class or an interface, not ${target.id} (${sym ? `a ${sym.kind}` : `a ${target.type}`}): \`xpl outline --kind class,interface\` lists them`,
+          `the entry must be a class or an interface, not ${target.id} (${withArticle(sym ? sym.kind : target.type)}): \`xpl outline --kind class,interface\` lists them`,
         );
       }
       classEntry = sym;

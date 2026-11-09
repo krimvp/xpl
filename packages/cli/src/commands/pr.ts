@@ -8,9 +8,10 @@ import { checkPrLink, linkPr } from "../pr-link.js";
 export const prCommand: CommandSpec = {
   name: "pr",
   usage:
-    "xpl pr prepare|create|check-link <url|owner/repo#number|owner/repo> [number] [--cache-dir dir] [--precise off|auto|require] | xpl pr finish|cleanup <directory> [--cache-dir dir] | xpl pr link <staged-dir> --url <base-url> --visibility team|public",
+    "xpl pr prepare|check-link <PR> [<number>] [--cache-dir <dir>] [--precise auto|off|require] | xpl pr create <PR> [<number>] --name <guide> --audience <reader> --question <question> [--skill-dir <folder>] [--cache-dir <dir>] [--precise auto|off|require] | xpl pr finish <directory> [--note <reason>] [--require-review] [--cache-dir <dir>] | xpl pr cleanup <directory> [--cache-dir <dir>] | xpl pr link <staged-dir> --url <base-url> --visibility team|public",
   summary: "Create a source-backed PR guide through the installed skill and check its result",
   details: [
+    "<PR> is a pull request URL, owner/repo#number, or owner/repo followed by the number.",
     "Uses existing gh and git access to GitHub. Never prompts for credentials. Only link and check-link write: one PR comment.",
     "Resolves full API base/head commits and fetches them into a new detached repository outside the developer tree.",
     "Inherited git-directory/work-tree/index overrides are excluded from all owned source reads and indexing.",
@@ -54,7 +55,7 @@ export const prCommand: CommandSpec = {
     },
     precise: {
       type: "string",
-      arg: "off|auto|require",
+      arg: "auto|off|require",
       desc: "Head reference analysis (default off)",
     },
     url: {

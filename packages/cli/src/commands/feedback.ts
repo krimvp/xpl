@@ -38,17 +38,17 @@ export const feedbackCommand: CommandSpec = {
   options: {
     import: {
       type: "string",
-      arg: "file",
+      arg: "<file>",
       desc: "Import feedback by ID and merge outcomes by revision",
     },
     export: {
       type: "string",
-      arg: "file",
+      arg: "<file>",
       desc: "Export requests including original context and outcomes",
     },
     outcomes: {
       type: "string",
-      arg: "file",
+      arg: "<file>",
       desc: "Record outcomes only for selected request IDs",
     },
   },

@@ -1,13 +1,12 @@
 # Getting started
 
-xpl needs Node 22.12 or newer. The npm package is tested on Linux x64; other platforms have not been
-verified. To write explanations, install and configure a supported authoring harness and its provider.
+xpl needs Node 22.12 or newer. The full install test runs on Linux x64. CI also checks the packed install,
+the local service and offline reading of HTML on macOS and Windows. To write guides with an agent, install
+and sign in to the agent separately.
 
 ## Install
 
-Install the CLI from npm, then install the bundled code-explainer skill and check the setup:
-
-Example for the default Claude Code target:
+Install the CLI and the skill, then check the setup (Claude Code, the default agent):
 
 ```sh
 npm install --global @krimvp/xpl
@@ -15,47 +14,41 @@ xpl skill install
 xpl doctor --agent claude
 ```
 
-Claude Code is the default target. For Codex, Pi, Factory Droid or Devin, use
-`xpl skill install --agent <codex|pi|droid|devin>`. Use `--dir <path>` to install into a project skill directory.
+For Codex, Pi, Factory Droid or Devin, run `xpl skill install --agent <codex|pi|droid|devin>`. Run
+`xpl skill install` again after you update or move the CLI. [Install options](skill/create.md#install) has
+the install folder of each agent, the Devin setup and the install from a source checkout.
 
-`xpl skill install` copies the skill and binds its launcher to the installed CLI. Rerun it after you
-update or move the CLI. The npm package includes the CLI and skill; harness installation, authentication
-and provider access are separate. Codex, Pi and Factory Droid install to `~/.agents/skills/code-explainer`;
-Devin installs to the project's `.agents/skills/code-explainer`. In Devin, run
-`xpl skill install --agent devin` inside the connected remote environment and target repo before using
-the launcher. Install Node >=22.12 and xpl there first; the launcher has no PATH fallback. A local
-project install does not provision xpl in Devin's remote environment. [The skill](skill/index.md) page
-has the install options.
+For shell completion, add `source <(xpl completion bash)` to `~/.bashrc`, or `source <(xpl completion zsh)`
+to `~/.zshrc` after `compinit`. For fish, run `xpl completion fish > ~/.config/fish/completions/xpl.fish`.
 
 ## Make your first guide
 
-From a repository, start a draft with a reader and question:
+In Claude Code, in a repository in a [supported language](concepts/languages.md), ask a question and name
+the reader:
+
+```text
+/code-explainer explain How does a failed job get retried? Root: /absolute/path/to/repo. Audience: maintainers. New guide: job-retries.
+```
+
+Other agents use another prefix; [The skill](skill/index.md) lists them. The agent indexes the repository,
+writes the guide as a patch, and `xpl` checks every code link before it saves
+`.explainer/job-retries.explainer.json`. Commit that file; the indexes beside it are git-ignored.
+[Create a guide](skill/create.md) has more prompts and what to do when a run stops.
+
+### Without an agent
+
+`xpl start` drafts a guide from the index. You write the text:
 
 ```sh
 xpl start job-retries --question "How does a failed job get retried?" --audience maintainers --precise off
 xpl view job-retries
 ```
 
-`xpl start` indexes the current repository, creates a guide and applies a checked draft. It prints the
-outside-repository draft patch and notes paths. Read the notes before editing: they name provisional or
-omitted parts of the draft. Add `--entry src/runner.ts#Runner.dispatch` when the question starts
-at a known function or method; that makes a call sequence instead of a repository map. Complete the TODO
-text, check each claim against its linked source, then run `xpl lint job-retries` and `xpl ready job-retries`.
-
-For an agent-written explanation, use the selected harness in a TypeScript, Python or Go repository.
-For example, in Claude Code, ask:
-
-```text
-/code-explainer explain How does a failed job get retried? Root: /absolute/path/to/repo. Audience: maintainers. New guide: job-retries.
-```
-
-That slash command is the Claude Code example; use the matching [harness invocation](skill/index.md)
-for Codex, Pi, Factory Droid or Devin.
-
-Name the reader and the question. The agent indexes the repository, writes the explanation as a patch, and
-`xpl` checks every anchor before it saves `.explainer/job-retries.explainer.json`. Commit that file; the
-indexes beside it are git-ignored. [Create a guide](skill/create.md) has more prompts and what to do when a
-run stops.
+`xpl start` indexes the repository, creates the guide and applies a checked draft. It prints the path of
+the draft patch and of its notes, both outside the repository. Read the notes first: they name the parts of
+the draft that are provisional or left out. Add `--entry src/runner.ts#Runner.dispatch` when the question
+starts at a known function; then the draft is a call sequence, not a repository map. Write the TODO text,
+check each claim against its code, then run `xpl lint job-retries` and `xpl ready job-retries`.
 
 ## View it and export HTML
 

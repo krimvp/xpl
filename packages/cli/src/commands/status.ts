@@ -163,7 +163,7 @@ function ghostLines(g: GhostStatus): string[] {
   }
   const shown = g.list.slice(0, TOP_GHOSTS).map((ghost) => `${ghost.id} ×${ghost.count}`);
   const lines = [
-    `  ghosts: ${g.total} (${plural(g.stubs, "stub")}; stubs: ${policy}), most referenced: ${shown.join(", ")}${
+    `  ghosts: ${plural(g.total, "box", "boxes")} for ${plural(g.stubs, "stub")} (policy: ${policy}), most referenced: ${shown.join(", ")}${
       g.list.length > TOP_GHOSTS
         ? `, ... +${g.list.length - TOP_GHOSTS} more (--json lists all, and the stub ids)`
         : ""

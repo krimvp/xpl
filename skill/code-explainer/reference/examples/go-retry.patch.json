@@ -3,7 +3,7 @@
     {
       "id": "grp:retry-engine",
       "label": "Retry engine",
-      "summary": "The code that handles a failed job. `runner.go` decides what happens next; the queue stores the job again or dead-letters it.",
+      "summary": "The code that decides what happens to a failed job. `runner.go` chooses a retry or the dead-letter list; the queue stores the job again or adds it to that list.",
       "members": [
         "file:internal/runner/runner.go",
         "file:internal/queue/queue.go",
@@ -177,7 +177,6 @@
         "file:internal/runner/runner.go",
         "file:internal/queue/queue.go",
         "file:internal/queue/deadletter.go",
-        "file:internal/worker/worker.go",
         "grp:retry-config",
         "file:config/default.yaml",
         "file:internal/config/config.go",
@@ -422,7 +421,7 @@
           "id": "t1",
           "view": "view:retry-code",
           "focus": ["grp:retry-engine"],
-          "note": "### Two files handle a failed job\n\nStart at the end of `Runner.Dispatch`: there the runner chooses between a retry and the dead-letter list. The queue then does what the runner asks.",
+          "note": "### The runner decides, the queue stores the job\n\nThe job runner runs background jobs from an in-memory queue. At the end of `Runner.Dispatch`, the runner chooses between a retry and the dead-letter list. The queue then does what the runner asks.",
           "code": [
             {
               "file": "internal/runner/runner.go",
@@ -594,7 +593,7 @@
           "id": "t8",
           "view": "view:retry-code",
           "focus": ["edge:runner-queue-di"],
-          "note": "### The runner calls the queue through an interface\n\n`Runner` holds its queue as a `JobQueue` interface. `main.go` passes the real `*queue.Queue`; the tests pass a wrapper that records each requeue, ack and dead-letter.",
+          "note": "### The runner calls the queue through an interface\n\n`Runner` holds its queue as an interface. The program passes the real queue; the tests pass a wrapper that records each requeue, ack and dead-letter.",
           "code": [
             {
               "file": "cmd/jobrunner/main.go",

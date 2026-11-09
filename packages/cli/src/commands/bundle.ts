@@ -107,7 +107,7 @@ function describeIndex(e: EmbeddedIndex): string {
 export const bundleCommand: CommandSpec = {
   name: "bundle",
   usage:
-    "xpl bundle [explainer] -o out.html [--mode explore|present] [--tour id] [--files referenced|boundary|all] [--boundary-max n] [--embed-index full|pruned] [--include-guides id,id] [--draft] [--note reason] [--require-review] [--allow-drift]",
+    "xpl bundle [explainer] -o <out.html> [--mode explore|present] [--tour <id>] [--files referenced|boundary|all] [--boundary-max <n>] [--embed-index full|pruned] [--include-guides <id,id>] [--draft] [--note <reason>] [--require-review] [--allow-drift]",
   summary: "Check readiness, then write one self-contained HTML file",
   details: [
     "Review state is reported separately. --require-review opts into a team policy requiring a current",
@@ -150,7 +150,7 @@ export const bundleCommand: CommandSpec = {
     "missing (their code is gone), the command refuses: the page would point at the wrong code. Run",
     "`xpl resolve <explainer> --write` and re-explain what it lists. --allow-drift is a legacy draft preview flag; it warns,",
     "and the page tells the reader which parts may be out of date.",
-    "--include-guides id,id embeds up to eight additional local guides, limited to 20 MiB of additional JSON.",
+    "--include-guides <id,id> embeds up to 8 additional local guides, limited to 20 MiB of additional JSON.",
     "Each has its own index and source scope, follows the same readiness gates and accepts --draft explicitly.",
     "--mode present opens in present mode; --tour <id> starts that tour (and implies --mode present).",
     "The output path is printed as given (absolute when you gave it absolute); -o is relative to the working",
@@ -160,7 +160,7 @@ export const bundleCommand: CommandSpec = {
   options: {
     "include-guides": {
       type: "string",
-      arg: "id,id",
+      arg: "<id,id>",
       desc: "Embed up to 8 additional checked guides (20 MiB limit) for offline switching",
     },
     draft: {
@@ -186,7 +186,7 @@ export const bundleCommand: CommandSpec = {
     files: {
       type: "string",
       arg: "referenced|boundary|all",
-      desc: "Files to embed: referenced (default: what the explainer shows), boundary (plus direct callers, callees and tests of anchored symbols) or all",
+      desc: "Files to embed: referenced (default: what the guide shows), boundary (plus direct callers, callees and tests of anchored symbols) or all",
     },
     "boundary-max": {
       type: "string",
