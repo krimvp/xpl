@@ -3091,8 +3091,8 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
   marked (`is-cue`: outlined, not filled, so it never reads as pressed) and counts the boxes out of
   sight ("Fit all (3 out of sight)"), and once all of the diagram is fitted it offers "Readable size" to come
   back. The first frame starts on the selection, else on the focus of the first tour step on this map (the
-  tour being read first; `workspace.ts startOrder`), else on the first drawn box of `view.include`, and
-  holds that box whole. Fitting and the first frame place the diagram under the band the floating zoom toolbar
+  tour being read first; `workspace.ts startOrder`; in Explore only while a tour is chosen), else on the
+  first drawn box of `view.include`, and holds that box whole. Fitting and the first frame place the diagram under the band the floating zoom toolbar
   covers (its bottom + 6 px), so the toolbar never covers a box of a fitted diagram (D6); whether a diagram
   reads whole is decided on the whole pane, so the band never turns a whole first view into a framed one. On a
   phone the first frame fits the part of the pane on screen, not the part under the parts list. A map is laid

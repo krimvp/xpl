@@ -20,7 +20,15 @@ export function DiagramPane() {
   const view = derived.view.view;
   const tourId = state.tour?.tourId;
   const order = useMemo(
-    () => (view?.type === "graph" ? startOrder(state.model, view, tourId) : undefined),
+    // (Explore starts on the tour's box only while a tour is chosen; else on the view's own first box)
+    () =>
+      view?.type !== "graph"
+        ? undefined
+        : tourId
+          ? startOrder(state.model, view, tourId)
+          : Array.isArray(view.include)
+            ? view.include
+            : undefined,
     [state.model, view, tourId],
   );
   if (!view) {
