@@ -92,9 +92,8 @@ export const startCommand: CommandSpec = {
   details: [
     "Indexes the repository, creates a new guide, drafts a repository map and applies the draft.",
     "--entry starts a call sequence at one indexed function or method instead of a repository map: the path",
-    "that answers the question. Without it, the output says so and names a function to start at, guessed from",
-    "the words of the question (common words and the project's name do not count), else where a manifest says",
-    "the project starts (a package.json bin, exports or main; a pyproject.toml script).",
+    "that answers the question. Without it, the output names where a path could start: a function the question's",
+    "words name (not common words or the project's name), else the entry a package.json or pyproject.toml declares.",
     "The draft patch and all draft notes are saved outside the repository. Up to three notes and apply",
     "warnings print here; --json returns the full lists. Review the TODO text and notes before sharing.",
     "With no reference tool installed, use --precise off. It never overwrites a guide.",
