@@ -143,6 +143,8 @@ They also follow the core of ASD-STE100, Simplified Technical English:
 
 "Wrap", "hook", "handle" and "manage" each need a definition in the guide before you use them.
 
+**One name across a repository's guides.** When a repository has more than one guide, give a box the same label in each, and give one value one name everywhere (a timeout is "the `totalTimeout` limit" in every guide). The library page shows the guides side by side, and a reader who sees two names looks for two things.
+
 ## 3. Titles and labels
 
 A good title is a plain statement of about 8 words that a presenter can say aloud: "The queue hands out the oldest due job", "Callers now get a `Result` or an error". A class name used as a noun is fine; a call or an expression is not.

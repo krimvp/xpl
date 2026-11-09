@@ -62,7 +62,7 @@ For a GitHub PR handoff (`handoff.json`), follow `reference/create.md`, "Author 
 
 ## Workflow
 
-1. **Index:** `xpl index`, and again when the code changes or a command says the index `does not match the working tree`. On Rust, Ruby or PHP, read the coverage lines `xpl index` prints before you describe a path: xpl reads them only in part.
+1. **Index:** `xpl index`, and again when the code changes or a command says the index `does not match the working tree`. On Rust, read the coverage lines `xpl index` prints before you describe a path: it has heuristic calls in a few forms. Ruby and PHP have no references, so `draft path` stops: write the map and the sequence by hand (`reference/patch-format.md` 3.6, 3.8), and draw each call on the map as an `llm` edge anchored at both ends (3.3).
 2. **Name:** `xpl new <name> --title "..."`. A change gets its own guide, titled after it: `xpl new <repo>-pr-42 --title "PR 42: <what it does>"`.
 3. **A change only:** `xpl change <name> <base>..<head>` records it and prints its analysis.
 4. **Draft:** `xpl draft <kind> <name> [<entry id>] --audience "<reader>" --question "<question>" -o <file>`, outside the repo. Each text of the draft holds `TODO: <what to write>`.
@@ -98,7 +98,7 @@ Length budgets (the other files and the drafts follow this table):
 | map              | 1 + top folders + where to start, ≤ 12 | 15-30 words     | 2-3 sentences | the folder maps                | one box per entry      | 0        |
 | presentation     | 5-9                                    | ≤ 280 chars     | 2-3 sentences | existing views                 | ≤ 8                    | 0-1      |
 
-This table is the one source of these numbers; the other files point here. Lint checks only part of it: `tour-summary` flags more than 5 sentences, so keep to the column yourself. A small subject can take fewer steps than the column: do not pad it. A second, in-detail tour of a repo may open one sequence per part, 1-2 steps each. A sequence has 3-6 participants in every scope. A flow has at most 8 steps: split a longer decision into two flows (which cases, then what happens in each). A class map or a data map may hold 8 boxes when each one answers the question; a step then names the types left off. `draft class` stops at 8 boxes, `draft data` at 6 (8 rows a table). Hard limits for every scope: a note body has 50 words at most (`long-note`). A box, concept or step `summary` has 2 sentences and 45 words at most, and says what the thing is for (`long-summary`). A `detail` paragraph has 80 words at most (`long-detail`).
+This table is the one source of these numbers; the other files point here. Lint checks part of it: `tour-summary` (more than 5 sentences), `many-diagrams` (a question tour's diagrams), `many-ranges` (a step's code) and `long-flow` (a flow's steps). Keep to the rest yourself. A small subject can take fewer steps than the column: do not pad it. A second, in-detail tour of a repo may open one sequence per part, 1-2 steps each. A sequence has 3-6 participants in every scope. A flow has at most 8 steps: split a longer decision into two flows (which cases, then what happens in each). A class map or a data map may hold 8 boxes when each one answers the question; a step then names the types left off. `draft class` stops at 8 boxes, `draft data` at 6 (8 rows a table). Hard limits for every scope: a note body has 50 words at most (`long-note`). A box, concept or step `summary` has 2 sentences and 45 words at most, and says what the thing is for (`long-summary`). A `detail` paragraph has 80 words at most (`long-detail`).
 
 - **One focus.** Each step focuses one main element, plus at most one concept that explains it.
 - **Cut to the budget.** A draft can hold more steps than the budget. Merge steps that make the same point. Drop a call that does not change the answer, from the sequence and from the tour. Gaps in step ids are fine (`t1`, `t2`, `t5`).
@@ -132,7 +132,7 @@ Three levels, each a zoom (`opens`) into a box of the level above:
 Then:
 
 1. **Draft:** `xpl draft repo` gives the system map, a map of each service's inside, and a tour. Its arrows and outside systems are leads: check each by `patch-format.md` 3.10, "Check the draft".
-2. **Main path:** the `draft repo` tour has at most 7 steps, where next included, and leaves room for 2 steps: the main path and its risks. Run `xpl draft path` on the entry point it names (`main`, `cmd/`, a server). Keep 2 of its sequence steps, the answer and its risk, and put them before `### Where to go next`. Leave out its files map and its own tour: copy only the sequence view and those steps. Their ids are new to the guide, so copy them as they are. Set `opens` on the box that holds the entry point to the sequence's view id.
+2. **Main path:** the `draft repo` tour has at most 7 steps, where next included, and leaves room for 2 steps: the main path and its risks. Run `xpl draft path` on the entry point it names (`main`, `cmd/`, a server, or for a library the method each request runs through). Keep 2 of its sequence steps, the answer and its risk, and put them before `### Where to go next`. Leave out its files map and its own tour: copy only the sequence view and those steps. Their ids are new to the guide, so copy them as they are. Set `opens` on the box that holds the entry point to the sequence's view id.
 3. **Tour:** the first step on the inside names the files left off the map, in one sentence. Offer 2-3 expansions in the reply.
 
 ## explain map: every file, in plain words
@@ -165,7 +165,7 @@ Readers save requests in the Feedback panel or with "Explain this". Saving a req
 
 ## make tour
 
-A presentation from existing views, by "The tour" and the presentation budget. Use the newest question's views and the overview; ask when there are several. Give it a slug with `talk` (`tour:talk-retries`), so `xpl lint` keeps each note short enough for Present. Check with `xpl anchors <name> tour:<slug>`, then `xpl bundle <name> -o talk.html --tour tour:<slug>`.
+Make a presentation from existing views. Follow "The tour" above and its presentation budget. Use the newest question's views and the overview; ask when there are several. Give it a slug with `talk` (`tour:talk-retries`), so `xpl lint` keeps each note short enough for Present. Check with `xpl anchors <name> tour:<slug>`, then `xpl bundle <name> -o talk.html --tour tour:<slug>`.
 
 ## After the code changed
 

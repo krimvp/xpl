@@ -120,7 +120,7 @@ An agent does not call work finished until each item is done or the reply says w
 
 1. **Run the `test-audit` skill. This is a strong recommendation, not a formality.** Put every test the
    change adds or touches through its authoring gate, and check the tests that own the changed code: does
-   each one protect behaviour at its owning seam, and would it fail on the regression it claims to catch? A
+   each one protect behavior at its owning seam, and would it fail on the regression it claims to catch? A
    regression test must have failed before the fix. Report what the audit found, even "nothing to change".
 2. `npm run typecheck`, `npm test`, `npm run format:check` pass, plus `npm run test:e2e` for viewer changes.
 3. Docs, `--help` text, the product skill and `.explainer/xpl.explainer.json` match the code (`docs-sync`).
@@ -153,10 +153,10 @@ Do yourself everything a tool can do; ask the user only for decisions, never to 
   the same way, publishes the changed shots side by side and prints the Screenshots section to paste. Do it
   without asking.
   Above each Before/After image, add one or two sentences explaining what changed and what the reviewer
-  should look for. Describe the previous behaviour and the expected behaviour after the change, including
+  should look for. Describe the previous behavior and the expected behavior after the change, including
   where to look when the difference is subtle.
 - Commits: conventional, scoped by package (`fix(indexer):`, `feat(viewer):`, `docs(explainer):`), with the
-  subject stating the new behaviour in plain words (see recent `git log`).
+  subject stating the new behavior in plain words (see recent `git log`).
 - Never push to `main` directly, never force-push a shared branch, never skip or loosen a test to get green.
 
 ## Skills

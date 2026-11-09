@@ -57,8 +57,9 @@ xpl view first-guide
 
 The draft holds the boxes, the steps and their code links, with TODO text for you to write. Without
 `--entry`, `xpl start` drafts a map of the whole repository instead of the path that answers the question.
-Write the text in `xpl view`, under Edit > **Edit the tour**. Or edit the draft patch that `xpl start` prints,
-and run `xpl apply first-guide <draft patch>`. `xpl lint first-guide` and `xpl ready first-guide` list what is
+Write the text in the draft patch that `xpl start` prints, and run `xpl apply first-guide <draft patch>`.
+`xpl view` can also edit the step notes (Edit > **Edit the tour**) and each box's text (**Edit text** in its
+details), but not the titles or the tour summary. `xpl lint first-guide` and `xpl ready first-guide` list what is
 still missing.
 
 From a source checkout of xpl, you can also open the sample job runner:

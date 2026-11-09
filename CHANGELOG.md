@@ -114,6 +114,20 @@ Guides and the viewer:
 - Search lists the guide's own words first, then names with code in the page, and test names last.
 - The key line names each kind of mark once, with the mark itself as its swatch. A jump to a line scrolls
   only its own code pane.
+- A flow whose steps all sit in one function names it once in the caption ("all in `updateModules`"), not
+  under each box. Two routes into different boxes no longer run side by side closer than a gap, and two
+  labels out of one choice keep apart. A repeated end stays beside the choice it follows.
+- An arrow is named by its two ends, then its label ("Scheduling → worker.ts (calls ×3)"). A step whose
+  places in one file are far apart shows "1 / 2 in this file" and steps between them.
+- On a phone, a Present slide stacks the diagram and the code; the split left the code 24 px wide. A
+  Present flow slide gets a wider diagram column like a map slide, so its arrows stay in view.
+- A draft's bar says what is left in words ("3 problems to fix and 2 notes for the author") and opens the
+  list behind it.
+- Search shows a snippet of each hit with the match marked; Up and Down walk through the results.
+- A change step lists the code that calls what changed apart from the tests that call it.
+- On a guide of Ruby or PHP code, the coverage bar says that xpl finds no calls there, so the author drew
+  every arrow. A canceled job reads "Canceled".
+- The Key says "Code links", "Opens map" and "Boxes outside this map".
 
 Indexing:
 
@@ -132,12 +146,15 @@ Indexing:
   (Java `static void main`, Python `__main__`, Go `func main`, Rust `fn main`) unused.
 - `xpl outline` shows the code files of a Maven layout by default: a chain of single folders is one row.
 - TypeScript: `type X = { ... }` and `type X = A & { ... }` have fields like an interface, so a data map
-  draws their rows. A package that imports itself by its own name links to its source through the
+  draws their rows and calls them fields. `type X = A & { ... }` extends `A`, as `interface X extends A`
+  does. A package that imports itself by its own name links to its source through the
   tsconfig `outDir`. A field typed `Options['baseUrl']` holds no arrow to `Options`.
-- Java: a lambda parameter or a for-each variable hides a field only inside the lambda or the loop. Record
-  components and interface constants are fields. `xpl new` names a Maven project after its `artifactId`.
-- A route served by a server that a test starts answers only the requests of that test.
-- `xpl outline` ends a file's range on its last line, as `wc -l` and editors count it.
+- Java: a lambda parameter or a for-each variable hides a field only inside the lambda or the loop. A call
+  through a record component or an interface constant (`held.lease()`) links to the method of the type it
+  holds. `xpl new` names a Maven project after its `artifactId`.
+- An HTTP route that a test's own server serves is linked only to the requests in that test.
+- `xpl outline`, `xpl show` and `xpl refs` end a file's range on its last line, as `wc -l` and editors count
+  it.
 
 Drafts and lint:
 
@@ -179,8 +196,14 @@ Drafts and lint:
   the entry's own class gets its own lifeline, and a helper called in an early exit and on the main path is
   drawn at both calls. `xpl draft map` skips a license or banner comment when it takes a file's description.
 - `xpl lint` flags a step with no `code` that shows more than 2 code ranges (`many-ranges`) and a tour that
-  follows a path with more than one map or one flow or sequence (`many-diagrams`). It checks a note's
-  heading like its body. `xpl lint --patch` prints the warnings `xpl apply` would print.
+  follows a path with more than one map or one flow or sequence (`many-diagrams`). A claim in a
+  note's heading (only, every) needs its evidence, as in the body. `xpl lint --patch` prints the warnings
+  `xpl apply` would print.
+- `xpl lint` flags a passive clause in a title or a note heading (a How, Why or What title passes) and a
+  flow a tour shows with more than 8 steps (`long-flow`). `xpl lint --patch` fails only on the apply
+  warnings the patch causes; a warning about the guide (an old index binding) is listed apart.
+- A Ruby singleton method reads `Jobrunner.run`, not `self.run`. `xpl change` drops the "matched by name"
+  limit for a language whose references a language tool checked.
 
 Command-line messages:
 
@@ -194,7 +217,11 @@ Command-line messages:
   `xpl apply`, then run `xpl validate` again".
 - `xpl feedback` says what it imported and exported, and why a request is outdated, in plain words. A bad
   request file names the request and the field. `xpl start` without `--entry` names one `draft path`
-  command. `--limit -1` says to write `--limit=-1`.
+  command. `--limit -1` says that the option takes 0 or more.
+- `xpl start` says which TODOs the viewer can edit (step notes and box texts) and which need the patch
+  (titles and the tour summary). The stale-index warning names `xpl resolve` when an index of the current
+  tree exists. `--index` help says a guide command uses the guide's own index first. `xpl apply` names
+  `nodes` for a patch field `node`. A step id without its view slug gets the hint to keep it.
 
 Docs:
 

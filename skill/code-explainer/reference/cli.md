@@ -8,13 +8,13 @@ Install the CLI and the skill, and set up each agent: [Create a guide](create.md
 
 **Global options** (every command)
 
-| Option            | Meaning                                                                                  |
-| ----------------- | ---------------------------------------------------------------------------------------- |
-| `--root <dir>`    | repository root (default: current directory)                                             |
-| `--json`          | machine-readable output (`{"ok": true, ...}`; errors as `{"ok": false, "error": "..."}`) |
-| `--index <path>`  | symbol index to use (default: the index of the current commit id, else the newest one)   |
-| `-h`, `--help`    | help for the command; `xpl help` lists all                                               |
-| `-v`, `--version` | print the version                                                                        |
+| Option            | Meaning                                                                                                            |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `--root <dir>`    | repository root (default: current directory)                                                                       |
+| `--json`          | machine-readable output (`{"ok": true, ...}`; errors as `{"ok": false, "error": "..."}`)                           |
+| `--index <path>`  | symbol index to use (default: the guide's own index, else the index of the current commit id, else the newest one) |
+| `-h`, `--help`    | help for the command; `xpl help` lists all                                                                         |
+| `-v`, `--version` | print the version                                                                                                  |
 
 **Exit codes:** 0 ok · 1 rejected or failed · 2 usage error. Exit 1 covers a bad id, a rejected patch, `resolve --write` on a stale index, validation errors, `lint` findings and `bundle` with drifted or missing anchors. It also covers a patch that changed nothing because the user owns everything it touches.
 **Streams:** results, issue lists and rejections print on stdout (a rejection also exits 1). Fatal errors (`error: ...`: unknown id, no index, bad JSON, unreadable file) and `warning:` lines go to stderr, so use `2>&1` to capture both. With `--json` there is one object on stdout, errors included (`{"ok": false, "error": ...}`).
@@ -254,7 +254,7 @@ drafts, and its source opens as plain text in the viewer.
 
 ## `xpl outline [--under <id>] [--depth <n>] [--kind <k,...>] [--keys] [--limit <n>]`
 
-One line per element: `<id>  <kind>  <first>-<last line>  in=<fan-in> out=<fan-out>`. `in`/`out` count references into and out of the element's subtree (calls, imports, type uses, reads), so high numbers mark hubs. A symbol's calls of itself stay inside it and do not count. `recursive` after the counts marks a symbol that calls itself (`"recursive": true` in `--json`). `[+n]` = n children below the depth limit. Default depth 2, or deeper until a code file shows (a Maven `src/main/java/<package>`), `--limit 400` lines. A chain of folders that each hold only one folder is one row (`dir:src/main/java/app`) and one level. Config keys (yaml, json, toml) are hidden unless `--keys`. `--kind method,function` lists only symbols of those kinds (`class interface function method type variable enum key other`, and Go's `struct` and `field`; repeat or comma-separate) together with the dirs, files and parent symbols that hold a match, so each keeps its place; with `--kind` and no `--depth` it searches every level. Go code shows `struct` and `field` where the index stores `class` and `variable` (`--json` keeps the stored kind, and `--kind struct,field` works too); a method on `T` or `*T` is `sym:<file>#T.Method`. Ruby modules and PHP namespaces show as `other`; a constant in a class shows as `field`. The `repo` line carries the name `xpl new` records (from `package.json`, `go.mod`, `pyproject.toml`, `Cargo.toml`, `pom.xml`, the git remote), not the directory's.
+One line per element: `<id>  <kind>  <first>-<last line>  in=<fan-in> out=<fan-out>`. `in`/`out` count references into and out of the element's subtree (calls, imports, type uses, reads), so high numbers mark hubs. A symbol's calls of itself stay inside it and do not count. `recursive` after the counts marks a symbol that calls itself (`"recursive": true` in `--json`). `[+n]` = n children below the depth limit. Default depth 2, or deeper until a code file shows (a Maven `src/main/java/<package>`), `--limit 400` lines. A chain of folders that each hold only one folder is one row (`dir:src/main/java/app`) and one level. Config keys (yaml, json, toml) are hidden unless `--keys`. `--kind method,function` lists only symbols of those kinds (`class interface function method type variable enum key other`, and Go's `struct` and `field`; repeat or comma-separate) together with the dirs, files and parent symbols that hold a match, so each keeps its place; with `--kind` and no `--depth` it searches every level. A field of a class, interface, object `type` or Go struct shows as `field`, and a Go struct as `struct`, where the index stores `variable` and `class` (`--json` keeps the stored kind, and `--kind struct,field` works too); a method on `T` or `*T` is `sym:<file>#T.Method`. Ruby modules and PHP namespaces show as `other`; a constant in a class shows as `field`. The `repo` line carries the name `xpl new` records (from `package.json`, `go.mod`, `pyproject.toml`, `Cargo.toml`, `pom.xml`, the git remote), not the directory's.
 
 ```
 $ xpl outline --depth 1
@@ -262,12 +262,12 @@ repo  ts-jobrunner  12 files, 160 symbols
   dir:config  dir  1 file  in=0 out=0  [+1]
   dir:src  dir  7 files  in=41 out=0  [+7]
   dir:test  dir  1 file  in=0 out=41  [+1]
-  file:README.md  text  1-46  in=0 out=0
-  file:package.json  json  1-16  in=0 out=0  [11 keys hidden]
-  file:tsconfig.json  json  1-16  in=0 out=0  [12 keys hidden]
+  file:README.md  text  1-45  in=0 out=0
+  file:package.json  json  1-15  in=0 out=0  [11 keys hidden]
+  file:tsconfig.json  json  1-15  in=0 out=0  [12 keys hidden]
 
 $ xpl outline --under file:src/runner.ts --kind method
-file:src/runner.ts  typescript  1-111  in=10 out=35
+file:src/runner.ts  typescript  1-110  in=10 out=35
   sym:src/runner.ts#Runner  class  12-93  in=8 out=30
     sym:src/runner.ts#Runner.constructor  method  22-27  in=0 out=8
     sym:src/runner.ts#Runner.start  method  30-34  in=2 out=4
@@ -278,14 +278,14 @@ file:src/runner.ts  typescript  1-111  in=10 out=35
     sym:src/runner.ts#RunnerStats.record  method  101-104  in=1 out=6
 
 $ xpl outline --under file:test/retry.test.ts --kind function
-file:test/retry.test.ts  typescript  1-91  in=0 out=41
+file:test/retry.test.ts  typescript  1-90  in=0 out=41
   sym:test/retry.test.ts#runOne  function  38-52  in=2 out=14
   sym:test/retry.test.ts#fails twice, then succeeds: acked after two requeues  function  54-66  in=0 out=4
   sym:test/retry.test.ts#always fails: dead-lettered after maxRetries requeues  function  68-79  in=0 out=10
   ...
 
 $ xpl outline --under file:config/default.yaml --keys
-file:config/default.yaml  yaml  1-22  in=0 out=0
+file:config/default.yaml  yaml  1-21  in=0 out=0
   sym:config/default.yaml#queue  key  3-6  in=0 out=0
     sym:config/default.yaml#queue.name  key  4-4  in=0 out=0
     ...
@@ -368,7 +368,7 @@ in (2):
   read  sym:src/runner.ts#Runner.dispatch  (src/runner.ts:74, precise)  +32
   read  sym:src/runner.ts#Runner.dispatch  (src/runner.ts:75, precise)  +33
 $ xpl refs file:src/runner.ts --in --depth 3 --kind call
-file:src/runner.ts (typescript) src/runner.ts:1-111
+file:src/runner.ts (typescript) src/runner.ts:1-110
 in (7):
   call  sym:src/main.ts#main  (src/main.ts:53, precise)  +14
     call  file:src/main.ts  (src/main.ts:70, precise)  +69
@@ -477,7 +477,7 @@ note: the draft guesses the kind of project, its users and its entry points from
 note: settings files the code loads (from the index): `config/default.yaml`; check that the code reads each at run time
 note: room is left for 2 more steps (9 at most), the main path and its risks
 note: drafted an overview of the whole repository, not the path that answers the question (no --entry). To draft that path, run `xpl draft path job-retries sym:src/runner.ts#Runner.dispatch -o <file>` (a guess from the question's words), or pass --entry next time.
-next: write the TODOs in `xpl view job-retries` (Edit > Edit the tour), or edit /tmp/xpl-first-guide-…/draft.patch.json and run `xpl apply job-retries /tmp/xpl-first-guide-…/draft.patch.json`; then `xpl lint job-retries`
+next: write the TODOs in /tmp/xpl-first-guide-…/draft.patch.json and run `xpl apply job-retries /tmp/xpl-first-guide-…/draft.patch.json`, then `xpl lint job-retries`. `xpl view job-retries` also edits the step notes (Edit > Edit the tour) and box texts (Edit text), not the titles or the tour summary
 ```
 
 `--precise off` uses heuristic references; confirm calls against source before completing the explanation. `--json` returns the guide and draft paths, `drafted` (`repo` or `path`), `suggestedEntry` (without `--entry`, when a function matches), notes file, notes and apply warnings.
@@ -838,7 +838,7 @@ Checks the text a reader sees. That is the explainer title, tour titles, tour `s
 
 **It exits 1 on any finding,** so `xpl lint <name> --patch p.json && xpl apply <name> p.json` stops on one. Fix it; for a finding you keep on purpose, say why in your reply and run with `--warn-only` (exit 0 on warnings; a `todo-left` error still exits 1). `--strict` is the default and is kept for older scripts.
 
-**Before you apply.** `--patch <file|->` lints the explainer as it would be after `xpl apply <explainer> <file>`. The patch is merged in memory the way `apply` merges it (same checks, actor `llm`), and nothing is written. A patch that `apply` would reject prints the same rejection lines and exits 1. The warnings `apply` would print (a step id that does not start with its view's slug) come after the findings and also exit 1: fix them in the patch, because an id never changes once applied. `-` reads the patch from stdin.
+**Before you apply.** `--patch <file|->` lints the explainer as it would be after `xpl apply <explainer> <file>`. The patch is merged in memory the way `apply` merges it (same checks, actor `llm`), and nothing is written. A patch that `apply` would reject prints the same rejection lines and exits 1. The warnings the patch causes in `apply` (such as a step id that does not start with its view's slug) come after the findings and also exit 1: fix them in the patch, because an id never changes once applied. Warnings the guide had before the patch (an old index binding, older drift) come last, under their own line, and do not change the exit code. `-` reads the patch from stdin.
 
 - `todo-left`: A `TODO` in any authored text, including frame/transition labels, audience, technology and view questions. One error per stored field; a tour note includes its heading and body. IDs, paths, anchors and metadata are excluded. Nested text names its field path and nearest element ID. Exit 1 even with `--warn-only`. A text that still holds a `TODO` gets only this finding: the other text rules judge it once it is written.
 - `tour-summary`: a tour without a `summary`, or one of fewer than 2 or more than 5 sentences (the answer, then up to four reasons)
@@ -859,7 +859,7 @@ Checks the text a reader sees. That is the explainer title, tour titles, tour `s
 - `bare-it`: a sentence that starts with a bare subject: `It` or `This` and a verb (`It calls ...`, `This is ...`), `They`, `These` or `Those` and a verb (`These are ...`), or `There is` / `There are`: name the subject. In the summary of a box, arrow, concept or step, `It` may start sentence 2 or later when sentence 1 names the thing or starts with a verb
 - `abstract-subject`: in any text, a sentence whose subject is a noun made of an action, then a verb in -s. The noun is a word and a noun in -tion, -sion, -ment, -ance, -ence or -ing (`Graph derivation combines ...`), or assembly, setup, lookup, dispatch, discovery, derivation and a few more alone (`Discovery uses git ...`). Make the code the subject; a summary may start with the verb (`Combines ...`). A sentence passes when it starts with a label of a box or concept of the guide ("Rate limiting" when a concept has that name). It also passes when it starts with the whole name of a mechanism: rate limiting, load balancing, dependency injection, lazy loading, error handling and a few more. "Job scheduling picks" still counts
 - `filler-word`: marketing and filler words (seamless, robust, leverage, elegant, powerful, simply, just, basically, delve, crucial, comprehensive, cutting-edge, ...), each with a replacement. The same for wordy phrases (in order to, prior to, a number of), weak intensifiers (very, really, actually), stale metaphors (heavy lifting, at its core, out of the box) and machine-text tics (ultimately, notably). And for the vague verbs of writing.md section 2b (manages, takes care of, deals with, preserve, retain, explicitly, various) and connectors (additionally, furthermore, moreover). Code verbs (render, dispatch, emit, persist, provide) are left to the writer. Plain uses pass: "in order to" before a or the, "first-class functions", "the test harness", "terminates the child process" (or the old group). Quoted text is the code's words, not the writer's, in four cases. It holds two words or more. It follows prints, logs, says, shows or returns. It is one of a list of quotes (`"a", "b"`). Or it comes before punctuation, the end, or a word such as or, and, as, when (`the mode "robust" when ...`: a value). A one-word quote before the word it modifies (`the pool "manages" its connections`) is still checked
-- `passive-voice`: a field with 2 or more passive clauses, or one in the main clause of the first sentence of a box, arrow, concept or step summary. A passive clause is a form of "be" or "get" and a past participle: `is written`, `are not shown`, `gets set`, `is being retried`, `is then re-rendered`. Code spans and adjectives such as `based on`, `undefined`, `unused` do not count, and a passive after when, if or whose names a state. Name who does it, or use a plain verb for a state
+- `passive-voice`: a field with 2 or more passive clauses, or one in the main clause of the first sentence of a box, arrow, concept or step summary, or of a title or note heading (a title that starts with How, Why or What is not judged). A passive clause is a form of "be" or "get" and a past participle: `is written`, `are not shown`, `gets set`, `is being retried`, `is then re-rendered`. Code spans and adjectives such as `based on`, `undefined`, `unused` do not count, and a passive after when, if or whose names a state. Name who does it, or use a plain verb for a state
 - `we-voice`: "we", "our", "us" or "let's" outside code spans and any quote (`"us"` may be a region code): name who does it, or write to the reader as "you"
 - `dash-chain`: a sentence with two or more dashes (an em dash, or a spaced `-`, `--` or en dash): split it into sentences
 - `tool-word`: a word of the tool in lower case. In tours: node, edge (not "edge case"), anchor, evidence, upsert, llm, provenance, stub, ghost, overlay and call-site. In box, arrow and concept text, only the tool's own senses count. These are a stub box or arrow, a ghost box, an authored overlay, anchor evidence, and stub or ghost in a sentence that says "this map", "the diagram", "boxes" or "arrows". The verb "maps" does not count, and neither does "a box" alone, which code may draw. A word passes when the guide names its own code with it: in the label or id of a box or concept, a linked file's path, the guide's title or a view's question. Quoted text passes, and "stub" passes in a text about tests
@@ -883,12 +883,13 @@ Checks the text a reader sees. That is the explainer title, tour titles, tour `s
 - `markdown-in-summary`: a `# heading` line or a `[text](link)` in the `summary` of a node, edge, concept or step. Inline markdown is fine there (code spans, `**bold**`, `*emphasis*`, as in `**Changed:** ...`): the viewer renders it. A summary is one or two sentences next to the code: put headings and links in the `detail`
 - `untitled-step`: a tour step without a note, or whose note has no `### title` and a first sentence over 80 characters (or opens with a list or code): the viewer shows that sentence cut short, or "Step N". Replaces `note-heading` for such a step
 - `change-not-shown`: an explainer of a change: changed files whose code no tour step shows (its `code` ranges, what it focuses, their members, ends and anchors; `ids` in `--json`). Naming a code file in a note is not enough: show it on a step (a range in `code`, or a symbol in the focus). Docs (readme, `*.md`, `docs/`), tests, lock files and renames with no edits may instead be named in a tour text (by file name, or by path when two changed files share one); the message says which kind each is
-- `far-ranges`: a tour step whose ranges in one file (its `code`, else the anchors of what it focuses) make more than 3 places, ranges over 40 lines apart. Present shows a pane per place, at most 3 per file, so the last pane holds the rest and opens at the first. (Read steps through any number, "range 1 / 4".) Keep the places the note is about, or split the step. Two or three far-apart places are fine. Not judged while the note holds a `TODO`
+- `far-ranges`: a tour step whose ranges in one file (its `code`, else the anchors of what it focuses) make more than 3 places, ranges over 40 lines apart. Present shows a pane per place, at most 3 per file, so the last pane holds the rest and opens at the first. (Read steps through any number, "1 / 4 in this file".) Keep the places the note is about, or split the step. Two or three far-apart places are fine. Not judged while the note holds a `TODO`
 - `many-ranges`: a tour step with no `code` whose focus has no anchors of its own, so it shows the code the box falls back to (a folder's files, a group's members): more than 2 ranges. Give the step `code` with the ranges the note is about, or focus a smaller box. Needs the index; not judged while the note holds a `TODO`.
-- `many-diagrams`: a tour that follows a path (it shows a flow or a sequence) and uses more than 1 map or more than 1 flow or sequence, the question budget in SKILL.md. A change, a presentation and a tour on an architecture map (a box with a `role`) are not judged. Keep the diagram that answers the question, or split the tour.
+- `many-diagrams`: a tour that follows a path (it shows a flow or a sequence) and uses more than 1 map or more than 1 flow or sequence, the question budget in SKILL.md. A change, a presentation and a tour on an architecture map (a box with a `role`) are not judged. Keep the diagram that answers the question, or split the tour. A tour with no flow or sequence is not judged.
 - `long-talk-note`: in a talk (a tour whose id or title says talk, presentation, demo or slides), a note over 280 characters under its title: Present sets it in its smaller caption type, and it may scroll
 - `big-map`: a graph view a tour shows with more than 8 boxes (counted on the index; without one, the `include` entries): a guide picture or a slide of it is too small to read
 - `many-participants`: a sequence a tour shows with more than 6 participants: the lifelines get too narrow to read. Fold a helper into the lifeline that calls it, or leave out calls that do not change the answer
+- `long-flow`: a flow a tour shows with more than 8 steps: the boxes get too small to read. A flow of a type's states (`xpl draft states`) is not judged. Split the decision into two flows (which cases, then what happens in each), or merge steps that make the same point
 - `crowded-map`: a graph view with more than 2 arrows (derived and stored) per box (needs the index). The hint and `ids` in `--json` list the least used drawn edges: put them in the view's `hidden`
 - `system-map-no-edges`: an indexed architecture map with at least one non-component role, at least two visible boxes and no visible arrows; check whether arrows the code shows are missing
 - `map-box`: a box on a map that draws its summary under the label (`boxText: "summary"`, as `xpl draft map` makes). Its label is over 5 words, or is a file name (`main.ts`, a code mark, the file's own name). Its summary is over 130 characters, or does not start with a verb in the present: it starts with an article, "This", "It", a code mark, the file's own name, the label's first word ("Job queue that …"), a word in -ing or -ed ("Used by …"), a word that does not end in "s" ("Configuration …"), or a vague verb ("Contains", "Handles", "Manages"). The explain map asks for 2-5 plain words and one sentence of about 120 characters that starts with a verb
@@ -930,7 +931,7 @@ error   tours[0].sumary [tour:intro]: unknown field "sumary" (allowed: id, title
 nothing linted: fix the patch, then run `xpl lint --patch` again
 ```
 
-A flow step is named with its view (`host-check:1 (step in view:host-check)`). `--json`: `{ok, path, patch?, changed?, protectedIds?, strict, checked, total, counts: {<rule>: n}, findings: [{rule, severity?, elementId, kind: explainer|tour|tour-step|view|step|node|edge|concept, view?, field, quote, message, hint, ids?}]}`. `ok` is false when the exit code is 1: a finding (with `--warn-only`, a `todo-left` error), or a rejected patch. A rejected patch gives `{ok: false, path, patch, changed: [], issues, error}`, as `apply` does. `field` is `title`, `summary`, `note`, `note heading`, `label` or `detail`; `steps` for the order checks and `many-diagrams`, `code` for `far-ranges` and `many-ranges`, `change` for `change-not-shown`, and `include` or `hidden` for the map checks. `strict` is false with `--warn-only`. `view` names the map of a `tour-covers-map` finding. `ids` lists the boxes, files or edges a finding is about.
+A flow step is named with its view (`host-check:1 (step in view:host-check)`). `--json`: `{ok, path, patch?, changed?, protectedIds?, applyIssues?, strict, checked, total, counts: {<rule>: n}, findings: [{rule, severity?, elementId, kind: explainer|tour|tour-step|view|step|node|edge|concept, view?, field, quote, message, hint, ids?}]}`. `applyIssues` lists the warnings `apply` would print, each an issue as `validate` gives it plus `fromPatch` (false for a warning the guide had before the patch). `ok` is false when the exit code is 1: a finding (with `--warn-only`, a `todo-left` error), an apply warning with `fromPatch: true` (not with `--warn-only`), or a rejected patch. A rejected patch gives `{ok: false, path, patch, changed: [], issues, error}`, as `apply` does. `field` is `title`, `summary`, `note`, `note heading`, `label` or `detail`; `steps` for the order checks and `many-diagrams`, `code` for `far-ranges` and `many-ranges`, `change` for `change-not-shown`, and `include` or `hidden` for the map checks. `strict` is false with `--warn-only`. `view` names the map of a `tour-covers-map` finding. `ids` lists the boxes, files or edges a finding is about.
 
 ## `xpl health`
 
@@ -1194,7 +1195,7 @@ A caller is code that calls. A test, or code that only names a changed type, is 
 
 **Draws** a sequence of the entry's calls (depth 1, source order; at most 6 participants and 12 calls). In Ruby or PHP the index has no references, so there is no call to draw: the draft says so, and you write the steps from `xpl show`.
 
-- Each call links to its call site and to the callee's definition. A method of the entry's own class is a lifeline of its own (`Ky.#run` calls `Ky.#retry`); a method of another class goes to that class's lifeline; a call through an interface, to its one implementation.
+- Each call links to its call site and to the callee's definition. A method of the entry's own class is a lifeline of its own (`Ky.#run` calls `Ky.#retry`), until the lifelines reach 6: the rest of those methods share one lifeline for the class, and a note names them. A method of another class goes to that class's lifeline; a call through an interface, to its one implementation.
 - A callee called twice is drawn at its first call, and again at its first call on the main path when the first was inside a branch (the `delay` of an early exit and the `delay` after it). A one-line check in a branch's condition is not drawn, also when it calls another one-line check.
 - Frames from the syntax tree: a `loop` around calls in a loop, an `alt` around a branch with calls in two or more arms (`arms`), an `opt` around a branch with calls in one arm. An `if` that ends in `continue`, `return`, `break`, `raise` or `throw` makes the rest of its block the other arm. Each label is a TODO that quotes the condition.
 - When the calls cross files, a map of those files first (`view:<entry>-files`), with a summary TODO per file box.
@@ -1261,7 +1262,7 @@ Run it again after the code changed (`xpl index`, `xpl resolve <explainer> --wri
 ```
 $ xpl draft path jobrunner sym:src/runner.ts#Runner.dispatch -o path.json
 wrote path.json
-draft path for jobrunner: a sequence of 9 calls between 6 participants after a map of the 3 files it crosses, 9 summaries, a tour of 8 steps, 29 anchors, 50 TODOs to write
+draft path for jobrunner: a sequence of 9 calls between 6 participants after a map of the 3 files it crosses, 8 summaries, a tour of 8 steps, 29 anchors, 49 TODOs to write
 note: called more than once, drawn at the first call (and at the first on the main path): Runner.log (3 calls)
 note: not drawn, one-line helpers that call nothing or only other one-liners: backoffDelay
 note: calls without a tour step of their own (at most 5 call steps): Runner.log, RunnerStats.record, WorkerPool.release

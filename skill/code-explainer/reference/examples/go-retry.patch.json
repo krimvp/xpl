@@ -526,7 +526,7 @@
           "id": "t6",
           "view": "view:retry",
           "focus": ["retry:8"],
-          "note": "### With no retries left, the job is parked\n\nThe dead-letter list keeps each job with the error of its last attempt. `Queue.Dead` returns a copy of that list.",
+          "note": "### With no retries left, the runner parks the job\n\nThe dead-letter list keeps each job with the error of its last attempt. `Queue.Dead` returns a copy of that list.",
           "code": [
             {
               "file": "internal/queue/deadletter.go",

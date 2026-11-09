@@ -55,8 +55,9 @@ from that function. Without `--entry`, `xpl start` drafts a map of the whole rep
 notes, both outside the repository. Read the notes first: they name the parts of the draft that are
 provisional or left out. Then write the TODO text in one of two ways:
 
-- in `xpl view`, under Edit > **Edit the tour**, and in each box's details;
-- in the draft patch, then run `xpl apply job-retries <draft patch>` to save it into the guide.
+- in the draft patch, then run `xpl apply job-retries <draft patch>` to save it into the guide;
+- in `xpl view`: the step notes under Edit > **Edit the tour**, and each box's text with **Edit text** in its
+  details. The viewer does not edit the titles or the tour summary: write those in the patch.
 
 Check each claim against its code, then run `xpl lint job-retries` and `xpl ready job-retries`.
 
