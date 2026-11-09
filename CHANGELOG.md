@@ -128,6 +128,17 @@ Guides and the viewer:
 - On a guide of Ruby or PHP code, the coverage bar says that xpl finds no calls there, so the author drew
   every arrow. A canceled job reads "Canceled".
 - The Key says "Code links", "Opens map" and "Boxes outside this map".
+- The viewer shows a draft by what the index found: a box drafted as "TODO: 1-3 plain words for this part
+  (now: worker)" reads "worker (TODO)", an unwritten arrow label reads "TODO", and lists, menus, breadcrumbs
+  and the page title follow. The full instruction stays in the details panel, the edit forms and the draft
+  banner. State, move, loop, option and arm labels from `xpl draft states` and `xpl draft path` now carry
+  the name or code they stand for as `(now: …)`.
+- A change guide no longer embeds the code before the change of files the index skips (exported pages over
+  1 MB, lockfiles, xpl's own guide and patch files), and `xpl draft change` no longer anchors them. xpl's
+  own change `37ef0e4..a1b2e7b` drops from 31.9 MB to 6.3 MB.
+- "Not checked" says what was not analyzed and why, one line per reason with a count ("8 files over the
+  1 MB size limit were not analyzed."), instead of one line per file. In "Files in this change", each such
+  file says why it shows no diff.
 
 Indexing:
 
@@ -155,6 +166,13 @@ Indexing:
 - An HTTP route that a test's own server serves is linked only to the requests in that test.
 - `xpl outline`, `xpl show` and `xpl refs` end a file's range on its last line, as `wc -l` and editors count
   it.
+- `xpl index` on a repository that did not change takes about a quarter less time: each file is read and
+  split once, cache lookups run 16 files at a time, and references are merged in linear time. The index
+  content is the same.
+- The index file is one line of JSON: 28% smaller (xpl: 28.9 MB to 20.9 MB), so every command that loads it
+  reads and parses it faster. Pipe it through `jq .` to read it.
+- Commands that check the index against the working tree run `git status` only when the index does not
+  match, and read each file once.
 
 Drafts and lint:
 
@@ -204,6 +222,19 @@ Drafts and lint:
   warnings the patch causes; a warning about the guide (an old index binding) is listed apart.
 - A Ruby singleton method reads `Jobrunner.run`, not `self.run`. `xpl change` drops the "matched by name"
   limit for a language whose references a language tool checked.
+- `xpl draft path` follows an entry that only forwards (one drawn call in at most 3 lines of code, such as
+  cobra's `Command.Execute` calling `Command.ExecuteC`): the sequence starts with the forwarding call, then
+  draws the calls of the function that does the work, and a note says so. It follows at most 3 forwards and
+  stops on a cycle.
+- `xpl draft repo`, `draft map` and `draft data` leave playgrounds, project templates (`templates/`,
+  `template-*/`), demos and sandboxes off their maps, and the repo draft's notes count what they left off by
+  folder.
+- `xpl draft repo` starts the main path where a manifest declares it: a package.json `bin`, `exports` or
+  `main` (a built `dist/` path read back to its source) or a pyproject.toml script. Vite now starts at
+  `createServer`, express at `createApplication` and xpl at `run`. `draft --json` returns it as `entry`.
+- A package.json `bin` puts a User at the terminal on the system map, whatever parses the arguments.
+- `xpl start` no longer guesses an entry from common words (put, get, make, work, ...) or the project's
+  name. It falls back to the declared entry, or says that none is guessed.
 
 Command-line messages:
 
@@ -222,6 +253,13 @@ Command-line messages:
   (titles and the tour summary). The stale-index warning names `xpl resolve` when an index of the current
   tree exists. `--index` help says a guide command uses the guide's own index first. `xpl apply` names
   `nodes` for a patch field `node`. A step id without its view slug gets the hint to keep it.
+- `xpl health` scans each line in linear time, so a minified or generated file no longer stalls it: on vite
+  it takes 1.2 s instead of 10 s, with the same secret findings.
+- "Possibly unused file" counts files that other files name by path (HTML script tags, `package.json` fields
+  and scripts, worker URLs, config entries), config variants such as `vite.config-ssr.js`, `__tests_dts__/`
+  type tests, and every file of a used Go package. On vite it lists 34 files instead of 209, and on cobra
+  none instead of `command_win.go`.
+- Draft notes say "1 outside system is" and "1 file or folder is".
 
 Docs:
 
