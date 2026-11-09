@@ -4,17 +4,20 @@
  *
  * The first view follows one rule (viewport.ts `frameView`): the fit, unless the diagram is too big to read
  * when fitted; then what the step is about (`focus`, with its neighbours when there is room) at a readable
- * zoom, a "+N more" cue for focused elements left out, and a badge that offers "Fit all" (and, once
- * everything is fitted, "Readable size" to come back). The Fit button, the 0 key and "Fit all" always fit all
- * of it, however small. Zooming keeps the selection where it is, and the selection (`keepInView`) is panned
- * into view when it changes or the pane is resized.
+ * zoom, and a "+N more" cue for focused elements left out. One toolbar button fits: "Fit all", marked (and
+ * counting the boxes out of sight) while part of a big diagram is out of sight, and "Readable size" once all
+ * of a big diagram is fitted, to come back. The 0 key always fits all of it, however small. Zooming keeps the
+ * selection where it is, and the selection (`keepInView`) is panned into view when it changes or the pane is
+ * resized.
  *
  * A drag never turns into a click: pointer capture only starts once the pointer has moved a few
  * pixels, so a plain click still reaches the element under it. A click on the empty background calls
  * `onBackgroundClick`.
  */
 import {
+  createContext,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -41,9 +44,14 @@ import {
   type Focus,
   type Transform,
 } from "../viewport.js";
+import { createPortal } from "react-dom";
 import { saveDiagramImage } from "../image.js";
 
 const FIT_PADDING = 24;
+/** On a phone a diagram that fits at this zoom or more starts whole (14-unit labels at 10px). */
+const PHONE_WHOLE_ZOOM = 10 / 14;
+/** The room around a fitted diagram on a phone, px. */
+const PHONE_FIT_PADDING = 8;
 /** Fitting never blows a small diagram up by more than this (a talk allows more: `maxFitZoom`). */
 const MAX_FIT_ZOOM = 1.25;
 /** In Present the diagram is enlarged more, and fitted closer to the edge: it is read from further away. */
@@ -70,7 +78,28 @@ export const PRESENT_FLOW_MAX_ZOOM = 16 / 13;
  * down to this zoom (10px text) rather than half of it at 16px: neighbours still come in only at 16px.
  */
 export const PRESENT_FLOW_FOCUS_ZOOM = 10 / 13;
+/**
+ * True inside Present (PresentMode provides it): the toolbar is out of sight until the mouse moves, so a
+ * slide's first view takes the whole pane.
+ */
+export const Presenting = createContext(false);
+/**
+ * Present: how many more pixels of width the diagram's pane needs for all of the diagram to read at the
+ * 12px floor (`PRESENT_READABLE_ZOOM`), `Infinity` when more width alone would not do it (the diagram is too
+ * tall at that zoom; a map may still turn when its pane gets wider). PresentMode widens the diagram column up
+ * to a limit and keeps the widest width a step asked for.
+ */
+export const PresentRoom = createContext<((extra: number) => void) | undefined>(undefined);
+/**
+ * Present: where the zoom toolbar goes instead of over the picture, the diagram's title bar (null until
+ * that element is in the page). "Fit all" there never covers a box, fitted or not.
+ */
+export const ToolbarSlot = createContext<HTMLElement | null | undefined>(undefined);
+/** Room kept between the floating toolbar and the diagram under it, px. */
+const TOOLBAR_GAP = 6;
 const DRAG_THRESHOLD = 4;
+/** At this width or less (a phone) the first view fits the part of the pane that is on screen. */
+const PHONE_WIDTH = 640;
 /** A pane shorter than this, px, shows "Fit all" and "+N more" among the zoom buttons. */
 const SHORT_PANE = 240;
 /** Room kept between the selection and the pane's edge when it is panned into view, px. */
@@ -89,6 +118,8 @@ function zoomAt(t: Transform, factor: number, px: number, py: number): Transform
 type Follow = "start" | "fit" | "free";
 
 export interface PanZoomProps {
+  /** More keys for this diagram, said after the common ones in the keyboard hint. */
+  keyboardMore?: string;
   /** Size of the content in its own coordinates. */
   width: number;
   height: number;
@@ -101,6 +132,8 @@ export interface PanZoomProps {
   maxFitZoom?: number;
   /** Fit preserves this scale and permits panning instead of shrinking text further. */
   minFitZoom?: number;
+  /** With `minFitZoom`, a "Pan to explore" badge says so (default); false leaves it to the Fit all button. */
+  panCue?: boolean;
   /** Room fitting leaves around the diagram, in px (default 24). */
   fitPadding?: number;
   /**
@@ -160,7 +193,8 @@ export function PanZoom({
   label,
   maxFitZoom = MAX_FIT_ZOOM,
   minFitZoom,
-  fitPadding = FIT_PADDING,
+  panCue = true,
+  fitPadding: askedPadding,
   readableZoom,
   readableMin,
   focusMin,
@@ -172,12 +206,41 @@ export function PanZoom({
   children,
   textView,
   imageName,
+  keyboardMore,
 }: PanZoomProps) {
+  // A phone keeps less room around a fitted diagram: 32px more of its width is a narrow sequence read whole
+  // rather than framed on one or two lifelines.
+  const fitPadding =
+    askedPadding ?? (window.innerWidth <= PHONE_WIDTH ? PHONE_FIT_PADDING : FIT_PADDING);
   const wrap = useRef<HTMLDivElement>(null);
+  /** The canvas: the pane's size is its size (on a phone the toolbar sits above it, not over it). */
+  const canvas = useRef<SVGSVGElement>(null);
   const content = useRef<SVGGElement>(null);
   const [textMode, setTextMode] = useState(false);
   const textId = useId();
   const [size, setSize] = useState({ w: 0, h: 0 });
+  /** The height of the pane on screen, when less than all of it is (a phone): what fitting uses. */
+  const [shown, setShown] = useState<number | undefined>();
+  /**
+   * The band at the top of the pane that the floating toolbar covers, px (0 when the toolbar sits above the
+   * canvas, as on a phone). Fitting and the first view place the diagram under it: the toolbar never covers
+   * a box of a fitted diagram.
+   */
+  const [band, setBand] = useState(0);
+  /** The band is at the bottom of the pane (Present), not the top: the diagram is not moved down under it. */
+  const [bandBelow, setBandBelow] = useState(false);
+  /** How far down the band moves a fitted diagram. */
+  const bandTop = bandBelow ? 0 : band;
+  const presenting = useContext(Presenting);
+  const slot = useContext(ToolbarSlot);
+  // In Present too the first view keeps clear of the band: "Fit all" stays on the slide while part of the
+  // diagram is out of sight, and it never covers a box.
+  const fitSize = useMemo(() => {
+    const h = shown !== undefined && shown < size.h ? shown : size.h;
+    return { w: size.w, h: Math.max(1, h - band) };
+  }, [size, shown, band]);
+  /** The pane on screen, the toolbar's band included: whether a diagram reads whole is decided on it. */
+  const paneSize = useMemo(() => ({ w: fitSize.w, h: fitSize.h + band }), [fitSize, band]);
   const [t, setT] = useState<Transform>({ k: 1, x: 0, y: 0 });
   /** Focused elements the first view leaves out ("+N more"); 0 once the user moves the view. */
   const [more, setMore] = useState(0);
@@ -188,42 +251,95 @@ export function PanZoom({
   const suppressClick = useRef(false);
 
   useLayoutEffect(() => {
-    const el = wrap.current;
+    const el = canvas.current;
     if (!el) return;
-    const measure = () => setSize({ w: el.clientWidth, h: el.clientHeight });
+    // (hidden in the text view: the size it had stays)
+    const measure = () => {
+      if (el.clientWidth > 0 || el.clientHeight > 0) {
+        setSize({ w: el.clientWidth, h: el.clientHeight });
+        // On a phone the pane can reach below the screen (the parts list follows it): fit to what shows.
+        const below = el.getBoundingClientRect().top;
+        setShown(
+          window.innerWidth <= PHONE_WIDTH && below >= 0
+            ? Math.max(160, Math.min(el.clientHeight, window.innerHeight - below))
+            : undefined,
+        );
+      }
+      const toolbar = wrap.current?.querySelector<HTMLElement>(".pz-toolbar");
+      if (toolbar && getComputedStyle(toolbar).position === "absolute") {
+        const pane = el.getBoundingClientRect();
+        const bar = toolbar.getBoundingClientRect();
+        // (in Present the toolbar sits at the bottom of the pane, clear of a sequence's participant names)
+        const below = bar.top > pane.top + pane.height / 2;
+        const covered = below ? pane.bottom - bar.top : bar.bottom - pane.top;
+        setBand(covered > 0 ? Math.round(covered + TOOLBAR_GAP) : 0);
+        setBandBelow(below);
+      } else setBand(0);
+    };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(el);
+    const toolbar = wrap.current?.querySelector(".pz-toolbar");
+    if (toolbar) observer.observe(toolbar);
     return () => observer.disconnect();
   }, []);
 
+  // In Present a frame of the focus keeps the floor too (text never under 12px when a slide starts).
+  const least = presenting ? (readableMin ?? readableZoom) : readableMin;
+  const own = readableZoom !== undefined ? (least ?? readableZoom) : READABLE_FLOOR;
+  // A phone (not a slide) shows all of a diagram whose 14-unit labels read at 10px, rather than one or two
+  // lifelines of it at 11px.
+  const floor =
+    !presenting && window.innerWidth <= PHONE_WIDTH ? Math.min(own, PHONE_WHOLE_ZOOM) : own;
   const options = useMemo(
     () => ({
       padding: fitPadding,
       maxZoom: maxFitZoom,
       minZoom: minFitZoom,
       ...(readableZoom !== undefined
-        ? { whole: readableMin ?? readableZoom, readable: readableZoom, readableMin }
+        ? { whole: floor, readable: readableZoom, readableMin: least }
         : {}),
       ...(focusMin !== undefined ? { focusMin } : {}),
     }),
-    [fitPadding, maxFitZoom, minFitZoom, readableZoom, readableMin, focusMin],
+    [fitPadding, maxFitZoom, minFitZoom, readableZoom, least, focusMin, floor],
   );
-  const floor = readableZoom !== undefined ? (readableMin ?? readableZoom) : READABLE_FLOOR;
+
+  // Present: ask the slide for the width this diagram needs to read whole at the 12px floor.
+  const askRoom = useContext(PresentRoom);
+  useLayoutEffect(() => {
+    if (!askRoom || width <= 0 || height <= 0 || paneSize.w <= 1 || paneSize.h <= 1) return;
+    const k = PRESENT_READABLE_ZOOM;
+    if (rawFitScale(paneSize, { width, height }, fitPadding) >= k) return;
+    const tall = height * k + 2 * fitPadding > paneSize.h;
+    askRoom(tall ? Infinity : Math.ceil(width * k + 2 * fitPadding - paneSize.w));
+  }, [askRoom, width, height, paneSize, fitPadding]);
 
   /** All of the diagram in the pane, however small that makes it. */
   const fitAll = useCallback(() => {
-    const next = fitTransform(size, { width, height }, options);
-    if (next) setT(next);
-  }, [size, width, height, options]);
+    const next = fitTransform(fitSize, { width, height }, options);
+    if (next) setT({ ...next, y: next.y + bandTop });
+  }, [fitSize, width, height, options, bandTop]);
 
   /** The first view: the fit, or for a diagram too big to read whole, a readable frame of the focus. */
   const showStart = useCallback(() => {
-    const next = frameView(size, { width, height }, start.current, options);
+    // A diagram that reads whole in the pane starts whole, under the toolbar's band (a little smaller):
+    // the band does not turn it into one that starts on its focus.
+    if (rawFitScale(paneSize, { width, height }, fitPadding) >= floor) {
+      const fit = fitTransform(fitSize, { width, height }, options);
+      if (!fit) return;
+      setT({ ...fit, y: fit.y + bandTop });
+      setMore(0);
+      return;
+    }
+    const next = frameView(fitSize, { width, height }, start.current, options);
     if (!next) return;
-    setT(next.transform);
+    // A frame of the focus with all of the diagram's height in the pane starts at its top, not centred
+    // under an empty band (a sequence's lifeline names come first).
+    const y =
+      height * next.transform.k + 2 * fitPadding <= fitSize.h ? fitPadding : next.transform.y;
+    setT({ ...next.transform, y: y + bandTop });
     setMore(next.hidden);
-  }, [size, width, height, options]);
+  }, [paneSize, fitSize, width, height, options, bandTop, fitPadding, floor]);
 
   // Read the caller's focus before the effect below uses it.
   useLayoutEffect(() => {
@@ -271,7 +387,7 @@ export function PanZoom({
     const onWheel = (event: WheelEvent) => {
       if (event.target instanceof Element && event.target.closest(".diagram-text-view")) return;
       event.preventDefault();
-      const rect = el.getBoundingClientRect();
+      const rect = (canvas.current ?? el).getBoundingClientRect();
       const delta = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
       // a trackpad pinch arrives as a wheel with ctrlKey and small deltas
       const factor = Math.exp(-delta * (event.ctrlKey ? 0.01 : 0.0018));
@@ -318,11 +434,11 @@ export function PanZoom({
   const showFocus = () => {
     const all = unionBox(start.current?.boxes ?? []);
     if (!all) return;
-    const fitted = fitTransform(size, all, { padding: fitPadding, maxZoom: maxFitZoom });
+    const fitted = fitTransform(fitSize, all, { padding: fitPadding, maxZoom: maxFitZoom });
     if (!fitted) return;
     follow.current = "free";
     setMore(0);
-    setT({ k: fitted.k, x: fitted.x - all.x * fitted.k, y: fitted.y - all.y * fitted.k });
+    setT({ k: fitted.k, x: fitted.x - all.x * fitted.k, y: bandTop + fitted.y - all.y * fitted.k });
   };
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -478,36 +594,50 @@ export function PanZoom({
 
   // A diagram too big to fit at a readable size gets a badge: it starts zoomed in, so say that part of it is
   // out of sight and how to see all of it (and, once all of it is in sight, how to get back).
-  const raw = rawFitScale(size, { width, height }, fitPadding);
+  const raw = rawFitScale(paneSize, { width, height }, fitPadding);
   const big = raw > 0 && raw < floor;
-  const allInSight = big && Math.abs(t.k - clamp(raw, MIN_ZOOM, maxFitZoom)) < 0.005;
-  // In a short pane (a laptop at 200%) "Fit all" and "+N more" join the zoom buttons: a pill in the bottom
-  // corner would sit on the boxes, which then fill the pane.
+  const fitted = rawFitScale(fitSize, { width, height }, fitPadding);
+  const allInSight = big && Math.abs(t.k - clamp(fitted, MIN_ZOOM, maxFitZoom)) < 0.005;
+  // In a short pane (a laptop at 200%) "+N more" joins the zoom buttons: a pill in the bottom corner would sit
+  // on the boxes, which then fill the pane.
   const short = size.h > 0 && size.h < SHORT_PANE;
+  // A big diagram, part of it out of sight: how many of its boxes are (when the caller says where they are).
+  const outOfSight =
+    big && !allInSight
+      ? (start.current?.others ?? []).filter(
+          (box) =>
+            // (a box taller or wider than the pane, such as a lifeline, is never all in sight: not counted)
+            box.width * t.k <= size.w &&
+            box.height * t.k <= size.h &&
+            (t.x + box.x * t.k < -1 ||
+              t.y + box.y * t.k < -1 ||
+              t.x + (box.x + box.width) * t.k > size.w + 1 ||
+              t.y + (box.y + box.height) * t.k > size.h + 1),
+        ).length
+      : 0;
+  const readableAgain = allInSight && minFitZoom === undefined;
+  // "Fit all" is a cue only while part of the diagram really is out of the pane (a big diagram fitted by
+  // the reader, or one whose first view shows all of it, has nothing more to show).
+  const cut =
+    size.w > 0 &&
+    (t.x < -1 || t.y < -1 || t.x + width * t.k > size.w + 1 || t.y + height * t.k > size.h + 1);
+  const cue = big && !allInSight && cut;
 
   const cues = (
     <>
-      {big && (
+      {big && minFitZoom !== undefined && panCue && (
         <button
           type="button"
           className="pz-badge"
           data-testid="pz-badge"
-          title={
-            minFitZoom !== undefined
-              ? "This map keeps its labels readable. Drag to pan; click to return to the starting focus."
-              : allInSight
-                ? `The whole diagram is in view at ${Math.round(t.k * 100)}%, too small to read comfortably. Zoom back to a readable size.`
-                : "This diagram is too big to read at once, so it starts zoomed in and part of it is out of sight. Fit all of it in the view."
-          }
+          title="This diagram keeps its words readable. Drag to pan; click to return to where it started."
           onPointerDown={(event) => event.stopPropagation()}
           onClick={() => {
-            if (allInSight || minFitZoom !== undefined) {
-              follow.current = "start";
-              showStart();
-            } else fitEverything();
+            follow.current = "start";
+            showStart();
           }}
         >
-          {minFitZoom !== undefined ? "Pan to explore" : allInSight ? "Readable size" : "Fit all"}
+          Pan to explore
         </button>
       )}
       {more > 0 && (
@@ -523,6 +653,79 @@ export function PanZoom({
         </button>
       )}
     </>
+  );
+
+  const toolbar = (
+    <div className="pz-toolbar" onPointerDown={(event) => event.stopPropagation()}>
+      {!textMode && (
+        <>
+          {short && cues}
+          <button
+            type="button"
+            aria-label="Zoom in"
+            title="Zoom in (+)"
+            onClick={() => zoomBy(1.25)}
+          >
+            +
+          </button>
+          <button
+            type="button"
+            aria-label="Zoom out"
+            title="Zoom out (-)"
+            onClick={() => zoomBy(1 / 1.25)}
+          >
+            &minus;
+          </button>
+          <button
+            type="button"
+            className={`pz-fit${cue ? " is-cue" : ""}`}
+            data-testid="pz-fit"
+            title={
+              readableAgain
+                ? `All of it is in view at ${Math.round(t.k * 100)}%, too small to read comfortably. Zoom back to a readable size.`
+                : big
+                  ? `Part of this diagram is out of sight${outOfSight > 0 ? ` (${outOfSight} boxes)` : ""}: it starts at a readable size. Fit all of it in the view (0).`
+                  : "Fit all of it in the view (0)"
+            }
+            onClick={() => {
+              if (readableAgain) {
+                follow.current = "start";
+                showStart();
+              } else fitEverything();
+            }}
+          >
+            {readableAgain ? "Readable size" : "Fit all"}
+            {/* (a cue says what is out of sight: a bare "Fit all" in its frame read as pressed) */}
+            {!readableAgain && (outOfSight > 0 || cue) && (
+              <span className="pz-fit-count">
+                {" "}
+                ({outOfSight > 0 ? `${outOfSight} out of sight` : "part out of sight"})
+              </span>
+            )}
+          </button>
+          {tools}
+          <button
+            type="button"
+            className="pz-save"
+            title="Save the whole diagram as a PNG image, as it looks here"
+            onClick={() => void saveDiagramImage(content.current!, width, height, imageName)}
+          >
+            Save image
+          </button>
+        </>
+      )}
+      {textView && (
+        <button
+          type="button"
+          className="pz-text"
+          aria-pressed={textMode}
+          aria-controls={textId}
+          onClick={() => setTextMode((shown) => !shown)}
+        >
+          Text view
+        </button>
+      )}
+    </div>
   );
 
   return (
@@ -550,10 +753,15 @@ export function PanZoom({
       }}
     >
       <span id={keyboardHelp} className="pz-keyboard-hint">
-        Enter to navigate. Up/Down: next element. Left/Right: follow links. Enter: select code.
-        Escape: canvas.
+        Press Enter to move through the diagram. Up and Down: next box. Left and Right: follow its
+        arrows. Enter: show its code. Escape: back to the diagram.
+        {keyboardMore && ` ${keyboardMore}`}
       </span>
+      {/* Before the canvas: Tab reaches the zoom buttons drawn above the diagram before its boxes. In
+          Present they sit in the diagram's title bar (ToolbarSlot), off the picture. */}
+      {slot === undefined ? toolbar : slot ? createPortal(toolbar, slot) : null}
       <svg
+        ref={canvas}
         className="pz-svg"
         width="100%"
         height="100%"
@@ -566,55 +774,6 @@ export function PanZoom({
         {overlay?.(t, size)}
       </svg>
       {!textMode && !short && cues}
-      <div className="pz-toolbar" onPointerDown={(event) => event.stopPropagation()}>
-        {!textMode && (
-          <>
-            {short && cues}
-            <button
-              type="button"
-              aria-label="Zoom in"
-              title="Zoom in (+)"
-              onClick={() => zoomBy(1.25)}
-            >
-              +
-            </button>
-            <button
-              type="button"
-              aria-label="Zoom out"
-              title="Zoom out (-)"
-              onClick={() => zoomBy(1 / 1.25)}
-            >
-              &minus;
-            </button>
-            <button
-              type="button"
-              aria-label="Fit to view"
-              title="Fit to view (0)"
-              onClick={fitEverything}
-            >
-              Fit
-            </button>
-            {tools}
-            <button
-              type="button"
-              title="Save the whole diagram as a PNG image, as it looks here"
-              onClick={() => void saveDiagramImage(content.current!, width, height, imageName)}
-            >
-              Save image
-            </button>
-          </>
-        )}
-        {textView && (
-          <button
-            type="button"
-            aria-pressed={textMode}
-            aria-controls={textId}
-            onClick={() => setTextMode((shown) => !shown)}
-          >
-            Text view
-          </button>
-        )}
-      </div>
       {textView && (
         <div
           id={textId}

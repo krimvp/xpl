@@ -6,7 +6,7 @@
     },
     {
       "id": "sym:packages/zod/src/v4/core/parse.ts#failure",
-      "summary": "Builds a failed result whose error instance is created on the first property read."
+      "summary": "Builds a failed result whose error is built on the first read of `error`."
     },
     {
       "id": "sym:packages/zod/src/v4/core/parse.ts#_parse",

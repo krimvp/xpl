@@ -13,7 +13,7 @@ export function ExpandInPlaceAction({ nodes }: { nodes: readonly GraphNode[] }) 
     available.find((node) => node.id === state.selection.at(-1)) ??
     (available.length === 1 ? available[0] : undefined);
   if (!chosen) return null;
-  const label = `Show parts of ${chosen.label} here`;
+  const label = `Show what is inside ${chosen.label}, here`;
   return (
     <button
       type="button"
@@ -22,7 +22,7 @@ export function ExpandInPlaceAction({ nodes }: { nodes: readonly GraphNode[] }) 
       aria-label={label}
       onClick={() => store.toggleExpanded(chosen.id)}
     >
-      Show parts
+      Show inside
     </button>
   );
 }

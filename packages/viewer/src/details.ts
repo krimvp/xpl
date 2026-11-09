@@ -18,6 +18,8 @@ import {
   type Stub,
 } from "@xpl/core";
 import type { ViewDerived } from "./derive.js";
+import { isHolds, kindCount } from "./drawnEdges.js";
+import { trustWords } from "./readerWords.js";
 
 export interface AnchorRow {
   role: AnchorRole;
@@ -89,6 +91,8 @@ function rowsFor(
   }));
 }
 
+/** What a derived arrow counts, in the word of its label ("calls ×3": 3 calls); other kinds count references. */
+const COUNT_NOUN: Record<string, string> = { calls: "call", imports: "import" };
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /** `llm, commit abc123; edited by you: summary` */
@@ -144,7 +148,7 @@ function buildInfo(id: ElementId, model: ExplainerModel, vd: ViewDerived): Eleme
     return {
       id,
       type: "stub",
-      title: `${stub.kinds.join(", ")} ×${stub.count}`,
+      title: `${stub.kinds.join(" & ")} ×${stub.count}`,
       kind: "stub",
       where: `${stub.direction === "out" ? "leaves" : "enters"} the view here`,
       summary: folded
@@ -197,12 +201,19 @@ function buildInfo(id: ElementId, model: ExplainerModel, vd: ViewDerived): Eleme
       const nested = node.kind === "group" ? 0 : model.children(id).length;
       if (nested > 0)
         facts.push({ label: "Inside it", value: `${nested} ${nested === 1 ? "part" : "parts"}` });
+      // a field: named with its type ("Queue.ready"), and the type it holds
+      const field = node.kindWord === "field";
+      if (field) {
+        const memberType = vd.graph?.nodes.find((n) => n.id === id)?.memberType;
+        if (memberType) facts.unshift({ label: "Type", value: memberType });
+        if (node.parent) facts.unshift({ label: "In", value: model.label(node.parent) });
+      }
       const info: ElementInfo = {
         id,
         type: "node",
-        title: node.label,
+        title: field ? fieldName(id, model) : node.label,
         // an architecture box is what it is ("database"), not the kind of code it groups
-        kind: node.role ?? node.symbolKind ?? node.kind,
+        kind: node.role ?? node.kindWord ?? node.symbolKind ?? node.kind,
         facts,
         anchors: rowsFor(node.anchors, id, model, vd),
         related: [],
@@ -246,21 +257,42 @@ function buildInfo(id: ElementId, model: ExplainerModel, vd: ViewDerived): Eleme
     }
     case "derived-edge": {
       const derived = vd.edgeMap.get(id);
+      // a field's arrow on a data map (core labels it "holds"): "Queue.ready holds Job", one field, no count
+      const holds = derived !== undefined && isHolds(derived);
+      const from = holds ? fieldName(ref.from, model) : model.label(ref.from);
+      const to = model.label(ref.to);
+      // a type's place in a hierarchy (extends, implements; Go's embeds) is said once, not counted as
+      // references: "queue.Queue implements JobQueue"
+      const verb =
+        derived && !holds && (ref.kind === "extends" || ref.kind === "implements")
+          ? (derived.label ?? ref.kind)
+          : undefined;
+      const trust = derived && trustWords(derived.resolution);
       const info: ElementInfo = {
         id,
         type: "derived-edge",
-        title: derived ? (derived.label ?? `${derived.kind} ×${derived.count}`) : ref.kind,
-        kind: ref.kind,
-        where: `${model.label(ref.from)} → ${model.label(ref.to)}`,
-        summary: derived
-          ? `${plural(derived.count, "reference")} from ${model.label(ref.from)} to ${model.label(ref.to)}, found by static analysis${derived.resolution === "heuristic" ? " (heuristic resolution: treat as a hint)" : derived.resolution === "mixed" ? " (mixed precise and heuristic resolution: some references are hints)" : ""}.`
-          : `Static ${ref.kind} edge.`,
+        title: holds
+          ? `${from} holds ${to}`
+          : verb
+            ? `${from} ${verb} ${to}`
+            : derived
+              ? (derived.label ?? kindCount(derived.kind, derived.count))
+              : ref.kind,
+        kind: holds ? "holds" : (verb ?? ref.kind),
+        where: `${from} → ${to}`,
+        summary: holds
+          ? `The field ${from} holds a value of type ${to}, found in the code${trust ? ` (${trust})` : ""}.`
+          : verb
+            ? `${from} ${verb} ${to}, found in the code${trust ? ` (${trust})` : ""}.`
+            : derived
+              ? `${plural(derived.count, COUNT_NOUN[derived.kind] ?? "reference")} from ${from} to ${to}, found in the code${trust ? ` (${trust})` : ""}.`
+              : `An arrow found in the code (${ref.kind}).`,
         facts: [
-          { label: "From", value: model.label(ref.from) },
-          { label: "To", value: model.label(ref.to) },
+          { label: "From", value: from },
+          { label: "To", value: to },
           ...(derived
             ? [
-                { label: "References", value: String(derived.count) },
+                ...(holds || verb ? [] : [{ label: "References", value: String(derived.count) }]),
                 { label: "Resolution", value: derived.resolution },
               ]
             : []),
@@ -318,4 +350,12 @@ function buildInfo(id: ElementId, model: ExplainerModel, vd: ViewDerived): Eleme
       return info;
     }
   }
+}
+
+/** A field named with the type that owns it ("Queue.ready"); any other element by its label. */
+function fieldName(id: ElementId, model: ExplainerModel): string {
+  const node = model.node(id);
+  const owner =
+    node?.parent !== undefined && node.parent !== null ? model.node(node.parent) : undefined;
+  return owner?.kind === "symbol" ? `${owner.label}.${node!.label}` : model.label(id);
 }

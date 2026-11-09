@@ -22,7 +22,7 @@ export const GLOBAL_OPTIONS: OptionDefs = {
   index: {
     type: "string",
     arg: "<path>",
-    desc: "Symbol index to use (default: the index of the current commit id, else the newest)",
+    desc: "Symbol index to use (default: the guide's own index, else the index of the current commit id, else the newest)",
   },
   help: { type: "boolean", short: "h", desc: "Show help" },
   version: { type: "boolean", short: "v", desc: "Show the version" },
@@ -114,11 +114,33 @@ export function parseCommandArgs(
     parsed = parseArgs({ args: [...argv], options: config, allowPositionals: true, strict: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    // `--limit -1`: parseArgs takes "-1" for an option, and says so in its own words
+    const ambiguous = /^Option '(?:-\w, )?(--[\w-]+)(?: <value>)?' argument is ambiguous/.exec(
+      message,
+    );
+    if (ambiguous) {
+      const flag = ambiguous[1]!;
+      const value =
+        argv[argv.findIndex((a) => a === flag || a === `-${all[flag.slice(2)]?.short}`) + 1];
+      // a number option (`<n>`, `<port>`) takes no negative value: say that, not how to write one
+      if (/^<(?:n|port|seconds)>$/.test(all[flag.slice(2)]?.arg ?? "") && /^-\d/.test(value ?? ""))
+        throw new UsageError(`${flag} must be a non-negative integer (got "${value}")`);
+      throw new UsageError(
+        `${flag} needs a value (got "${value}"; a value that starts with "-" is written ${flag}=${value})`,
+      );
+    }
     const unknown = /Unknown option '([^']+)'/.exec(message);
+    if (!unknown)
+      throw new UsageError(message.replace(/\. To specify a positional argument.*$/s, ""));
+    const typed = unknown[1]!.replace(/^-+/, "");
+    const near = Object.keys(all).filter((name) => editDistance(name, typed) <= 2);
     throw new UsageError(
-      unknown
-        ? `unknown option ${unknown[1]} (a value that starts with "-" must come after "--")`
-        : message.replace(/\. To specify a positional argument.*$/s, ""),
+      near.length > 0
+        ? `unknown option ${unknown[1]}. Did you mean: ${near.map((n) => `--${n}`).join(", ")}?`
+        : // `--audience` is an option of another command; `-x` or `-1` may be a value meant for a positional
+          /^--[a-z]/i.test(unknown[1]!)
+          ? `unknown option ${unknown[1]}`
+          : `unknown option ${unknown[1]}. A value that starts with "-" goes after "--".`,
     );
   }
   const given = parsed.positionals;
@@ -132,4 +154,19 @@ export function parseCommandArgs(
     throw new UsageError(`unexpected argument "${given[positionals.length]}"`);
   }
   return new Args(parsed.values as Record<string, Value>, given);
+}
+
+/** Levenshtein distance, for "did you mean" suggestions of commands and options. */
+export function editDistance(a: string, b: string): number {
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i];
+    for (let j = 1; j <= b.length; j++) {
+      row.push(
+        Math.min(prev[j]! + 1, row[j - 1]! + 1, prev[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1)),
+      );
+    }
+    prev = row;
+  }
+  return prev[b.length]!;
 }

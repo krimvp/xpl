@@ -14,10 +14,10 @@ test("opens a readable guide with optional synchronized map, flow and source", a
   await page.goto(TS_BUNDLE.href);
   await expect(page.getByTestId("guide")).toBeVisible();
   await expect(page.locator(".editor-host")).toHaveCount(0);
-  await page.getByRole("navigation", { name: "Guide contents" }).getByRole("button").nth(1).click();
+  await page.getByRole("navigation", { name: "Tour steps" }).getByRole("button").nth(1).click();
   const selection = await selectionOf(page);
   await page.getByTestId("perspective-map").click();
-  await expect(page.locator(".workspace-diagram svg")).toBeVisible();
+  await expect(page.locator(".workspace-diagram svg.pz-svg")).toBeVisible();
   expect(await selectionOf(page)).toEqual(selection);
   await page.getByTestId("perspective-flow").click();
   await expect(page.locator(".workspace-diagram .sequence")).toBeVisible();
@@ -41,13 +41,13 @@ test("shows configuration keys, opens supporting files and restores the topic on
   const problems = watchProblems(page);
   await page.goto(TS_BUNDLE.href);
   await expect(page.getByTestId("guide")).toBeVisible();
-  await page.getByRole("navigation", { name: "Guide contents" }).getByRole("button").nth(1).click();
-  await expect(page.getByRole("region", { name: "Related files" })).toContainText(
+  await page.getByRole("navigation", { name: "Tour steps" }).getByRole("button").nth(1).click();
+  await expect(page.getByRole("region", { name: "This step's code" })).toContainText(
     "config/default.yaml",
   );
   await expect(page.locator(".resource-key")).toContainText("retry");
   await page
-    .getByRole("region", { name: "Related files" })
+    .getByRole("region", { name: "This step's code" })
     .getByRole("button", { name: "config/default.yaml", exact: true })
     .click();
   await expect(
@@ -137,21 +137,23 @@ for (const scheme of ["light", "dark"] as const) {
     await page.goto(TS_BUNDLE.href);
     await expect(page.getByTestId("guide")).toBeVisible();
     await page.screenshot({ path: screenshotPath(`workspace-guide-${scheme}`) });
-    await page
-      .getByRole("navigation", { name: "Guide contents" })
-      .getByRole("button")
-      .nth(1)
-      .click();
+    await page.getByRole("navigation", { name: "Tour steps" }).getByRole("button").nth(1).click();
     await page.getByTestId("perspective-flow").click();
     await expect(page.locator(".workspace-diagram .step").first()).toBeVisible();
     await page.screenshot({ path: screenshotPath(`workspace-flow-${scheme}`) });
-    await page.getByRole("button", { name: "Show source", exact: true }).click();
+    await page
+      .locator(".workspace-location")
+      .getByRole("button", { name: "Show code", exact: true })
+      .click();
     await page.evaluate(() => window.__xpl!.setCursor("src/runner.ts", 76));
     await expect(page.locator('[data-element-id="dispatch:3"]')).toHaveClass(/is-match/);
     await page.screenshot({ path: screenshotPath(`workspace-source-${scheme}`) });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByTestId("perspective-guide").click();
-    await page.getByRole("button", { name: "Hide source", exact: true }).click();
+    await page
+      .locator(".workspace-location")
+      .getByRole("button", { name: "Hide code", exact: true })
+      .click();
     await expect(page.getByTestId("perspective-code")).toBeVisible();
     await expect(page.locator('.guide-section[data-section-id="t2"]')).toBeInViewport();
     await expect(page.locator(".header")).toBeInViewport();
@@ -199,7 +201,9 @@ test("keeps the reader available when an associated diagram is malformed", async
   expect(problems).toEqual([]);
 });
 
-test("offers the map, guide and code even without a tour or process model", async ({ page }) => {
+test("offers the map, guide and code even without a tour or process model, and no Flow tab", async ({
+  page,
+}) => {
   const { html, bundle } = readEmbeddedBundle();
   const explainer = bundle.explainer as { tours: object[]; views: { type: string }[] };
   explainer.tours = [];
@@ -210,9 +214,9 @@ test("offers the map, guide and code even without a tour or process model", asyn
   await page.goto("http://xpl.test/");
   await expect(page.locator(".guide-fallback")).toBeVisible();
   await page.getByTestId("perspective-map").click();
-  await expect(page.locator(".workspace-diagram svg")).toBeVisible();
-  await page.getByTestId("perspective-flow").click();
-  await expect(page.locator(".guide-path")).toContainText("no flow diagram");
+  await expect(page.locator(".workspace-diagram svg.pz-svg")).toBeVisible();
+  // no flow or sequence: no Flow tab, and the line that names the tabs leaves it out
+  await expect(page.getByTestId("perspective-flow")).toHaveCount(0);
   await page.getByTestId("perspective-code").click();
   await expect(page.locator(".workspace-source .tree-panel")).toBeVisible();
 });
@@ -249,16 +253,61 @@ test("Ctrl+F finds in a file, in the page's colours, counts the matches and Ente
   expect(problems).toEqual([]);
 });
 
+test("Related files follow the tour step scrolled to, not the one applied before the scroll", async ({
+  page,
+}) => {
+  await page.goto(TS_BUNDLE.href);
+  await expect(page.getByTestId("guide")).toBeVisible();
+  // step 1 (the Scheduling group) has no cards of its own: the column lists where its code is
+  // (one name for the column in the Tour, whatever it lists)
+  const column = page.getByRole("region", { name: "This step's code" });
+  await expect(page.getByRole("region", { name: "Related files" })).toHaveCount(0);
+  await expect(column).toContainText("runner.ts");
+  await expect(column).not.toContainText("config/default.yaml");
+  await page
+    .locator('.guide-section[data-section-id="t2"]')
+    .evaluate((el) => el.scrollIntoView({ block: "start" }));
+  await expect(page.getByTestId("breadcrumb-topic")).toContainText("Where failures go");
+  await expect(column).toContainText("config/default.yaml");
+  await expect(page.getByRole("region", { name: "Related files" })).toHaveCount(0);
+});
+
 test("Related files: the triangle sits in the heading, a file's path shows once", async ({
   page,
 }) => {
   await page.goto(TS_BUNDLE.href);
   await expect(page.getByTestId("guide")).toBeVisible();
-  await page.getByRole("navigation", { name: "Guide contents" }).getByRole("button").nth(1).click();
-  const card = page.getByRole("region", { name: "Related files" }).locator(".resource-set").first();
+  await page.getByRole("navigation", { name: "Tour steps" }).getByRole("button").nth(1).click();
+  const card = page
+    .getByRole("region", { name: "This step's code" })
+    .locator(".resource-set")
+    .first();
   const chevron = (await card.locator(".resource-chevron").boundingBox())!;
   const kind = (await card.locator(".resource-kind").boundingBox())!;
   expect(Math.abs(chevron.y - kind.y)).toBeLessThan(8);
   await expect(card.getByText("config/default.yaml", { exact: true })).toHaveCount(1);
   await expect(card.locator(".resource-key")).toContainText("Setting:");
+});
+
+test("a selected arrow is named by its two ends, and its count by its kind", async ({ page }) => {
+  const problems = watchProblems(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${TS_BUNDLE.href}?perspective=map`);
+  await page.evaluate(() =>
+    window.__xpl!.select(["edge:calls:grp:scheduling->file:src/worker.ts"]),
+  );
+  await page
+    .locator(".workspace-location")
+    .getByRole("button", { name: "Show code", exact: true })
+    .click();
+  // (it said "calls ×3" alone, and "3 references" beside a pane's "range 1 / 2")
+  await expect(page.getByTestId("breadcrumb-topic")).toHaveText(
+    "Scheduling → worker.ts (calls ×3)",
+  );
+  const topic = page.getByTestId("source-topic");
+  await expect(topic.locator("strong")).toHaveText("Scheduling → worker.ts (calls ×3)");
+  await expect(topic.locator(".source-topic-text")).toHaveText(
+    "3 calls from Scheduling to worker.ts, found in the code (heuristic: matched by name).",
+  );
+  expect(problems).toEqual([]);
 });

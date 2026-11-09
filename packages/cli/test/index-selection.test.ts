@@ -157,9 +157,11 @@ describe("index selection", () => {
     expect(validate.code).toBe(1);
     expect(validate.json.issues.length).toBeGreaterThanOrEqual(1);
     expect(validate.json.issues[0]!.message).toContain("xpl resolve demo --write");
+    // the index of the current tree is there: no "run `xpl index`"
     expect(validate.json.issues[0]!.message).toContain(
-      `an index for the current tree exists: .explainer/index-${b}.json`,
+      `Line numbers and offsets may be off. An index of the current tree exists (.explainer/index-${b}.json): run \`xpl resolve demo --write\` to move the guide to it.`,
     );
+    expect(validate.json.issues[0]!.message).not.toContain("run `xpl index`");
 
     // resolve looks at the code as it is now: the newest / current index
     const resolve = await xplJson<{ index: { path: string; commit: string }; moved: number }>(

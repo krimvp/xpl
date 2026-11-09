@@ -1,27 +1,46 @@
 # Revise a selected feedback batch
 
-Use the installed skill's `bin/xpl` launcher. The user's chosen agent reads source and writes proposed text. The CLI checks and commits ordinary patches; it calls no model and starts no watcher or service. Keep selection, proposal, decision and review files outside the source root.
+Readers save requests in the Feedback panel or with "Explain this". Saving a request starts no work. This page says how to answer a batch of saved requests.
+
+Use the installed skill's `bin/xpl` launcher. The agent reads the source and writes the proposed text. The CLI checks the patches and commits them; it calls no model and starts no watcher or service. Keep the selection, proposal, decision and review files outside the source root.
 
 ## Select against current source
 
-Import offline feedback first, then inspect `xpl feedback <name> --json`. Select explicit pending or retryable IDs; never process the whole store implicitly. Reindex when source changed, using the author's chosen precise-analysis mode. `revise` forces working-tree freshness checks even if `XPL_SKIP_STALE_CHECK=1` is set.
+1. Import offline feedback first: `xpl feedback <name> --import <file>`.
+2. Read the stored requests: `xpl feedback <name> --json`.
+3. When the source changed, index again in the author's chosen mode.
+4. Select the pending or retryable request ids by name. Never process the whole store at once.
 
 ```sh
 xpl index --precise off
 xpl revise myguide --select request-a,request-b -o /tmp/selection.json --json
 ```
 
-The returned `runId` names `.explainer/revisions/<runId>/run.json`. The journal retains immutable requests with their original context/outcome baseline, the expected `artifactIdentity`, the previous artifact in `previous.json`, the in-memory resolution report and reviewed source. Generated directories are excluded from source discovery; directory aliases into source are refused using device/inode identity. Keep the whole journal for recovery and history.
+`revise` always checks that the index matches the working tree, even with `XPL_SKIP_STALE_CHECK=1`.
 
-The guide stays unchanged. Resolution updates location-only moves and index metadata in memory, retaining prose, hashes and provenance. Drifted claims need reading and fresh anchors. Missing anchors remain present. Compare original ranges/context with current source; do not infer freshness from equal source hashes. The hashes identify indexed snapshots, which can be stale.
+The returned `runId` names the journal, `.explainer/revisions/<runId>/run.json`. The journal keeps:
 
-Each request's selected element bounds its patch. The optional `view` records the reader's open view; it grants no permission to edit that view or sibling steps. A selected flow/sequence/tour step allows only that step's `stepsUpdate` through its enclosing view/tour. Whole-view edits require feedback selecting the view itself or an explicit `--include <view-id>` at selection. Add explicit `--include <id,id>` for extra existing or new explanation IDs needed by an expansion or repair. Guide title/audience cannot be changed through this operation. Read all user-owned fields before writing.
+- each selected request, unchanged, with its original context and outcome;
+- the expected `artifactIdentity`, and the previous guide in `previous.json`;
+- the resolution report and the source that the review showed.
 
-Step permission applies to one step in one owning view or tour. Raw flow/sequence feedback IDs resolve to their actual owning view in the retained artifact. A tour step with the same local ID remains outside that scope. Use `--include view:flow/flow:1` or `--include tour:reader/step-id` to name a specific step explicitly; tour steps always need this qualified address. Keep local step IDs inside the ordinary patch's `stepsUpdate`. Replacing full step arrays, editing frames or changing other view/tour fields requires selecting or including the whole container. Ordinary `remove` IDs are checked against the current candidate's owner, including moves proposed earlier in the run.
+Source discovery skips generated directories, and refuses directory aliases into the source (by device and inode). Keep the whole journal: it serves recovery and history.
+
+**The guide stays unchanged until you accept.** Resolution moves anchors whose code only moved, in memory, and keeps the text, hashes and provenance. A drifted claim needs a fresh read and fresh anchors. A missing anchor stays in place. Compare the original ranges and context with the current source. Equal source hashes do not prove freshness: they name indexed snapshots, which can be stale.
+
+**Scope.** The element that a request selects bounds its patch:
+
+- The optional `view` records which view the reader had open. It gives no permission to edit that view or its other steps.
+- A selected flow, sequence or tour step allows only that step's `stepsUpdate`, through the view or tour that holds it.
+- A whole-view edit needs a request that selects the view, or `--include <view-id>` at selection.
+- Add `--include <id,id>` for other existing or new ids that an expansion or repair needs.
+- This operation cannot change the guide's title or audience. Read all user-owned fields before you write.
+
+**Step ids.** A step permission covers one step in the view or tour that owns it. A raw flow or sequence id resolves to its owning view in the stored guide. A tour step with the same local id stays out of scope. Name a step with `--include view:flow/flow:1` or `--include tour:reader/step-id`; a tour step always needs this form. Inside the patch's `stepsUpdate`, keep the local step id. To send whole step arrays, edit frames or change other view or tour fields, select or include the whole view or tour. The CLI checks each `remove` id against its current owner, including moves that the run proposed earlier.
 
 ## Propose and inspect
 
-Write an array of `{id, patch}` for selected request IDs. Each `patch` uses the existing [patch format](patch-format.md); it is applied as `llm`. No second patch language exists. An empty patch handles a location-only move. Wrong feedback can be declined without proposing a patch.
+Write an array of `{id, patch}`, one entry per selected request. Each `patch` uses the [patch format](patch-format.md), and applies as `llm`. There is no second patch language. An empty patch answers a request whose code only moved. You can decline a wrong request without a patch.
 
 ```json
 [
@@ -37,19 +56,35 @@ Write an array of `{id, patch}` for selected request IDs. Each `patch` uses the 
 ]
 ```
 
-For each ordinary patch, use `xpl apply <name> /tmp/patch.json --dry-run --index <current-index-path>` and `xpl lint <name> --patch /tmp/patch.json --index <current-index-path>` while authoring. Those commands write nothing. Submit the envelope with:
+While you write each patch, check it with these two commands; they write nothing:
+
+```sh
+xpl apply <name> /tmp/patch.json --dry-run --index <current-index-path>
+xpl lint <name> --patch /tmp/patch.json --index <current-index-path>
+```
+
+Then submit the proposal:
 
 ```sh
 xpl revise myguide --run <runId> --proposal /tmp/proposal.json -o /tmp/proposal-review.json
 ```
 
-Review output contains `changes: [{id, before, after}]`, supporting `source: [{file, side, text}]`, the resolution report, protected-field warnings and readiness findings. Plain output prints BEFORE/AFTER and SOURCE blocks, skipped-field warnings and detailed readiness findings with repair hints; `--json` emits the packet. The CLI refuses edits outside the selected scope and patches that change only protected content. Unfinished previews can be inspected but cannot be accepted as ready artifacts.
+The review holds `changes: [{id, before, after}]`, the source that supports them (`source: [{file, side, text}]`), the resolution report, protected-field warnings and ready findings. Plain output prints BEFORE, AFTER and SOURCE blocks, the skipped fields and the ready findings with repair hints. `--json` prints the packet. The CLI refuses an edit outside the selected scope, and a patch that changes only protected content. You can read an unfinished preview, but you cannot accept it.
 
 ## Decide the exact subset, then accept
 
-Ask the author for a status and concrete reason for every selected ID. `addressed` includes that request's patch; `rejected`, `unresolved` and `outdated` omit it. Unresolved/outdated requests remain retryable. Rejected requests remain stored with the decline reason. For an accepted request whose captured explanation/source differs, get a `reconciliation` reason explaining what the request now means. Legacy requests lacking identity must stay outdated; capture a new request against the intended guide.
+Ask the author for a status and a reason for every selected id:
 
-Missing evidence needs a separate explicit decision for each affected owner: `missing: [{id: "concept:retry", action: "reanchor"}]` or `action: "remove"`. The patch supplies the new anchors or removal; the declaration permits the corresponding action. A missing anchor left unresolved blocks a next ready artifact, even if the accepted text patch is valid. Keep it pending while asking the author what to do.
+| Status       | Its patch | Afterwards             |
+| ------------ | --------- | ---------------------- |
+| `addressed`  | applied   | recorded as addressed  |
+| `rejected`   | left out  | stored with the reason |
+| `unresolved` | left out  | can be retried         |
+| `outdated`   | left out  | can be retried         |
+
+When a request's captured text or source differs from the current one, an accepted request also needs a `reconciliation` reason: what the request means now. An older request without an identity must stay `outdated`; capture a new request against the intended guide.
+
+**Missing anchors** need one decision for each affected element: `missing: [{id: "concept:retry", action: "reanchor"}]`, or `action: "remove"`. The patch supplies the new anchors or the removal; the decision allows it. An unresolved missing anchor blocks the next ready guide, even when the text patch is valid. Keep it pending while you ask the author. Never retarget or drop it silently.
 
 ```json
 [
@@ -66,12 +101,19 @@ xpl ready myguide
 xpl bundle myguide -o /tmp/myguide-next.html
 ```
 
-Do not call `--accept` before the author accepts the reviewed candidate, unless the existing user instruction explicitly accepts it. Before publication the CLI rechecks artifact/source identities, live discovered file hashes (including additions/deletions), selected original content/outcome revisions, and shared readiness. Source changes require reindexing and a new selection/reconciliation; explanation changes require a new run too. Warnings remain visible and do not prove prose truth or complete runtime coverage.
+Call `--accept` only after the author accepts the reviewed candidate, or when their instruction already accepts it. Before it publishes, the CLI checks again:
 
-Only accepted patches and location resolution enter the next artifact. A wholly declined batch records decisions without changing/rebinding the artifact, even if that artifact still needs repair. All selected outcomes are recorded after the durable decision. Newly collected/unselected feedback is merged unchanged. Use `xpl feedback <name> --export /tmp/results.json` for portable results; do not clear the store.
+- the guide and source identities;
+- the live hashes of the discovered files, with added and deleted files;
+- the original content and outcome revisions of the selected requests;
+- the ready check.
+
+A source change needs a new index and a new selection. A change to the guide needs a new run too. Warnings stay visible; they do not prove the text true or every runtime path covered.
+
+Only accepted patches and the anchor moves enter the next guide. A batch that the author declines as a whole records the decisions, and leaves the guide as it is, even when it needs repair. The CLI records all selected outcomes after the decision is stored. New and unselected feedback stays unchanged. Use `xpl feedback <name> --export /tmp/results.json` for portable results. Do not clear the store, edit its counters or order results by time.
 
 ## Resume without duplicate changes
 
-Retry the same `xpl revise <name> --run <runId> --accept` after interrupted acceptance. The journal commits intent before artifact publication. Recovery distinguishes the original artifact, the already-published candidate and a conflicting newer artifact. It never overwrites the latter. Outcome recording uses the original expected revision, so a previously recorded result is preserved without another increment. Historical `--run <runId>` inspection retains the exact reviewed source even after later edits.
+After an interrupted acceptance, run the same `xpl revise <name> --run <runId> --accept` again. The journal commits the intent before it publishes the guide. Recovery tells apart the original guide, the candidate it already published, and a newer conflicting guide. It never overwrites the newer one. The CLI records the outcomes against the guide's revision from before the run, so it does not count a result twice. `--run <runId>` shows the exact reviewed source of a past run, even after later edits.
 
-If a killed process left a lock, the existing lock helper times out and names the directory. Verify that writer has stopped, then remove only its reported lock directory and retry. Revision acceptance locks the journal, then artifact, then feedback store; a killed acceptance may leave more than one of those locks. Never remove a live writer's lock, apply the proposal separately, delete the journal, rewrite an explainer JSON file or manually record the same outcomes to recover. Validation/provider failures before acceptance leave the original artifact and requests unchanged; repair and invoke the chosen agent again.
+A killed process can leave a lock. The lock helper times out and names the directory. Check that the writer has stopped, then remove only that lock directory and retry. Acceptance locks the journal, then the guide, then the feedback store, so a killed acceptance can leave more than one lock. Never remove a live writer's lock. Never recover by applying the proposal separately, deleting the journal, rewriting an explainer JSON file or recording the outcomes by hand. A validation or provider failure before acceptance leaves the guide and the requests unchanged: repair it and invoke the agent again.

@@ -9,7 +9,12 @@ import { DiagramText } from "./DiagramText.js";
  * A ghost that stands for several elements ("rest of <file>", "N more") opens a menu of them instead
  * (GhostMenu), and adding one of them expands the view.
  */
-import { codeFocus, type DerivedGraph, type GraphView as StoredGraphView } from "@xpl/core";
+import {
+  codeFocus,
+  type Anchor as CodeLink,
+  type DerivedGraph,
+  type GraphView as StoredGraphView,
+} from "@xpl/core";
 import {
   createContext,
   memo,
@@ -35,10 +40,13 @@ import {
   ZOOM_SIZE,
   EDGE_BOUNDS_PAD,
   labelWidth,
+  foldPins,
   layoutGraphFitting,
+  shownType,
   nodeBox,
   graphBounds,
   PILL_GAP,
+  ROW_HEIGHT,
   startAnchor,
   startFocus,
   type ChangeMarks,
@@ -46,22 +54,28 @@ import {
   type LayoutEdge,
   type LayoutNode,
   SUMMARY_LINE,
+  codeRuns,
 } from "../layout/graphLayout.js";
+import { GENERATED_MAP_ID, layoutView } from "../workspace.js";
 import {
   arrowHeadPath,
   distanceToSegment,
+  openArrowHeadPath,
   roundedPath,
   routeBox,
   type Box,
   type Point,
 } from "../svg.js";
 import { changeMarks, changeOf } from "../diff.js";
+import { isHolds } from "../drawnEdges.js";
 import { useStore, useViewerState } from "../hooks.js";
-import { mapKeyShows } from "../keyMarks.js";
-import { boxName, readingOrder } from "../mapOrder.js";
+import { headOf, mapKeyShows } from "../keyMarks.js";
+import { boxName, readingOrder, tabOrder } from "../mapOrder.js";
 import { readerBadge } from "../readerWords.js";
+import { READABLE_ZOOM, unionBox } from "../viewport.js";
 import { GhostTargetList } from "./GhostTargets.js";
-import { Legend } from "./Legend.js";
+import { KeyLine, Legend } from "./Legend.js";
+import { MatrixView } from "./MatrixView.js";
 import { BoxIcon, iconName } from "./icons.js";
 import {
   PanZoom,
@@ -83,6 +97,8 @@ const Reader = createContext(false);
  * ids (the live diagram keeps those to itself) and nothing to click or focus.
  */
 const Still = createContext(false);
+/** True on a data map (`GraphView.boxText: "members"`): a type box folds and unfolds its rows by key. */
+const DataMap = createContext(false);
 /** The edge under the pointer (its label is drawn apart from it, and shows while it is hovered). */
 const Hovered = createContext<string | undefined>(undefined);
 const SetHovered = createContext<(id: string | undefined) => void>(() => undefined);
@@ -92,12 +108,22 @@ const BoxNames = createContext<ReadonlyMap<string, string>>(new Map());
 function boxNames(
   nodes: readonly LayoutNode[],
   into = new Map<string, string>(),
+  table?: string,
 ): Map<string, string> {
   for (const node of nodes) {
-    into.set(node.id, node.label);
-    boxNames(node.children, into);
+    // a row is named with its table: "Queue.ready"
+    into.set(node.id, node.row && table !== undefined ? `${table}.${node.label}` : node.label);
+    boxNames(node.children, into, node.rows ? node.label : undefined);
   }
   return into;
+}
+
+/** An arrow's accessible name: "Runner to Queue: calls ×2"; a field's arrow "Queue.ready holds Job". */
+function arrowName(edge: LayoutEdge, names: ReadonlyMap<string, string>): string {
+  const from = names.get(edge.from) ?? "?";
+  const to = names.get(edge.to) ?? "?";
+  if (isHolds({ kind: edge.kind, label: edge.title })) return `${from} holds ${to}`;
+  return `${from} to ${to}: ${edge.title}` + (edge.stub ? " (outside this map)" : "");
 }
 
 /** Where a ghost box is on screen, relative to the diagram pane (the menu of a folded ghost opens beside it). */
@@ -128,8 +154,20 @@ interface Marks {
   selected: ReadonlySet<string>;
   matches: ReadonlySet<string>;
   related: ReadonlySet<string>;
+  /**
+   * On a data map: the rows the step's code uses (a code link with the role "usage"), marked in the color of
+   * the code pane's "used here" (a green outline beside a purple "used here" read as two things).
+   */
+  used?: ReadonlySet<string>;
+  /**
+   * With something selected on the map: the boxes whose arrows stay in front (the selected boxes, the boxes in
+   * them, and the ends of a selected arrow). An arrow with no end among them is drawn dim.
+   */
+  lit?: ReadonlySet<string>;
   /** In a still picture: what the frame cuts (graphLayout `cutAt`), drawn faded. */
   cut?: ReadonlySet<string>;
+  /** An arrow of the map (not a line out of it) is selected: only that arrow's lines out are shown. */
+  arrowPicked?: boolean;
 }
 
 /**
@@ -204,8 +242,83 @@ function stateClasses(id: string, marks: Marks): string {
     (marks.selected.has(id) ? " is-selected" : "") +
     (marks.matches.has(id) ? " is-match" : "") +
     (marks.related.has(id) ? " is-related" : "") +
+    (marks.used?.has(id) ? " is-used" : "") +
     (marks.cut?.has(id) ? " is-cut" : "")
   );
+}
+
+/** The rows of a data map that a code link names by its symbol (`{ file, symbol: "Queue.ready" }`). */
+function anchoredRows(layout: Pick<GraphLayout, "nodes">, anchors: readonly CodeLink[]): string[] {
+  const named = new Set(anchors.flatMap((a) => (a.symbol ? [`sym:${a.file}#${a.symbol}`] : [])));
+  const out: string[] = [];
+  const visit = (list: readonly LayoutNode[]) => {
+    for (const node of list) {
+      if (node.row && named.has(node.id)) out.push(node.id);
+      visit(node.children);
+    }
+  };
+  visit(layout.nodes);
+  return out;
+}
+
+/**
+ * On a data map, the tables a selected table or row holds or is held by (through the rows' arrows), marked as
+ * linked the way a selected box's neighbours are.
+ */
+function heldTables(
+  layout: Pick<GraphLayout, "nodes" | "edges">,
+  selected: ReadonlySet<string>,
+): string[] {
+  const tableOf = new Map<string, string>();
+  const visit = (list: readonly LayoutNode[]) => {
+    for (const node of list) {
+      if (node.rows) {
+        tableOf.set(node.id, node.id);
+        for (const row of node.children) tableOf.set(row.id, node.id);
+      }
+      visit(node.children);
+    }
+  };
+  visit(layout.nodes);
+  const out = new Set<string>();
+  for (const edge of allEdgesOf(layout)) {
+    const from = tableOf.get(edge.from) ?? edge.from;
+    const to = tableOf.get(edge.to) ?? edge.to;
+    if (to === from) continue;
+    // a selected table, or the selected row the arrow leaves from or ends on
+    if (selected.has(edge.from) || (selected.has(from) && tableOf.has(from))) out.add(to);
+    if (selected.has(edge.to) || (selected.has(to) && tableOf.has(to))) out.add(from);
+  }
+  return [...out];
+}
+
+/**
+ * The boxes whose arrows stay lit while something is selected: each selected box with every box inside it, and
+ * both ends of a selected arrow. Undefined when nothing on this map is selected (then no arrow is dimmed).
+ */
+function litBoxes(
+  layout: Pick<GraphLayout, "nodes" | "edges">,
+  selected: ReadonlySet<string>,
+): Set<string> | undefined {
+  if (selected.size === 0) return undefined;
+  const lit = new Set<string>();
+  const add = (node: LayoutNode) => {
+    lit.add(node.id);
+    node.children.forEach(add);
+  };
+  const visit = (list: readonly LayoutNode[], edges: readonly LayoutEdge[]) => {
+    for (const edge of edges)
+      if (selected.has(edge.id)) {
+        lit.add(edge.from);
+        lit.add(edge.to);
+      }
+    for (const node of list) {
+      if (selected.has(node.id)) add(node);
+      visit(node.children, node.edges);
+    }
+  };
+  visit(layout.nodes, layout.edges);
+  return lit.size > 0 ? lit : undefined;
 }
 
 function activate(event: KeyboardEvent, run: () => void) {
@@ -288,18 +401,59 @@ export function GraphView({
     state.model.view(viewId)?.type === "graph";
 
   const changes = useGraphChanges(graph);
+  const storedView = state.model.view(viewId);
+  const dataMap = storedView?.type === "graph" && storedView.boxText === "members";
   const [layout, setLayout] = useState<GraphLayout | undefined>();
+  // the layout last drawn, and of which view: a fold keeps its positions (`foldPins`)
+  const drawn = useRef<{ viewId: string; layout: GraphLayout } | undefined>(undefined);
+  // the canvas of the layout before a fold, kept for the folded layout (`layout`)
+  const foldCanvas = useRef<{ layout: GraphLayout; canvas: Box } | undefined>(undefined);
   const [error, setError] = useState<string | undefined>();
   const [moveError, setMoveError] = useState<string>();
   const [menu, setMenu] = useState<GhostMenuState | undefined>();
   const [hovered, setHovered] = useState<string | undefined>();
+  // the code links of what is selected, and of the step on screen (its `code`)
+  const stepAnchors = (ids: readonly string[]): CodeLink[] => [
+    ...(state.applied?.code ?? []),
+    ...ids.flatMap((id) => state.model.node(id)?.anchors ?? []),
+  ];
   // Stable while nothing selected, matched or related changes, so unchanged shapes are not re-rendered.
-  const marks = useMemo<Marks>(
-    () => ({ selected: new Set(selection), matches: new Set(matches), related }),
-    [selection, matches, related],
-  );
+  const marks = useMemo<Marks>(() => {
+    const selected = new Set(selection);
+    const lit = layout ? litBoxes(layout, selected) : undefined;
+    const arrowPicked =
+      layout !== undefined &&
+      allEdgesOf(layout).some((edge) => !edge.stub && selected.has(edge.id));
+    // a row whose field the step's code points at (Queue.ready, "used here" for the Job table) is marked on its
+    // own table, as a caret on that line would mark it
+    const anchors = stepAnchors(selection);
+    const rows = dataMap && layout ? anchoredRows(layout, anchors) : [];
+    const used =
+      dataMap && layout
+        ? anchoredRows(
+            layout,
+            anchors.filter((a) => a.role === "usage"),
+          )
+        : [];
+    const held = dataMap && layout ? heldTables(layout, selected) : [];
+    return {
+      selected,
+      matches: new Set(matches),
+      related: rows.length + held.length > 0 ? new Set([...related, ...rows, ...held]) : related,
+      ...(used.length > 0 ? { used: new Set(used) } : {}),
+      ...(lit ? { lit } : {}),
+      ...(arrowPicked ? { arrowPicked } : {}),
+    };
+  }, [selection, matches, related, layout, dataMap, state.applied, state.model]);
 
-  const drawnCanvas = useMemo(() => (layout ? graphBounds(layout) : undefined), [layout]);
+  // (a fold keeps the canvas it was drawn on too, so the pane does not move the boxes that stayed)
+  const drawnCanvas = useMemo(() => {
+    const bounds = layout ? graphBounds(layout) : undefined;
+    const kept = foldCanvas.current;
+    return bounds && kept && kept.layout === layout
+      ? (unionBox([bounds, kept.canvas]) ?? bounds)
+      : bounds;
+  }, [layout]);
   const canvas = preview ? (frozenCanvas.current ?? drawnCanvas) : drawnCanvas;
   const move: MoveApi | undefined = canMove
     ? {
@@ -335,15 +489,16 @@ export function GraphView({
   const focus = useMemo(() => {
     const found = layout ? startFocus(layout, selection, order) : undefined;
     if (!found || !layout) return undefined;
-    // the boxes without boxes inside them: a frame cuts as few of them as it can
+    // the boxes without boxes inside them, a table as one (its rows are not boxes): a frame cuts as few of
+    // them as it can, and "Fit all (N out of sight)" counts them
     const leaves: Box[] = [];
     const walk = (list: readonly LayoutNode[], x: number, y: number) => {
       for (const node of list) {
-        if (node.children.length === 0)
+        if (node.children.length === 0 || node.rows)
           leaves.push(
             shift({ x: x + node.x, y: y + node.y, width: node.width, height: node.height }),
           );
-        walk(node.children, x + node.x, y + node.y);
+        if (!node.rows) walk(node.children, x + node.x, y + node.y);
       }
     };
     walk(layout.nodes, 0, 0);
@@ -358,21 +513,49 @@ export function GraphView({
     return box && shift(box);
   }, [layout, shift, selection]);
 
-  // The layout direction (right or down) is chosen for the pane the diagram is drawn in.
+  // The pane's shape, coarsely (steps of about 15%): when it changes (Show code halves the pane, a phone turns),
+  // the map is laid out again for it, so it never shrinks to a strip and then flips on the next click.
+  const [paneShape, setPaneShape] = useState("");
+  useLayoutEffect(() => {
+    const el = host.current;
+    if (!el) return;
+    const step = (n: number) => Math.round(Math.log(Math.max(n, 1)) / Math.log(1.15));
+    const measure = () => setPaneShape(`${step(el.clientWidth)}x${step(el.clientHeight)}`);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  // The layout direction (right or down) is chosen for the first pane the view is drawn in, and kept for
+  // the view (`layoutView`): the Tour's picture, this map and Explore draw it the same way round.
   useEffect(() => {
+    if (paneShape === "") return; // (measured right after the first render)
     let cancelled = false;
     const el = host.current;
     const viewport = el ? { width: el.clientWidth, height: el.clientHeight } : undefined;
-    layoutGraphFitting(
+    // a table folded on this map: every box stays where it was
+    const last = drawn.current;
+    const kept = last?.viewId === viewId ? foldPins(last.layout, graph) : undefined;
+    // (a slide picks its own: a map that does not read whole at the 12px floor turns in the wider column it asks for)
+    (present ? layoutGraphFitting : layoutView.bind(null, viewId))(
       graph,
       viewport,
       present ? PRESENT_MAX_FIT_ZOOM : undefined,
       present ? PRESENT_FIT_PADDING : undefined,
       changes,
-      activePins,
+      kept ? { ...kept, ...activePins } : activePins,
     ).then(
       (result) => {
         if (cancelled) return;
+        // a fold of a fold keeps the first canvas
+        const before =
+          last &&
+          (foldCanvas.current?.layout === last.layout
+            ? foldCanvas.current.canvas
+            : graphBounds(last.layout));
+        foldCanvas.current = kept && before ? { layout: result, canvas: before } : undefined;
+        drawn.current = { viewId, layout: result };
         setLayout(result);
         setError(undefined);
       },
@@ -383,7 +566,7 @@ export function GraphView({
     return () => {
       cancelled = true;
     };
-  }, [graph, present, changes, activePins]);
+  }, [viewId, graph, present, changes, activePins, paneShape]);
 
   // The menu belongs to the layout it was opened on.
   useEffect(() => setMenu(undefined), [graph, present, viewId]);
@@ -424,12 +607,71 @@ export function GraphView({
   const dismissOnWheel = (event: WheelEvent<HTMLDivElement>) => {
     if (!(event.target as Element).closest(".ghost-menu")) setMenu(undefined);
   };
+  // A reader sees the lines out of the map only for what they look at: a picked or matched box, the
+  // ghost under the pointer, or a picked stub. All of them at once bury the map's own arrows.
+  // (not for what is only related: a selected arrow relates both its ends, and their lines out of the map would
+  // bury it)
+  const quietStub = (edge: LayoutEdge): boolean =>
+    (present || reader) && stubIsQuiet(edge, marks, hovered);
   const menuGhost = menu ? layout?.nodes.find((n) => n.id === menu.id) : undefined;
   const names = useMemo(() => boxNames(layout?.nodes ?? []), [layout]);
 
+  const keyShows = useMemo(
+    () =>
+      layout &&
+      mapKeyShows(layout.nodes, layout.edges, {
+        canZoomInto: (id) => store.canZoomInto(id),
+        canExpandInPlace: (id) => store.canExpandInPlace(id),
+        changed: (changes?.size ?? 0) > 0,
+      }),
+    [layout, store, changes, state.model],
+  );
+
+  // Boxes and arrows, or the same as a matrix: the view's `render` says which it opens as, the reader's choice
+  // holds until the diagram starts over (another view, another tour step). A matrix of three boxes says
+  // nothing the map does not, nor does one whose arrows the author drew (each cell a "•"), and Present shows
+  // the author's picture: there the switch is offered only when the view opens as a matrix. A table
+  // counts as one box (the matrix folds its rows into it).
+  const stored = state.model.view(viewId);
+  const opensAsMatrix = stored?.type === "graph" && stored.render === "matrix";
+  const [choice, setChoice] = useState<{ key: string; matrix: boolean }>();
+  const matrix = choice?.key === resetKey ? choice.matrix : opensAsMatrix;
+  const offersMatrix =
+    opensAsMatrix ||
+    (!present &&
+      graph.nodes.filter((node) => node.rows || (!node.container && node.row === undefined))
+        .length >= 4 &&
+      graph.edges.some((edge) => FOUND_IN_CODE.has(edge.resolution)));
+  const matrixToggle = offersMatrix ? (
+    <button
+      type="button"
+      className="matrix-toggle"
+      title={
+        matrix
+          ? "Show this map as boxes and arrows again"
+          : "Show this map as a dependency matrix: a row and a column per box, the arrows in the cells"
+      }
+      onClick={() => setChoice({ key: resetKey, matrix: !matrix })}
+    >
+      {matrix ? "Diagram" : "Matrix"}
+    </button>
+  ) : null;
+
   let body;
-  if (error) body = <div className="diagram-message is-error">Layout failed: {error}</div>;
-  else if (!layout) body = <div className="diagram-message">Laying out the graph…</div>;
+  if (matrix && graph.nodes.length > 0)
+    body = (
+      <MatrixView
+        graph={graph}
+        order={order}
+        imageName={stored?.title ?? viewId}
+        selected={marks.selected}
+        matches={marks.matches}
+        related={related}
+        toggle={matrixToggle}
+      />
+    );
+  else if (error) body = <div className="diagram-message is-error">Layout failed: {error}</div>;
+  else if (!layout) body = <div className="diagram-message">Drawing the map…</div>;
   else if (layout.nodes.length === 0) {
     body = (
       <div className="diagram-message">
@@ -439,28 +681,41 @@ export function GraphView({
   } else {
     body = (
       <PanZoom
-        textView={<DiagramText graph={graph} />}
+        textView={<DiagramText graph={graph} order={order} />}
         width={canvas!.width}
         height={canvas!.height}
         resetKey={resetKey}
         label="Diagram. Drag to pan, scroll to zoom."
         imageName={state.model.view(viewId)?.title ?? viewId}
-        maxFitZoom={present ? PRESENT_MAX_FIT_ZOOM : undefined}
+        keyboardMore={
+          dataMap
+            ? "On a table: Down: go into its rows. -: fold it to one box. +: show its rows again."
+            : undefined
+        }
+        // (the map a guide without one gets is small: one box drawn twice its size says nothing more)
+        maxFitZoom={viewId === GENERATED_MAP_ID ? 1 : present ? PRESENT_MAX_FIT_ZOOM : undefined}
         fitPadding={present ? PRESENT_FIT_PADDING : undefined}
         minFitZoom={pinned ? GRAPH_READABLE_ZOOM : undefined}
-        readableZoom={present ? PRESENT_READABLE_ZOOM : pinned ? GRAPH_READABLE_ZOOM : undefined}
+        // A reader's map starts whole only when its labels read at 10px or more (13-14 unit text at 0.75):
+        // a map that grew (a box opened in place) is framed on what was picked rather than shrunk to 8px.
+        readableZoom={
+          present
+            ? PRESENT_READABLE_ZOOM
+            : pinned
+              ? GRAPH_READABLE_ZOOM
+              : reader
+                ? READABLE_ZOOM
+                : undefined
+        }
         readableMin={pinned ? GRAPH_READABLE_ZOOM : undefined}
         focus={focus}
         keepInView={preview ? undefined : selectionBox}
         onBackgroundClick={() => store.clearSelection()}
         tools={
-          <Legend
-            shows={mapKeyShows(layout.nodes, layout.edges, {
-              canZoomInto: (id) => store.canZoomInto(id),
-              canExpandInPlace: (id) => store.canExpandInPlace(id),
-              changed: (changes?.size ?? 0) > 0,
-            })}
-          />
+          <>
+            <Legend shows={keyShows!} />
+            {matrixToggle}
+          </>
         }
       >
         <g
@@ -472,20 +727,26 @@ export function GraphView({
           {/* Nodes are drawn above the edges of their level: a click on a box is never taken by an edge. */}
           <g className="edges">
             {layout.edges.map((edge) => (
-              <EdgeShape key={edge.id} edge={edge} marks={marks} focusable={false} />
+              <EdgeShape
+                key={edge.id}
+                edge={edge}
+                marks={marks}
+                focusable={false}
+                quiet={quietStub(edge)}
+              />
             ))}
           </g>
           <EdgeLabels edges={layout.edges} marks={marks} />
           <g className="nodes">
-            {readingOrder(layout.nodes).map((node) => (
+            {tabOrder(layout.nodes, order).map((node) => (
               <NodeShape key={node.id} node={node} marks={marks} />
             ))}
           </g>
           {/* The edges again, for the keyboard only: after the boxes, so Tab reaches the boxes first. */}
           <g className="edge-keys">
-            {layout.edges.map((edge) => (
-              <EdgeKey key={edge.id} edge={edge} />
-            ))}
+            {layout.edges.map((edge) =>
+              quietStub(edge) ? null : <EdgeKey key={edge.id} edge={edge} />,
+            )}
           </g>
         </g>
       </PanZoom>
@@ -495,30 +756,41 @@ export function GraphView({
     <Move.Provider value={move}>
       <ReadOnly.Provider value={present}>
         <Reader.Provider value={present || reader}>
-          <BoxNames.Provider value={names}>
-            <SetHovered.Provider value={setHovered}>
-              <Hovered.Provider value={hovered}>
-                <GhostMenuContext.Provider value={menuApi}>
-                  <div
-                    className="graph-host"
-                    ref={host}
-                    onPointerDownCapture={dismiss}
-                    onWheelCapture={menu ? dismissOnWheel : undefined}
-                  >
-                    {body}
-                    {moveError && (
-                      <p className="placement-error" role="alert">
-                        {moveError}
-                      </p>
-                    )}
-                    {menu && menuGhost?.ghostFold && (
-                      <GhostMenu node={menuGhost} anchor={menu.anchor} onClose={closeMenu} />
-                    )}
-                  </div>
-                </GhostMenuContext.Provider>
-              </Hovered.Provider>
-            </SetHovered.Provider>
-          </BoxNames.Provider>
+          <DataMap.Provider value={dataMap}>
+            <BoxNames.Provider value={names}>
+              <SetHovered.Provider value={setHovered}>
+                <Hovered.Provider value={hovered}>
+                  <GhostMenuContext.Provider value={menuApi}>
+                    <div
+                      className="graph-host"
+                      ref={host}
+                      onPointerDownCapture={dismiss}
+                      onWheelCapture={menu ? dismissOnWheel : undefined}
+                    >
+                      {keyShows && layout && !present && !matrix && (
+                        <KeyLine
+                          shows={keyShows}
+                          sharedBadge={layout.sharedBadge}
+                          stubLines={allEdgesOf(layout).some(
+                            (edge) => edge.stub && !quietStub(edge),
+                          )}
+                        />
+                      )}
+                      {body}
+                      {moveError && (
+                        <p className="placement-error" role="alert">
+                          {moveError}
+                        </p>
+                      )}
+                      {menu && menuGhost?.ghostFold && (
+                        <GhostMenu node={menuGhost} anchor={menu.anchor} onClose={closeMenu} />
+                      )}
+                    </div>
+                  </GhostMenuContext.Provider>
+                </Hovered.Provider>
+              </SetHovered.Provider>
+            </BoxNames.Provider>
+          </DataMap.Provider>
         </Reader.Provider>
       </ReadOnly.Provider>
     </Move.Provider>
@@ -540,7 +812,7 @@ export function useGraphChanges(graph: DerivedGraph): ChangeMarks | undefined {
             graph.nodes.map((node) => node.id),
             index,
             change,
-            (id) => codeFocus([id], state.model).map((range) => range.file),
+            (id) => codeFocus([id], state.model),
           )
         : undefined,
     [graph, change, index, state.model],
@@ -575,7 +847,12 @@ export function GraphPicture({
           <g className="graph" data-direction={layout.direction}>
             <g className="edges">
               {layout.edges.map((edge) => (
-                <EdgeShape key={edge.id} edge={edge} marks={marks} />
+                <EdgeShape
+                  key={edge.id}
+                  edge={edge}
+                  marks={marks}
+                  quiet={stubIsQuiet(edge, marks, undefined)}
+                />
               ))}
             </g>
             <EdgeLabels edges={layout.edges} marks={marks} />
@@ -596,10 +873,59 @@ export function GraphPicture({
 const NodeShape = memo(function NodeShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
   return node.ghost ? (
     <GhostShape node={node} marks={marks} />
+  ) : node.row ? (
+    <RowShape node={node} marks={marks} />
   ) : (
     <BoxShape node={node} marks={marks} />
   );
 });
+
+/** Arrows found in the code, not drawn by the author: a matrix of them counts something. */
+const FOUND_IN_CODE = new Set<string>(["precise", "heuristic", "mixed"]);
+
+/**
+ * A row of a table (`GraphView.boxText: "members"`): a field, with the type its code names. It is a box of its
+ * own: a click shows its code, the caret in its code lights it, and its arrows start at its side.
+ */
+function RowShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
+  const store = useStore();
+  const still = useContext(Still);
+  const selected = marks.selected.has(node.id);
+  const select = (event: MouseEvent | KeyboardEvent) => store.click(node.id, additive(event));
+  const name = boxName(node.label, node.memberType && `type ${node.memberType}`);
+  const middle = ROW_HEIGHT / 2 + 4.5;
+  return (
+    <g
+      className={`node is-row${stateClasses(node.id, marks)}`}
+      data-element-id={still ? undefined : node.id}
+      transform={`translate(${node.x} ${node.y})`}
+      role={still ? undefined : "button"}
+      // one Tab stop per table: the arrow keys move through its rows (the table's own keys, PanZoom)
+      tabIndex={still ? undefined : -1}
+      aria-label={still ? undefined : name}
+      aria-pressed={still ? undefined : selected}
+      onClick={(event) => {
+        event.stopPropagation();
+        select(event);
+      }}
+      onDoubleClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => activate(event, () => select(event))}
+    >
+      <title>{node.memberType ? `${node.label}: ${node.memberType}` : node.label}</title>
+      <rect className="box" x={2} y={1} width={node.width - 4} height={node.height - 2} rx={4} />
+      {!still && <FocusRing width={node.width} height={node.height} rx={4} />}
+      <path className="row-rule" d={`M0 0.5H${node.width}`} />
+      <text className="row-name" x={14} y={middle}>
+        {node.label}
+      </text>
+      {node.memberType && (
+        <text className="row-type" x={node.width - 14} y={middle}>
+          {shownType(node.memberType)}
+        </text>
+      )}
+    </g>
+  );
+}
 
 function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
   const store = useStore();
@@ -607,9 +933,13 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
   const reader = useContext(Reader);
   const container = node.children.length > 0;
   const still = useContext(Still);
+  const dataMap = useContext(DataMap);
   const select = (event: MouseEvent | KeyboardEvent) => store.click(node.id, additive(event));
-  const badgeText = reader || node.role ? readerBadge(node.badge) : node.badge;
+  const fullBadge = reader || node.role ? readerBadge(node.badge) : node.badge;
+  // a badge every box shares is said once by the key line, not drawn on each box
+  const badgeText = node.badgeShared ? undefined : fullBadge;
   const badge = badgeWidth(badgeText ?? "");
+  const named = node.badge ? `${node.label} (${node.badge})` : node.label;
   // A box that opens a more detailed view zooms into it; while presenting, the tour decides what is shown.
   const zoomable = node.opens !== undefined && !still && store.canZoomInto(node.id);
   // opened in place: the boxes of the map it opens are drawn inside it, until the reader folds it back
@@ -618,6 +948,8 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
     node.expandable === true && !container && !still && store.canExpandInPlace(node.id);
   const showCollapse = container && !still && (!readOnly || expandedHere);
   const zoom = () => store.zoomInto(node.id);
+  // a folded table of a data map: "+" shows its rows again
+  const unfoldable = dataMap && !container && !still && !readOnly && store.canDrillIn(node.id);
   const role = node.role ? ` role-${node.role}` : "";
   const textX = 14 + ICON_ROOM;
   const icon = iconName(node);
@@ -625,19 +957,20 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
   const selected = marks.selected.has(node.id);
   const name = boxName(
     node.label,
-    badgeText ?? (node.badge || undefined),
+    fullBadge ?? (node.badge || undefined),
     node.change && changeText(node.change),
   );
   // left to right, the order Tab takes them in
+  // (top right, in the name's row: the box keeps room for them there, and a summary's lines run below)
   const cornerButtons = (
     <>
       {expandable && (
         <CornerButton
           className="expand-here"
           x={node.width - ZOOM_SIZE - 6 - (zoomable ? ZOOM_SIZE + 4 : 0)}
-          y={node.height - ZOOM_SIZE - 6}
-          label={`Show the parts of ${node.label} in its box`}
-          title="Show its parts in this box, on this map"
+          y={lid + 6}
+          label={`Show what is inside ${node.label}, in its box`}
+          title="Show inside: what is inside it, in this box, on this map"
           onPress={() => store.toggleExpanded(node.id)}
         >
           {/* a box with boxes in it: open it on this map */}
@@ -651,7 +984,7 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
         <CornerButton
           className="zoom"
           x={node.width - ZOOM_SIZE - 6 - (showCollapse ? 30 : 0)}
-          y={container ? 8 : node.height - ZOOM_SIZE - 6}
+          y={container ? 8 : lid + 6}
           label={`Open the map of what is inside ${node.label}`}
           title="Open its own map: what is inside it"
           onPress={zoom}
@@ -665,14 +998,16 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
   );
   const shape = (
     <g
-      className={`node kind-${node.kindClass}${role}${node.sketch ? " is-sketch" : ""}${container ? " is-container" : ""}${zoomable ? " is-zoomable" : ""}${stateClasses(node.id, marks)}`}
+      className={`node kind-${node.kindClass}${role}${node.sketch ? " is-sketch" : ""}${container ? " is-container" : ""}${node.rows ? " is-table" : ""}${zoomable ? " is-zoomable" : ""}${stateClasses(node.id, marks)}`}
       data-element-id={still ? undefined : node.id}
       transform={`translate(${node.x} ${node.y})`}
-      // a container holds boxes (buttons): it is a group, and says when it is the one picked
+      // a container holds boxes (buttons): it is a group, and says when it is the one selected
       role={still ? undefined : container ? "group" : "button"}
       tabIndex={still ? undefined : 0}
-      aria-label={still ? undefined : container && selected ? `${name}, picked` : name}
+      aria-label={still ? undefined : container && selected ? `${name}, selected` : name}
       aria-pressed={still || container ? undefined : selected}
+      // a table of a data map shows its rows or is folded to its header ("-" and "+")
+      aria-expanded={still ? undefined : node.rows ? true : unfoldable ? false : undefined}
       onClick={(event) => {
         event.stopPropagation();
         select(event);
@@ -682,14 +1017,49 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
         if (zoomable) zoom();
         else if (!readOnly) store.drillIn(node.id);
       }}
-      onKeyDown={(event) => activate(event, () => select(event))}
+      aria-keyshortcuts={
+        still ? undefined : node.rows ? "ArrowDown -" : unfoldable ? "+ =" : undefined
+      }
+      onKeyDown={(event) => {
+        // a table folds with "-" (its fold button is not a Tab stop) and opens again with "+"
+        if (event.target === event.currentTarget && !still) {
+          if (event.key === "-" && node.rows && showCollapse) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (expandedHere) store.toggleExpanded(node.id);
+            else store.collapse(node.id);
+            return;
+          }
+          if ((event.key === "+" || event.key === "=") && unfoldable) {
+            event.preventDefault();
+            event.stopPropagation();
+            store.drillIn(node.id);
+            return;
+          }
+        }
+        // a table's rows are not Tab stops: Down (or Home) goes into the first of them
+        if (
+          node.rows &&
+          event.target === event.currentTarget &&
+          /^(ArrowDown|Home)$/.test(event.key)
+        ) {
+          const row = event.currentTarget.querySelector<SVGElement>(".node.is-row");
+          if (row) {
+            event.preventDefault();
+            event.stopPropagation();
+            row.focus();
+            return;
+          }
+        }
+        activate(event, () => select(event));
+      }}
     >
       <title>
         {zoomable
-          ? `${node.label} (${node.badge}): double-click to see what is inside`
+          ? `${named}: double-click to see what is inside`
           : !readOnly && store.canDrillIn(node.id)
-            ? `${node.label} (${node.badge}): double-click to open what it contains`
-            : `${node.label} (${node.badge})`}
+            ? `${named}: double-click to open what it contains`
+            : named}
       </title>
       <Frame node={node}>
         {container && (
@@ -748,8 +1118,15 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
               <g
                 className="collapse"
                 role="button"
-                tabIndex={0}
-                aria-label={expandedHere ? `Fold ${node.label} back` : `Collapse ${node.label}`}
+                // (a table is one Tab stop: its fold button is a click, as on a phone)
+                tabIndex={node.rows ? -1 : 0}
+                aria-label={
+                  expandedHere
+                    ? `Fold ${node.label} back`
+                    : node.rows
+                      ? `Fold ${node.label}`
+                      : `Collapse ${node.label}`
+                }
                 data-collapse-id={node.id}
                 transform={`translate(${node.width - 30} 8)`}
                 onClick={(event) => {
@@ -767,13 +1144,16 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
                 <title>
                   {expandedHere
                     ? "Fold back: show it as one box again"
-                    : "Collapse: remove what is inside"}
+                    : node.rows
+                      ? "Fold: hide its fields"
+                      : "Collapse: remove what is inside"}
                 </title>
                 <rect width={20} height={18} rx={4} />
                 <path d="M5 9h10" />
               </g>
             )}
-            {centerIsCovered(node) && (
+            {/* (a table's middle is one of its rows: a click there picks the row) */}
+            {!node.rows && centerIsCovered(node) && (
               <circle className="hit" cx={node.width / 2} cy={node.height / 2} r={10} />
             )}
             {/* inside a container (a group), its buttons stay with it */}
@@ -976,10 +1356,19 @@ function LeafText({
       )}
       {lines.length > 0 && (
         <text className="box-summary" x={x} y={(two ? badgeY + 16 : labelY) + SUMMARY_LINE}>
-          {lines.map((line, i) => (
+          {codeRuns(lines).map((runs, i) => (
             <tspan key={i} x={x} dy={i === 0 ? 0 : SUMMARY_LINE}>
+              {runs.map((run, n) =>
+                run.code ? (
+                  <tspan key={n} className="box-code">
+                    {run.text}
+                  </tspan>
+                ) : (
+                  run.text
+                ),
+              )}
               {/* the space keeps the words apart when the text is read or copied as one */}
-              {i < lines.length - 1 ? `${line} ` : line}
+              {i < lines.length - 1 ? " " : ""}
             </tspan>
           ))}
         </text>
@@ -1096,10 +1485,15 @@ function centerIsCovered(node: LayoutNode): boolean {
   );
 }
 
-/** "New" or "Changed": what the explainer's change did to this box, in plain words. */
-function ChangePill({ x, y, change }: { x: number; y: number; change: "new" | "changed" }) {
+/** The width of the "New" / "Changed" pill. */
+export function changePillWidth(change: "new" | "changed"): number {
+  return badgeWidth(changeText(change));
+}
+
+/** "New" or "Changed": what the explainer's change did to this box or step, in plain words. */
+export function ChangePill({ x, y, change }: { x: number; y: number; change: "new" | "changed" }) {
   const text = changeText(change);
-  const width = badgeWidth(text);
+  const width = changePillWidth(change);
   return (
     <g
       className={`change-pill is-${change}`}
@@ -1131,6 +1525,7 @@ function GhostShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
   const readOnly = useContext(ReadOnly);
   const still = useContext(Still);
   const menu = useContext(GhostMenuContext);
+  const hover = useContext(SetHovered);
   const fold = node.ghostFold;
   const open = fold !== undefined && menu.openId === node.id;
   // One element: add it. Several: choose (the menu). While presenting, nothing happens.
@@ -1140,7 +1535,7 @@ function GhostShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
     else if (node.ghostTarget !== undefined) store.expandStub({ ghost: node.ghostTarget });
   };
   const label = readOnly
-    ? `${node.label} (not in this view)`
+    ? `${node.label} (outside this map)`
     : fold
       ? `${node.label}: choose what to add to the view`
       : `Add ${node.label} to the view`;
@@ -1149,11 +1544,16 @@ function GhostShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
       className={`node ghost${fold ? " is-fold" : ""}${open ? " is-open" : ""}${stateClasses(node.id, marks)}`}
       data-element-id={still ? undefined : node.id}
       transform={`translate(${node.x} ${node.y})`}
-      role={still ? undefined : "button"}
-      tabIndex={still ? undefined : 0}
+      // (read-only, a reader's map or a slide: the dashed box does nothing, so it is no Tab stop)
+      role={still || readOnly ? undefined : "button"}
+      tabIndex={still || readOnly ? undefined : 0}
       aria-label={still ? undefined : label}
       aria-haspopup={fold && !readOnly ? "menu" : undefined}
       aria-expanded={fold && !readOnly ? open : undefined}
+      onPointerEnter={() => hover(node.id)}
+      onPointerLeave={() => hover(undefined)}
+      onFocus={() => hover(node.id)}
+      onBlur={() => hover(undefined)}
       onClick={(event) => {
         event.stopPropagation();
         expand(event.currentTarget.getBoundingClientRect());
@@ -1164,7 +1564,7 @@ function GhostShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
     >
       <title>
         {readOnly
-          ? `${node.label} is not in this view`
+          ? `${node.label} is outside this map`
           : fold
             ? `${node.label}: ${node.hint ?? ""} reach ${fold.kind === "more" ? "places" : "symbols"} that are not in this view. Click to choose what to add.`
             : node.hint
@@ -1319,20 +1719,46 @@ function EdgeKey({ edge }: { edge: LayoutEdge }) {
       data-navigation-to={edge.to}
       role="button"
       tabIndex={0}
-      aria-label={
-        `${names.get(edge.from) ?? "?"} to ${names.get(edge.to) ?? "?"}: ${edge.title}` +
-        (edge.stub ? " (outside this map)" : "")
-      }
+      aria-label={arrowName(edge, names)}
       onKeyDown={(event) => activate(event, () => select(event))}
     >
-      <path d={roundedPath(edge.points)} />
+      <path d={roundedPath(edge.own ?? edge.points)} />
     </g>
   );
+}
+
+/** Every edge of a layout, the ones its containers hold too. */
+function allEdgesOf(layout: Pick<GraphLayout, "nodes" | "edges">): LayoutEdge[] {
+  const out = [...layout.edges];
+  const visit = (list: readonly LayoutNode[]) => {
+    for (const node of list) {
+      out.push(...node.edges);
+      visit(node.children);
+    }
+  };
+  visit(layout.nodes);
+  return out;
+}
+
+/**
+ * A line out of the map that no one looks at: not drawn, and not in the Tab order (its ghost box still is).
+ * With an arrow of the map selected, its ends (selected as related boxes, and under the caret) do not bring
+ * their lines out back: they would bury the arrow the reader asked about.
+ */
+function stubIsQuiet(edge: LayoutEdge, marks: Marks, hovered: string | undefined): boolean {
+  if (!edge.stub) return false;
+  // (the selection a map gets holds the picked arrow's ends too, as related boxes)
+  if (marks.arrowPicked)
+    return !(marks.selected.has(edge.id) || edge.from === hovered || edge.to === hovered);
+  const looked = (id: string) => id === hovered || marks.selected.has(id) || marks.matches.has(id);
+  return ![edge.id, edge.from, edge.to].some(looked);
 }
 
 /** The classes of an edge (and of its label): kind, trust, state, and quiet in a reader view. */
 function edgeClasses(edge: LayoutEdge, marks: Marks, reader: boolean): string {
   const classes = ["edge", edge.stub ? "is-stub" : `res-${edge.resolution}`, `kind-${edge.kind}`];
+  // something is selected and this arrow touches none of it: it steps back
+  if (marks.lit && !marks.lit.has(edge.from) && !marks.lit.has(edge.to)) classes.push("is-dim");
   // A count label in a reader view: shown on hover and when the edge or an end of it is selected.
   if (
     reader &&
@@ -1349,11 +1775,14 @@ const EdgeShape = memo(function EdgeShape({
   edge,
   marks,
   focusable = true,
+  quiet = false,
 }: {
   edge: LayoutEdge;
   marks: Marks;
   /** False when EdgeKey gives the keyboard its way to the edge (the top level). */
   focusable?: boolean;
+  /** A stub a reader is not looking at: not drawn (its ghost box still is). */
+  quiet?: boolean;
 }) {
   const store = useStore();
   const reader = useContext(Reader);
@@ -1371,7 +1800,7 @@ const EdgeShape = memo(function EdgeShape({
   const select = (event: MouseEvent | KeyboardEvent) => store.click(edge.id, additive(event));
   return (
     <g
-      className={edgeClasses(edge, marks, reader)}
+      className={edgeClasses(edge, marks, reader) + (quiet ? " is-stub-quiet" : "")}
       onPointerEnter={edge.label ? () => hover(edge.id) : undefined}
       onPointerLeave={edge.label ? () => hover(undefined) : undefined}
       data-element-id={still ? undefined : edge.id}
@@ -1381,12 +1810,7 @@ const EdgeShape = memo(function EdgeShape({
       role={still || !focusable ? undefined : "button"}
       tabIndex={still || !focusable ? undefined : 0}
       aria-hidden={!still && !focusable ? true : undefined}
-      aria-label={
-        still || !focusable
-          ? undefined
-          : `${names.get(edge.from) ?? "?"} to ${names.get(edge.to) ?? "?"}: ${edge.title}` +
-            (edge.stub ? " (outside this map)" : "")
-      }
+      aria-label={still || !focusable ? undefined : arrowName(edge, names)}
       onClick={(event) => {
         event.stopPropagation();
         select(event);
@@ -1409,11 +1833,22 @@ const EdgeShape = memo(function EdgeShape({
       />
       <path className="halo" d={path} />
       <path className="line" d={path} />
-      <path className="head" d={arrowHeadPath(before, tip)} />
-      <path className="hit" d={path} />
+      <EdgeHead kind={edge.kind} before={before} tip={tip} />
+      {/* one of a two-way pair takes clicks on its own half of the shared line */}
+      <path className="hit" d={edge.own ? roundedPath(edge.own) : path} />
     </g>
   );
 });
+
+/** The head of an edge, by its kind (keyMarks `headOf`): filled for a call, hollow for extends, open for imports. */
+function EdgeHead({ kind, before, tip }: { kind: string; before: Point; tip: Point }) {
+  const head = headOf(kind);
+  if (head === "hollow")
+    return <path className="head is-hollow" d={arrowHeadPath(before, tip, 12, 6.5)} />;
+  if (head === "open")
+    return <path className="head is-open" d={openArrowHeadPath(before, tip, 10, 5)} />;
+  return <path className="head" d={arrowHeadPath(before, tip)} />;
+}
 
 /**
  * The labels of a level's edges, drawn after all of its lines: a line never runs over a label (not even the

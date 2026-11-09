@@ -13,9 +13,11 @@
  * - `env-file`: an indexed `.env` or `.env.<name>` file with values (example and template files excepted).
  * - `large-file`: a code file over `HEALTH_LARGE_FILE_LINES` lines.
  * - `unused-file`: a code file with symbols that no other file references (by the index) and that is not an
- *   entry point (`ENTRY_STEMS`, `ENTRY_DIRS`), a test, a config file or a type declaration file. Marked
- *   `heuristic`; skipped when the index has no references or is pruned. A file without symbols (a list of
- *   re-exports, say) is never reported: imports through it resolve to the symbols it re-exports.
+ *   entry point (`ENTRY_STEMS`, `ENTRY_DIRS`, or a `main` its text declares: `ENTRY_TEXT`), a test, a config
+ *   file or a type declaration file. Marked `heuristic`; skipped when the index has no references or is
+ *   pruned. A file without symbols (a list of re-exports, say) is never reported: imports through it resolve
+ *   to the symbols it re-exports. Nor is a file whose language's analysis does not follow imports: a note says
+ *   how many files xpl cannot tell about.
  *
  * Tests, fixtures, docs and examples (`SAMPLE_GLOBS`) hold fake secrets far more often than real ones: there,
  * key shapes are reported one severity lower and the guessing checks (assignments, tokens, URLs, `.env`, browser
@@ -469,6 +471,24 @@ function isEntryPoint(path: FilePath): boolean {
     .some((dir) => ENTRY_DIRS.has(dir));
 }
 
+/**
+ * Source text that makes a file a program's entry point, which nothing refers to by design: Java's
+ * `static void main`, Python's `if __name__ == "__main__"`, Go's `func main` in package main and Rust's
+ * `fn main`.
+ */
+const ENTRY_TEXT: Partial<Record<string, (text: string) => boolean>> = {
+  java: (text) => /\bstatic\s+(?:public\s+|final\s+)*void\s+main\s*\(/.test(text),
+  python: (text) => /^if\s+__name__\s*==\s*["']__main__["']\s*:/m.test(text),
+  go: (text) => /^package\s+main\b/m.test(text) && /^func\s+main\s*\(\s*\)/m.test(text),
+  rust: (text) => /^\s*(?:pub\s+)?(?:async\s+)?fn\s+main\s*\(/m.test(text),
+};
+
+function declaresEntry(file: IndexedFile, texts: TextCache): boolean {
+  const test = ENTRY_TEXT[file.language];
+  const lines = test && texts.lines(file.path);
+  return lines !== undefined && test!(lines.join("\n"));
+}
+
 /** Files that some other file references: a symbol or module reference, or a resource it loads. */
 function referencedFiles(model: IndexModel): Set<FilePath> {
   const used = new Set<FilePath>();
@@ -484,10 +504,45 @@ function referencedFiles(model: IndexModel): Set<FilePath> {
   return used;
 }
 
+/**
+ * Files the index's analysis looked at without following imports (Rust tags record calls only, say): no
+ * reference into such a file says nothing about whether it is used. Undefined on a legacy index with no
+ * recorded analysis.
+ */
+function importBlindFiles(model: IndexModel): Set<FilePath> | undefined {
+  const reports = model.index.analysis;
+  if (!reports) return undefined;
+  const followed = new Set<FilePath>();
+  for (const report of reports)
+    for (const result of report.results)
+      if (
+        result.capabilities.includes("import") &&
+        result.status !== "unsupported" &&
+        result.status !== "failed"
+      )
+        for (const file of result.analyzedFiles) followed.add(file);
+  return new Set(model.files.map((f) => f.path).filter((path) => !followed.has(path)));
+}
+
+/** Whether the unused-file check applies to `file` at all, before the index's references are asked. */
+function unusedCandidate(model: IndexModel, file: IndexedFile, texts: TextCache): boolean {
+  return (
+    CODE_LANGUAGES.has(file.language) &&
+    // A file without symbols of its own (a re-export list, a script) is reached through what it imports.
+    model.symbolsInFile(file.path).length > 0 &&
+    model.index.languages[file.language]?.refs !== "none" &&
+    !matchesAnyGlob(file.path, SAMPLE_GLOBS) &&
+    !isEntryPoint(file.path) &&
+    !declaresEntry(file, texts)
+  );
+}
+
 function fileFindings(
   model: IndexModel,
   file: IndexedFile,
   used: Set<FilePath> | undefined,
+  blind: Set<FilePath> | undefined,
+  texts: TextCache,
 ): HealthFinding[] {
   if (!CODE_LANGUAGES.has(file.language)) return [];
   const out: HealthFinding[] = [];
@@ -504,11 +559,8 @@ function fileFindings(
   if (
     used &&
     !used.has(file.path) &&
-    // A file without symbols of its own (a re-export list, a script) is reached through what it imports.
-    model.symbolsInFile(file.path).length > 0 &&
-    model.index.languages[file.language]?.refs !== "none" &&
-    !matchesAnyGlob(file.path, SAMPLE_GLOBS) &&
-    !isEntryPoint(file.path)
+    !blind?.has(file.path) &&
+    unusedCandidate(model, file, texts)
   ) {
     out.push({
       check: "unused-file",
@@ -538,15 +590,26 @@ export function healthCheck(
       "The index is cut down to what a guide shows, so the check for possibly unused files was skipped.",
     );
   } else if (model.refs.length === 0) {
-    notes.push("The index has no references, so the check for possibly unused files was skipped.");
+    notes.push("the index has no references, so xpl did not check for unused files");
   } else {
     used = referencedFiles(model);
+  }
+  const blind = used && importBlindFiles(model);
+  if (used && blind) {
+    const unknown = new Map<string, number>();
+    for (const file of model.files)
+      if (blind.has(file.path) && !used.has(file.path) && unusedCandidate(model, file, texts))
+        unknown.set(file.language, (unknown.get(file.language) ?? 0) + 1);
+    for (const [language, count] of [...unknown].sort(([a], [b]) => cmp(a, b)))
+      notes.push(
+        `${language}: the index does not follow imports, so xpl cannot tell whether ${count} ${count === 1 ? "file is" : "files are"} unused.`,
+      );
   }
 
   const findings: HealthFinding[] = [];
   let files = 0;
   for (const file of model.files) {
-    findings.push(...fileFindings(model, file, used));
+    findings.push(...fileFindings(model, file, used, blind, texts));
     const lines = texts.lines(file.path);
     if (lines === undefined) continue;
     files++;

@@ -542,13 +542,13 @@ describe("validateExplainer: references", () => {
   it("suggests the id when a loose form was written", () => {
     const loose = edit((ex) => (ex.edges[0]!.from = "src/queue.ts#Queue.pop"));
     const issue = loose.find((i) => i.path === "edges[0].from")!;
-    expect(issue.message).toContain("did you mean sym:src/queue.ts#Queue.pop?");
+    expect(issue.message).toContain("Did you mean: sym:src/queue.ts#Queue.pop?");
     const file = edit(
       (ex) =>
         ex.views[0]!.type === "graph" && (ex.views[0] as GraphView).include.push("src/queue.ts"),
     );
     expect(file.find((i) => i.path === "views[0].include[3]")!.message).toContain(
-      "did you mean file:src/queue.ts?",
+      "Did you mean: file:src/queue.ts?",
     );
     const hopeless = edit((ex) => (ex.edges[0]!.to = "zzz"));
     expect(hopeless.find((i) => i.path === "edges[0].to")!.message).toContain("expected repo");
@@ -671,14 +671,14 @@ describe("validateExplainer: references", () => {
       edit((ex) => (view(ex).scope.entryPoints = ["src/runner.ts#Runner.dispatchh"])),
     );
     expect(near.path).toBe("views[0].scope.entryPoints[0]");
-    expect(near.message).toContain("; did you mean src/runner.ts#Runner.dispatch?");
+    expect(near.message).toContain(". Did you mean: src/runner.ts#Runner.dispatch?");
     // no suggestion for a file that does not exist, and none when nothing is close
     expect(
       only(edit((ex) => (view(ex).scope.entryPoints = ["src/nowhere.ts#Runner.dispatch"]))).message,
-    ).not.toContain("did you mean");
+    ).not.toContain("Did you mean");
     expect(
       only(edit((ex) => (view(ex).scope.entryPoints = ["src/runner.ts#Zzzzzz"]))).message,
-    ).not.toContain("did you mean");
+    ).not.toContain("Did you mean");
     expect(only(edit((ex) => ((view(ex) as { scope: unknown }).scope = null)))).toMatchObject({
       path: "views[0].scope",
     });
@@ -779,6 +779,68 @@ describe("validateExplainer: references", () => {
         }),
       ),
     ).toEqual([]);
+  });
+
+  it("checks the arms of an alt frame: they split its steps top to bottom", () => {
+    const alt = (arms: unknown, kind = "alt") =>
+      edit((ex) => {
+        seq(ex).frames = [
+          {
+            id: "frame:outcome",
+            kind: kind as "alt",
+            label: "how the attempt ends",
+            fromStep: "dispatch:1",
+            toStep: "dispatch:3",
+            arms: arms as never,
+          },
+        ];
+      });
+    const arm = (label: string, fromStep: string, toStep: string) => ({ label, fromStep, toStep });
+    expect(
+      alt([arm("ok", "dispatch:1", "dispatch:1"), arm("else", "dispatch:2", "dispatch:3")]),
+    ).toEqual([]);
+    const problem = (arms: unknown, kind?: string) => {
+      const issue = only(alt(arms, kind));
+      expect(issue).toMatchObject({ path: "views[1].frames[0].arms", code: "frame" });
+      return issue.message;
+    };
+    // a gap, an overlap, an arm past the frame, too few arms, arms on another kind, an unknown step
+    expect(
+      problem([arm("ok", "dispatch:1", "dispatch:1"), arm("else", "dispatch:3", "dispatch:3")]),
+    ).toContain("must start at dispatch:2");
+    expect(
+      problem([arm("ok", "dispatch:1", "dispatch:2"), arm("else", "dispatch:2", "dispatch:3")]),
+    ).toContain("must start at dispatch:3");
+    expect(
+      problem([arm("ok", "dispatch:1", "dispatch:1"), arm("else", "dispatch:2", "dispatch:2")]),
+    ).toContain("end at dispatch:3");
+    expect(problem([arm("ok", "dispatch:1", "dispatch:3")])).toContain("two or more arms");
+    expect(
+      problem(
+        [arm("ok", "dispatch:1", "dispatch:1"), arm("else", "dispatch:2", "dispatch:3")],
+        "loop",
+      ),
+    ).toContain("only an alt frame has arms");
+    expect(
+      problem([arm("ok", "dispatch:1", "dispatch:1"), arm("else", "dispatch:2", "dispatch:9")]),
+    ).toContain('toStep "dispatch:9" is not a step of view:dispatch');
+    // a frame inside an alt lies inside one arm, or it is drawn across the line between two
+    const nested = (fromStep: string) =>
+      edit((ex) => {
+        seq(ex).frames = [
+          {
+            id: "frame:outcome",
+            kind: "alt",
+            label: "how the attempt ends",
+            fromStep: "dispatch:1",
+            toStep: "dispatch:3",
+            arms: [arm("ok", "dispatch:1", "dispatch:1"), arm("else", "dispatch:2", "dispatch:3")],
+          },
+          { id: "frame:retry", kind: "loop", label: "x", fromStep, toStep: "dispatch:3" },
+        ];
+      });
+    expect(nested("dispatch:2")).toEqual([]);
+    expect(only(nested("dispatch:1"))).toMatchObject({ severity: "warning", code: "frame" });
   });
 
   it("checks tours: view, focus, primary file", () => {
@@ -908,12 +970,12 @@ describe("validateExplainer: llm edge evidence", () => {
       ["evidence", "edges[0].anchors", "edge:x"],
       ["evidence", "edges[0].anchors", "edge:x"],
     ]);
-    expect(none[0]!.message).toContain("inside its from (file:src/worker.ts)");
-    expect(none[1]!.message).toContain("inside its to (file:src/metrics.ts)");
+    expect(none[0]!.message).toContain("at its start (from: file:src/worker.ts)");
+    expect(none[1]!.message).toContain("at its end (to: file:src/metrics.ts)");
     const onlyFrom = withEdge(llmEdge(F.worker, F.metrics, [A.emit]));
-    expect(only(onlyFrom).message).toContain("inside its to");
+    expect(only(onlyFrom).message).toContain("at its end (to:");
     const onlyTo = withEdge(llmEdge(F.worker, F.metrics, [A.handler]));
-    expect(only(onlyTo).message).toContain("inside its from");
+    expect(only(onlyTo).message).toContain("at its start (from:");
   });
 
   it("is not required of user or static edges", () => {

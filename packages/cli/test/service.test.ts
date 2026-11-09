@@ -331,7 +331,7 @@ describe("repository service lifecycle", () => {
         {
           ...ledger.jobs[0],
           state: "interrupted",
-          error: "Service interrupted this attempt. Inspect its progress and explicitly retry.",
+          error: "Service interrupted this attempt. Check its progress, then retry.",
           updatedAt: expect.any(String),
         },
       ]);
@@ -850,7 +850,7 @@ describe("repository service lifecycle", () => {
       );
       expect((await xplJson(root, "service", "status")).json.state).toBe("unavailable");
       expect((await xplJson(root, "service", "stop")).json.error).toMatch(
-        /cannot verify service ownership/,
+        /cannot tell which process owns the service/,
       );
       const refused = await invoke(["service", "start", "--recover", "--json"], {
         cwd: root,
@@ -927,9 +927,7 @@ describe("repository service lifecycle", () => {
       expect(busy.code).toBe(1);
       expect(busy.err).toMatch(/already in use; pick another with --port/);
       expect((await xplJson(root, "service", "status")).json.state).toBe("stopped");
-      expect((await xplJson(root, "service", "start", "missing")).json.error).toMatch(
-        /no explainer/,
-      );
+      expect((await xplJson(root, "service", "start", "missing")).json.error).toMatch(/no guide/);
       expect(
         (await xplJson(root, "service", "start", join(other, ".explainer/demo.explainer.json")))
           .json.error,

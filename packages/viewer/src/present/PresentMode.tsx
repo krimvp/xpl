@@ -8,20 +8,31 @@
  * lines): the screen is split once per tour, so it does not jump between a map step and a flow step. The
  * diagram takes less of that extra width when the tour's code needs it (present/split.ts).
  *
- * The caption keeps one height and one type size for the whole tour: as tall as its tallest step needs,
- * measured off-screen, so the diagram above it does not jump from step to step. The diagram keeps a
- * minimum (`DIAGRAM_MIN`); when the captions do not fit what is left, their type gets smaller first, and
- * only at the smallest size does a caption scroll.
+ * While no code is on screen (a step without code, or a detour that selected none) the diagram takes the
+ * whole width, as the Map and the Flow do.
+ *
+ * The caption keeps one type size for the whole tour, and is as tall as its own text, up to 40% of
+ * the column: the diagram above it gets the rest. The type size is the largest at which the tour's tallest
+ * caption, measured off-screen, fits that cap; only at the smallest size does a caption scroll.
  *
  * Keys live in App.tsx (arrows, PageUp/PageDown, Space, Home/End, Esc). Clicking around the diagram is
  * a detour: the selection follows the click and the header says so; the next arrow key applies the
  * next step again (← and Esc go back to the step that was interrupted).
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import type { TourStep } from "@xpl/core";
 import { CodeArea } from "../components/CodeArea.js";
 import { DiagramPane } from "../components/DiagramPane.js";
-import { useStore, useViewerState } from "../hooks.js";
+import { Presenting, PresentRoom } from "../components/PanZoom.js";
+import { useDerived, useStore, useViewerState } from "../hooks.js";
 import { renderInline, renderMarkdown } from "../markdown.js";
 import { stepNumber } from "../modes.js";
 import { stepText } from "../stepTitle.js";
@@ -34,6 +45,7 @@ const LONG_NOTE = 280;
 export function PresentMode() {
   const store = useStore();
   const state = useViewerState();
+  const derived = useDerived();
   const tour = store.currentTour();
   const index = state.tour?.step ?? 0;
   const step = tour?.steps[index];
@@ -58,11 +70,13 @@ export function PresentMode() {
     [tour, wide, state.model, state.files],
   );
 
-  // One caption height for the tour: the tallest step's, measured on hidden copies of every caption, at the
-  // largest type size that leaves the diagram its room.
+  // One type size for the tour: the largest at which the tallest step's caption, measured on hidden copies
+  // of every caption, fits the cap. Each caption then takes the height of its own text.
   const left = useRef<HTMLElement>(null);
   const measure = useRef<HTMLDivElement>(null);
-  const [fit, setFit] = useState<{ size: number; height: number; cap: number } | undefined>();
+  const [fit, setFit] = useState<
+    { size: number; height: number; cap: number; tour: string | undefined } | undefined
+  >();
   const [width, setWidth] = useState(0);
   const [height, setHeight] = useState(0);
   useLayoutEffect(() => {
@@ -88,8 +102,36 @@ export function PresentMode() {
       for (const copy of copies) tallest = Math.max(tallest, (copy as HTMLElement).offsetHeight);
       return tallest;
     };
-    setFit({ ...captionFit(tallestAt, cap, long), cap });
+    const next = { ...captionFit(tallestAt, cap, long), cap, tour: tour?.id };
+    // A step whose diagram took a wider column leaves the caption wider: its type does not grow back
+    // for that (the size only goes down within a tour), so the words keep one size from step to step.
+    setFit((known) =>
+      known && known.tour === next.tour && known.cap === next.cap && known.size >= next.size
+        ? known
+        : next,
+    );
   }, [tour, width, state.model, height, long]);
+
+  // a map or a sequence that does not read whole at the 12px floor gets a wider column, up to 65% of the
+  // screen (`.present[data-room]` in styles.css), before it falls back to a frame of the step's focus. The width a step asked for is kept for
+  // the step (going back to it does not jump), and only grows: a map laid out again for the wider pane does
+  // not hand the room back and forth.
+  const [room, setRoom] = useState<ReadonlyMap<string, number>>(new Map());
+  const stepId = step ? `${tour?.id}/${step.id}` : "";
+  // (a flow step asks too: framed on one choice in a narrow column, its arrows ran off to nowhere)
+  const askRoom = useCallback(
+    (extra: number) => {
+      const column = left.current?.offsetWidth ?? 0;
+      if (column === 0 || !stepId) return;
+      setRoom((known) => {
+        const want = column + extra;
+        if ((known.get(stepId) ?? 0) >= want) return known;
+        return new Map(known).set(stepId, want);
+      });
+    },
+    [stepId],
+  );
+  const need = room.get(stepId);
 
   // Keyboard focus: on the slide when the talk starts, back on the Present button when it ends.
   const slide = useRef<HTMLElement>(null);
@@ -159,7 +201,7 @@ export function PresentMode() {
         <h2>{tour ? `“${tour.title}” has no steps yet` : "There is no tour to present"}</h2>
         <p>
           Leave Present and open the Tours panel: select something in a view and add it as the first
-          step. Claude can also write a tour: run <code>/code-explainer make tour</code>.
+          step. Your agent can also write a tour: run <code>/code-explainer make tour</code>.
         </p>
         <button type="button" className="btn is-primary" onClick={() => store.exitPresent()}>
           Back to Explore
@@ -183,17 +225,32 @@ export function PresentMode() {
       data-step-id={step.id}
       data-view-type={store.view()?.type}
       data-split={wide ? "wide" : undefined}
-      style={columns > 0 ? ({ "--code-columns": columns } as CSSProperties) : undefined}
+      style={
+        {
+          ...(columns > 0 ? { "--code-columns": columns } : {}),
+          ...(need !== undefined
+            ? { "--diagram-need": Number.isFinite(need) ? `${need}px` : "100%" }
+            : {}),
+        } as CSSProperties
+      }
+      data-room={need !== undefined ? "wide" : undefined}
+      // no code on screen (a step with none, or a click away from it): the diagram takes the code's width
+      data-code={derived.panes.length === 0 ? "none" : undefined}
       data-pointer={pointer ? "moved" : undefined}
     >
       <section className="present-left" aria-label="Diagram and caption" ref={left}>
-        <DiagramPane />
+        {/* (the zoom toolbar is out of sight on a slide: the first view takes the whole pane, PanZoom) */}
+        <Presenting.Provider value={true}>
+          <PresentRoom.Provider value={askRoom}>
+            <DiagramPane />
+          </PresentRoom.Provider>
+        </Presenting.Provider>
         <footer
           className="tour-caption"
           aria-label="Caption"
           data-testid="tour-caption"
           data-size={fit?.size ?? (long ? 1 : 0)}
-          style={fit ? { height: fit.height, maxHeight: fit.cap } : undefined}
+          style={fit ? { maxHeight: fit.cap } : undefined}
         >
           {text!.titleMarkdown !== undefined ? (
             <h2

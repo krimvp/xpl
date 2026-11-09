@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { GRAMMAR_IDS, createParser, getWasmDir, initParser, type GrammarId } from "@xpl/indexer";
 import pkg from "../package.json" with { type: "json" };
-import { GLOBAL_OPTIONS, parseCommandArgs, type OptionDefs } from "./args.js";
+import { editDistance, GLOBAL_OPTIONS, parseCommandArgs, type OptionDefs } from "./args.js";
 import type { CommandSpec } from "./command.js";
 import { anchorsCommand } from "./commands/anchors.js";
 import { applyCommand } from "./commands/apply.js";
@@ -81,7 +81,107 @@ const defaultIo: Io = {
 
 // ─── Help ───────────────────────────────────────────────────────────────────────────────────────
 
-const DOCS_REFERENCE = "Docs: https://krimvp.github.io/xpl/docs/reference/";
+const DOCS_URL = "https://krimvp.github.io/xpl/docs/reference/";
+const DOCS_REFERENCE = `Docs: ${DOCS_URL}`;
+
+const HELP_WIDTH = 110;
+
+/**
+ * Wraps one help line at HELP_WIDTH columns. A continuation lines up under the text it continues: the
+ * second column of a table row (`  --flag <x>  text`, `  name  text`), the text of a `- ` bullet, or the
+ * line's own indent.
+ */
+function wrapHelpLine(line: string, hang?: number): string[] {
+  if (line.length <= HELP_WIDTH) return [line];
+  const table = /^ *\S(?:\S| (?! ))* {2,}/.exec(line)?.[0].length;
+  const column = table !== undefined && table <= 60 ? table : undefined;
+  const bullet = /^( *- )/.exec(line)?.[1]!.length;
+  const indent = " ".repeat(hang ?? column ?? bullet ?? /^ */.exec(line)![0].length);
+  const lines: string[] = [];
+  let rest = line;
+  while (rest.length > HELP_WIDTH) {
+    const cut = rest.lastIndexOf(" ", HELP_WIDTH);
+    if (cut <= indent.length) break;
+    lines.push(rest.slice(0, cut).trimEnd());
+    rest = indent + rest.slice(cut + 1).trimStart();
+  }
+  return [...lines, rest];
+}
+
+/**
+ * Wraps hand-wrapped help paragraphs: what does not fit on a line moves to the start of the next line when
+ * that one continues the same text (same indent, not an option, a bullet or a table row), so a paragraph
+ * reflows instead of leaving one word on a line of its own.
+ */
+function wrapHelp(lines: readonly string[]): string[] {
+  const out: string[] = [];
+  const todo = [...lines];
+  const indentOf = (line: string) => /^ */.exec(line)![0].length;
+  const continuation = (line: string | undefined): line is string =>
+    line !== undefined &&
+    /^ *(?:[^\s-]|--?\w)/.test(line) &&
+    !/^ *(?:Exit codes?:|xpl |\$ )/.test(line) &&
+    !/^ *\S(?:\S| (?! ))* {2,}/.test(line);
+  for (let i = 0; i < todo.length; i++) {
+    let line = todo[i]!;
+    // a line that stops inside a sentence takes the rest of its paragraph, so the paragraph wraps as a whole
+    // (no short line in the middle, no word left alone on a line)
+    while (
+      /[^.:;!?]$/.test(line) &&
+      !/^ *(?:xpl |\$ )/.test(line) &&
+      continuation(todo[i + 1]) &&
+      indentOf(todo[i + 1]!) === indentOf(line) &&
+      (/^ *- /.test(line) ? false : true)
+    ) {
+      line = `${line} ${todo[i + 1]!.trimStart()}`;
+      todo.splice(i + 1, 1);
+    }
+    const next = todo[i + 1];
+    // `Head: text` over indented lines that continue it: wrap the head under that indent too.
+    const hang = continuation(next) && indentOf(next) > indentOf(line) ? indentOf(next) : undefined;
+    const pieces = wrapHelpLine(line, hang);
+    const last = pieces[pieces.length - 1]!;
+    // the end of a wrapped line moves onto the next line of its paragraph when it ends inside a sentence, or when
+    // it is too short to stand alone; a full sentence ending keeps its own line
+    const continues =
+      pieces.length > 1 &&
+      continuation(next) &&
+      indentOf(next) === indentOf(last) &&
+      (/[^.:;!?]$/.test(last) || last.trim().length < 40);
+    if (continues) {
+      todo[i + 1] = `${last} ${next.trimStart()}`;
+      pieces.pop();
+    }
+    out.push(...pieces);
+  }
+  return out;
+}
+
+/**
+ * `Usage: xpl x ...`, one alternative (`a | xpl x b`) per line, each wrapped under its arguments and
+ * never inside a `[...]` or `<...>` group.
+ */
+function usageLines(usage: string): string[] {
+  return usage.split(" | xpl ").flatMap((form, i) => {
+    const words: string[] = [];
+    let depth = 0;
+    for (const part of (i === 0 ? form : `xpl ${form}`).split(" ")) {
+      if (depth > 0) words[words.length - 1] += ` ${part}`;
+      else words.push(part);
+      depth += (part.match(/[[<]/g)?.length ?? 0) - (part.match(/[\]>]/g)?.length ?? 0);
+    }
+    const head = i === 0 ? "Usage:" : "      ";
+    // Continuations line up under the first argument: after `xpl <command> `.
+    const hang = " ".repeat(head.length + words[0]!.length + (words[1]?.length ?? 0) + 3);
+    const lines = [`${head} ${words.shift()} ${words.shift() ?? ""}`.trimEnd()];
+    for (const word of words) {
+      const line = `${lines[lines.length - 1]} ${word}`;
+      if (line.length <= HELP_WIDTH) lines[lines.length - 1] = line;
+      else lines.push(hang + word);
+    }
+    return lines;
+  });
+}
 
 function optionRows(options: OptionDefs): string[] {
   const rows = Object.entries(options).map(([name, def]) => {
@@ -89,12 +189,14 @@ function optionRows(options: OptionDefs): string[] {
     return { flag, desc: def.desc };
   });
   const width = Math.max(0, ...rows.map((row) => row.flag.length));
-  return rows.map((row) => `  ${row.flag.padEnd(width)}  ${row.desc}`);
+  return wrapHelp(rows.map((row) => `  ${row.flag.padEnd(width)}  ${row.desc}`));
 }
 
 function helpText(): string {
   const width = Math.max(...COMMANDS.map((command) => command.name.length));
-  const rows = COMMANDS.map((command) => `  ${command.name.padEnd(width)}  ${command.summary}`);
+  const rows = wrapHelp(
+    COMMANDS.map((command) => `  ${command.name.padEnd(width)}  ${command.summary}`),
+  );
   return [
     `xpl ${pkg.version} - code explainer`,
     "",
@@ -107,9 +209,10 @@ function helpText(): string {
     ...optionRows(GLOBAL_OPTIONS),
     "",
     "<id> arguments accept sym:..., file:..., dir:..., src/a.ts#A.b and src/a.ts.",
-    "Environment: XPL_VIEWER_HTML=<file> overrides the viewer page (view, bundle); XPL_SKIP_STALE_CHECK=1 skips",
-    "the comparison of the index with the working tree (about a second per 5000 files); XPL_WASM_DIR, XPL_DEBUG.",
-    "Setup: xpl doctor; xpl skill install; xpl doctor --agent claude. Offline indexing: xpl index --precise off.",
+    "<explainer> arguments name a guide: <name> for the file .explainer/<name>.explainer.json.",
+    "Environment: XPL_VIEWER_HTML=<file> sets the viewer page. XPL_SKIP_STALE_CHECK=1 skips the check of the",
+    "index against the working tree. The CLI reference describes the other XPL_ variables.",
+    "Setup: xpl skill install; xpl doctor --agent claude. Offline indexing: xpl index --precise off.",
     "First guide: xpl start <name> --question <question> --audience <reader>; then xpl view <name>.",
     "Repeat use: xpl index; xpl outline; xpl show <id> --refs; xpl new <name>; xpl apply <name> patch.json;",
     "xpl lint <name>; xpl view <name>. Exit codes: 0 ok, 1 rejected or failed, 2 usage error.",
@@ -118,18 +221,83 @@ function helpText(): string {
   ].join("\n");
 }
 
-function commandHelp(command: CommandSpec): string {
+/**
+ * A detail line that starts with `[kind,kind] ` belongs to those kinds of a command whose first argument is a
+ * choice; `[all] ` marks a line only the help of the whole command shows. The tag is never printed.
+ */
+const TAGGED = /^\[([a-z,]+)\] /;
+
+/** The lines of `details` for one topic (a kind), or for the whole command (`topic` undefined), without tags. */
+function forTopic(details: readonly string[], topic: string | undefined): string[] {
+  return details.flatMap((line) => {
+    const tags = TAGGED.exec(line)?.[1]?.split(",");
+    if (!tags) return [line];
+    return tags.includes(topic ?? "all") ? [line.replace(TAGGED, "")] : [];
+  });
+}
+
+/** The topic of `xpl <command> <kind> --help`, when the command's first argument is a choice of kinds. */
+function helpTopic(command: CommandSpec, topic: string | undefined): string | undefined {
+  const choices = command.positionals[0]?.name.split("|") ?? [];
+  return topic !== undefined && choices.length > 1 && choices.includes(topic) ? topic : undefined;
+}
+
+/**
+ * The details of one kind of a command whose first argument is a choice (`xpl draft path --help`): the lines
+ * before the table of kinds, the row of that kind, and the lines after the table. Undefined for any other topic.
+ */
+function topicDetails(command: CommandSpec, topic: string | undefined): string[] | undefined {
+  const choices = command.positionals[0]?.name.split("|") ?? [];
+  if (helpTopic(command, topic) === undefined || !command.details) return undefined;
+  const lines = forTopic(command.details, topic);
+  const rowOf = (line: string) => /^ {2}([a-z]+)\b/.exec(line)?.[1];
+  const isRow = (line: string) => choices.includes(rowOf(line) ?? "");
+  const first = lines.findIndex(isRow);
+  if (first === -1) return undefined;
+  let last = first;
+  for (let i = first; i < lines.length && /^ {2}/.test(lines[i]!); i++) last = i;
+  const out = lines.slice(0, first);
+  let inRow = false;
+  for (const line of lines.slice(first, last + 1)) {
+    if (isRow(line)) inRow = rowOf(line) === topic;
+    if (inRow) out.push(line);
+  }
+  return [...lines.slice(0, first), "", ...out.slice(first), "", ...lines.slice(last + 1)];
+}
+
+/** The usage of one kind: `xpl draft repo` and the arguments of its row, then the command's options. */
+function topicUsage(command: CommandSpec, topic: string): string | undefined {
+  const row = command.details?.find((line) => new RegExp(`^ {2}${topic}\\b`).test(line));
+  const args = row && /^ {2}(\S+(?: [<[][^ ]+)*)/.exec(row)?.[1];
+  if (!args) return undefined;
+  const options = command.usage.match(/\[-[^\]]*\]/g) ?? [];
+  return [`xpl ${command.name} ${args}`, ...options].join(" ");
+}
+
+/** The summary of one kind: the command's summary up to its colon, then what the kind's row says it draws. */
+function topicSummary(command: CommandSpec, topic: string): string | undefined {
+  const row = command.details?.find((line) => new RegExp(`^ {2}${topic}\\b`).test(line));
+  const text = row?.replace(/^ {2}\S+(?: [<[][^ ]+)*\s+/, "");
+  const lead = command.summary.split(":")[0];
+  return text && lead !== command.summary ? `${lead}: ${text}` : undefined;
+}
+
+function commandHelp(command: CommandSpec, topic?: string): string {
+  const kind = helpTopic(command, topic);
+  const details =
+    topicDetails(command, kind) ?? (command.details && forTopic(command.details, undefined));
   return [
-    `Usage: ${command.usage}`,
+    ...usageLines((kind && topicUsage(command, kind)) ?? command.usage),
     "",
-    command.summary,
-    ...(command.details ? ["", ...command.details] : []),
+    ...wrapHelpLine((kind && topicSummary(command, kind)) ?? command.summary),
+    ...(details ? ["", ...wrapHelp(details)] : []),
     ...(Object.keys(command.options).length > 0
       ? ["", "Options:", ...optionRows(command.options)]
       : []),
     "",
-    `Global options (${DOCS_REFERENCE})`,
+    "Global options:",
     ...optionRows(GLOBAL_OPTIONS),
+    `More: the skill's reference/cli.md ("xpl ${command.name}"), or ${DOCS_URL}`,
   ].join("\n");
 }
 
@@ -178,28 +346,15 @@ function wantsJson(argv: readonly string[]): boolean {
   return (end === -1 ? argv : argv.slice(0, end)).includes("--json");
 }
 
-function editDistance(a: string, b: string): number {
-  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
-  for (let i = 1; i <= a.length; i++) {
-    const row = [i];
-    for (let j = 1; j <= b.length; j++) {
-      row.push(
-        Math.min(prev[j]! + 1, row[j - 1]! + 1, prev[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1)),
-      );
-    }
-    prev = row;
-  }
-  return prev[b.length]!;
-}
-
 function unknownCommand(name: string): UsageError {
   const near = COMMANDS.filter(
     (c) => c.name.startsWith(name) || name.startsWith(c.name) || editDistance(c.name, name) <= 2,
   );
+  const mean = near.map((c) => c.name).join(", ");
   return new UsageError(
-    `unknown command "${name}"` +
-      (near.length > 0 ? `. Did you mean: ${near.map((c) => c.name).join(", ")}?` : "") +
-      `. Run "xpl --help" for the list of commands.`,
+    `unknown command "${name}".` +
+      (near.length > 0 ? ` Did you mean: ${mean}?` : "") +
+      ` Run "xpl --help" for the list of commands.`,
   );
 }
 
@@ -244,7 +399,7 @@ async function dispatch(argv: string[], io: Io): Promise<number> {
   const command = COMMANDS.find((candidate) => candidate.name === name);
   if (!command) throw unknownCommand(name);
   if (first.values.help === true) {
-    io.out(commandHelp(command));
+    io.out(commandHelp(command, first.positionals[1]));
     return 0;
   }
 
@@ -299,7 +454,12 @@ function reportError(io: Io, json: boolean, error: unknown): number {
     } else {
       io.err(`error: ${error.message}`);
       if (error instanceof UsageError && error.usage) {
-        io.err(`usage: ${error.usage}`);
+        // wrapped like the Usage of --help
+        io.err(
+          usageLines(error.usage)
+            .join("\n")
+            .replace(/^Usage:/, "usage:"),
+        );
         io.err(`Run "xpl ${error.usage.split(/\s+/)[1] ?? ""} --help" for details.`);
       }
     }

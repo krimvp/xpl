@@ -46,6 +46,33 @@ function example() {
 }
 
 describe("ready export rules", () => {
+  it("a step id without its view slug is kept: the hint says so instead of asking for a fix", () => {
+    const { world, explainer } = example();
+    explainer.views.push(
+      sequenceView(
+        "view:retry-flow",
+        ["file:a.ts", "file:b.ts"],
+        [
+          {
+            id: "retry:1",
+            kind: "call",
+            from: "file:a.ts",
+            to: "file:b.ts",
+            label: "Read b",
+            anchors: [],
+          },
+        ],
+        { title: "The value a reads" },
+      ),
+    );
+    const report = checkReadiness(explainer, world.index, world.getText, { scope: "workspace" });
+    expect(report.findings.find((f) => f.elementId === "retry:1")).toMatchObject({
+      severity: "warning",
+      code: "step",
+      hint: "keep this id, because a tour may point at it (SKILL.md hard rule 8); give new steps ids that start with the view slug",
+    });
+  });
+
   it("keeps the system map relationship check advisory", () => {
     const { world, explainer } = example();
     explainer.nodes.push(
@@ -68,7 +95,7 @@ describe("ready export rules", () => {
       elementId: "view:system",
       field: "include",
       message: expect.stringContaining("System map"),
-      hint: expect.stringContaining("source-backed relationships"),
+      hint: expect.stringContaining("arrows the code shows"),
     });
     expect(report).toMatchObject({ ready: true, errors: 0 });
   });
@@ -243,6 +270,63 @@ describe("ready export rules", () => {
       findings: [{ code: "required-content", elementId: "file:a.ts", field: "summary" }],
       decisionNote: "The empty box is intentional.",
     });
+  });
+
+  // a row of a data map shows its field's name and type; the draft writes no text for it
+  it("needs no summary on a field row of a data map, and needs one on the same field drawn as a box", () => {
+    const world = makeWorld({
+      files: [{ path: "q.ts", text: "export interface Job {\n  id: string;\n}" }],
+      symbols: [
+        { id: "q.ts#Job", kind: "interface", start: 1, end: 3 },
+        { id: "q.ts#Job.id", kind: "variable", start: 2, end: 2 },
+      ],
+    });
+    const symbolNode = (id: string, summary: string) => ({
+      id,
+      kind: "symbol" as const,
+      parent: "file:q.ts",
+      label: id.split("#")[1]!,
+      summary,
+      anchors: [anchor(world, { file: "q.ts", symbol: id.split("#")[1]!, role: "definition" })],
+      provenance: LLM,
+    });
+    const explainer = (boxText?: "members") =>
+      emptyExplainer({
+        nodes: [symbolNode("sym:q.ts#Job", "A job waiting to run.")],
+        views: [
+          graphView("view:data", ["sym:q.ts#Job", "sym:q.ts#Job.id"], {
+            title: "What a job holds",
+            stubs: { mode: "none" },
+            ...(boxText ? { boxText } : {}),
+          }),
+        ],
+      });
+    const missing = (e: Explainer) =>
+      checkReadiness(e, world.index, world.getText, { scope: "embedded-snapshot" })
+        .findings.filter((f) => f.code === "required-content")
+        .map((f) => f.elementId);
+    expect(missing(explainer("members"))).toEqual([]);
+    expect(missing(explainer())).toEqual(["sym:q.ts#Job.id"]);
+  });
+
+  it("says what to write in the words of what is empty: a tour summary is not an element", () => {
+    const { world, explainer } = example();
+    explainer.tours = [
+      {
+        id: "tour:intro",
+        title: "Intro",
+        steps: [
+          { id: "t1", view: "view:values", focus: ["file:a.ts"], note: "### Values\n\nThe start." },
+        ],
+        provenance: LLM,
+      },
+    ];
+    const hints = checkReadiness(explainer, world.index, world.getText, {
+      scope: "embedded-snapshot",
+    })
+      .findings.filter((f) => f.code === "required-content")
+      .map((f) => [f.elementId, f.hint]);
+    expect(hints).toEqual([["tour:intro", "write the tour summary with `xpl apply`"]]);
   });
 
   it("does not accept cached evidence when embedded source is missing", () => {

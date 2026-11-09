@@ -43,6 +43,10 @@
   gap: 5px;
   flex-shrink: 0;
 }
+/* Back and Forward are arrows (the browser has the same words): the room goes to where the reader is. */
+.navigation-history .nav-word {
+  display: none;
+}
 .workspace-breadcrumb {
   display: flex;
   align-items: center;
@@ -78,6 +82,12 @@
 }
 .switch-notice:empty {
   padding: 0;
+}
+/* "Show code" with nothing selected: no empty code column, one line says how to fill it. */
+.code-waiting {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
 }
 .workspace-columns {
   display: grid;
@@ -336,6 +346,20 @@
 .guide-contents > button:hover {
   background: var(--hover);
 }
+/* The keys that step through the tour (Guide.tsx), under the list of steps. */
+.guide-keys {
+  margin: 14px 8px 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.guide-keys kbd {
+  font: inherit;
+  font-weight: 600;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
 .guide-body,
 .guide-fallback {
   padding: 34px clamp(20px, 4vw, 60px) 60px;
@@ -404,13 +428,10 @@
   outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
-.guide-section-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin: 0 0 18px;
-  font-size: 13px;
+/* "Link to this step" is a link, drawn like the buttons beside it. */
+.section-actions a.btn {
+  color: var(--fg);
+  text-decoration: none;
 }
 .guide-link-notice {
   max-width: 680px;
@@ -439,10 +460,14 @@
   border-radius: 8px;
   background: var(--panel-2);
 }
-.guide-mini figcaption {
-  font-size: 10px;
+/* One caption style for every small figure of a step (This call, Parts, Tests, the code excerpt). */
+.guide-mini figcaption,
+.guide-tests h4,
+.guide-source-caption {
+  font-size: 12px;
+  font-weight: 600;
   color: var(--muted);
-  margin-bottom: 12px;
+  margin: 0 0 10px;
 }
 .guide-mini-row {
   display: flex;
@@ -674,6 +699,8 @@
 }
 .snapshot-frame > svg {
   display: block;
+  /* beats the live canvas' `.pz-svg { height: auto }`, which leaves an svg outside a flex box at 150px */
+  height: 100%;
   pointer-events: none;
 }
 /* framing: the step's elements a still picture leaves out (SnapshotFrame). It replaces the fade the cut
@@ -715,14 +742,7 @@
 .guide-tests {
   margin: 18px 0 0;
 }
-.guide-tests h4 {
-  margin: 0 0 8px;
-  font-size: 12px;
-  font-weight: 650;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
+
 .guide-tests ul {
   margin: 0;
   padding: 0;
@@ -770,6 +790,30 @@
   font-size: 20px;
   margin: 0;
 }
+/* the trail of levels above the title is one line: a level above gives way (cut short, whole on hover),
+   never the current one. Beside the code the column is narrow, and the trail broke into four lines. */
+.workspace-caption > div {
+  min-width: 0;
+}
+.workspace-caption .zoom-trail {
+  flex-wrap: nowrap;
+  min-width: 0;
+  white-space: nowrap;
+}
+.workspace-caption .zoom-trail > span {
+  display: flex;
+  min-width: 0;
+}
+.workspace-caption .zoom-trail > span:last-child,
+.workspace-caption .zoom-trail > span > span {
+  flex: none;
+}
+.workspace-caption .zoom-trail button {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
 .view-question {
   margin: 4px 0 0;
   color: var(--muted);
@@ -812,6 +856,11 @@
   .caption-actions select {
     flex: 1 1 12ch;
   }
+  /* its own row: the picker keeps its width beside the box actions */
+  .explore-link {
+    flex-basis: 100%;
+    text-align: right;
+  }
 }
 /* a11y: the maps a box on this one opens, as plain links under the title (manager V4) */
 .caption-insides {
@@ -828,6 +877,16 @@
   color: var(--muted);
   overflow-wrap: anywhere;
 }
+/* ... and on a tour card's or a slide's title line, after the title */
+.guide-snapshot-title .caption-owner,
+.diagram-caption .caption-owner {
+  margin: 0 0 0 8px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.guide-snapshot-title .caption-owner::before {
+  content: "· ";
+}
 .workspace-diagram {
   display: flex;
   flex-direction: column;
@@ -839,7 +898,40 @@
   min-width: 0;
   min-height: 0;
   display: flex;
+  flex-direction: column;
   border-left: 1px solid var(--border);
+}
+.workspace-source .code-area {
+  min-height: 0;
+}
+/* What was picked, above the code while the right column is folded away. */
+.source-topic {
+  flex: none;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.source-topic .eyebrow {
+  margin-right: 4px;
+}
+.source-topic strong.is-code {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+.source-topic-text {
+  display: block;
+  color: var(--muted);
+}
+@media (max-width: 1100px), (min-width: 1680px) {
+  .source-topic {
+    display: none;
+  }
+}
+.summary-more {
+  margin: -6px 0 10px;
+  font-size: 13px;
 }
 .workspace-source .code-area {
   flex: 1;
@@ -876,6 +968,29 @@
   font-size: 11px;
   overflow-wrap: anywhere;
 }
+/* the Tour keeps its right column for every step of a tour that has related files; a step with
+   none lists where its own code is. On a phone the step's card shows the step's code (its settings and
+   tests included) already: the Tour shows no panel for the cards, so the text keeps the whole height. */
+.related-files.is-own-code ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.step-code-lines {
+  margin-left: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+@media (max-width: 760px) {
+  .related-files.is-own-code,
+  .workspace[data-perspective="guide"] .related-files {
+    display: none;
+  }
+  .workspace[data-perspective="guide"] .workspace-context:not(:has(> :not(.related-files))) {
+    display: none;
+  }
+}
+
 .resource-set {
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -916,9 +1031,8 @@
 .resource-kind {
   /* r3-copy: card text at 12px at least (designer V15) */
   font-size: 12px;
+  font-weight: 600;
   line-height: 16px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
   color: var(--related);
 }
 .resource-label {
@@ -1070,6 +1184,8 @@
   stroke: var(--node-border);
   stroke-width: 1.5;
 }
+.flow-stage.is-hover > rect,
+.flow-stage.is-hover > polygon,
 .flow-stage:hover > rect,
 .flow-stage:hover > polygon,
 .flow-stage:focus > rect,
@@ -1102,15 +1218,20 @@
   font-size: 13px;
   pointer-events: none;
 }
-.flow-stage-label {
+/* the step's words at 14 units, the actor line under them at 13 (flowLayout sizes the box to them; 13 is
+   the smallest flow text, which Present's zoom is set for) */
+.flow-stage .flow-stage-label {
+  font-size: 14px;
   font-weight: 600;
 }
 .flow-stage .flow-owner {
   fill: var(--muted);
   font-size: 13px;
 }
-.flow-stage .flow-frame {
+.flow-frame {
   fill: var(--purple);
+  font-family: var(--font-ui);
+  pointer-events: none;
   font-size: 13px;
   paint-order: stroke;
   stroke: var(--canvas);
@@ -1256,6 +1377,17 @@
   .workspace-source {
     min-height: 450px;
   }
+  /* no code open yet (the Code tab on arrival): the file list gets the room, the hint its own height. */
+  .workspace-source:has(.editor-stack.is-empty) {
+    min-height: 0;
+  }
+  .workspace .code-area:has(> .editor-stack.is-empty) {
+    grid-template-rows: auto auto;
+    height: auto;
+  }
+  .workspace .code-area:has(> .editor-stack.is-empty) > .tree-panel {
+    max-height: none;
+  }
   .workspace-tabs button {
     padding: 8px;
     font-size: 12px;
@@ -1294,6 +1426,10 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  /* (one row: the question and the way to Explore wait for a taller screen; the Tour and Edit have them) */
+  .workspace-caption :is(.view-question, .explore-link) {
+    display: none;
+  }
   .workspace-location {
     min-height: 0;
     padding: 4px 12px;
@@ -1328,10 +1464,24 @@
     text-overflow: ellipsis;
   }
   .workspace-context {
-    max-height: 24vh;
+    max-height: 20vh;
   }
 }
 /* Optional reading guidance stays compact until a reader asks for it. */
+/* The lead: no one-word last line. */
+.guide-summary p {
+  text-wrap: pretty;
+}
+/* What each tab holds, one muted line above "About this guide" (ExplanationInfo TABS_LINE). */
+.guide-tabs-line {
+  max-width: 680px;
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.guide-tabs-line + .guide-about {
+  margin-top: 8px;
+}
 .guide-about {
   margin: 12px 0 20px;
   padding: 10px 14px;
@@ -1361,15 +1511,18 @@
   border-radius: 8px;
   background: var(--bg);
 }
-.guide-source h4 {
-  margin: 0 0 8px;
+.guide-source {
+  margin: 0 0 18px;
 }
 .guide-source p {
   margin: 6px 0;
   font-size: 12px;
 }
-.guide-source-file {
+.guide-source-caption {
   overflow-wrap: anywhere;
+}
+.guide-source-caption code {
+  font-weight: 600;
 }
 .guide-source pre {
   overflow: auto;
@@ -1378,16 +1531,50 @@
   line-height: 1.65;
   tab-size: 2;
 }
+/* A long line wraps under itself (after its number), so no code is cut off at the right edge. */
+.guide-source-line {
+  display: block;
+  /* (6px more: the 3px bar of a changed line sits left of the number, not on its first digit) */
+  padding-left: calc(5ch + 6px);
+  text-indent: -5ch;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* the lines a change removes (code before it) or adds and rewrites (code after it), as in the code pane;
+   the lines around them stay plain. */
+.guide-source-line.is-gone {
+  background-color: var(--diff-del-bg);
+  box-shadow: inset 3px 0 0 var(--diff-del-bar);
+}
+.guide-source-line.is-add {
+  background-color: var(--diff-add-bg);
+  box-shadow: inset 3px 0 0 var(--diff-add-bar);
+}
+.guide-source-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.guide-source-pager {
+  display: inline-flex;
+  gap: 4px;
+}
 .guide-source-number {
   display: inline-block;
   width: 4ch;
   margin-right: 1ch;
+  text-indent: 0;
   color: var(--muted);
   user-select: none;
 }
-@container (min-width: 760px) {
-  .guide-explanation {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+/* The step's picture beside its text on a wide screen; under it on a narrow one. The code comes after. */
+.guide-explanation > .guide-snapshot {
+  margin: 0;
+}
+@container (min-width: 900px) {
+  .guide-explanation:has(> .guide-snapshot) {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    align-items: start;
   }
 }
 
@@ -1396,4 +1583,135 @@
 }
 .guide-explanation:has(.guide-prose:empty) {
   grid-template-columns: minmax(0, 1fr);
+}
+
+/* A step whose excerpt has its own "Show code" does not get a second one 20px under it (GuideSource). */
+.guide-section:has(.guide-source .btn) > .section-actions > .section-show-code {
+  display: none;
+}
+
+/* A long action ("Open its own map: <title>") wraps inside its column instead of leaving a phone screen. */
+.details .actions .btn {
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
+}
+
+/* on a phone the diagram gets most of the screen (55% or more of its height). The caption
+   keeps its levels and title; its question, "Inside …" links, picker and "Explore all diagrams" sit behind
+   "About this map". The key line goes (the toolbar's Key says it all), and the topic column under the diagram
+   starts below it, its first line peeking in at the bottom. */
+.caption-about,
+.caption-steps {
+  display: none;
+}
+/* (a short screen, a phone on its side or 200% zoom, has its own one-line caption: below) */
+@media (max-width: 760px) and (min-height: 561px) {
+  .workspace-caption {
+    padding: 12px 16px;
+  }
+  /* a chevron says whether the details are open (aria-expanded says it to a screen reader). The
+     disclosure shows only when it hides more than "Explore all diagrams"; the diagram picker
+     always stays in sight, under the title, as wide as the caption. */
+  .workspace-caption.has-about .caption-about {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    font-size: 13px;
+  }
+  .caption-steps {
+    display: inline-flex;
+    margin: 6px 0 0 12px;
+    font-size: 13px;
+  }
+  .caption-about-chevron::before {
+    content: "▸";
+    display: inline-block;
+    transition: transform 0.15s;
+  }
+  .caption-about[aria-expanded="true"] .caption-about-chevron::before {
+    transform: rotate(90deg);
+  }
+  .workspace-caption.has-about:not(.is-about-open)
+    :is(.view-question, .caption-insides, .explore-link) {
+    display: none;
+  }
+  .workspace-caption .caption-actions {
+    justify-content: flex-start;
+  }
+  .workspace-caption .caption-actions select {
+    flex: 1 1 160px;
+    min-width: 0;
+  }
+  .workspace .key-line {
+    display: none;
+  }
+  /* (as tall as the caption and the diagram: the column scrolls, the topic column follows them) */
+  .workspace:is([data-perspective="map"], [data-perspective="flow"]) .workspace-primary {
+    min-height: auto;
+    overflow: visible;
+  }
+  .workspace-primary > .workspace-diagram,
+  .workspace-primary > .flow-diagram {
+    flex: none;
+    height: max(62vh, 320px);
+  }
+}
+/* in the Tour the right column shows only when it has something for the step on screen
+   (related files, or a box picked from the step); otherwise the text takes its width. The Code tab with
+   nothing selected gives the code that width too. */
+.workspace:is([data-perspective="guide"], [data-perspective="code"]) .workspace-context:empty {
+  display: none;
+}
+.workspace:is([data-perspective="guide"], [data-perspective="code"])
+  .workspace-columns:has(> .workspace-context:empty) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* in a Tour picture the lifeline names kept at the top hide what scrolled under them completely. */
+.guide-snapshot .sticky-band {
+  opacity: 1;
+}
+/* A repeated end's copy (dashed, no number): the same step, drawn again near another way into it. */
+.flow-stage.is-copy > rect {
+  stroke-dasharray: 6 4;
+}
+/* A flow of states (xpl draft states): a state is a pill with a firm edge. A move is the chip on the arrow
+   between two states, framed like a button: it is the move's link to its code. (Dashes mean "not here" or
+   "not checked" only: a stub, a heuristic arrow, a repeated end.) */
+.flow-stage.is-state > rect {
+  stroke-width: 2.5;
+}
+.flow-transition.is-move rect {
+  stroke: var(--edge);
+  stroke-width: 1;
+  cursor: pointer;
+}
+.flow-transition.is-move:hover rect,
+.flow-transition.is-move:focus rect {
+  stroke: var(--accent);
+}
+.flow-transition.is-move.is-selected rect {
+  stroke: var(--accent);
+  stroke-width: 2;
+  fill: var(--accent-soft);
+}
+.flow-transition.is-move.is-matched rect {
+  stroke: var(--match);
+  stroke-width: 2;
+  fill: var(--match-soft);
+}
+.flow-transition.is-move.is-matched polyline {
+  stroke: var(--match);
+}
+/* a move drawn as a box (one no state leads to): a flat box with a thin solid edge */
+.flow-stage.is-move > rect {
+  fill: var(--panel-2);
+  stroke-width: 1;
+}
+/* Which diagram a chip's step is in, when two chips have the same name. */
+.guide-mini-where {
+  color: var(--muted);
+  font-weight: 400;
 }

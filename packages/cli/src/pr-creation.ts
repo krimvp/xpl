@@ -82,7 +82,7 @@ async function installedCommand(
   const current = await skillIdentity(skill.directory);
   if (JSON.stringify(current) !== JSON.stringify(skill))
     throw new CliError(
-      "installed CLI binding changed during PR creation; explicitly recreate the handoff with the intended installation",
+      "installed CLI binding changed during PR creation; create the handoff again with the installation you mean",
     );
   const env: Ctx["env"] = {
     ...prGitOptions(ctx.env).env,
@@ -331,7 +331,7 @@ export async function finishPr(
     } catch (error) {
       await rm(resultDirectory, { recursive: true, force: true });
       throw new CliError(
-        `PR result was not promoted: ${error instanceof Error ? error.message : String(error)}. Input and authored guide retained; repair or explicitly prepare the updated PR, then retry.`,
+        `PR result was not promoted: ${error instanceof Error ? error.message : String(error)}. The input and the guide you wrote are kept; fix the cause or prepare the updated PR, then retry.`,
       );
     }
   });

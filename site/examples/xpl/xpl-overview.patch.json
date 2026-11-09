@@ -43,7 +43,7 @@
       "id": "dir:packages/indexer/src",
       "kind": "dir",
       "label": "Source index",
-      "summary": "Discovers source files and records declarations, ranges, and labelled relationships.",
+      "summary": "Discovers source files and records declarations, ranges, and labeled relationships.",
       "parent": "dir:packages/indexer",
       "role": "component",
       "anchors": []
@@ -122,7 +122,7 @@
       "scope": {
         "root": "repo",
         "depth": 1,
-        "question": "Source links are checked; prose still needs review."
+        "question": "What does xpl take in, and what does it give back?"
       },
       "include": [
         "grp:author",
@@ -186,7 +186,7 @@
     {
       "id": "tour:overview",
       "title": "How xpl links guides to source",
-      "summary": "xpl turns a repository and an authored explanation into an interactive code guide. xpl indexes source, checks that explanation links point to current code, and exports one HTML page. These checks cannot prove the prose is correct or complete. This tour shows the reader path and the four main parts behind it.",
+      "summary": "xpl turns a repository and an author's text into an interactive guide to the code. xpl indexes source, checks that explanation links point to current code, and exports one HTML page. These checks cannot prove the prose is correct or complete. This tour shows the reader path and the four main parts behind it.",
       "steps": [
         {
           "id": "t1",
@@ -227,7 +227,7 @@
               "role": "definition"
             }
           ],
-          "note": "### The CLI runs the authoring workflow\n\nCommands load the index and guide, check an author's patch, and write or export the result. The command layer owns filesystem access.",
+          "note": "### The CLI runs the authoring workflow\n\nCommands load the index and guide, check an author's patch, and write or export the result. The CLI and the indexer read and write files; core does not, so the viewer can use the same rules in a browser.",
           "editor": {
             "primary": "packages/cli/src/commands/apply.ts"
           }
@@ -250,7 +250,7 @@
               "role": "definition"
             }
           ],
-          "note": "### Shared rules check each source link\n\nThe core builds checked anchors from the index and source text. Its patch merge also preserves fields a reader edited.",
+          "note": "### Shared rules check each source link\n\nThe core builds checked code links from the index and source text. Its patch merge also keeps the fields the user edited.",
           "editor": {
             "primary": "packages/core/src/anchors.ts"
           }
@@ -273,7 +273,7 @@
               "role": "definition"
             }
           ],
-          "note": "### The index records what source contains\n\nThe indexer discovers files and extracts symbols and relationships. The guide can then refer to known locations rather than free-form line claims.",
+          "note": "### The index records what source contains\n\nThe indexer discovers files and extracts symbols and references. The guide can then refer to known locations rather than free-form line claims.",
           "editor": {
             "primary": "packages/indexer/src/build.ts"
           }
@@ -299,6 +299,25 @@
           "note": "### The viewer lets readers follow both directions\n\nThe page renders a diagram and code together. Selecting a diagram element finds its source, while cursor movement can highlight related elements.",
           "editor": {
             "primary": "packages/viewer/src/App.tsx"
+          }
+        },
+        {
+          "id": "t6",
+          "view": "view:overview",
+          "focus": [
+            "dir:packages/cli",
+            "dir:packages/core/src"
+          ],
+          "code": [
+            {
+              "file": "packages/cli/src/commands/apply.ts",
+              "symbol": "applyCommand",
+              "role": "definition"
+            }
+          ],
+          "note": "### Where to go next\n\nThe guide \"How xpl checks and applies guide edits\" follows one patch through `xpl apply`, from the CLI into the core merge. This tour did not open the language packs of the indexer or the viewer's diagram layout.",
+          "editor": {
+            "primary": "packages/cli/src/commands/apply.ts"
           }
         }
       ]

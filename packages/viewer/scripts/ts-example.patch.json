@@ -112,10 +112,17 @@
       ],
       "frames": [
         {
-          "id": "frame:retry",
+          "id": "frame:dispatch-loop",
           "kind": "loop",
-          "label": "until success or maxRetries",
-          "fromStep": "dispatch:2",
+          "label": "while the runner is running",
+          "fromStep": "dispatch:1",
+          "toStep": "dispatch:3"
+        },
+        {
+          "id": "frame:retry",
+          "kind": "opt",
+          "label": "the attempt failed and retries are left",
+          "fromStep": "dispatch:3",
           "toStep": "dispatch:3"
         }
       ]

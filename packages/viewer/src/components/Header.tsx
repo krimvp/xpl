@@ -19,6 +19,7 @@ import { DEFAULT_EDGE_KINDS, resolveStubPolicy } from "@xpl/core";
 import { explainerFileName } from "../edits.js";
 import { useStore, useViewerState } from "../hooks.js";
 import { stepNumber } from "../modes.js";
+import { stepText } from "../stepTitle.js";
 import { canSaveHtml } from "../saveHtml.js";
 import { NEXT_THEME, setThemeChoice, themeChoice, type ThemeChoice } from "../theme.js";
 import { Review } from "./Review.js";
@@ -33,13 +34,14 @@ import { WorkspaceTabs } from "./WorkspaceTabs.js";
 
 /** The tooltip of the disabled Present button. */
 export const NO_TOURS_HINT =
-  "This explainer has no tour yet. Run /code-explainer make tour in Claude Code, or add steps with Edit > Edit the guide's steps.";
+  "This guide has no tour yet. Run /code-explainer make tour in your agent, or add steps with Edit > Edit the tour.";
 
 export function Header() {
   const store = useStore();
   const state = useViewerState();
   const [searchOpen, setSearchOpen] = useState(false);
   const searchButton = useRef<HTMLButtonElement>(null);
+  const feedbackButton = useRef<HTMLButtonElement>(null);
   const feedbackOpen = state.feedbackOpen;
   const [toursOpen, setToursOpen] = useState(false);
   useEffect(() => {
@@ -66,6 +68,15 @@ export function Header() {
         >
           {state.explainer.title}
         </h1>
+        {state.exportInfo?.status === "draft" && (
+          <span
+            className="draft-pill"
+            data-testid="draft-pill"
+            title="A draft: its author has not finished it yet."
+          >
+            Draft
+          </span>
+        )}
       </div>
 
       {present ? (
@@ -83,21 +94,24 @@ export function Header() {
       <div className="spacer" />
       <SaveStatus />
       <ThemeButton />
-      <button
-        ref={searchButton}
-        className="btn"
-        type="button"
-        aria-label="Search and guides"
-        aria-haspopup="dialog"
-        aria-expanded={searchOpen}
-        onClick={() => {
-          setSearchOpen(!searchOpen);
-          store.closeFeedback();
-          setToursOpen(false);
-        }}
-      >
-        Search
-      </button>
+      {/* Search and Feedback are for a reader at their own pace: not on a slide in front of an audience. */}
+      {!present && (
+        <button
+          ref={searchButton}
+          className="btn"
+          type="button"
+          aria-label="Search and guides"
+          aria-haspopup="dialog"
+          aria-expanded={searchOpen}
+          onClick={() => {
+            setSearchOpen(!searchOpen);
+            store.closeFeedback();
+            setToursOpen(false);
+          }}
+        >
+          Search
+        </button>
+      )}
       {searchOpen && (
         <SearchLibrary
           onClose={() => {
@@ -106,23 +120,34 @@ export function Header() {
           }}
         />
       )}
-      <button
-        className="btn"
-        type="button"
-        aria-expanded={feedbackOpen}
-        onClick={() => {
-          if (feedbackOpen) store.closeFeedback();
-          else store.openFeedback();
-          setSearchOpen(false);
-          setToursOpen(false);
-        }}
-      >
-        Feedback{state.feedback.length > 0 ? ` (${state.feedback.length})` : ""}
-      </button>
+      {!present && (
+        <button
+          ref={feedbackButton}
+          className="btn"
+          type="button"
+          aria-haspopup="dialog"
+          aria-expanded={feedbackOpen}
+          onClick={() => {
+            if (feedbackOpen) store.closeFeedback();
+            else store.openFeedback();
+            setSearchOpen(false);
+            setToursOpen(false);
+          }}
+        >
+          Feedback{state.feedback.length > 0 ? ` (${state.feedback.length})` : ""}
+        </button>
+      )}
       {present ? <ExitButton /> : <PresentButton />}
       <EditMenu toursOpen={toursOpen} onTours={() => setToursOpen((open) => !open)} />
 
-      {feedbackOpen && <FeedbackPanel onClose={() => store.closeFeedback()} />}
+      {feedbackOpen && (
+        <FeedbackPanel
+          onClose={() => {
+            store.closeFeedback();
+            feedbackButton.current?.focus();
+          }}
+        />
+      )}
       {toursOpen && <TourPanel onClose={() => setToursOpen(false)} />}
     </header>
   );
@@ -181,7 +206,7 @@ function ThemeButton() {
   );
 }
 
-/** Read and Explore: the one button that starts the talk. */
+/** Read and Explore: the one button that starts the presentation. */
 function PresentButton() {
   const store = useStore();
   const state = useViewerState();
@@ -192,7 +217,7 @@ function PresentButton() {
       className="btn present-btn"
       data-testid="mode-present"
       disabled={none}
-      title={none ? NO_TOURS_HINT : "Show the guide as slides: ← → step, Esc to leave"}
+      title={none ? NO_TOURS_HINT : "Show the tour as slides: ← → step, Esc to stop"}
       onClick={() => store.setMode("present")}
     >
       Present
@@ -200,7 +225,7 @@ function PresentButton() {
   );
 }
 
-/** Present: back to where the talk was started from (Read or Explore), like Esc. */
+/** Present: back to where the presentation was started from (Read or Explore), like Esc. */
 function ExitButton() {
   const store = useStore();
   return (
@@ -208,7 +233,7 @@ function ExitButton() {
       type="button"
       className="btn present-btn"
       data-testid="present-exit"
-      title="Leave the talk (Esc)"
+      title="Stop presenting (Esc)"
       onClick={() => store.exitPresent()}
     >
       Exit
@@ -224,6 +249,7 @@ function StepProgress() {
   const count = tour?.steps.length ?? 0;
   if (!tour || count === 0) return null;
   const index = state.tour?.step ?? 0;
+  const step = tour.steps[index];
   const detour = state.applied === undefined;
   return (
     <div className="step-progress" title="← → step · Home, End: first, last · Esc: leave">
@@ -238,8 +264,13 @@ function StepProgress() {
       >
         ‹
       </button>
-      <span className="tour-counter" data-testid="tour-counter" aria-live="polite">
+      <span className="tour-counter" data-testid="tour-counter" aria-hidden="true">
         {stepNumber(index)} / {count}
+      </span>
+      {/* a11y: a slide change is heard with the step's title, not only its number */}
+      <span className="sr-only" aria-live="polite" data-testid="tour-announce">
+        Step {stepNumber(index)} of {count}
+        {step ? `: ${stepText(step, state.model).title}` : ""}
       </span>
       <button
         type="button"
@@ -299,7 +330,7 @@ function saveStatus(state: ReturnType<typeof useViewerState>) {
         text: "Unsaved",
         tone: "warn",
         title:
-          "Unsaved edits: they live only in this page. Use Edit > Save as HTML (or download the explainer JSON) to keep them.",
+          "Your edits live only in this page. Use Edit > Save as HTML (or download the guide's JSON) to keep them.",
       }
     : undefined;
 }
@@ -361,6 +392,9 @@ function EditMenu({ toursOpen, onTours }: { toursOpen: boolean; onTours: () => v
     if (open) root.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
   }, [open]);
 
+  // A modal <dialog> gives the focus back, as it closes, to the menu item that opened it: that item is gone
+  // by then, so the focus would land on the page. Take it to the Edit button once the dialog is gone.
+  const focusEdit = () => requestAnimationFrame(() => button.current?.focus());
   const close = (refocus: boolean) => {
     setOpen(false);
     if (refocus) button.current?.focus();
@@ -390,7 +424,7 @@ function EditMenu({ toursOpen, onTours }: { toursOpen: boolean; onTours: () => v
         <Review
           onClose={() => {
             setReviewOpen(false);
-            button.current?.focus();
+            focusEdit();
           }}
         />
       )}
@@ -398,7 +432,7 @@ function EditMenu({ toursOpen, onTours }: { toursOpen: boolean; onTours: () => v
         <SaveHtml
           onClose={() => {
             setHtmlOpen(false);
-            button.current?.focus();
+            focusEdit();
           }}
           onDownload={(name, html) => download(name, html, "text/html")}
         />
@@ -411,7 +445,7 @@ function EditMenu({ toursOpen, onTours }: { toursOpen: boolean; onTours: () => v
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        title="Tools to change this explainer: the diagrams, the tours, saving"
+        title="Edit this guide: its diagrams, its tours, saving"
         onClick={() => (open ? close(false) : setOpen(true))}
       >
         Edit
@@ -430,7 +464,7 @@ function EditMenu({ toursOpen, onTours }: { toursOpen: boolean; onTours: () => v
             <MenuItem
               testId="edit-explore"
               title="Explore the diagrams"
-              hint="Every view, with filters and the details of each box"
+              hint="Every diagram, with filters and the details of each box"
               onClick={run(() => store.setMode("explore"))}
             />
           )}
@@ -438,14 +472,14 @@ function EditMenu({ toursOpen, onTours }: { toursOpen: boolean; onTours: () => v
             <MenuItem
               testId="edit-read"
               title="Back to reading"
-              hint="The guide, the map, the flow and the code"
+              hint="The tour, the map, the flow and the code"
               onClick={run(() => store.setPerspective(store.lastReading()))}
             />
           )}
           <MenuItem
             testId="edit-tours"
-            title="Edit the guide's steps"
-            hint="Add, order and write the steps of a tour"
+            title="Edit the tour"
+            hint="Add, order and write its steps"
             disabled={!!state.readOnlyGuide}
             expanded={toursOpen}
             onClick={run(onTours)}
@@ -481,8 +515,8 @@ function EditMenu({ toursOpen, onTours }: { toursOpen: boolean; onTours: () => v
           <MenuItem
             testId="edit-review"
             disabled={!!state.readOnlyGuide}
-            title="Record author review"
-            hint="Inspect a scoped snapshot and name important omissions"
+            title="Mark as reviewed"
+            hint="Say what you checked and what is missing"
             onClick={run(() => setReviewOpen(true))}
           />
           {canSaveHtml() && (
@@ -500,7 +534,7 @@ function EditMenu({ toursOpen, onTours }: { toursOpen: boolean; onTours: () => v
           <MenuItem
             testId="edit-download"
             disabled={state.editBusy || state.editDraft}
-            title="Download explainer JSON"
+            title="Download the guide as JSON"
             hint="The file with the edits made here"
             onClick={run(() => download(fileName, store.explainerJson(), "application/json"))}
           />

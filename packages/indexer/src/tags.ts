@@ -44,6 +44,8 @@ interface TagsProfile {
       declarations: readonly ProviderDeclaration[],
     ): ProviderRelationship[];
     limitations: string[];
+    /** Relationship kinds the analysis reports as partly covered; default only `call`. */
+    kinds?: readonly (typeof RELATIONSHIP_CAPABILITIES)[number][];
     resolveProject?(
       sources: readonly ProviderSource[],
       declarations: readonly ProviderDeclaration[],
@@ -77,11 +79,15 @@ export class TagsProvider implements IndexProvider {
       symbols: "partial",
       declarationRanges: "partial",
       nesting: "partial",
-      ...(this.profile.calls ? { call: "partial" as const } : {}),
+      ...Object.fromEntries(this.relationshipKinds.map((kind) => [kind, "partial" as const])),
     } as const;
   }
   readonly id: string;
   readonly languages: readonly FileLanguage[];
+  /** The relationship kinds this profile's bounded analysis reports on (none without `calls`). */
+  private get relationshipKinds(): readonly (typeof RELATIONSHIP_CAPABILITIES)[number][] {
+    return this.profile.calls ? (this.profile.calls.kinds ?? ["call"]) : [];
+  }
   constructor(private readonly profile: TagsProfile) {
     this.id = profile.id;
     this.languages = [profile.language];
@@ -245,7 +251,7 @@ export class TagsProvider implements IndexProvider {
             ...(this.profile.calls
               ? [
                   {
-                    capabilities: ["call" as const],
+                    capabilities: [...this.relationshipKinds],
                     status: recovered ? ("failed" as const) : ("partial" as const),
                     resolution: "heuristic" as const,
                     analyzedFiles: recovered ? [] : [source.path],
@@ -260,7 +266,7 @@ export class TagsProvider implements IndexProvider {
               : []),
             {
               capabilities: RELATIONSHIP_CAPABILITIES.filter(
-                (kind) => !this.profile.calls || kind !== "call",
+                (kind) => !this.relationshipKinds.includes(kind),
               ),
               status: "unsupported",
               analyzedFiles: [],

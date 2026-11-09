@@ -136,10 +136,9 @@ it("keeps fixture macro definitions and physical impls without inventing expande
     }),
   ).toEqual(expected);
   expect(index.symbols.filter((s) => s.path === "RunnerStats" || s.path === "$name")).toEqual([]);
+  const calls = index.refs.filter((ref) => ref.kind === "call");
   expect(
-    index.refs
-      .slice(0, 2)
-      .map(({ from, to, site, resolution }) => ({ from, to, site, resolution })),
+    calls.slice(0, 2).map(({ from, to, site, resolution }) => ({ from, to, site, resolution })),
   ).toEqual([
     {
       from: "src/config.rs#load_config",
@@ -154,9 +153,9 @@ it("keeps fixture macro definitions and physical impls without inventing expande
       resolution: "heuristic",
     },
   ]);
-  expect(index.refs).toHaveLength(14);
+  expect(calls).toHaveLength(14);
   expect(
-    index.refs
+    calls
       .filter((ref) => ref.from.endsWith(".dispatch"))
       .map(({ to, site, resolution }) => [to, site.startLine, resolution]),
   ).toEqual([
@@ -192,9 +191,9 @@ it("reports syntax recovery and does not promise precise Rust relationships", as
     expect.stringContaining(
       "rust (rust-tags): named symbols, full declaration ranges, nesting partial (1/1 files analyzed)",
     ),
-    expect.stringContaining("rust (rust-tags): calls failed (0/1 files analyzed)"),
+    expect.stringContaining("rust (rust-tags): calls, imports failed (0/1 files analyzed)"),
     expect.stringContaining(
-      "rust (rust-tags): imports, inheritance, implementations, type references, reads, writes unsupported (0/1 files analyzed)",
+      "rust (rust-tags): inheritance, implementations, type references, reads, writes unsupported (0/1 files analyzed)",
     ),
   ]);
   expect(describeAnalysis(index).details.join("\n")).toContain(
@@ -292,7 +291,7 @@ it("resolves unshadowed bare calls between same-file root functions as heuristic
     },
   ]);
   expect(index.languages.rust?.refs).toBe("heuristic");
-  expect(describeAnalysis(index).details.join("\n")).toContain("calls partial");
+  expect(describeAnalysis(index).details.join("\n")).toContain("calls, imports partial");
 });
 
 it("resolves source-backed trait and concrete receiver calls across Rust modules", async () => {
@@ -337,8 +336,41 @@ it("resolves crate imports from the crate root, not a nested module directory", 
     ].join("\n"),
     "src/foo/bar.rs": "pub struct Thing; impl Thing { pub fn run(&self) {} }\n",
   });
-  expect(index.refs.map(({ from, to, resolution }) => [from, to, resolution])).toEqual([
-    ["src/foo/mod.rs#impl Runner.dispatch", "src/bar.rs#impl Thing.run", "heuristic"],
+  expect(index.refs.map(({ from, to, kind, resolution }) => [from, to, kind, resolution])).toEqual([
+    ["src/foo/mod.rs#", "src/bar.rs#Thing", "import", "heuristic"],
+    ["src/foo/mod.rs#impl Runner.dispatch", "src/bar.rs#impl Thing.run", "call", "heuristic"],
+    ["src/lib.rs#", "src/bar.rs#", "import", "heuristic"],
+    ["src/lib.rs#", "src/foo/mod.rs#", "import", "heuristic"],
+  ]);
+});
+
+it("records `mod` declarations and in-package `use` paths as heuristic imports of files and items", async () => {
+  const { index } = await indexFiles({
+    "Cargo.toml": '[package]\nname = "job-runner"\n',
+    "src/lib.rs": "pub mod config;\npub mod jobs;\n",
+    "src/config.rs": "pub struct Settings;\nimpl Settings { pub fn load() {} }\npub fn read() {}\n",
+    "src/jobs/mod.rs": "mod queue;\nuse super::config::{self as settings, Settings};\n",
+    "src/jobs/queue.rs": "use self::inner::Deep;\nuse super::super::config::*;\nuse std::fmt;\n",
+    "src/main.rs": "use job_runner::jobs::queue;\nuse other_crate::Thing;\nfn main() {}\n",
+    // a binary under src/bin is a crate of its own: its `crate::` is not the library's
+    "src/bin/tool.rs": "use crate::config::Settings;\nfn main() {}\n",
+  });
+  expect(
+    index.refs.map(({ from, to, kind, site, resolution }) => [
+      from,
+      to,
+      kind,
+      `${site.startLine}:${site.startCol}-${site.endCol}`,
+      resolution,
+    ]),
+  ).toEqual([
+    ["src/jobs/mod.rs#", "src/jobs/queue.rs#", "import", "1:1-10", "heuristic"],
+    ["src/jobs/mod.rs#", "src/config.rs#", "import", "2:21-36", "heuristic"],
+    ["src/jobs/mod.rs#", "src/config.rs#Settings", "import", "2:39-46", "heuristic"],
+    ["src/jobs/queue.rs#", "src/config.rs#", "import", "2:5-27", "heuristic"],
+    ["src/lib.rs#", "src/config.rs#", "import", "1:1-15", "heuristic"],
+    ["src/lib.rs#", "src/jobs/mod.rs#", "import", "2:1-13", "heuristic"],
+    ["src/main.rs#", "src/jobs/queue.rs#", "import", "1:5-27", "heuristic"],
   ]);
 });
 

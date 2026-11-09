@@ -10,6 +10,8 @@
  *   matches    (view stage, cursor) -> ids whose code contains the caret
  */
 import {
+  artifactIdentity,
+  type ArtifactIdentity,
   baseAnchorFocus,
   buildReverseIndex,
   codeFocus,
@@ -30,17 +32,34 @@ import {
   type DerivedEdge,
   type DerivedGraph,
   type ElementId,
+  type Explainer,
   type ExplainerModel,
   type FileFocus,
   type FilePath,
   type FocusRange,
   type ReverseIndex,
   type Stub,
+  type SymbolIndex,
   type TourStep,
   type View,
 } from "@xpl/core";
 import { drawnEdges } from "./drawnEdges.js";
 import type { Cursor, ViewerState } from "./store.js";
+
+const identities = new WeakMap<Explainer, WeakMap<SymbolIndex, ArtifactIdentity>>();
+
+/**
+ * `artifactIdentity`, cached per explainer and index object. It hashes the whole guide, and the viewer asks
+ * for it on every store and every render of the feedback panel. The viewer never changes an explainer in
+ * place (each edit makes a new one), so the object identifies its content.
+ */
+export function identityOf(explainer: Explainer, index: SymbolIndex): ArtifactIdentity {
+  let byIndex = identities.get(explainer);
+  if (!byIndex) identities.set(explainer, (byIndex = new WeakMap()));
+  let identity = byIndex.get(index);
+  if (!identity) byIndex.set(index, (identity = artifactIdentity(explainer, index)));
+  return identity;
+}
 
 /** More editor panes than this are listed instead of shown. */
 export const MAX_PANES = 10;
@@ -121,6 +140,7 @@ function deriveView(
   model: ExplainerModel,
   viewId: string | undefined,
   expanded: ReadonlySet<ElementId> = new Set(),
+  files?: Readonly<Record<string, string>>,
 ): ViewDerived {
   const view = viewId === undefined ? undefined : model.view(viewId);
   let graph: DerivedGraph | undefined;
@@ -128,7 +148,8 @@ function deriveView(
   if (view?.type === "graph") {
     // boxes the reader opened in place show the boxes of the view they open, inside them
     const drawn = expandInPlace(view, model, expanded);
-    graph = deriveGraph(drawn, model);
+    // (the text names the type of each row of a data-model view)
+    graph = deriveGraph(drawn, model, files ? { text: (file) => files[file] } : {});
     include = new Set(
       (Array.isArray(drawn.include) ? drawn.include : []).filter((id) => model.hasNode(id)),
     );
@@ -400,6 +421,17 @@ function sideOrder(
   return order;
 }
 
+const stepViews = new WeakMap<ExplainerModel, Map<string | undefined, ViewDerived>>();
+
+/** The view of a tour step, derived once per model: every step card of the tour asks for it. */
+function stepView(model: ExplainerModel, viewId: string | undefined): ViewDerived {
+  let views = stepViews.get(model);
+  if (!views) stepViews.set(model, (views = new Map()));
+  let view = views.get(viewId);
+  if (!view) views.set(viewId, (view = deriveView(model, viewId)));
+  return view;
+}
+
 /** Read mode uses the same checked focus and before/head ordering as opening the tour step. */
 export function stepSelection(
   step: TourStep,
@@ -407,7 +439,7 @@ export function stepSelection(
   model: ExplainerModel,
 ): SelectionDerived {
   return deriveSelection(
-    deriveView(model, step.view),
+    stepView(model, step.view),
     model,
     step.focus,
     step.code?.length ? { anchors: step.code, owner: `${tourId}/${step.id}` } : undefined,
@@ -624,7 +656,7 @@ export function getDerived(state: ViewerState): Derived {
       model: state.model,
       viewId: state.viewId,
       expanded: state.expanded,
-      value: deriveView(state.model, state.viewId, state.expanded),
+      value: deriveView(state.model, state.viewId, state.expanded, state.files),
     };
   }
   const view = lastView.value;

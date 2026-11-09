@@ -5,8 +5,10 @@
  *   1. `name` in package.json
  *   2. the last element of the module path in go.mod (`example.com/jobrunner/v2` -> `jobrunner`)
  *   3. `name` under `[project]` in pyproject.toml
- *   4. the base name of the git remote (`origin`, else the first one), without `.git`
- *   5. the name of the directory
+ *   4. `name` under `[package]` in Cargo.toml
+ *   5. the project's `artifactId` in pom.xml
+ *   6. the base name of the git remote (`origin`, else the first one), without `.git`
+ *   7. the name of the directory
  */
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -14,7 +16,7 @@ import { basename, join } from "node:path";
 
 export interface RepoName {
   name: string;
-  /** Where it came from: `package.json`, `go.mod`, `pyproject.toml`, `git remote origin`, `directory name`. */
+  /** Where it came from: `package.json`, `go.mod`, `pyproject.toml`, `Cargo.toml`, `pom.xml`, `git remote origin`, `directory name`. */
   source: string;
 }
 
@@ -55,8 +57,8 @@ function fromGoMod(text: string | undefined): string | undefined {
   return undefined;
 }
 
-/** `name = "..."` in the `[project]` table of a pyproject.toml (a small reader: no other TOML is needed). */
-function fromPyproject(text: string | undefined): string | undefined {
+/** `name = "..."` in one table of a TOML file (a small reader: no other TOML is needed). */
+function fromTomlTable(text: string | undefined, wanted: string): string | undefined {
   if (text === undefined) return undefined;
   let table = "";
   for (const raw of text.split(/\r?\n/)) {
@@ -66,7 +68,7 @@ function fromPyproject(text: string | undefined): string | undefined {
       table = header[1]!;
       continue;
     }
-    if (table !== "project") continue;
+    if (table !== wanted) continue;
     const name = /^name\s*=\s*(?:"([^"]*)"|'([^']*)')/.exec(line);
     if (name) {
       const value = (name[1] ?? name[2] ?? "").trim();
@@ -74,6 +76,18 @@ function fromPyproject(text: string | undefined): string | undefined {
     }
   }
   return undefined;
+}
+
+/** The project's own `<artifactId>` in a pom.xml: not the parent's, not a dependency's or a plugin's. */
+function fromPom(text: string | undefined): string | undefined {
+  if (text === undefined) return undefined;
+  const own = text
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(
+      /<(parent|dependencies|dependencyManagement|build|profiles|modules)\b[\s\S]*?<\/\1>/g,
+      "",
+    );
+  return /<artifactId>\s*([^<\s]+)\s*<\/artifactId>/.exec(own)?.[1];
 }
 
 function git(root: string, args: string[]): Promise<string | undefined> {
@@ -116,7 +130,9 @@ export async function detectRepoName(root: string): Promise<RepoName> {
   const fromFiles: [string, string | undefined][] = [
     ["package.json", fromPackageJson(read(root, "package.json"))],
     ["go.mod", fromGoMod(read(root, "go.mod"))],
-    ["pyproject.toml", fromPyproject(read(root, "pyproject.toml"))],
+    ["pyproject.toml", fromTomlTable(read(root, "pyproject.toml"), "project")],
+    ["Cargo.toml", fromTomlTable(read(root, "Cargo.toml"), "package")],
+    ["pom.xml", fromPom(read(root, "pom.xml"))],
   ];
   for (const [source, name] of fromFiles) if (name) return { name, source };
   const remote = await fromGitRemote(root);

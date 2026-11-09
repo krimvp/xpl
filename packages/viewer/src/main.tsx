@@ -39,8 +39,8 @@ if (loaded.ok) {
       <h1>xpl viewer</h1>
       <p data-testid="no-data">{loaded.error}</p>
       <p>
-        Open an explainer with <code>xpl view &lt;explainer&gt;</code>, or build a self-contained
-        page with <code>xpl bundle &lt;explainer&gt; -o explainer.html</code>.
+        Open a guide with <code>xpl view &lt;explainer&gt;</code>, or build a self-contained page
+        with <code>xpl bundle &lt;explainer&gt; -o guide.html</code>.
       </p>
     </main>,
   );

@@ -341,7 +341,7 @@ function boundedPatch(revision: Revision, proposal: Proposal, current: Explainer
     (target.length === 3 && allowed.has(JSON.stringify(target.slice(0, 2))));
   const refuse = (id: string): never => {
     throw new CliError(
-      `patch for ${proposal.id} changes ${id} outside its selected scope; explicitly select it with --include in a new run`,
+      `patch for ${proposal.id} changes ${id} outside its selected scope; select it with --include in a new run`,
     );
   };
   const patch = proposal.patch;
@@ -414,7 +414,7 @@ function candidate(
           const action = afterCount < beforeCount ? "remove" : "reanchor";
           if (!decision?.missing?.some((m) => m.id === site.elementId && m.action === action))
             throw new CliError(
-              `missing anchor on ${site.elementId}: explicitly decide ${action} in decision.missing`,
+              `missing anchor on ${site.elementId}: decide ${action} in decision.missing`,
             );
         }
       }

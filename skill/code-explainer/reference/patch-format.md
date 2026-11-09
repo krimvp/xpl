@@ -2,7 +2,7 @@
 
 Everything you write goes into a JSON **patch**. `xpl apply <name> patch.json` (or `-` for stdin) merges it into `.explainer/<name>.explainer.json`, fills in hashes and resolved ranges, validates the result, and either writes everything or nothing.
 
-A draft (`xpl draft`) is a patch in this format: start from it, and use these templates for what you add. **Read only what the task needs.** Always: section 1 (anchors) and 2 (ids). Then the template of each element you write: 3.1 groups, 3.2 overlays (summaries of files and symbols), 3.3-3.4 edges, 3.5 concepts, 3.6 graph views, 3.7 flow views, 3.8 sequence views, 3.9 tours. The rest is for when a command points you there: 4 merge rules (what a resend replaces), 5 provenance (a `protected` warning), 6 the apply output, 7 rejection messages, 8 repair after the code changed.
+A draft (`xpl draft`) is a patch in this format: start from it, and use these templates for what you add. **Read only what the task needs.** Always: section 1 (anchors) and 2 (ids). Then the template of each element you write: 3.1 groups, 3.2 overlays (summaries of files and symbols), 3.3-3.4 edges, 3.5 concepts, 3.6 graph views, 3.7 flow views, 3.8 sequence views, 3.9 tours. Read 3.10-3.12 for architecture maps, `title` and `scope`, and sketch boxes. The rest is for when a command points you there: 4 merge rules (what a resend replaces), 5 provenance (a `protected` warning), 6 the apply output, 7 rejection messages, 8 repair after the code changed, 9 editor completion.
 
 ```json
 {
@@ -17,31 +17,9 @@ A draft (`xpl draft`) is a patch in this format: start from it, and use these te
 }
 ```
 
-Every key is optional; any other top-level key is rejected. User patches also accept `review` (below); LLM patches must omit it. The authoritative merge rules are in the header of `packages/core/src/patch.ts`; this file is the practical version of them, and every JSON block below marked `patch` is real: applied in order to a fresh explainer on the TypeScript fixture it passes `xpl validate` (a test of the repository does exactly that). `xpl apply --help` prints a compact summary of the format. What to write in the text fields (titles, summaries, notes) is in `writing.md`.
-
-`reference/patch.schema.json` ships with the skill (and in the npm package at `skill/code-explainer/reference/patch.schema.json`). Associate it with patch files in your editor for field and value completion. For VS Code, add this to workspace settings when using a source checkout:
-
-```text
-{
-  "json.schemas": [
-    { "fileMatch": ["**/*.patch.json"], "url": "./skill/code-explainer/reference/patch.schema.json" }
-  ]
-}
-```
-
-For an installed skill, replace `url` with the absolute path to its `reference/patch.schema.json`. The default location is `~/.claude/skills/code-explainer` for Claude, `~/.agents/skills/code-explainer` for Codex, Pi and Droid, or the project's `.agents/skills/code-explainer` for Devin. Do not add a `$schema` key to a patch: `xpl apply` rejects unknown top-level fields. The schema catches JSON shape errors; `xpl apply` still checks source anchors, IDs, review fingerprints and user-owned fields against the repository.
+Every key is optional; any other top-level key is rejected. User patches also accept `review` (section 5); an `llm` patch must omit it. The header of `packages/core/src/patch.ts` holds the binding merge rules; this file is the practical version. Every JSON block below marked `patch` is real. A test of the repository applies them in order to a fresh explainer on the TypeScript fixture, and the result passes `xpl validate`. `xpl apply --help` prints a short summary of the format. What to write in the text fields (titles, summaries, notes) is in `writing.md`.
 
 An anchor may use `span` or `find`, never both. Span offsets start at 0. A copied stored anchor may carry `hash` and `resolved`; `xpl apply` checks the hash and recomputes `resolved`. The schema cannot compare `span.to` with `span.from`, so `xpl apply` checks their order and whether the range exists in the source.
-
-### Author review (user patches only)
-
-`xpl apply --actor user` accepts `review: { reviewer, reviewedAt, scope, omissions, fingerprint }`, or `review: null` to remove the record. The reviewer name is self-reported; `reviewedAt` is a UTC ISO timestamp such as `2026-10-04T12:00:00Z`. `omissions` names behavior outside the inspection (`[]` means none named). Apply fills `sourceCommit` from the index. LLM patches must never carry `review`, including null: they are rejected atomically. Ordinary generated patches preserve the record.
-
-Scope is `{ content: "all" | [stored IDs], source: "anchored" | "repository", files?: [paths] }`. IDs select exactly stored nodes, edges, concepts, views or tours, without their dependencies. A view includes its own steps and a tour its own notes/code overrides; included nodes and focused elements need their own IDs to cover their prose and anchors. `all` also covers title, audience, repository name/URL and change metadata. Derived graph content and runtime paths outside those records are outside the review.
-
-`anchored` checks attached evidence from the selected records; `files` adds named whole indexed files. `repository` also checks every indexed file, so unrelated indexed edits invalidate that broader scope. Narrow anchored scopes survive unrelated file edits, edits outside the selected spans and exact code moves. Prose/evidence edits or unavailable source make the review out of date. This state is independent of anchor validity.
-
-Core `reviewFingerprint(explainer, index, texts, scope)` computes `{ version: "xpl-review@1", contentHash, evidenceHash }` from the inspected snapshot. Supply that exact fingerprint; do not invent hashes. Apply compares it after merging the patch and refuses if content or evidence changed. Fingerprints exclude review metadata, provenance, index commits and moved anchor offsets/caches. Before-source needs a `TextCache` with a base-text reader. Legacy explainers are unchecked. Review remains optional; this contract does not require approval for ordinary export.
 
 ## 1. Anchors (`AnchorInput`)
 
@@ -62,7 +40,7 @@ An anchor says "this element is about that code". You give a place; the CLI chec
 | `symbol` | the symbol's path **inside the file** (`Runner.dispatch`, `retry.maxRetries`), not the id `sym:src/runner.ts#Runner.dispatch`. Omit for a whole file or a file-relative span                                            |
 | `span`   | `{from, to}`: 0-based line offsets, inclusive, relative to the symbol's first line (file line 1 when there is no `symbol`). Copy them from `xpl show` (`<line> <offset>│`) or `+a..b` in `refs`/`show --refs`/`search`  |
 | `find`   | alternative to `span` (give one): text that occurs **exactly once** in the symbol (or file). May be multi-line; matched exactly, then ignoring whitespace differences. It is stored as the span of the lines it touches |
-| `role`   | `definition` where it lives · `call-site` where it is invoked (the caller side of an arrow) · `usage` other notable references · `config` config that shapes behaviour · `test` tests that exercise it                  |
+| `role`   | `definition` where it lives · `call-site` where it is invoked (the caller side of an arrow) · `usage` other notable references · `config` config that shapes behavior · `test` tests that exercise it                   |
 | `hash`   | optional; if given it must equal the current hash, else the anchor is rejected as stale. Leave it out                                                                                                                   |
 | `at`     | `"base"`: the code **before** the change the explainer records (`xpl change`), not the current code. Only with `find` or a file-relative `span`, never `symbol`; see "Anchors in the code before the change" below      |
 
@@ -159,7 +137,7 @@ In a graph view, include the group **and** its members to draw it as a container
 }
 ```
 
-The participants of a sequence or flow view and the boxes of a graph view count as "unexplained" (`xpl status`) until they have a `summary`, so write overlays for them in the same patch. What a summary says, how long it is and which markdown it takes: `writing.md`, section 1.
+`xpl status` lists the participants of a sequence or flow view and the boxes of a graph view as "without summary" until they have a `summary`, so write overlays for them in the same patch. What a summary says, how long it is and which markdown it takes: `writing.md`, section 1.
 
 ### 3.3 `llm` edge (only for links static analysis cannot see)
 
@@ -197,7 +175,7 @@ Event bus, DI, HTTP, queues, config keys read by name. An HTTP call with a liter
 
 "Inside" means: file → same file; dir → under it; symbol → that symbol or a descendant; group → any member.
 
-**A reaches C through B** (B not a box on the map): one edge from A to C with `via: [B]`, the ids it passes through in order (nodes: symbols, files, groups; not `from` or `to`). The map draws one arrow labelled "(via B)" and names B in its tooltip, and the references from A to B and from B to C are part of that arrow, not stubs to a ghost B. Evidence is per hop (A → B, B → C): a hop the index shows (a reference from inside one end to inside the other: `refs <A> --out`) needs no anchors, and the arrow's code is then those references; any other hop needs an anchor inside each of its ends. `via: null` clears it. A derived edge's id cannot take `via`.
+**A reaches C through B** (B not a box on the map): one edge from A to C with `via: [B]`, the ids it passes through in order (nodes: symbols, files, groups; not `from` or `to`). The map draws one arrow labeled "(via B)" and names B in its tooltip, and the references from A to B and from B to C are part of that arrow, not stubs to a ghost B. Evidence is per hop (A → B, B → C): a hop the index shows (a reference from inside one end to inside the other: `refs <A> --out`) needs no anchors, and the arrow's code is then those references; any other hop needs an anchor inside each of its ends. `via: null` clears it. A derived edge's id cannot take `via`.
 
 ```json patch
 {
@@ -217,7 +195,7 @@ Event bus, DI, HTTP, queues, config keys read by name. An HTTP call with a liter
 
 ### 3.4 Overlay on a derived (static) edge
 
-Calls, imports and inheritance appear in graph views on their own. To label or explain one, store an edge whose id is the derived id; `kind`, `from`, `to` come from the id and must not contradict it. It is still an `llm` edge, so it needs anchors at both ends, and give it a `label` (an empty one warns). The ends of a derived id are what the view shows, so they change when the view's `include` changes: after adding `sym:internal/worker/worker.go#Worker` to the `include` of the go-jobrunner view, the call to `Worker.Run` is `edge:calls:file:internal/runner/runner.go->sym:internal/worker/worker.go#Worker`, and an overlay left on the old `...->file:internal/worker/worker.go` id now sits on an edge that stands for other references. Write these overlays after the `include` list is final and copy the id from `xpl status <name> --json` (`views[].edges.unexplained[].id`).
+Calls, imports and inheritance appear in graph views on their own. To label or explain one, store an edge whose id is the derived id; `kind`, `from`, `to` come from the id and must not contradict it. It is still an `llm` edge, so it needs anchors at both ends, and give it a `label` (an empty one warns). The ends of a derived id are what the view shows, so they change when the view's `include` changes. Example: add `sym:internal/worker/worker.go#Worker` to the `include` of the go-jobrunner view. The call to `Worker.Run` is then `edge:calls:file:internal/runner/runner.go->sym:internal/worker/worker.go#Worker`. An overlay left on the old `...->file:internal/worker/worker.go` id now sits on an edge that stands for other references. Write these overlays after the `include` list is final and copy the id from `xpl status <name> --json` (`views[].edges.unexplained[].id`).
 
 ```json patch
 {
@@ -270,7 +248,7 @@ Required: `label`. Anchor the lines that decide (not the whole function), the co
 
 ### 3.6 Graph view
 
-Required: `type: "graph"`, `title`, `include`. `scope` defaults to `{"root": "repo", "depth": 1}`; record the question and depth you used. `include` is the source of truth for what is drawn; a node whose children are also included renders as a container; calls between shown nodes are derived. `edgeKinds` picks which kinds: default `calls`, `extends`, `implements`; also `imports` (runtime dependencies: a TS `import type` or a Python `TYPE_CHECKING` import is a type use, so it shows as `references`), `references` (type dependencies), `writes` and `reads` (uses of a variable, constant or field: many, so keep `reads` for a small view about one config switch or shared field), `requests` (web requests to the handlers of the repository's own routes, matched by method and path; always heuristic). Edges leaving the view become dashed stubs to ghost boxes (see "Crowded views" below). `hidden` removes nodes, derived edges, ghosts or stubs you do not want (`layout` pins positions; leave it to the user). `excludeFiles` (below) drops the references of test files from the derived edges and stubs. `"boxText": "summary"` shows each box's summary under its label (at most 3 lines, cut with "…"): use it on a map a reader scans, such as the folder maps of `xpl draft map`; `null` clears it.
+Required: `type: "graph"`, `title`, `include`. `scope` defaults to `{"root": "repo", "depth": 1}`; record the question and depth you used. `include` is the source of truth for what is drawn; a node whose children are also included renders as a container; calls between shown nodes are derived. `edgeKinds` picks which kinds: default `calls`, `extends`, `implements`; also `imports` (runtime dependencies: a TS `import type` or a Python `TYPE_CHECKING` import is a type use, so it shows as `references`), `references` (type dependencies), `writes` and `reads` (uses of a variable, constant or field: many, so keep `reads` for a small view about one config switch or shared field), `requests` (web requests to the handlers of the repository's own routes, matched by method and path; always heuristic). Edges leaving the view become dashed stubs to ghost boxes (see "Crowded views" below). `hidden` removes nodes, derived edges, ghosts or stubs you do not want (`layout` pins positions; leave it to the user). `excludeFiles` (below) drops the references of test files from the derived edges and stubs. `"boxText": "summary"` shows each box's summary under its label (at most 3 lines, cut with "…"): use it on a map a reader scans, such as the folder maps of `xpl draft map`. `"boxText": "members"` makes a data map (`xpl draft data`): a box of a type (class, interface, type or enum) whose included children are plain boxes draws them as rows of a table, each with the type its declaration line names; include the type and the fields you want as rows. Arrows then start at the rows, and the uses inside a type's methods draw none. `null` clears either. `"render": "matrix"` opens the view as a dependency matrix: a row and a column per box, the arrows in the cells, with their counts. Use it for a dense map (more than about 12 boxes, or many arrows) whose question is "what depends on what" or "are there cycles"; only an arrow of a cycle lies below the diagonal. The reader can switch a map of 4 or more boxes between boxes and the matrix, so leave it out for a map that reads well as a drawing; `null` clears it.
 
 ```json patch
 {
@@ -347,32 +325,158 @@ Keep a graph view readable: `"none"` for no stubs at all (every graph view a tou
 }
 ```
 
+**Edits made in the viewer.** Explore's **Edit map** makes groups (`members` and `include`) and hides or shows boxes and arrows (`hidden`). Its move handle pins a box: `layout` holds the box's `{x, y}`, relative to its container or, for a top-level box, to the canvas. A container keeps its origin and grows around a child at a negative position. Ungroup keeps the stored group, because anchors, arrows, maps and tours can still name it. These edits are the user's, and section 5 says what an `llm` patch may still change. When you regenerate a view, keep the user's groups, `members`, `hidden` and `layout`. Send `layout: null` only when the user asks to reset the placement. Each map keeps its own pins, also when it opens inside another map. Pan, zoom and opening a level change nothing in the file.
+
 ### 3.7 Flow view (stages, decisions, branches)
 
 Use `type: "flow"` when the point is what the code decides: stages, conditions, and where each path ends. It takes the same fields as a sequence view (3.8): `title`, `participants`, `steps`, `scope`, anchors. Each step may add `shape` (`"stage"`, `"decision"` or `"terminal"`) and `next: [{"step": "<id>", "label": "<when>"}]`. Without `next`, a step goes on to the next step in the list, unless it is a `terminal`; `next: []` ends a path. Every `next` target must be a step of the same view (only a `return` link may have none, see Recursion). Model each branch and loop explicitly, and anchor the condition that decides it. A stage or decision inside one function uses that function's participant as both `from` and `to`, with `kind: "call"`; the box shows the label, not the two ends. `shape` and `next` are also accepted by `stepsUpdate` (`null` clears them).
 
 The box shows the `label` in large type, so a flow label names a stage (`writing.md`, section 3), and the call goes in the anchors. A `decision` label is a short question ("Did the attempt succeed?"), and each `next` label says when that branch is taken ("yes", "attempts left").
 
-**Participants need a summary.** Each participant counts as unexplained (`xpl status`) until its node has a `summary`: put an overlay (3.2) for every participant in the same patch as the view.
+**Participants need a summary.** `xpl status` lists each participant "without summary" until its node has a `summary`: put an overlay (3.2) for every participant in the same patch as the view.
 
 **Who does the step.** The box names the step's `from` under its label. Draw a step from the participant whose code it is: when the step's first anchor (in the current code) is not inside `from`, validation warns and names the participant that holds it. (A `return` step whose code is in `to`, the caller getting the answer, is fine.)
 
 **Recursion.** A `next` link may say how it changes the level of a recursive function. `{"step": "match:2", "kind": "recurse", "label": "the child"}` means: the function calls itself, and the steps from `match:2` run again, one level down; point it at an earlier step, the first one the call runs (a later one warns). It does not end the step: a step whose `next` has only recurse links still goes on to the next step in the list. `{"step": "match:17", "kind": "return", "label": "found"}` means: the call returns, back up one level, to `match:17`. In a recursive function the caller differs by level (the step that recursed, or at the top the code that first called the function), so a return that is not to one step leaves `step` out: `{"kind": "return", "label": "found"}` goes back to whoever made the call, drawn as an arrow out of the step and up. A `terminal` may have return links (and no others). Both kinds are drawn dashed, with "one level down" or "up one level" after their label. A link from a step to itself (the next item of a loop) is drawn as a loop on the box.
 
-**Viewer graph edits.** Explore's **Edit map** creates groups through `members` and `include`, and hides or
-restores individual IDs through `hidden`. These actions share text/evidence undo and user protection.
-Ungroup keeps the stored group for existing anchors, arrows, maps and tour references. Regeneration must
-keep user-owned groups and membership/visibility fields; additive `includeAdd` remains available.
-`GraphView.layout` pins drawn boxes at finite `{x, y}` coordinates relative to their rendered container
-(or the canvas for root boxes). A container keeps that origin while its frame expands around negative
-child positions. Explore offers a move handle and placement reset, both through the same author history.
-Pins travel in live saves and offline exports. Leave user-owned `layout` unchanged during regeneration;
-`layout: null` resets placement only when the user explicitly asks for it. Opening another level, pan and
-zoom remain navigation. Each map uses its own pins, including when another map is opened inside it.
+**A loop over items.** Draw a loop as a link back: the last step of one round has a `next` to the step where the next round starts. The check that ends the loop is a `decision`, with one branch out of the loop. In the TypeScript job runner, `Runner.dispatch` takes jobs while the runner runs, and waits a tick when the queue is empty:
 
-**Code first.** In Read and Explore, a flow with at least three steps, each with current-code anchors all in one file, defaults to code first: the code is the main pane and a narrow process outline follows the caret. `"layout": "diagram"` keeps the diagram as the main pane; `"layout": "code-first"` requests code first for any flow; `null` restores the default.
+```json patch
+{
+  "views": [
+    {
+      "id": "view:dispatch-loop",
+      "type": "flow",
+      "title": "How the runner takes one job after another",
+      "scope": {
+        "root": "repo",
+        "depth": 3,
+        "question": "What does the dispatch loop do with each job, and when does it stop?",
+        "entryPoints": ["src/runner.ts#Runner.dispatch"]
+      },
+      "participants": ["sym:src/runner.ts#Runner.dispatch"],
+      "steps": [
+        {
+          "id": "dispatch-loop:1",
+          "from": "sym:src/runner.ts#Runner.dispatch",
+          "to": "sym:src/runner.ts#Runner.dispatch",
+          "label": "Is the runner still running?",
+          "kind": "call",
+          "shape": "decision",
+          "summary": "The loop runs while `running` is true; `Runner.stop` sets it to false.",
+          "next": [
+            { "step": "dispatch-loop:2", "label": "yes" },
+            { "step": "dispatch-loop:6", "label": "no" }
+          ],
+          "anchors": [
+            {
+              "file": "src/runner.ts",
+              "symbol": "Runner.dispatch",
+              "find": "while (this.running) {",
+              "role": "call-site"
+            }
+          ]
+        },
+        {
+          "id": "dispatch-loop:2",
+          "from": "sym:src/runner.ts#Runner.dispatch",
+          "to": "sym:src/runner.ts#Runner.dispatch",
+          "label": "Take the next due job",
+          "kind": "call",
+          "shape": "stage",
+          "summary": "`Queue.pop` gives the highest-priority, oldest due job, or nothing.",
+          "anchors": [
+            {
+              "file": "src/runner.ts",
+              "symbol": "Runner.dispatch",
+              "find": "const job = await this.queue.pop();",
+              "role": "call-site"
+            }
+          ]
+        },
+        {
+          "id": "dispatch-loop:3",
+          "from": "sym:src/runner.ts#Runner.dispatch",
+          "to": "sym:src/runner.ts#Runner.dispatch",
+          "label": "Is the queue empty?",
+          "kind": "call",
+          "shape": "decision",
+          "summary": "No job means no job is due yet.",
+          "next": [
+            { "step": "dispatch-loop:4", "label": "yes" },
+            { "step": "dispatch-loop:5", "label": "no" }
+          ],
+          "anchors": [
+            {
+              "file": "src/runner.ts",
+              "symbol": "Runner.dispatch",
+              "find": "if (!job) {",
+              "role": "call-site"
+            }
+          ]
+        },
+        {
+          "id": "dispatch-loop:4",
+          "from": "sym:src/runner.ts#Runner.dispatch",
+          "to": "sym:src/runner.ts#Runner.dispatch",
+          "label": "Wait a tick",
+          "kind": "call",
+          "shape": "stage",
+          "summary": "The loop sleeps for `idleDelayMs`, then checks again.",
+          "next": [{ "step": "dispatch-loop:1", "label": "check again" }],
+          "anchors": [
+            {
+              "file": "src/runner.ts",
+              "symbol": "Runner.dispatch",
+              "find": "await sleep(this.config.idleDelayMs);",
+              "role": "call-site"
+            }
+          ]
+        },
+        {
+          "id": "dispatch-loop:5",
+          "from": "sym:src/runner.ts#Runner.dispatch",
+          "to": "sym:src/runner.ts#Runner.dispatch",
+          "label": "Run the job on a leased worker",
+          "kind": "call",
+          "shape": "stage",
+          "summary": "The runner leases a worker, runs one attempt and gives the worker back.",
+          "next": [{ "step": "dispatch-loop:1", "label": "next job" }],
+          "anchors": [
+            {
+              "file": "src/runner.ts",
+              "symbol": "Runner.dispatch",
+              "find": "const worker = await this.pool.lease();",
+              "role": "call-site"
+            }
+          ]
+        },
+        {
+          "id": "dispatch-loop:6",
+          "from": "sym:src/runner.ts#Runner.dispatch",
+          "to": "sym:src/runner.ts#Runner.dispatch",
+          "label": "The loop ends",
+          "kind": "call",
+          "shape": "terminal",
+          "summary": "`dispatch` returns, and the promise of `Runner.start` settles.",
+          "anchors": [
+            {
+              "file": "src/runner.ts",
+              "symbol": "Runner.dispatch",
+              "find": "while (this.running) {",
+              "role": "call-site"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
 
-Read always keeps a sequence in the diagram pane, even when its code is all in one file or its `layout` is `"code-first"`. **Show source** opens the linked code beside it. Explore uses a narrow diagram column and a larger code pane for a sequence only with explicit `"layout": "code-first"`; it still draws lifelines, arrows and frames, without a caret-following process outline. A one-file sequence otherwise keeps Explore's usual diagram layout.
+**Code first.** In Read and Explore, some flows open code first: the code is the main pane, and a narrow outline of the steps follows the caret. A flow does this when it has at least three steps, and all their current-code anchors are in one file. `"layout": "diagram"` keeps the diagram as the main pane; `"layout": "code-first"` requests code first for any flow; `null` restores the default.
+
+Read always keeps a sequence in the diagram pane, even when its code is all in one file or its `layout` is `"code-first"`. **Show code** opens the linked code beside it. Explore uses a narrow diagram column and a larger code pane for a sequence only with explicit `"layout": "code-first"`; it still draws lifelines, arrows and frames, without a caret-following process outline. A one-file sequence otherwise keeps Explore's usual diagram layout.
 
 ```json patch
 {
@@ -491,13 +595,13 @@ Read always keeps a sequence in the diagram pane, even when its code is all in o
 }
 ```
 
-A sequence view appears in the reader's **Flow** tab as a sequence diagram, with the same lifelines, call arrows and frames as its Guide picture and Explore. Write a flow view when stages, decisions and branches are the point.
+A sequence view appears in the reader's **Flow** tab as a sequence diagram, with the same lifelines, call arrows and frames as in the tour and in Explore. Write a flow view when stages, decisions and branches are the point.
 
 **Supporting files.** For configuration and files that code loads by name, use configuration-key anchors (`role: "config"`) and edges with `kind: "loads"`, `"discovers"`, `"configures"` or `"overrides"`, anchored at both ends. A loader points to the loaded file or plugin directory (or group); configuration points to the code that reads it; an overriding file points to the file it overrides. Say the conditions and the order of precedence in the edge summary, as the code shows them: file names and reading order do not prove precedence. Index `resources` records resolve literal paths and supported globs, with `static` or `inferred` labels; a matching file does not prove that it is loaded at runtime.
 
 ### 3.8 Sequence view (steps, frames)
 
-Required: `type: "sequence"`, `title`, `participants` (lifelines, left to right), `steps`. Every step needs `id` (`<view-slug>:<n>`), `from`, `to` (both must be participants), `label` (the call text, as written in the code), `kind` (`call` solid arrow, `return` dashed back to the caller, `async` open head), and should have `summary` and anchors: the exact call in the caller (`call-site`) plus the callee's definition. `edge` links a step to the edge it instantiates. A step's `from` may equal `to` (self-call). Frames (`loop`, `alt`, `opt`, `par`) wrap the run `fromStep`..`toStep` (inclusive); nest them or keep them apart (a partial overlap draws a warning). Keep a sequence view to 6 participants at most: a flow with more is two or three views (one per phase or per collaborator group), each readable on its own. **Participants need a summary:** each counts as unexplained (`xpl status`) until its node has one, so put an overlay (3.2) for every participant in the same patch as the view.
+Required: `type: "sequence"`, `title`, `participants` (lifelines, left to right), `steps`. Every step needs `id` (`<view-slug>:<n>`), `from`, `to` (both must be participants), `label` (the call text, as written in the code), `kind` (`call` solid arrow, `return` dashed back to the caller, `async` open head), and should have `summary` and anchors: the exact call in the caller (`call-site`) plus the callee's definition. `edge` links a step to the edge it instantiates. A step's `from` may equal `to` (self-call). Frames (`loop`, `alt`, `opt`, `par`) wrap the run `fromStep`..`toStep` (inclusive); nest them or keep them apart (a partial overlap draws a warning). An `alt` frame may have `arms`, one per alternative ("When to draw a frame", below). Keep a sequence view to 6 participants at most: a flow with more is two or three views (one per phase or per collaborator group), each readable on its own. **Participants need a summary:** `xpl status` lists each one "without summary" until its node has one, so put an overlay (3.2) for every participant in the same patch as the view.
 
 ```json patch
 {
@@ -620,15 +724,34 @@ Required: `type: "sequence"`, `title`, `participants` (lifelines, left to right)
         {
           "id": "frame:failed-attempt",
           "kind": "alt",
-          "label": "result.ok is false: retry, or give up",
+          "label": "the job failed",
           "fromStep": "dispatch:4",
-          "toStep": "dispatch:5"
+          "toStep": "dispatch:5",
+          "arms": [
+            { "label": "retries left", "fromStep": "dispatch:4", "toStep": "dispatch:4" },
+            { "label": "else", "fromStep": "dispatch:5", "toStep": "dispatch:5" }
+          ]
         }
       ]
     }
   ]
 }
 ```
+
+**When to draw a frame.** Mark each loop and each branch on the path. Without frames, the reader sees the steps as one straight run. A `loop` wraps the steps that a `while` or `for` repeats. An `alt` wraps the steps of a branch that has other arms (an `if` with an `else`, a `switch`). An `opt` wraps the steps of an `if` with no `else`, when the code after the `if` runs in both cases. A `par` wraps steps that run at the same time. `xpl draft path` adds these frames from the code, each with a `TODO` label. A `loop` or `opt` label quotes its condition; an `alt` quotes it on each arm. Give an `alt` its `arms`: one per alternative, top to bottom, each with a short condition (`label`: "retries left", "else") and its steps (`fromStep`..`toStep`). The arms split the frame's steps with no gap and no overlap, and there are two or more. The diagram draws a dashed line between two arms and each condition in brackets. The frame's `label` then says what it decides ("the job failed"). Without `arms`, an `alt` has one label and no lines, and its steps read as one run. An arm has no anchors: a click on its condition selects its steps, and their code. Another frame inside an `alt` stays inside one arm. `xpl draft path` drafts the arms of each `alt` from the code. When the choice itself is the point, draw a flow (3.7), with one branch per exit.
+
+**An early exit is an `alt`.** An `if` whose body ends in `continue`, `return`, `break`, `raise` or `throw` makes the rest of the loop body or function its `else`. Draw one `alt` with two arms: the `if`, and `else` for the steps after it, to the end of the loop body or function. Do not draw an `opt` there. An `opt` reads as "maybe this, then the rest", but the rest runs only when the `if` did not. In the Go job runner, `Runner.Dispatch` acks a job that succeeded and goes on to the next job:
+
+```go
+if result.OK() {
+	if err := r.queue.Ack(job); err != nil { ... }
+	continue
+}
+attempts := job.Attempts + 1
+if attempts <= r.cfg.Retry.MaxRetries { /* Requeue */ } else { /* DeadLetter */ }
+```
+
+Its sequence has `Ack`, `Requeue` and `DeadLetter` as steps 7, 8 and 9. Draw an `alt` "the attempt's outcome" over steps 7-9, with the arms `result.OK()` (step 7) and `else` (steps 8-9). Inside the `else` arm, a second `alt` "retry or give up" has the arms "retries left" (step 8) and `else` (step 9). An arm needs one step at least. When the code after the `if` has no call, keep an `opt`. Its label then says what happens instead ("ok: ack, then the next job"). When the `if` draws no step and skips the rest of a loop body with `continue` or `break` (`if (!job) continue`), draw an `opt` over the rest of the loop body. Its label says when that rest runs ("a job was popped"). A guard that draws no step and leaves with `return`, `raise` or `throw` gets no frame: the code after it is the path. `xpl draft path` drafts all these cases this way.
 
 **Editing one step** (sequence and flow views). To fix a step's summary or anchors, do not resend all the steps: `stepsUpdate` is a list of `{id, ...fields}` merged into the existing steps with those ids. The fields are those of a step (`from`, `to`, `label`, `kind`, `summary`, `anchors`, `edge`, and for a flow `shape`, `next`): `anchors` replace that step's anchors wholesale, `null` clears `summary`, `edge`, `shape` or `next`. The other steps, the frames and the tours that point at them stay as they are, and `changed` lists the view and the ids of the steps it updated. It applies after `steps` when both are sent, only to a view that exists (a new view sends `steps`), and an unknown step id is an error that names the view's steps. Like `steps`, it is skipped with a `protected` warning when the user edited the view's steps.
 
@@ -658,15 +781,15 @@ Required: `type: "sequence"`, `title`, `participants` (lifelines, left to right)
 }
 ```
 
-### 3.9 Tour (the guide)
+### 3.9 Tour
 
 The tour is what the reader sees first: its `title`, its `summary`, then its steps in order. Required: `title`, `steps`. Optional: `summary` (markdown; `null` clears it). Write one on every tour (`writing.md`, section 4).
 
 A tour step has:
 
-- `id` (`t1`, `t2`, ...; unique in the tour, never renumbered) and `view` (the picture the step shows);
+- `id` (`t1`, `t2`, ...; unique in the tour, never renumbered) and `view` (the diagram the step shows);
 - `focus`: element ids to highlight. A flow or sequence step id must belong to that tour step's `view`, else a warning;
-- `note` (markdown): the first line is `### <plain title>`, which the viewer shows as the step title and does not repeat; then the body (`writing.md`, sections 1 and 3). The body may end with a small table for a comparison: a header row, a rule row (`| --- | --- |`, with `:--`, `:-:` or `--:` to align a column), then one row per item, each row starting and ending with `|`, after a blank line. In JSON the rows are joined with `\n`: `"### Two ways to wait\n\nThe fixed policy never grows the delay.\n\n| Policy | Third retry waits |\n| --- | --: |\n| fixed | 500 ms |\n| backoff | 2 s |"`. `xpl lint` reads each cell on its own (no row is one long sentence), and the cells count toward the note's 60 words;
+- `note` (markdown): the first line is `### <plain title>`, which the viewer shows as the step title and does not repeat; then the body (`writing.md`, sections 1 and 3). The body may end with a small table for a comparison (`writing.md`, section 1, "Tables"). In JSON the rows are joined with `\n`: `"### Two ways to wait\n\nThe fixed policy never grows the delay.\n\n| Policy | Third retry waits |\n| --- | --: |\n| fixed | 500 ms |\n| backoff | 2 s |"`. `xpl lint` reads each cell on its own (no row is one long sentence), and the cells count toward the note's 50 words;
 - `code`: `AnchorInput[]` that replaces the code the focus would show (base anchors too). Without it, a group, file or directory focus shows whole files (focusing `grp:retry-engine` alone shows runner.go 1-146, queue.go 1-154 and deadletter.go 1-35);
 - `editor`: `primary` (the file shown first), `dimOthers`, `hideFileTree`.
 
@@ -768,7 +891,7 @@ To change some steps of a tour, send `stepsUpdate` instead of the whole `steps`:
 }
 ```
 
-A tour has provenance like an element: what the user edits in the tour panel (`title`, `summary`, `steps`) becomes theirs (section 5), and an `llm` patch can then neither change those fields nor remove the tour. A `stepsUpdate` of a tour whose steps the user edited is skipped with a `protected` warning, like `steps`.
+A tour has provenance like an element. What the user edits in the tour panel (`title`, `summary`, `steps`) becomes theirs (section 5). An `llm` patch can then neither change those fields nor remove the tour. A `stepsUpdate` of a tour whose steps the user edited is skipped with a `protected` warning, like `steps`.
 
 ### 3.10 Architecture maps (system map, inside a service)
 
@@ -776,11 +899,17 @@ An overview reads top-down, like the C4 model: first a **system map** (the servi
 
 - `role`: what the box is. `person`, `system`, `service`, `component`, `database`, `cache`, `queue`, `storage` or `external`. The viewer gives each its own shape (a cylinder for a database, a dashed box for something outside the repo) and names the role or the `tech` on the box instead of the kind of code.
 - `tech`: the technology in 1-3 words ("PostgreSQL", "REST API", "Go service").
-- `opens`: the view that shows what is inside the box. The reader zooms in with the button on the box (or a double-click), and a trail above the map leads back up. When that view is a map, the reader can also show its boxes inside this one, on the same map ("Show the inside here"): the parts of a service are drawn in its box, with their arrows to the outside systems. Nothing is stored, so one system map serves both the executive picture and the nested one.
+- `opens`: the view that shows what is inside the box. The reader zooms in with the button on the box (or a double-click), and a trail above the map leads back up. When that view is a map, the reader can also show its boxes inside this one ("Show the inside here"). The parts of a service are then drawn in its box, with their arrows to the outside systems. Nothing is stored, so one system map serves both the top-level map and the nested one.
 
 A box for something outside the repo is a group with a `role` and **no `members`**: it is not code of the repo. Anchor it at the code that talks to it (where its client is built, where its address is configured). An `llm` edge to it counts that code as the evidence at its end, so one anchor can be the evidence at both ends. `role`, `tech` and `opens` also go on overlays (`dir:`, `file:`): `{"id": "dir:services/api", "role": "service", "opens": "view:api-inside"}`. `null` clears each.
 
-`xpl draft repo` builds both levels: it finds outside systems from the import lines (database drivers, caches, queues, HTTP clients, SDKs, web and CLI frameworks) and anchors each at its import. Those are hints: check each in the code, name the real system when the code says, and merge or drop boxes.
+`xpl draft repo` builds both levels: it finds outside systems from the import lines (database drivers, caches, queues, HTTP clients, SDKs, web and CLI frameworks) and anchors each at its import. Those are hints.
+
+**Check the draft.**
+
+- **Outside systems.** Read the code that builds each client, and name the real system ("Orders database", not "SQL database"). Check whether the default run uses it, or only an optional integration. Merge two boxes for one system, and drop a library that is only imported. Add what imports miss: `search` for a URL or a config key.
+- **Roles.** A box with a `role` and a `tech` shows what it is. For a library, the library is the `system` box, and the program that uses it is `external`, with `tech: "your app"`. A return value is an arrow label, not a box.
+- **Parts.** Give each box one job and a label a manager understands ("Payments", not `pay_svc`). Where one job spans several folders, merge them into a group (`grp:<slug>`). Each arrow gets a 1-4 word label for what passes ("stores orders").
 
 ```json patch
 {
@@ -828,6 +957,7 @@ A box for something outside the repo is a group with a `role` and **no `members`
       "to": "file:src/main.ts",
       "kind": "custom",
       "label": "starts it",
+      "summary": "The operator runs the program and may pass the path of a config file as its first argument.",
       "anchors": [
         { "file": "src/main.ts", "symbol": "main", "find": "process.argv[2]", "role": "usage" }
       ]
@@ -838,6 +968,7 @@ A box for something outside the repo is a group with a `role` and **no `members`
       "to": "grp:config-file",
       "kind": "custom",
       "label": "reads settings",
+      "summary": "At start, the runner reads the YAML file into typed settings. Without a path, it reads the default file.",
       "anchors": [
         { "file": "src/config.ts", "symbol": "loadConfig", "role": "definition" },
         { "file": "config/default.yaml", "role": "config" }
@@ -877,9 +1008,13 @@ A box for something outside the repo is a group with a `role` and **no `members`
 
 On the system map the service is one box, so the arrows of its parts are drawn there as one arrow per outside box (with the anchors of all; when their labels differ the arrow shows none). Write a tour that goes down a level at a time: a step on the system map, then the inside, then the code (SKILL.md, "explain repo"). Keep 3-7 boxes on a system map. The parts on the map of a service's inside are its `component`s (`xpl draft repo` sets the role): with the role icons, the reader always sees which level a map is at (system, service, component, then code). Boxes on maps of code need no role: the viewer shows their kind (folder, file, class, function) with an icon of its own.
 
+### 3.11 `title`, `scope` and `remove`
+
+`"title"` renames the explainer. `"scope": {"audience": "…"}` is one short line (at most 120 characters) that the viewer shows under the title: who the page is for and how deep it goes, such as `"Overview, for anyone new to ky"` or `"In detail, for engineers working on chi's router"`. `{"audience": null}` or `"scope": null` removes it. `"remove"` deletes elements, views, tours and steps by id; an unknown id is a warning, not an error. Removing what something else points at (a step a frame or tour uses, a group a view includes, a concept a tour focuses) is rejected until the same patch fixes the pointer. An `llm` patch cannot remove what the user owns: an element, view or tour with `origin: "user"` or with any `userFields` (they edited part of it), nor a single step of a view whose `steps` they edited; those ids are skipped with a `protected` warning.
+
 ### 3.12 Sketch boxes (the big picture, linked to no code)
 
-A **sketch box** is an idea of the big picture: what the user described before there is code to read, or what you understood from reading that no one place of code shows. It is a group with `"sketch": true`, **no `members` and no `anchors`**: a box that points at code is not a sketch (drop `sketch`, with `"sketch": null`, to make it one). The viewer draws it dotted, with a "sketch" badge, and the map's Key says it is not linked to code. An `llm` edge needs no evidence at an end that is a sketch box; an end that is code still needs its anchor. Keep sketch boxes on a view of their own (`view:sketch`), say in its title that it is a sketch, and replace a box with code as soon as you can anchor it.
+A **sketch box** is an idea of the big picture. It shows what the user described before there is code to read, or what you understood that no one place of code shows. It is a group with `"sketch": true`, **no `members` and no `anchors`**: a box that points at code is not a sketch (drop `sketch`, with `"sketch": null`, to make it one). The viewer draws it dotted, with a "sketch" badge, and the map's Key says it is not linked to code. An `llm` edge needs no evidence at an end that is a sketch box; an end that is code still needs its anchor. Keep sketch boxes on a view of their own (`view:sketch`), and say in its title that it is a sketch. Replace a box with code as soon as you can anchor it.
 
 ```json patch
 {
@@ -920,11 +1055,17 @@ A **sketch box** is an idea of the big picture: what the user described before t
 }
 ```
 
-### 3.11 `title`, `scope` and `remove`
-
-`"title"` renames the explainer. `"scope": {"audience": "…"}` is one short line (at most 120 characters) that the viewer shows under the title: who the page is for and how deep it goes, such as `"Overview, for anyone new to ky"` or `"Deep dive, for engineers working on chi's router"`. `{"audience": null}` or `"scope": null` removes it. `"remove"` deletes elements, views, tours and steps by id; an unknown id is a warning, not an error. Removing what something else points at (a step a frame or tour uses, a group a view includes, a concept a tour focuses) is rejected until the same patch fixes the pointer. An `llm` patch cannot remove what the user owns: an element, view or tour with `origin: "user"` or with any `userFields` (they edited part of it), nor a single step of a view whose `steps` they edited; those ids are skipped with a `protected` warning.
-
 ## 4. Merge semantics
+
+Patch only what changes, and lint the patch first:
+
+- One element's text: `{id, summary}`. Rewrite the summary whole (SKILL.md, hard rule 6).
+- One step of a flow or sequence: the view's `stepsUpdate` with that step.
+- One tour step: `{"tours": [{"id": "tour:x", "stepsUpdate": [{"id": "t3", "note": "..."}]}]}`. Send `steps` whole only to add, remove or reorder steps.
+- A box on a map: `includeAdd` / `includeRemove`. Other lists (`members`, `participants`, `anchors`) replace whole (below).
+- Use `--actor user` only for text the user dictates.
+
+The rules:
 
 - **Upsert by id.** New id: create (required fields in 3.x). Existing id: shallow merge.
 - **Shallow merge:** fields you send replace, fields you omit keep their value. Send `{"id": "grp:scheduling", "summary": "…"}` and `label` and `members` stay.
@@ -963,13 +1104,23 @@ warning nodes[0].summary [sym:src/runner.ts#Runner.dispatch]: summary of sym:src
 warning concepts[0] [concept:mine]: concept:mine is user-authored; an llm patch cannot modify it (skipped)
 ```
 
-The `detail` sent in the same node patch was applied, the `summary` kept the user's words, and the user's concept was skipped whole (`remove` of a user-authored element is skipped the same way). These warnings are correct behaviour, not failures: do not work around them (for example by re-creating the element under another id to replace the user's text). On regeneration, re-explain only `llm` elements, and never the fields in their `userFields`.
+The `detail` sent in the same node patch was applied, the `summary` kept the user's words, and the user's concept was skipped whole (`remove` of a user-authored element is skipped the same way). These warnings are correct behavior, not failures: do not work around them (for example by re-creating the element under another id to replace the user's text). On regeneration, re-explain only `llm` elements, and never the fields in their `userFields`.
 
 Edits made in the viewer count as the user's too. After the user drilled into a node or dragged a box under `xpl view`, the view's provenance is `{"origin": "llm", "commit": "928ad45", "userFields": ["include", "layout"]}`. An `llm` patch that resends its `include` (or sends `includeRemove`) gets `warning views[0].include [view:retry-code]: include of view:retry-code was edited by the user and is kept as it is`, and when that was all the patch did, `apply` exits 1 (see below). `includeAdd` is the way in: it only adds, so `{"views": [{"id": "view:retry-code", "type": "graph", "includeAdd": ["file:src/bus.ts"]}]}` grows the user's view and leaves their curation alone. What you cannot do to such a view, take nodes out, you tell the user; a view with `origin: "user"` takes no `llm` edit at all: put the nodes in a new graph view.
 
 Tours follow the same rules. A tour you create gets `{origin: "llm", commit}`; once the user edits it in the tour panel its provenance lists what they touched, e.g. `{"origin": "llm", "commit": "97f70e7", "userFields": ["steps"]}` (or `title`). An `llm` patch that resends those fields gets `warning tours[0].steps [tour:retries]: steps of tour:retries was edited by the user and is kept as it is`; a `remove` of the tour is skipped (`tour:retries has fields edited by the user (steps); an llm patch cannot remove it (skipped)`); and when that was all the patch did, `apply` exits 1. A tour without provenance (an older file) counts as `llm`. To add to a talk the user has reworked, make a new tour (new slug) or ask.
 
-**When everything is protected.** A patch whose every change was skipped because the user owns it is not "applied": `xpl apply` exits 1, names the protected ids and what to do (new view, `includeAdd`, ask the user). A patch with only some parts skipped exits 0 and ends its output with `skipped as protected (<ids>): …`. Both are correct behaviour: never work around them by re-creating the element under another id.
+**When everything is protected.** A patch whose every change was skipped because the user owns it is not "applied": `xpl apply` exits 1, names the protected ids and what to do (new view, `includeAdd`, ask the user). A patch with only some parts skipped exits 0 and ends its output with `skipped as protected (<ids>): …`. Both are correct behavior: never work around them by re-creating the element under another id.
+
+### Author review (user patches only)
+
+`xpl apply --actor user` accepts `review: { reviewer, reviewedAt, scope, omissions, fingerprint }`, or `review: null` to remove the record. The reviewer name is self-reported; `reviewedAt` is a UTC ISO timestamp such as `2026-10-04T12:00:00Z`. `omissions` names behavior outside the inspection (`[]` means none named). Apply fills `sourceCommit` from the index. LLM patches must never carry `review`, including null: they are rejected atomically. Ordinary generated patches preserve the record.
+
+Scope is `{ content: "all" | [stored IDs], source: "anchored" | "repository", files?: [paths] }`. IDs select exactly stored nodes, edges, concepts, views or tours, without their dependencies. A view includes its own steps and a tour its own notes/code overrides; included nodes and focused elements need their own IDs to cover their prose and anchors. `all` also covers title, audience, repository name/URL and change metadata. Derived graph content and runtime paths outside those records are outside the review.
+
+`anchored` checks attached evidence from the selected records; `files` adds named whole indexed files. `repository` also checks every indexed file, so unrelated indexed edits invalidate that broader scope. Narrow anchored scopes survive unrelated file edits, edits outside the selected spans and exact code moves. Prose/evidence edits or unavailable source make the review out of date. This state is independent of anchor validity.
+
+Core `reviewFingerprint(explainer, index, texts, scope)` computes `{ version: "xpl-review@1", contentHash, evidenceHash }` from the inspected snapshot. Supply that exact fingerprint; do not invent hashes. Apply compares it after merging the patch and refuses if content or evidence changed. Fingerprints exclude review metadata, provenance, index commits and moved anchor offsets/caches. Before-source needs a `TextCache` with a base-text reader. Legacy explainers are unchecked. Review remains optional; this contract does not require approval for ordinary export.
 
 ## 6. Reading the result
 
@@ -999,7 +1150,7 @@ A rejection lists **every** error of the patch at once (anchors, ids and referen
 | `anchor has both span and find; give exactly one of them`                                                                                             | both given                                               | keep one                                                                                                |
 | `anchor.role must be one of definition, call-site, usage, config, test (got "callsite")`                                                              | bad role                                                 | fix the spelling                                                                                        |
 | `stale anchor for …: given hash sha256-v2:… but the current text hashes to sha256-v2:…`                                                               | you sent a `hash` of older code                          | drop `hash`                                                                                             |
-| `llm edge edge:x needs at least one anchor inside its to (file:src/metrics.ts): a place in src/metrics.ts. Evidence…`                                 | no anchor at one end                                     | add the missing end (subscription site, handler definition); never delete the claim's evidence to pass  |
+| `llm edge edge:x needs an anchor at its end (to: file:src/metrics.ts): a place in src/metrics.ts. An arrow needs code…`                               | no anchor at one end                                     | add the missing end (subscription site, handler definition); never delete the claim's evidence to pass  |
 | `step dispatch:1: file:src/queue.ts is not a participant of view:dispatch; add it to participants…`                                                   | step end not among `participants`                        | add it to `participants` (resend the whole list) or use an existing participant                         |
 | `step id "step1" must look like "<view-slug>:<n>", e.g. "t:1"`                                                                                        | free-form step id                                        | `<view-slug>:<n>`                                                                                       |
 | `step dispatch:9 is not a step of view:dispatch (its steps: dispatch:1, …)` at `views[0].stepsUpdate[0].id`                                           | `stepsUpdate` names a step the view lacks                | copy an id from the message (a step of another view says so); a new step goes in `steps`, sent whole    |
@@ -1008,7 +1159,7 @@ A rejection lists **every** error of the patch at once (anchors, ids and referen
 | warning `stepsUpdate of view:dispatch was skipped: its steps were edited by the user…`                                                                | the user owns the view's `steps`                         | not an error: tell the user, or put the change in a new view                                            |
 | `frame toStep "dispatch:9" is not a step of view:dispatch (steps: dispatch:1, …)`                                                                     | frame points at a missing step                           | fix the id, or update `frames` in the same patch when you remove steps                                  |
 | `focus: no step dispatch:9 in view:dispatch (its steps: …)` / `tour step view "view:x" is not a view of this explainer. Did you mean: view:dispatch?` | tour points at something absent                          | fix the id (the message names close ones), or add the view/step first (same patch is fine)              |
-| `include: "src/runner.ts" is not an element id; did you mean file:src/runner.ts?`                                                                     | path instead of element id                               | `file:src/runner.ts`                                                                                    |
+| `include: "src/runner.ts" is not an element id. Did you mean: file:src/runner.ts?`                                                                    | path instead of element id                               | `file:src/runner.ts`                                                                                    |
 | `unknown file "src/nope.ts" (not in the index).` at `views[0].includeAdd[1]`                                                                          | an id of `includeAdd` is checked like an `include` entry | copy ids from `xpl outline`; an `includeRemove` id may be one that vanished                             |
 | `file:src/queue.ts is in both includeAdd and includeRemove of view:overview; give it to one of them`                                                  | contradicting edit                                       | keep it in one list                                                                                     |
 | `include: ghost:rest:file:src/main.ts is not a node (expected repo, dir:, file:, sym: or grp:)`                                                       | a ghost id in `include` / `includeAdd`                   | add what it stands for, or `file:src/main.ts` (the whole file); ghost ids only go in `hidden`           |
@@ -1021,7 +1172,7 @@ A rejection lists **every** error of the patch at once (anchors, ids and referen
 | `node id "group:queueing" must be "dir:<path>", "file:<path>", "sym:<file>#<symbol>", "repo" or "grp:<slug>"`                                         | wrong prefix                                             | `grp:`                                                                                                  |
 | `group id "grp:Retry Path" has an invalid slug…`                                                                                                      | space or symbol in slug                                  | lowercase kebab-case                                                                                    |
 | `view slug "file" is reserved (its step ids would be ambiguous)`                                                                                      | slug collides with an id prefix                          | pick another slug                                                                                       |
-| `sym:src/runner.ts#Runner.dispach does not exist in the index; only existing files, directories and symbols can be given a stored overlay`            | overlay on a missing node                                | fix the id                                                                                              |
+| `symbol sym:src/runner.ts#Runner.dispach does not exist in the index; only existing files, directories and symbols can be given a stored overlay`     | overlay on a missing node                                | fix the id                                                                                              |
 | `unknown field "description" (allowed: id, kind, label, summary, detail, parent, members, role, tech, opens, …)`                                      | field not in the schema                                  | use an allowed field (`summary`, `detail`)                                                              |
 | `label cannot be null (null clears only: summary, detail, members, …)`                                                                                | `null` on a required field                               | send a string, or omit                                                                                  |
 | `edge … overlays a derived edge, so its kind, from and to must match the id`                                                                          | contradicting fields                                     | omit `kind`/`from`/`to`, or make them match                                                             |
@@ -1029,17 +1180,31 @@ A rejection lists **every** error of the patch at once (anchors, ids and referen
 | `entry point "sym:src/…" is not a symbol id in the index (form: "src/a.ts#Class.method")`                                                             | `sym:` prefix in `scope.entryPoints`                     | drop `sym:`                                                                                             |
 | `an llm patch cannot create user-authored elements (origin "user")`                                                                                   | `provenance.origin: "user"`                              | omit `provenance`                                                                                       |
 | `id "concept:x" appears twice in the patch (also at concepts[0]); merge the two entries`                                                              | duplicate id                                             | merge                                                                                                   |
-| `unknown patch field "node" (allowed: title, scope, nodes, edges, concepts, views, tours, remove, review)`                                            | typo in a top-level key                                  | fix                                                                                                     |
+| `unknown patch field "node". Did you mean: nodes? (allowed: title, scope, nodes, edges, concepts, views, tours, remove, review)`                      | typo in a top-level key                                  | fix                                                                                                     |
 | warning `nothing to remove: no element, view, tour or step has the id concept:retry-polcy. Did you mean: concept:retry-policy?`                       | `remove` of an id that does not exist                    | fix the id: it is only a warning, and `changed:` will not list it                                       |
 | warning `tours[0].steps [tour:retries]: steps of tour:retries was edited by the user and is kept as it is`                                            | the user edited the tour                                 | not an error: make a new tour (new slug) or ask; a `remove` of it is skipped too                        |
 | `error: patch … is not valid JSON: Expected ',' or '}' after property value in JSON at position 49 (line 2 column 1)`                                 | broken JSON (fatal, on stderr)                           | fix the syntax at that position                                                                         |
 
 ## 8. Repairing after code changes
 
-`xpl resolve <name> --write` (after `xpl index`) marks every anchor `ok`, `moved` (span updated automatically), `drifted` (text changed) or `missing`. A drifted anchor stays drifted until you resend it: re-read the code (`xpl anchors <name> <id>` shows what the anchor points at now), resend the element with fresh anchors (no `hash`) and a summary that matches the new code. A missing anchor means the symbol is gone or renamed: its message says where the code went when it can tell (`the anchored lines now sit in sym:… (anchor: file: …, symbol: …, span: {from, to})`, or a same-sized symbol as a `did you mean`); report it to the user and ask before re-anchoring or removing; never drop one silently or retarget it to something merely similar. Never change a field listed in `userFields`, and never touch `origin: "user"` elements: `xpl status` counts their drift apart, for the user. Ids that vanished from a view (`xpl status`: broken references) are fixed with `includeRemove`, or by resending `members` / `participants` / `steps` without them. To repair **one step**, use `stepsUpdate` (3.8): the other steps stay as they are.
+`xpl resolve <name> --write` (after `xpl index`) marks every anchor `ok`, `moved` (span updated automatically), `drifted` (text changed) or `missing`. A drifted anchor stays drifted until you resend it. Re-read the code (`xpl anchors <name> <id>` shows what the anchor points at now). Then resend the element with fresh anchors (no `hash`). Rewrite its summary whole when the code says something new, so the summary still says what the part is for; never append a sentence. A missing anchor means the symbol is gone or renamed: its message says where the code went when it can tell (`the anchored lines now sit in sym:… (anchor: file: …, symbol: …, span: {from, to})`, or a same-sized symbol as a `did you mean`); report it to the user and ask before re-anchoring or removing; never drop one silently or retarget it to something merely similar. Never change a field listed in `userFields`, and never touch `origin: "user"` elements: `xpl status` counts their drift apart, for the user. Ids that vanished from a view (`xpl status`: broken references) are fixed with `includeRemove`, or by resending `members` / `participants` / `steps` without them. To repair **one step**, use `stepsUpdate` (3.8): the other steps stay as they are.
 
 1. `xpl anchors <name> dispatch:4` shows what the step's anchors point at now (`xpl status` names the drifted steps);
-2. rewrite the drifted or missing anchors from `xpl show` output (`find` or `span`, no `hash`), and the summary if the new code says something else;
+2. rewrite the drifted or missing anchors from `xpl show` output (`find` or `span`, no `hash`), and rewrite the summary whole if the new code says something else;
 3. send `{"views": [{"id": "view:…", "type": "sequence", "stepsUpdate": [{"id": "dispatch:4", "summary": "…", "anchors": [ … ]}]}]}`. The `anchors` replace the step's, so list every one you keep, the unchanged ones too (without `hash`, or as `find`/`span`).
 
 Resend a view's `steps` whole only when the list itself changes (a step added, removed or reordered).
+
+## 9. Editor completion
+
+`reference/patch.schema.json` ships with the skill (and in the npm package at `skill/code-explainer/reference/patch.schema.json`). Associate it with patch files in your editor for field and value completion. For VS Code, add this to workspace settings when using a source checkout:
+
+```text
+{
+  "json.schemas": [
+    { "fileMatch": ["**/*.patch.json"], "url": "./skill/code-explainer/reference/patch.schema.json" }
+  ]
+}
+```
+
+For an installed skill, replace `url` with the absolute path to its `reference/patch.schema.json`. The default location is `~/.claude/skills/code-explainer` for Claude, `~/.agents/skills/code-explainer` for Codex, Pi and Droid, or the project's `.agents/skills/code-explainer` for Devin. Do not add a `$schema` key to a patch: `xpl apply` rejects unknown top-level fields. The schema catches JSON shape errors; `xpl apply` still checks source anchors, IDs, review fingerprints and user-owned fields against the repository.

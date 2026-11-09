@@ -99,12 +99,17 @@ function checkShape(patch: ExplainerPatch): void {
   const tour = patch.tours![0]!;
   expect(tour.title).toMatch(/^TODO: /);
   expect(tour.summary).toMatch(/^TODO: /);
-  for (const step of tour.steps!) {
+  // a closing "Where to go next" step (repo and path drafts) points away from the code shown so far: no code of
+  // its own. A change tour ends on its risks instead.
+  const closing = /^### Where to go next\n\nTODO: /.test(tour.steps!.at(-1)!.note ?? "");
+  for (const step of closing ? tour.steps!.slice(0, -1) : tour.steps!) {
     expect(step.note).toMatch(/^### TODO: .+\n\n.*TODO: /);
     expect((step.code ?? []).length).toBeLessThanOrEqual(DRAFT_LIMITS.codeRanges);
     expect((step.code ?? []).length).toBeGreaterThan(0);
-    expect(step.focus.length).toBeGreaterThan(0);
   }
+  // (the closing step may focus nothing: it names what the tour skipped, not a box it showed)
+  for (const step of closing ? tour.steps!.slice(0, -1) : tour.steps!)
+    expect(step.focus.length).toBeGreaterThan(0);
   for (const view of patch.views ?? []) {
     if (view.type === "graph") {
       expect(view.stubs).toEqual({ mode: "none" });
@@ -143,7 +148,8 @@ describe.each(Object.keys(ENTRIES))("xpl draft on %s", (fixture) => {
     expect(system.include).toContain(service.id);
     expect(service.opens).toBe("view:overview");
     expect(patch.tours![0]!.steps![0]!.view).toBe("view:system");
-    expect(patch.tours![0]!.steps![0]!.focus).toEqual([service.id]);
+    // the first step focuses the service and who starts it (every fixture has a main function)
+    expect(patch.tours![0]!.steps![0]!.focus).toEqual([service.id, "grp:operator"]);
     // level 2: the parts
     const view = patch.views!.find((v) => v.id === "view:overview")!;
     expect(view.type).toBe("graph");
@@ -155,8 +161,13 @@ describe.each(Object.keys(ENTRIES))("xpl draft on %s", (fixture) => {
     expect(view.include!.every((id) => !/test|README|\.ya?ml/.test(id))).toBe(true);
     const focused = patch.tours![0]!.steps!.flatMap((s) => s.focus);
     for (const box of view.include!) expect(focused).toContain(box);
+    // inside the skill's budget, with 2 steps left for the main path and its risks: parts past it share one step
+    expect(patch.tours![0]!.steps!.length).toBeLessThanOrEqual(DRAFT_LIMITS.repoSteps - 2);
     // the first step shows what the project is: the README
     expect(patch.tours![0]!.steps![0]!.code![0]!.file).toBe("README.md");
+    // the last step says where to go next, back on the system map
+    expect(patch.tours![0]!.steps!.at(-1)).toMatchObject({ view: "view:system" });
+    expect(patch.tours![0]!.steps!.at(-1)!.note).toContain("Where to go next");
   });
 
   it("draft path: the calls of the entry in source order, one tour step each after the big picture", async () => {
@@ -184,11 +195,25 @@ describe.each(Object.keys(ENTRIES))("xpl draft on %s", (fixture) => {
       expect.stringMatching(/^requeue\(/),
     );
     const tour = patch.tours![0]!.steps!;
-    expect(tour[0]!.focus).toEqual([ENTRIES[fixture]]);
-    expect(tour.length).toBeLessThanOrEqual(DRAFT_LIMITS.pathSteps + 1);
-    for (const step of tour.slice(1)) {
+    // first where the path sits: a small map of the files its participants live in, every box focused
+    const files = [
+      ...new Set(view.participants!.map((p) => `file:${p.slice("sym:".length).split("#")[0]}`)),
+    ];
+    const where = patch.views!.find((v) => v.id === tour[0]!.view)!;
+    expect(where.type).toBe("graph");
+    if (where.type !== "graph") return;
+    expect(where.include).toEqual(files);
+    expect(where.stubs).toEqual({ mode: "none" });
+    expect([...tour[0]!.focus].sort()).toEqual([...files].sort());
+    // then the path, call by call
+    expect(tour[1]!.focus).toEqual([ENTRIES[fixture]]);
+    expect(tour.length).toBeLessThanOrEqual(DRAFT_LIMITS.pathSteps);
+    for (const step of tour.slice(2, -1)) {
       expect(steps.map((s) => s.id)).toContain(step.focus[0]);
     }
+    // and last, where to go next: on the map, with no box focused
+    expect(tour.at(-1)!.note).toContain("Where to go next");
+    expect(tour.at(-1)!.focus).toEqual([]);
   });
 });
 
@@ -224,7 +249,9 @@ describe("xpl draft: refusals and reuse", () => {
     expect(JSON.parse(r.out).views[0].id).toBe("view:runner-dispatch");
     expect(r.err).toMatch(/^draft path for d: a sequence of \d+ calls between \d+ participants/);
     expect(r.err).toContain("next: save the patch to a file outside the repo (or use -o)");
-    expect(r.err).toContain("called more than once, drawn once at the first call");
+    expect(r.err).toContain(
+      "called more than once, drawn at the first call (and at the first on the main path): Runner.log (3 calls)",
+    );
   });
 
   it("a second draft takes new ids and leaves what the explainer explains alone", async () => {
@@ -412,9 +439,13 @@ describe("xpl draft change", () => {
     );
     const anchored = new Set(patchAnchors(patch).map((a) => a.file));
     for (const file of changed) expect(anchored, file).toContain(file);
-    // the deleted files are anchored in the code before the change
+    // the deleted files are anchored in the code before the change, and so are the old lines of a changed piece
     const base = patchAnchors(patch).filter((a) => a.at === "base");
-    expect([...new Set(base.map((a) => a.file))].sort()).toEqual(["old.py", "tests/test_old.py"]);
+    expect([...new Set(base.map((a) => a.file))].sort()).toEqual([
+      "old.py",
+      "runner.py",
+      "tests/test_old.py",
+    ]);
     expect(notes.filter((n) => n.startsWith("no anchor"))).toEqual([]);
     // `xpl anchors --json` agrees: every changed file has an anchor in the stored explainer
     const listed = await xplJson<{ elements: { anchors: { file: string }[] }[] }>(
@@ -430,7 +461,12 @@ describe("xpl draft change", () => {
     const { json } = await xplJson<DraftJson>(repo, "draft", "change", "pr");
     const patch = json.patch;
     const view = patch.views![0]!;
-    expect(view).toMatchObject({ id: "view:change-map", type: "graph", stubs: { mode: "none" } });
+    expect(view).toMatchObject({
+      id: "view:change-map",
+      type: "graph",
+      stubs: { mode: "none" },
+      edgeKinds: ["calls", "reads", "references", "extends", "implements"],
+    });
     if (view.type !== "graph") return;
     expect(view.include).toEqual(
       expect.arrayContaining([
@@ -484,7 +520,20 @@ describe("xpl draft change", () => {
     // the tests step names changed symbols with no indexed test reference
     const tests = steps.at(-2)!.note!;
     expect(tests).toContain("No indexed test reference found");
-    expect(tests).toContain("`clamp`");
+    // clamp is not named: test_backoff calls backoff, which calls it
+    expect(tests).toContain("`Runner.dispatch`");
+    expect(tests).not.toContain("`clamp`");
+    // a changed piece shows its old lines first (a base anchor), then the new ones
+    const dispatch = steps.find((s) => s.focus[0] === "sym:runner.py#Runner.dispatch")!;
+    expect(dispatch.code).toEqual([
+      { file: "runner.py", at: "base", span: { from: 12, to: 12 }, role: "definition" },
+      expect.objectContaining({ file: "runner.py", symbol: "Runner.dispatch" }),
+    ]);
+    expect(dispatch.note).toContain("the first code link shows it");
+    // who else is affected: always a step, even with no caller beyond the entry
+    const others = steps.find((s) => s.note!.includes("who else is affected"))!;
+    expect(others.note).toContain("Callers outside tests: none beyond the entry, `main`");
+    expect(others.note).toContain("explain-change.md §5");
     // the steps cite changed lines: no step shows more than 2 ranges
     for (const step of steps) expect(step.code!.length).toBeLessThanOrEqual(2);
   });

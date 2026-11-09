@@ -7,7 +7,6 @@
  * the current view, code focus, reverse lookup, matches) lives in derive.ts and is memoised per state.
  */
 import {
-  artifactIdentity,
   applyUserEdits,
   makeUserEdit,
   makeGraphEdits,
@@ -74,6 +73,7 @@ import {
   type AnswerHistory,
 } from "./data.js";
 import { changeAt, changeOf, hasBase } from "./diff.js";
+import { identityOf } from "./derive.js";
 import { workspaceView } from "./workspace.js";
 import { serializeExplainer, withViewFields } from "./edits.js";
 import { clampStep, stepIndex, type Mode, type TourPosition } from "./modes.js";
@@ -342,7 +342,7 @@ export class ViewerStore {
     this.editStorageKey = this.editAttachment
       ? `xpl-edits:${JSON.stringify([this.editAttachment.root, this.editAttachment.guide])}`
       : undefined;
-    const identity = artifactIdentity(bundle.explainer, bundle.index);
+    const identity = identityOf(bundle.explainer, bundle.index);
     this.feedbackStorageKey = `xpl-feedback:${identity.explainerHash}:${identity.sourceHash}`;
     this.indexModel = asIndexModel(bundle.index);
     this.api = bundle.server?.api
@@ -1057,7 +1057,7 @@ export class ViewerStore {
     const view = this.graphView();
     if (!view) return;
     const next = expandStubView(view, stub);
-    if (next !== view) this.editView(view.id, { include: next.include });
+    if (next !== view) this.editView(view.id, { include: next.include }, this.authoring());
   }
 
   /** Includes the children of a node (a group's members): it becomes a container. */
@@ -1066,7 +1066,7 @@ export class ViewerStore {
     const view = this.graphView();
     if (!view) return;
     const next = drillInView(view, id, this.state.model);
-    if (next !== view) this.editView(view.id, { include: next.include });
+    if (next !== view) this.editView(view.id, { include: next.include }, this.authoring());
   }
 
   /**
@@ -1142,7 +1142,7 @@ export class ViewerStore {
     const view = this.graphView();
     if (!view) return;
     const next = collapseView(view, id, this.state.model);
-    if (next !== view) this.editView(view.id, { include: next.include });
+    if (next !== view) this.editView(view.id, { include: next.include }, this.authoring());
   }
 
   /** True when double-clicking `id` would add something to the current graph view. */
@@ -1184,20 +1184,29 @@ export class ViewerStore {
         : undefined;
   }
 
-  private editView(viewId: string, fields: Record<string, unknown>): void {
+  /**
+   * True in Explore, where a change to a diagram is an edit of the guide. On the reading tabs (Tour, Map,
+   * Flow, Code) opening or folding a box only changes what this reader sees: it is not saved, and the page
+   * does not say "Unsaved".
+   */
+  private authoring(): boolean {
+    return this.state.perspective === "explore";
+  }
+
+  private editView(viewId: string, fields: Record<string, unknown>, save = true): void {
     if (this.state.editBusy || this.state.readOnlyGuide) return;
     const explainer = withViewFields(this.state.explainer, viewId, fields);
     if (explainer === this.state.explainer) return;
     const model = this.modelOf(explainer);
     const selection = this.stillShown(model, viewId, this.state.selection);
-    this.queueSave(viewId, fields);
+    if (save) this.queueSave(viewId, fields);
     this.set({
       explainer,
       model,
       ...(selection.length !== this.state.selection.length
         ? { selection, applied: undefined }
         : {}),
-      ...(this.api ? { save: { status: "saving" } as SaveState } : {}),
+      ...(this.api && save ? { save: { status: "saving" } as SaveState } : {}),
     });
   }
 
@@ -1268,7 +1277,7 @@ export class ViewerStore {
             sourceWarning: bundle.sourceWarning,
             exportInfo: bundle.exportInfo,
           });
-          version = artifactIdentity(bundle.explainer, bundle.index);
+          version = identityOf(bundle.explainer, bundle.index);
         }
         const result = await api.putEdits(version, write.edits);
         if (!write.applied) this.acceptAuthor(write, result);
@@ -1394,7 +1403,7 @@ export class ViewerStore {
       throw new Error("This guide preview is read-only. Open its own service to edit it.");
     const draft = this.state.textDrafts[id] ?? {
       edit: makeUserEdit(this.state.explainer, this.indexModel, collection, id, fields),
-      version: artifactIdentity(this.state.explainer, this.indexModel.index),
+      version: identityOf(this.state.explainer, this.indexModel.index),
     };
     this.set({ textDrafts: { ...this.state.textDrafts, [id]: draft } });
     return draft;
@@ -1472,7 +1481,7 @@ export class ViewerStore {
       throw new Error("Open Explore to edit this map.");
     if (this.state.editDraft) throw new Error("Save or cancel the author draft first.");
     const edits = makeGraphEdits(this.state.explainer, this.indexModel, viewId, action);
-    await this.saveEdits(edits, artifactIdentity(this.state.explainer, this.indexModel.index));
+    await this.saveEdits(edits, identityOf(this.state.explainer, this.indexModel.index));
   }
 
   private acceptAuthor(
@@ -1578,7 +1587,7 @@ export class ViewerStore {
       const id = `author:${++this.authorSequence}`;
       if (!this.api) {
         const current = this.state.explainer;
-        const expected = artifactIdentity(current, this.indexModel.index);
+        const expected = identityOf(current, this.indexModel.index);
         if (version && JSON.stringify(version) !== JSON.stringify(expected))
           throw new Error(
             "This explanation changed while you were editing. Reopen the editor and inspect it before saving.",
@@ -1747,6 +1756,15 @@ export class ViewerStore {
   private keepFeedback(requests: readonly FeedbackRequest[]): void {
     const held = mergeFeedbackRequests([...this.state.feedback, ...requests]);
     held.forEach(parseFeedbackRequest);
+    // (no storage at all, outside a browser: say so without building an error to catch)
+    if (typeof localStorage === "undefined") {
+      this.set({
+        feedback: held,
+        feedbackStorageError:
+          "Browser storage unavailable: this browser does not let the page save. Export the feedback JSON to keep your note.",
+      });
+      return;
+    }
     let stored: FeedbackRequest[] = [];
     try {
       // Read both legacy arrays and per-ID records. New writes never replace either format.
@@ -1759,10 +1777,11 @@ export class ViewerStore {
         const json = localStorage.getItem(key);
         if (json !== null) stored.push(parseFeedbackRequest(JSON.parse(json)));
       }
-    } catch (error) {
+    } catch {
       this.set({
         feedback: held,
-        feedbackStorageError: `Browser storage unavailable: ${String(error)}. Export feedback JSON to keep it.`,
+        feedbackStorageError:
+          "Browser storage unavailable: this browser does not let the page save. Export the feedback JSON to keep your note.",
       });
       return;
     }
@@ -1778,9 +1797,10 @@ export class ViewerStore {
         const key = `${prefix}${encodeURIComponent(request.id)}:revision:${request.outcome.revision}:${hashText(json)}`;
         if (localStorage.getItem(key) === null) localStorage.setItem(key, json);
       }
-    } catch (error) {
+    } catch {
       this.set({
-        feedbackStorageError: `Browser storage unavailable: ${String(error)}. Export feedback JSON to keep it.`,
+        feedbackStorageError:
+          "Browser storage unavailable: this browser does not let the page save. Export the feedback JSON to keep your note.",
       });
     }
   }
@@ -1940,11 +1960,14 @@ export class ViewerStore {
     return JSON.stringify(this.feedbackFile(), null, 2) + "\n";
   }
 
-  /** Capture the element and selected inclusive lines against exactly the snapshot being viewed. */
+  /**
+   * Capture the element and selected inclusive lines against exactly the snapshot being viewed. With no kind,
+   * a typed note is a question ("explain"); an empty one asks for more detail ("expand").
+   */
   async requestExplain(
     id: ElementId,
     note?: string,
-    kind: FeedbackKind = "expand",
+    kind: FeedbackKind = note?.trim() ? "explain" : "expand",
   ): Promise<"queued" | "command"> {
     const request = this.captureFeedback(id, note, kind);
     if (!this.api) return "command";
@@ -1979,7 +2002,7 @@ export class ViewerStore {
       kind,
       elementId: id,
       at,
-      context: artifactIdentity(this.state.explainer, this.state.model.index.index),
+      context: identityOf(this.state.explainer, this.state.model.index.index),
       ...(this.state.sourceWarning ? { sourceWarning: this.state.sourceWarning } : {}),
       ...(note?.trim() ? { note: note.trim() } : {}),
       ...(this.state.viewId ? { view: this.state.viewId } : {}),

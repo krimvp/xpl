@@ -51,7 +51,12 @@ xpl anchors xpl <element-id>       # what a drifted anchor points at now
 
 For each drifted element, read the new code and resend it in a patch (outside the repo) with fresh anchors
 (`find` or `span` from `xpl show`, never a hash) and a summary that matches the new code;
-`skill/code-explainer/reference/patch-format.md` §8 has the shapes (`stepsUpdate` for one step). Then
+`skill/code-explainer/reference/patch-format.md` §8 has the shapes (`stepsUpdate` for one step).
+
+**Rewrite a summary whole, at its level; never append a sentence per change.** A `dir:` or `grp:` box says
+what the part is for, in 1-2 sentences (45 words at most). A new feature gets a concept, a `detail` line or
+a view of its own, never another sentence on a package summary. `xpl lint` flags the result
+(`long-summary`, `long-detail`, `duplicate-step`), so a summary that grew one sentence per PR fails. Then
 `xpl lint xpl --patch /tmp/p.json && xpl apply xpl /tmp/p.json`, and `xpl validate xpl`. A missing anchor
 (symbol renamed or gone) needs a judgment: retarget it only to the code that now does the same thing.
 Commit as `docs(explainer): re-anchor <what> after <change>` and say in the body what moved.

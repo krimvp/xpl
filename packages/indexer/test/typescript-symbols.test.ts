@@ -144,6 +144,36 @@ describe("TypeScript symbols: kinds and paths (ARCHITECTURE.md §3 table)", () =
     ]);
   });
 
+  it("object type aliases hold fields like interfaces, also the literal of an intersection", async () => {
+    // Shapes from ky's source/types (options.ts, retry.ts): xo prefers `type X = {...}` to interfaces.
+    const source = src(
+      "export type RetryOptions = {", // 1
+      "  limit?: number;", // 2
+      "  shouldRetry?: (state: State) => boolean;", // 3
+      "  delay?(attempt: number): number;", // 4
+      "};", // 5
+      "export type InitOptions = Omit<Options, 'retry'> & {", // 6
+      "  retry: RetryOptions;", // 7
+      "};", // 8
+      "type Pair = (A & { left: string }) & { right: string };", // 9
+      "type Fn = (x: number) => void;", // 10
+      "type Mapped = { [K in keyof A]-?: true };", // 11
+    );
+    expect(await symbolsOf(source)).toEqual([
+      "type RetryOptions 1-5",
+      "variable RetryOptions.limit 2-2",
+      "variable RetryOptions.shouldRetry 3-3",
+      "method RetryOptions.delay 4-4",
+      "type InitOptions 6-8",
+      "variable InitOptions.retry 7-7",
+      "type Pair 9-9",
+      "variable Pair.left 9-9",
+      "variable Pair.right 9-9",
+      "type Fn 10-10",
+      "type Mapped 11-11",
+    ]);
+  });
+
   it("enum members are not symbols; const enum and export enum work", async () => {
     const source = src("const enum CE { A, B }", "export enum E2 {", "  X = 1,", "}");
     expect(await symbolsOf(source)).toEqual(["enum CE 1-1", "enum E2 2-4"]);
@@ -548,6 +578,7 @@ describe("JavaScript and TSX files", () => {
     );
     expect(await symbolsOf(source, "page.tsx")).toEqual([
       "type Props 2-2",
+      "variable Props.title 2-2",
       "function Header 3-3",
       "function Page 4-10",
       "class Legacy 11-15",

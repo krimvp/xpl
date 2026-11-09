@@ -13,7 +13,9 @@
  *
  * A transition A -> B is drafted only where one function tests A and then sets B under that test: the set is on the
  * test's line, or indented under it, with no `else` between; or the test is a negated guard (`!==`, `is not`) whose
- * branch leaves (`throw`, `return`, `raise`), and the set follows at the guard's level. Both sites are anchored.
+ * branch leaves (`throw`, `return`, `raise`), and the set follows in the guard's block (inside an `if`/`else` there
+ * too). Both sites are anchored. A state that is tested but has no move out gets a note: the draft missed it or the
+ * state is a dead end.
  *
  * One flow view (`view:<type>-states`): a stage per state (anchored at its declaration and its first sets and
  * tests), a stage per transition (anchored at the test and the set), linked by `next`. A tour: the big picture,
@@ -43,7 +45,7 @@ import {
   type Draft,
   type DraftInput,
 } from "./draft.js";
-import { plural } from "./format.js";
+import { plural, withArticle } from "./format.js";
 
 export const STATES_LIMITS = {
   /** States on the flow. */
@@ -92,6 +94,12 @@ interface Transition {
 
 const ENTRY_KINDS =
   "the entry must be a TypeScript enum or union of string literals, a Python Enum class, or a Go type with a const block of its values";
+/** How to find an entry `draft states` takes: a Python `Enum` is a class in the index, so `outline` lists none. */
+export function statesHint(lang: string | undefined): string {
+  return lang === "py" || lang === "python"
+    ? '`xpl search "(Enum)"` finds the Enum classes.'
+    : "`xpl outline --kind enum,type` lists candidates.";
+}
 const symId = (sym: IndexedSymbol) => `sym:${sym.file}#${sym.path}`;
 const shortName = (sym: IndexedSymbol) => sym.path.split(".").pop() ?? sym.path;
 const esc = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -295,7 +303,8 @@ function under(code: readonly string[], t: Use, s: Use): boolean {
   let n = t.line + 1;
   for (; n < s.line && (blank(n) || indent(at(n)) > base); n++) guard += `\n${at(n)}`;
   if (n < s.line && /^\s*}\s*$/.test(at(n))) n++;
-  if (!EXIT.test(guard) || indent(at(s.line)) !== base) return false;
+  // the guard fixed the state for the rest of its block: a set there counts, inside an if/elif/else too
+  if (!EXIT.test(guard) || indent(at(s.line)) < base) return false;
   for (; n < s.line; n++) if (!blank(n) && indent(at(n)) < base) return false;
   return true;
 }
@@ -334,7 +343,12 @@ export function draftStates(input: DraftInput, entry: IndexedSymbol): Draft {
     match = "bare";
   }
   if (!states || states.length < 2) {
-    throw new Error(`${symId(entry)} (a ${entry.kind}) does not enumerate states: ${ENTRY_KINDS}`);
+    throw new Error(
+      `${symId(entry)} (${withArticle(entry.kind)}) does not enumerate states: ${ENTRY_KINDS}. ${statesHint(lang)}` +
+        (entry.kind === "class"
+          ? " No status type? When the state is where the data sits (which list or table holds it), draft the data map (`xpl draft data`) and write the flow by hand."
+          : ""),
+    );
   }
   const limits: string[] = [];
   if (states.length > STATES_LIMITS.states) {
@@ -639,12 +653,35 @@ export function draftStates(input: DraftInput, entry: IndexedSymbol): Draft {
   }
 
   const notes: string[] = [];
-  for (const [kind, word] of [
-    ["set", "set"],
-    ["test", "tested"],
-  ] as const) {
+  for (const kind of ["set", "test"] as const) {
     const never = states.filter((_, i) => users(i, kind).length === 0).map((s) => s.name);
-    if (never.length > 0) notes.push(`never ${word}: ${nameList(never)}`);
+    if (never.length === 0) continue;
+    if (kind === "set") {
+      notes.push(`never set: ${nameList(never)}`);
+      continue;
+    }
+    // a state the code sets and never reads looks like an end state; one it never sets either is unused
+    const ends = never.filter((name) => users(index.get(name)!, "set").length > 0);
+    const unused = never.filter((name) => !ends.includes(name));
+    if (unused.length > 0) notes.push(`never tested: ${nameList(unused)}`);
+    if (ends.length > 0) {
+      const one = ends.length === 1;
+      notes.push(
+        `never tested (no comparison in the code reads ${one ? "it" : "them"}, so ${one ? "it looks like an end state" : "they look like end states"}): ${nameList(ends)}`,
+      );
+    }
+  }
+  // a state the code tests is not an end state: a flow with no move out of it says the thing stays there for ever
+  for (const [i, s] of states.entries()) {
+    // (tested where the code also moves a state; a function that only reads it, to print it, does not count)
+    const tests = users(i, "test").filter((u) =>
+      all.some((v) => v.kind === "set" && v.sym.id === u.sym.id),
+    );
+    if (tests.length === 0 || transitions.some((t) => t.from === i)) continue;
+    const fns = [...new Set(tests.map((u) => u.sym.path))];
+    notes.push(
+      `${s.name}: no move out of it found; check ${nameList(fns)} and add the moves the draft missed`,
+    );
   }
   const other = all.filter((u) => u.kind === "other").length;
   if (other > 0) {

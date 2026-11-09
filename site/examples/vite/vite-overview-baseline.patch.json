@@ -11,6 +11,11 @@
           "file": "packages/vite/src/node/cli.ts",
           "find": ".command('[root]', 'start dev server')",
           "role": "usage"
+        },
+        {
+          "file": "packages/vite/src/node/cli.ts",
+          "find": ".command('build [root]', 'build for production')",
+          "role": "usage"
         }
       ]
     },
@@ -80,6 +85,90 @@
       "summary": "Creates build environments and runs the production build path."
     }
   ],
+  "edges": [
+    {
+      "id": "edge:developer-starts-server",
+      "from": "grp:developer",
+      "to": "grp:dev-server",
+      "kind": "calls",
+      "label": "starts dev server",
+      "summary": "The default CLI command creates the development server and starts listening for requests.",
+      "anchors": [
+        {
+          "file": "packages/vite/src/node/cli.ts",
+          "find": ".command('[root]', 'start dev server')",
+          "role": "usage"
+        },
+        {
+          "file": "packages/vite/src/node/cli.ts",
+          "find": "const server = await createServer({",
+          "role": "call-site"
+        },
+        {
+          "file": "packages/vite/src/node/cli.ts",
+          "find": "await server.listen()",
+          "role": "call-site"
+        },
+        {
+          "file": "packages/vite/src/node/server/index.ts",
+          "symbol": "createServer",
+          "find": "export function createServer(",
+          "role": "definition"
+        }
+      ]
+    },
+    {
+      "id": "edge:developer-builds-app",
+      "from": "grp:developer",
+      "to": "grp:production-build",
+      "kind": "calls",
+      "label": "runs production build",
+      "summary": "The CLI build command creates a builder and runs its application build.",
+      "anchors": [
+        {
+          "file": "packages/vite/src/node/cli.ts",
+          "find": ".command('build [root]', 'build for production')",
+          "role": "usage"
+        },
+        {
+          "file": "packages/vite/src/node/cli.ts",
+          "find": "await builder.buildApp()",
+          "role": "call-site"
+        },
+        {
+          "file": "packages/vite/src/node/build.ts",
+          "symbol": "createBuilder",
+          "find": "export async function createBuilder(",
+          "role": "definition"
+        }
+      ]
+    },
+    {
+      "id": "edge:browser-requests-modules",
+      "from": "grp:browser",
+      "to": "grp:dev-server",
+      "kind": "custom",
+      "label": "requests modules",
+      "summary": "The development server receives browser script and import requests, transforms their modules, and sends the result.",
+      "anchors": [
+        {
+          "file": "packages/vite/src/node/server/middlewares/transform.ts",
+          "find": "req.headers['sec-fetch-dest'] === 'script' ||",
+          "role": "usage"
+        },
+        {
+          "file": "packages/vite/src/node/server/middlewares/transform.ts",
+          "find": "const result = await environment.transformRequest(url)",
+          "role": "call-site"
+        },
+        {
+          "file": "packages/vite/src/node/server/middlewares/transform.ts",
+          "find": "return send(req, res, result.code, type, {",
+          "role": "call-site"
+        }
+      ]
+    }
+  ],
   "views": [
     {
       "id": "view:system",
@@ -132,8 +221,8 @@
   "tours": [
     {
       "id": "tour:overview",
-      "title": "How Vite serves development and builds production output",
-      "summary": "Vite is a web build tool with a development server and a production build command. The server serves modules to a browser and watches files as developers work. The builder prepares deployable output through configured environments. This tour follows those two paths from the command line.",
+      "title": "How Vite serves and builds a web app",
+      "summary": "Vite turns a web app's source files into what a browser loads, both while a developer edits and as files ready to deploy. The server serves modules to a browser and watches files as developers work. The builder prepares deployable output through configured environments. This tour follows those two paths from the command line.",
       "steps": [
         {
           "id": "t1",
@@ -205,7 +294,7 @@
           "focus": [
             "file:packages/vite/src/node/server/index.ts"
           ],
-          "note": "### Development creates a listening server and watcher\n\nBrowser requests and file changes can arrive throughout the development session. The server keeps both channels active.",
+          "note": "### Development builds a server, a hot-update channel and a file watcher\n\nThe dev server is an HTTP server around connect middlewares, a WebSocket server for hot updates, and a file watcher. The CLI then starts it with `server.listen`.",
           "code": [
             {
               "file": "packages/vite/src/node/server/index.ts",
@@ -216,6 +305,16 @@
               "file": "packages/vite/src/node/server/index.ts",
               "find": "const ws = createWebSocketServer(httpServer, config, httpsOptions)",
               "role": "usage"
+            },
+            {
+              "file": "packages/vite/src/node/server/index.ts",
+              "find": "chokidar.watch(",
+              "role": "usage"
+            },
+            {
+              "file": "packages/vite/src/node/cli.ts",
+              "find": "await server.listen()",
+              "role": "call-site"
             }
           ],
           "editor": {
@@ -228,7 +327,7 @@
           "focus": [
             "file:packages/vite/src/node/build.ts"
           ],
-          "note": "### Production runs the configured builder\n\nThe build command calls `buildApp`. The builder chooses its configured application build and falls back to its environments when needed.",
+          "note": "### Production runs the configured builder\n\nThe build command calls `buildApp`. The builder runs its configured application build; when that builds no environment, it builds every environment.",
           "code": [
             {
               "file": "packages/vite/src/node/cli.ts",
@@ -237,12 +336,30 @@
             },
             {
               "file": "packages/vite/src/node/build.ts",
-              "find": "if (!configBuilderBuildAppCalled) {\n        await configBuilder.buildApp(builder)",
+              "find": "if (!configBuilderBuildAppCalled) {\n        await configBuilder.buildApp(builder)\n      }\n      // fallback to building all environments if no environments have been built\n      if (\n        Object.values(builder.environments).every(\n          (environment) => !environment.isBuilt,\n        )\n      ) {\n        for (const environment of Object.values(builder.environments)) {\n          await builder.build(environment)\n        }\n      }",
               "role": "usage"
             }
           ],
           "editor": {
             "primary": "packages/vite/src/node/cli.ts"
+          }
+        },
+        {
+          "id": "t6",
+          "view": "view:inside",
+          "focus": [
+            "file:packages/vite/src/node/server/middlewares/transform.ts"
+          ],
+          "code": [
+            {
+              "file": "packages/vite/src/node/server/middlewares/transform.ts",
+              "symbol": "transformMiddleware",
+              "role": "definition"
+            }
+          ],
+          "note": "### Where to go next\n\nThe guide \"How Vite chooses a hot update, reload, or no update\" follows one file change to its outcome. The box on screen is the transform middleware: it answers each module request from the browser.",
+          "editor": {
+            "primary": "packages/vite/src/node/server/middlewares/transform.ts"
           }
         }
       ]

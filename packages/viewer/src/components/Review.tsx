@@ -33,6 +33,11 @@ function prose(value: unknown): string[] {
   );
 }
 
+/** A box, step or tour by its title, with its kind of record when it has none. */
+function nameOf(record: { id: string; label?: string; title?: string }): string {
+  return record.title ?? record.label ?? record.id;
+}
+
 /** An explicit author inspection, scoped to a captured content/evidence fingerprint. */
 export function Review({ onClose }: { onClose: () => void }) {
   const store = useStore();
@@ -70,7 +75,7 @@ export function Review({ onClose }: { onClose: () => void }) {
     setInspection(undefined);
     try {
       if (scope.content !== "all" && scope.content.length === 0)
-        throw new Error("Select at least one stored item.");
+        throw new Error("Choose at least one box, step or tour.");
       const bundle = await prepareHtmlSave(store, scope);
       if (state.serverMode) store.adoptExplainer(bundle.explainer, bundle);
       captured.current = bundle;
@@ -135,92 +140,94 @@ export function Review({ onClose }: { onClose: () => void }) {
       aria-labelledby="review-title"
       onCancel={onClose}
     >
-      <h2 id="review-title">Record author review</h2>
+      <h2 id="review-title">Mark as reviewed</h2>
       <p>
-        Inspect the explanation and linked code before recording. This is your judgment of the
-        captured snapshot. A name is self-reported; anchors do not verify prose or complete runtime
-        coverage.
+        Read the text and its code before you record a review. The review says that you checked this
+        version. xpl does not check your name or the truth of the text.
       </p>
-      <label>
-        Reviewer name (self-reported)
-        <input value={reviewer} onChange={(e) => setReviewer(e.target.value)} />
-      </label>
-      <label>
-        Content scope
-        <select
-          aria-label="Content scope"
-          value={content}
-          onChange={(e) => setContent(e.target.value as "all" | "selected")}
-        >
-          <option value="all">All stored explanation content</option>
-          <option value="selected">Selected stored items</option>
-        </select>
-      </label>
-      {content === "selected" && (
+      <div className="review-fields">
         <label>
-          Stored items
+          Your name (xpl does not check it)
+          <input value={reviewer} onChange={(e) => setReviewer(e.target.value)} />
+        </label>
+        <label>
+          What you reviewed
           <select
-            aria-label="Stored items"
-            multiple
-            value={ids}
-            onChange={(e) => setIds([...e.target.selectedOptions].map((o) => o.value))}
+            aria-label="What you reviewed"
+            value={content}
+            onChange={(e) => setContent(e.target.value as "all" | "selected")}
           >
-            {records.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.id}
-              </option>
-            ))}
+            <option value="all">The whole guide</option>
+            <option value="selected">Some boxes, steps or tours</option>
           </select>
         </label>
-      )}
-      <p>
-        Selected items include their own anchors and nested steps, without other items' prose or
-        dependency coverage.
-      </p>
-      <label>
-        Source scope
-        <select
-          aria-label="Source scope"
-          value={source}
-          onChange={(e) => setSource(e.target.value as ReviewScope["source"])}
-        >
-          <option value="anchored">Attached anchor evidence</option>
-          <option value="repository">All indexed repository files</option>
-        </select>
-      </label>
-      <label>
-        Additional whole source files (one indexed path per line)
-        <textarea value={files} onChange={(e) => setFiles(e.target.value)} />
-      </label>
-      <label>
-        Named omissions (one per line)
-        <textarea value={omissions} onChange={(e) => setOmissions(e.target.value)} />
-      </label>
-      <button type="button" className="btn" disabled={busy} onClick={() => void inspect()}>
-        Inspect current snapshot
-      </button>
-      {busy && <p role="status">Checking snapshot…</p>}
+        {content === "selected" && (
+          <>
+            <label>
+              Which ones
+              <select
+                aria-label="Which ones"
+                multiple
+                value={ids}
+                onChange={(e) => setIds([...e.target.selectedOptions].map((o) => o.value))}
+              >
+                {records.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {nameOf(r)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p>A box or step covers its own code links and steps, not the text of others.</p>
+          </>
+        )}
+        <label>
+          Which code
+          <select
+            aria-label="Which code"
+            value={source}
+            onChange={(e) => setSource(e.target.value as ReviewScope["source"])}
+          >
+            <option value="anchored">The code it links to</option>
+            <option value="repository">Every indexed file</option>
+          </select>
+        </label>
+        <label>
+          Other files you read (one path per line)
+          <textarea value={files} onChange={(e) => setFiles(e.target.value)} />
+        </label>
+        <label>
+          What you left out (one per line)
+          <textarea value={omissions} onChange={(e) => setOmissions(e.target.value)} />
+        </label>
+        <button type="button" className="btn" disabled={busy} onClick={() => void inspect()}>
+          Show what I review
+        </button>
+      </div>
+      {busy && <p role="status">Reading the guide and its code…</p>}
       {inspection?.bundle.sourceWarning && <p role="status">{inspection.bundle.sourceWarning}</p>}
       {error && <p role="alert">{error}</p>}
       {current && (
         <div data-testid="review-inspection">
           <p>
             <strong>{inspection.bundle.explainer.title}</strong>.{" "}
-            {content === "all" ? "All stored explanation content" : ids.join(", ")};{" "}
-            {source === "repository" ? "all indexed source files" : "attached anchor evidence"}.
+            {content === "all"
+              ? "The whole guide"
+              : records
+                  .filter((r) => ids.includes(r.id))
+                  .map(nameOf)
+                  .join(", ")}
+            ; {source === "repository" ? "every indexed file" : "the code it links to"}.
           </p>
           <p>
-            Source snapshot: {inspection.bundle.index.commit}.{" "}
+            Code at version {inspection.bundle.index.commit}.{" "}
             {state.serverMode
-              ? "Source will be checked again at write time."
-              : "Only embedded source is available; later repository changes cannot be detected."}
+              ? "xpl checks the code again when it records the review."
+              : "This page holds a copy of the code; it cannot see later changes."}
           </p>
-          <p>
-            Record only after checking the captured claims and linked evidence and naming important
-            omissions.
-          </p>
+          <p>Record the review after you read the text and its code, and name what you left out.</p>
           <details>
-            <summary>Read captured explanation content</summary>
+            <summary>Read the text</summary>
             {content === "all" && (
               <>
                 <h3>{inspection.bundle.explainer.title}</h3>
@@ -237,7 +244,7 @@ export function Review({ onClose }: { onClose: () => void }) {
               .filter((r) => content === "all" || ids.includes(r.id))
               .map((r) => (
                 <article key={r.id}>
-                  <h4>{r.id}</h4>
+                  <h4>{nameOf(r)}</h4>
                   {prose(r).map((text, i) => (
                     <p key={i}>{text}</p>
                   ))}
@@ -245,10 +252,10 @@ export function Review({ onClose }: { onClose: () => void }) {
               ))}
           </details>
           <details>
-            <summary>Read available captured source</summary>
+            <summary>Read the code</summary>
             <p>
-              Only attached anchors and explicitly scoped files are fingerprinted. Other available
-              source gives context.
+              xpl records a hash of the linked code and of the files you listed. Other code is here
+              for context only.
             </p>
             {Object.entries(inspection.bundle.files).map(([path, text]) => (
               <details key={path}>
@@ -266,7 +273,7 @@ export function Review({ onClose }: { onClose: () => void }) {
         </div>
       )}
       {!current && !busy && !error && (
-        <p>Scope changed. Inspect the current snapshot before recording.</p>
+        <p>You changed what you review. Press &ldquo;Show what I review&rdquo; again.</p>
       )}
       <div className="save-html-actions">
         <button type="button" className="btn" disabled={busy} onClick={onClose}>
@@ -284,13 +291,19 @@ export function Review({ onClose }: { onClose: () => void }) {
         )}
         <button
           type="button"
-          className="btn"
+          className="btn is-primary"
           disabled={busy || !current || !reviewer.trim()}
+          aria-describedby={!reviewer.trim() ? "review-needs-name" : undefined}
           onClick={() => void record()}
         >
-          Record inspected review
+          Record review
         </button>
       </div>
+      {!reviewer.trim() && (
+        <p id="review-needs-name" className="note">
+          Type your name to record the review.
+        </p>
+      )}
     </dialog>
   );
 }

@@ -1,4 +1,4 @@
-import { drawnEdges } from "../src/drawnEdges.js";
+import { drawnEdges, rowTypeText } from "../src/drawnEdges.js";
 import {
   deriveGraph,
   ExplainerModel,
@@ -9,16 +9,20 @@ import {
 import { describe, expect, it } from "vitest";
 import {
   absoluteBoxes,
+  codeRuns,
   cutAt,
   fitScale,
+  foldPins,
   gridLayoutOf,
   layoutGraph,
   layoutGraphFitting,
   spreadLabels,
+  dropDetours,
   SUMMARY_FONT,
   ICON_ROOM,
   startAnchor,
   startFocus,
+  wholePicture,
   type LayoutEdge,
   type LayoutNode,
 } from "../src/layout/graphLayout.js";
@@ -290,7 +294,7 @@ describe("layoutGraph", () => {
     const b = layout.nodes.find((n) => n.id === "file:src/b.ts")!;
     expect(a.x + a.width).toBeLessThanOrEqual(b.x);
     const [edge] = layout.edges;
-    expect(edge!.title).toBe("calls ×2 (mixed confidence)");
+    expect(edge!.title).toBe("calls ×2 (partly matched by name)");
     expect(edge!.resolution).toBe("mixed");
     expect(edge!.kind).toBe("calls");
     expect(edge!.stub).toBe(false);
@@ -340,6 +344,53 @@ describe("layoutGraph", () => {
     expect(stub.label).toBeUndefined();
     expect(stub.title).toBe("calls ×1");
     expect(stub.points.at(-1)!.x).toBeCloseTo(ghost.x, 0);
+  });
+
+  it("names every kind of reference on a ghost, so its count always has a verb", async () => {
+    const stub = (inside: string, kinds: DerivedEdge["kind"][], count: number) => ({
+      id: `stub:in:${inside}->ghost:file:test.ts`,
+      direction: "in" as const,
+      inside,
+      ghost: "file:test.ts",
+      ghostLabel: "test.ts",
+      targets: [],
+      kinds,
+      count,
+    });
+    const graph: DerivedGraph = {
+      nodes: [{ id: "a", label: "a.ts", kind: "file", container: false }],
+      edges: [],
+      stubs: [stub("a", ["calls", "extends"], 13)],
+      ghosts: [],
+    };
+    const layout = await layoutGraph(graph);
+    expect(layout.nodes.find((n) => n.ghost)!.detail).toBe("calls & extends ×13");
+  });
+
+  it("says a ghost's count is a total when it links to several boxes (the details give each box's share)", async () => {
+    const stub = (inside: string, count: number) => ({
+      id: `stub:in:${inside}->ghost:file:main.ts`,
+      direction: "in" as const,
+      inside,
+      ghost: "file:main.ts",
+      ghostLabel: "main.ts",
+      targets: [],
+      kinds: ["calls" as const],
+      count,
+    });
+    const graph: DerivedGraph = {
+      nodes: ["a", "b"].map((id) => ({
+        id,
+        label: `${id}.ts`,
+        kind: "file" as const,
+        container: false,
+      })),
+      edges: [],
+      stubs: [stub("a", 7), stub("b", 5)],
+      ghosts: [],
+    };
+    const layout = await layoutGraph(graph);
+    expect(layout.nodes.find((n) => n.ghost)!.detail).toBe("calls ×12 in all");
   });
 
   it("draws a ghost that folds several elements as one box that carries its pick-list", async () => {
@@ -535,6 +586,38 @@ describe("layoutGraph", () => {
     expect(layout.nodes.map((n) => [n.id, n.badge, n.role, n.sketch])).toEqual([
       ["grp:client", "sketch", "person", true],
       ["grp:db", "database", "database", undefined],
+    ]);
+  });
+
+  // ky's system map: the box "Your app" carried the chip "your app"
+  it("badges a box by its role when its technology only repeats its name", async () => {
+    const graph: DerivedGraph = {
+      nodes: [
+        {
+          id: "grp:app",
+          label: "Your app",
+          kind: "group",
+          role: "external",
+          tech: "your app",
+          container: false,
+        },
+        {
+          id: "grp:db",
+          label: "Orders",
+          kind: "group",
+          role: "database",
+          tech: "PostgreSQL",
+          container: false,
+        },
+      ],
+      edges: [],
+      stubs: [],
+      ghosts: [],
+    };
+    const layout = await layoutGraph(graph);
+    expect(layout.nodes.map((n) => [n.id, n.badge])).toEqual([
+      ["grp:app", "external system"],
+      ["grp:db", "PostgreSQL"],
     ]);
   });
 
@@ -770,6 +853,154 @@ describe("what a map draws", () => {
     }
   });
 
+  it("takes an arrow out of a group on the side that faces its other end, and never back through the group", async () => {
+    // xpl's own overview: cli (in a group with skill) serves the viewer, which is laid out above the group.
+    const box = (id: string, parent?: string) => ({
+      id,
+      label: id,
+      kind: "group" as const,
+      container: id === "tools",
+      ...(parent ? { parent } : {}),
+    });
+    const said = (from: string, to: string, label?: string) =>
+      derived({ id: `edge:${from}-${to}`, from, to, ...(label ? { label, stored: true } : {}) });
+    const graph: DerivedGraph = {
+      nodes: [
+        box("tools"),
+        box("skill", "tools"),
+        box("cli", "tools"),
+        box("viewer"),
+        box("indexer"),
+        box("core"),
+      ],
+      edges: [
+        said("skill", "cli", "runs the cli"),
+        said("cli", "viewer", "viewer page"),
+        said("viewer", "cli", "HTTP /api"),
+        said("cli", "core"),
+        said("cli", "indexer"),
+        said("indexer", "core"),
+        said("viewer", "core"),
+      ],
+      stubs: [],
+      ghosts: [],
+    };
+    for (const direction of ["DOWN", "RIGHT"] as const) {
+      const layout = await layoutGraph(graph, { direction });
+      const group = absoluteBoxes(layout.nodes).get("tools")!;
+      const inGroup = (p: { x: number; y: number }) =>
+        p.x > group.x + 1 &&
+        p.x < group.x + group.width - 1 &&
+        p.y > group.y + 1 &&
+        p.y < group.y + group.height - 1;
+      for (const edge of layout.edges) {
+        // walk the route in 2px steps: it goes in (or out of) the group once at most
+        let changes = 0;
+        let was: boolean | undefined;
+        for (let i = 1; i < edge.points.length; i++) {
+          const a = edge.points[i - 1]!,
+            b = edge.points[i]!;
+          const steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 2));
+          for (let s = 0; s <= steps; s++) {
+            const now = inGroup({
+              x: a.x + ((b.x - a.x) * s) / steps,
+              y: a.y + ((b.y - a.y) * s) / steps,
+            });
+            if (was !== undefined && now !== was) changes++;
+            was = now;
+          }
+        }
+        expect({ direction, edge: edge.id, changes }).toEqual({
+          direction,
+          edge: edge.id,
+          changes: edge.from === "cli" || edge.to === "cli" ? 1 : 0,
+        });
+      }
+    }
+  });
+
+  it("puts each label on or against a straight part of its own line, not on a bend", async () => {
+    // the shape of the job runner's overview: one authored label and counted calls between files
+    const files = ["main", "scheduling", "worker", "metrics", "bus", "queue"];
+    const call = (from: string, to: string, label?: string) =>
+      derived({
+        id: `edge:${from}-${to}`,
+        from,
+        to,
+        count: 3,
+        ...(label ? { label, stored: true, resolution: "llm" as const } : {}),
+      });
+    const graph: DerivedGraph = {
+      nodes: files.map((id) => ({
+        id,
+        label: `${id}.ts`,
+        kind: "file" as const,
+        container: false,
+      })),
+      edges: [
+        call("main", "scheduling"),
+        call("main", "worker"),
+        call("main", "metrics"),
+        call("scheduling", "worker"),
+        call("scheduling", "queue"),
+        call("worker", "metrics", "job.completed"),
+        call("worker", "bus"),
+        call("metrics", "bus"),
+      ],
+      stubs: [],
+      ghosts: [],
+    };
+    for (const direction of ["DOWN", "RIGHT"] as const) {
+      const layout = await layoutGraph(graph, { direction });
+      for (const edge of layout.edges) {
+        const label = edge.label!;
+        // on its line, or beside it and touching it
+        const corners = [0, 1].flatMap((i) =>
+          [0, 1].map((j) => ({ x: label.x + i * label.width, y: label.y + j * label.height })),
+        );
+        const near = edge.points.slice(1).some((p, i) => {
+          const a = edge.points[i]!;
+          const crosses =
+            Math.max(a.x, p.x) >= label.x &&
+            Math.min(a.x, p.x) <= label.x + label.width &&
+            Math.max(a.y, p.y) >= label.y &&
+            Math.min(a.y, p.y) <= label.y + label.height;
+          return (
+            crosses ||
+            corners.some((c) => distanceToSegment(c, a, p) <= 4) ||
+            (a.y === p.y &&
+              Math.min(Math.abs(a.y - label.y), Math.abs(a.y - label.y - label.height)) <= 4 &&
+              Math.max(a.x, p.x) > label.x &&
+              Math.min(a.x, p.x) < label.x + label.width)
+          );
+        });
+        // a bend turns the line (a jog of a few px between two tracks, or a point on a straight line, is none)
+        type P = { x: number; y: number };
+        const turns = (a: P, p: P, b: P) =>
+          Math.hypot(a.x - p.x, a.y - p.y) >= 4 &&
+          Math.hypot(b.x - p.x, b.y - p.y) >= 4 &&
+          Math.abs((p.x - a.x) * (b.y - p.y) - (p.y - a.y) * (b.x - p.x)) >
+            0.1 * Math.hypot(a.x - p.x, a.y - p.y) * Math.hypot(b.x - p.x, b.y - p.y);
+        const bends = edge.points
+          .slice(1, -1)
+          .filter((p, i) => turns(edge.points[i]!, p, edge.points[i + 2]!))
+          .filter(
+            (p) =>
+              p.x > label.x &&
+              p.x < label.x + label.width &&
+              p.y > label.y &&
+              p.y < label.y + label.height,
+          );
+        expect({ direction, edge: edge.id, onLine: near, bends }).toEqual({
+          direction,
+          edge: edge.id,
+          onLine: true,
+          bends: [],
+        });
+      }
+    }
+  });
+
   it("spreads labels that would overlap, along their own lines", () => {
     const label = (x: number, y: number) => ({ text: "calls ×5", x, y, width: 60, height: 18 });
     const edges = [
@@ -792,8 +1023,10 @@ describe("what a map draws", () => {
     const [a, b] = edges.map((e) => e.label);
     const apart = a!.x + a!.width <= b!.x || b!.x + b!.width <= a!.x;
     expect(apart).toBe(true);
-    // still on its line
-    expect(b!.y).toBe(3);
+    // still at its line (on it, or beside it and touching it, where the other line does not run through it)
+    expect(b!.y).toBeLessThanOrEqual(12 + 2);
+    expect(b!.y + b!.height).toBeGreaterThanOrEqual(12 - 2);
+    expect(routeHitsLabel(edges[0]!.points, b!)).toBe(false);
   });
 
   it("keeps the Go overview event label off unrelated incoming routes", () => {
@@ -944,6 +1177,161 @@ describe("what a map draws", () => {
   });
 });
 
+describe("labels and routes a reader can follow", () => {
+  const overlaps = (a: Box, b: Box) =>
+    a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+  type Box = { x: number; y: number; width: number; height: number };
+
+  it("moves a label off a box it would sit under, and keeps it at its own line", () => {
+    // (the self map: "applyPatch, injectBundle, …" half under the Indexer box beside its line)
+    const route = [
+      { x: 60, y: 0 },
+      { x: 60, y: 100 },
+      { x: 180, y: 100 },
+      { x: 180, y: 240 },
+    ];
+    const edges = [
+      {
+        points: route,
+        label: { text: "applyPatch, injectBundle, …", x: 100, y: 91, width: 160, height: 18 },
+      },
+    ];
+    const box = { x: 230, y: 105, width: 100, height: 60 };
+    spreadLabels(edges, [box], { x: 0, y: 0, width: 400, height: 240 });
+    const label = edges[0]!.label!;
+    expect(overlaps(label, box)).toBe(false);
+    // on its line, or beside it and touching it
+    const grown = {
+      x: label.x - 4,
+      y: label.y - 4,
+      width: label.width + 8,
+      height: label.height + 8,
+    };
+    expect(routeHitsLabel(route, grown)).toBe(true);
+  });
+
+  it("drops a detour that runs past the turn and doubles back", () => {
+    // (the self map's "viewer page" arrow: left to x 153, up 6 px, then right again to x 330)
+    const route = [
+      { x: 403, y: 388 },
+      { x: 403, y: 359 },
+      { x: 376, y: 359 },
+      { x: 376, y: 123 },
+      { x: 153, y: 123 },
+      { x: 153, y: 117 },
+      { x: 330, y: 117 },
+      { x: 330, y: 80 },
+    ];
+    expect(dropDetours(route)).toEqual([
+      { x: 403, y: 388 },
+      { x: 403, y: 359 },
+      { x: 376, y: 359 },
+      { x: 376, y: 123 },
+      { x: 330, y: 123 },
+      { x: 330, y: 80 },
+    ]);
+    // a route that turns back around something (a long way across) keeps its shape
+    const around = [
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 100, y: 60 },
+      { x: 20, y: 60 },
+    ];
+    expect(dropDetours(around)).toEqual(around);
+  });
+
+  it("draws two arrows between the same two boxes, one each way, as one line with a head at each end", async () => {
+    const node = (id: string) => ({ id, label: id, kind: "group" as const, container: false });
+    const graph: DerivedGraph = {
+      nodes: [node("cli"), node("viewer"), node("core")],
+      edges: [
+        derived({
+          id: "edge:embeds",
+          from: "cli",
+          to: "viewer",
+          label: "viewer page (dist/index.html)",
+          stored: true,
+          resolution: "llm",
+        }),
+        derived({
+          id: "edge:api",
+          from: "viewer",
+          to: "cli",
+          label: "HTTP /api (xpl view)",
+          stored: true,
+          resolution: "llm",
+        }),
+        derived({ id: "edge:calls:cli->core", from: "cli", to: "core", count: 4 }),
+      ],
+      stubs: [],
+      ghosts: [],
+    };
+    for (const direction of ["DOWN", "RIGHT"] as const) {
+      const layout = await layoutGraph(graph, { direction });
+      const there = layout.edges.find((edge) => edge.id === "edge:embeds")!;
+      const back = layout.edges.find((edge) => edge.id === "edge:api")!;
+      // one route, read both ways
+      expect(back.points).toEqual([...there.points].reverse());
+      // each label on the line, apart from the other
+      expect(overlaps(there.label!, back.label!)).toBe(false);
+      // a click near an arrow's head picks that arrow: its anchor is on its own half of the line
+      const half = (edge: LayoutEdge) => {
+        const tip = edge.points.at(-1)!;
+        const tail = edge.points[0]!;
+        return (
+          Math.hypot(edge.anchor.x - tip.x, edge.anchor.y - tip.y) <=
+          Math.hypot(edge.anchor.x - tail.x, edge.anchor.y - tail.y) + 0.5
+        );
+      };
+      expect([direction, half(there), half(back)]).toEqual([direction, true, true]);
+      // each label points the way its own arrow goes: on one line, two labels must not read alike
+      const way = (edge: LayoutEdge) => {
+        const [a, b] = [edge.points[0]!, edge.points.at(-1)!];
+        return Math.abs(b.x - a.x) >= Math.abs(b.y - a.y)
+          ? b.x > a.x
+            ? "→"
+            : "←"
+          : b.y > a.y
+            ? "↓"
+            : "↑";
+      };
+      for (const edge of [there, back]) expect(edge.label!.text).toContain(way(edge));
+      expect(way(there)).not.toBe(way(back));
+    }
+  });
+
+  // on a short line the two labels sat end to end and read as one ("← calls ×3 calls ×1 →")
+  it("keeps the labels of a two-way pair clearly apart, one on each side of their line", async () => {
+    const node = (id: string) => ({ id, label: id, kind: "group" as const, container: false });
+    const graph: DerivedGraph = {
+      nodes: [node("builder"), node("config")],
+      edges: [
+        derived({ id: "edge:calls:builder->config", from: "builder", to: "config", count: 3 }),
+        derived({ id: "edge:calls:config->builder", from: "config", to: "builder", count: 1 }),
+      ],
+      stubs: [],
+      ghosts: [],
+    };
+    for (const direction of ["DOWN", "RIGHT"] as const) {
+      const layout = await layoutGraph(graph, { direction });
+      const [a, b] = layout.edges.map((edge) => edge.label!);
+      // the gap between the two boxes, along whichever axis parts them
+      const gap = Math.max(
+        Math.max(a!.x, b!.x) - Math.min(a!.x + a!.width, b!.x + b!.width),
+        Math.max(a!.y, b!.y) - Math.min(a!.y + a!.height, b!.y + b!.height),
+      );
+      expect(gap, direction).toBeGreaterThanOrEqual(4);
+      // and the line runs between them, not under one of them (each label beside its own half)
+      const line = layout.edges[0]!.points;
+      expect([direction, routeHitsLabel(line, a!), routeHitsLabel(line, b!)]).toEqual([
+        direction,
+        false,
+        false,
+      ]);
+    }
+  });
+});
+
 describe("what a still picture's frame cuts", () => {
   const node = (id: string, x: number, y: number, children: LayoutNode[] = []) =>
     ({ id, x, y, width: 100, height: 40, children, edges: [] }) as unknown as LayoutNode;
@@ -968,5 +1356,347 @@ describe("what a still picture's frame cuts", () => {
     expect(cut.has("g")).toBe(false);
     expect(cut.has("a-g")).toBe(false);
     expect(cut.has("inner")).toBe(false);
+  });
+});
+
+// ky's "Every file of ky" step 1 names every box: its picture cut "types" at the left and "errors" at the
+// bottom, the big picture in part
+describe("the still picture of a step about every box", () => {
+  const content = { width: 1100, height: 700 };
+  const all = { boxes: [{ x: 20, y: 10, width: 1060, height: 680 }] };
+  it("shows the whole diagram, as tall as it takes up to the tallest picture, below the usual floor", () => {
+    const whole = wholePicture(619, 620, content, all)!;
+    // 599 px of width for 1,100 units: 0.545, under the 0.6 floor of a framed picture
+    expect(whole.transform.k).toBeCloseTo(599 / 1100, 5);
+    expect(whole.height).toBeCloseTo(700 * (599 / 1100) + 20, 5);
+    expect(whole.transform.x).toBeCloseTo(10, 5);
+    expect([whole.hidden, whole.partial]).toEqual([0, false]);
+  });
+  it("is no special case for a step about part of the diagram, or a diagram too large to read whole", () => {
+    expect(
+      wholePicture(619, 620, content, { boxes: [{ x: 20, y: 10, width: 300, height: 200 }] }),
+    ).toBe(undefined);
+    expect(
+      wholePicture(
+        619,
+        620,
+        { width: 4000, height: 700 },
+        { boxes: [{ x: 0, y: 0, width: 4000, height: 700 }] },
+      ),
+    ).toBe(undefined);
+  });
+});
+
+// "Go" on each of cobra's 7 boxes said nothing a box could tell apart; the map says it once
+describe("a badge every box shares", () => {
+  const go = (id: string): DerivedGraph["nodes"][number] => ({
+    id,
+    label: id,
+    kind: "group",
+    container: false,
+    role: "component",
+    tech: "Go",
+  });
+  it("is drawn on no box, and named once for the map", async () => {
+    const nodes = ["a", "b", "c", "d"].map(go);
+    const layout = await layoutGraph({ nodes, edges: [], stubs: [], ghosts: [] });
+    expect(layout.sharedBadge).toBe("Go");
+    // not drawn, but still the box's name for a screen reader ("a, Go")
+    expect(layout.nodes.map((n) => [n.badge, n.badgeShared])).toEqual(
+      ["a", "b", "c", "d"].map(() => ["Go", true]),
+    );
+  });
+  it("stays on each box when one box differs, or the map has three boxes", async () => {
+    const mixed = [...["a", "b", "c"].map(go), { ...go("d"), tech: "Python" }];
+    const one = await layoutGraph({ nodes: mixed, edges: [], stubs: [], ghosts: [] });
+    expect(one.sharedBadge).toBeUndefined();
+    expect(one.nodes.map((n) => [n.badge, n.badgeShared])).toEqual([
+      ["Go", undefined],
+      ["Go", undefined],
+      ["Go", undefined],
+      ["Python", undefined],
+    ]);
+    const few = await layoutGraph({
+      nodes: ["a", "b", "c"].map(go),
+      edges: [],
+      stubs: [],
+      ghosts: [],
+    });
+    expect(few.sharedBadge).toBeUndefined();
+  });
+});
+
+/** A data-model view (`GraphView.boxText: "members"`): types as tables, fields as rows, arrows from the rows. */
+describe("tables", () => {
+  const type = (id: string): DerivedGraph["nodes"][number] => ({
+    id,
+    label: id,
+    kind: "symbol",
+    symbolKind: "interface",
+    container: true,
+    rows: true,
+  });
+  const field = (parent: string, name: string, row: number, memberType: string) => ({
+    id: `${parent}.${name}`,
+    label: name,
+    kind: "symbol" as const,
+    symbolKind: "variable" as const,
+    container: false,
+    parent,
+    row,
+    memberType,
+  });
+  const graph: DerivedGraph = {
+    // in id order, as core gives them: the rows follow `row`, not this order
+    nodes: [
+      type("DeadJob"),
+      field("DeadJob", "error", 1, "string"),
+      field("DeadJob", "job", 0, "Job"),
+      type("Job"),
+      field("Job", "attempts", 1, "number"),
+      field("Job", "id", 0, "string"),
+    ],
+    edges: [
+      {
+        id: "edge:references:DeadJob.job->Job",
+        from: "DeadJob.job",
+        to: "Job",
+        kind: "references",
+        count: 1,
+        resolution: "precise",
+        stored: false,
+        anchors: [],
+      },
+    ],
+    stubs: [],
+    ghosts: [],
+  };
+
+  // folding a table laid the whole map out again, and every table jumped
+  it("keeps every box where it was when a table folds, and lays out afresh for anything else", async () => {
+    const before = await layoutGraph(graph);
+    const folded: DerivedGraph = {
+      ...graph,
+      nodes: graph.nodes
+        .filter((n) => !n.id.startsWith("DeadJob."))
+        .map((n) => (n.id === "DeadJob" ? { ...n, container: false, rows: false } : n)),
+      edges: [{ ...graph.edges[0]!, id: "edge:references:DeadJob->Job", from: "DeadJob" }],
+    };
+    const pins = foldPins(before, folded);
+    const where = (layout: { nodes: LayoutNode[] }) =>
+      layout.nodes.map((n) => [n.id, Math.round(n.x), Math.round(n.y)]);
+    expect(where(await layoutGraph(folded, { pins }))).toEqual(where(before));
+    // the table opens again, or a box joins: no pins, the map is laid out as it first was
+    const after = await layoutGraph(folded, { pins });
+    expect(foldPins(after, graph)).toBeUndefined();
+    expect(
+      foldPins(before, { ...graph, nodes: [...graph.nodes, { ...type("Queue"), rows: false }] }),
+    ).toBeUndefined();
+  });
+
+  it("stacks the rows under the header in code order, as wide as the table", async () => {
+    const layout = await layoutGraph(graph);
+    const dead = layout.nodes.find((n) => n.id === "DeadJob")!;
+    expect(dead.rows).toBe(true);
+    expect(dead.children.map((c) => [c.id, c.row, c.memberType, c.width === dead.width])).toEqual([
+      ["DeadJob.job", true, "Job", true],
+      ["DeadJob.error", true, "string", true],
+    ]);
+    const [first, second] = dead.children;
+    expect(second!.y).toBe(first!.y + first!.height);
+    expect(dead.height).toBeGreaterThanOrEqual(second!.y + second!.height);
+  });
+
+  it("starts a row's arrow on the table's side at the row's height, and ends it at the other table's header", async () => {
+    const layout = await layoutGraph(graph);
+    const boxes = absoluteBoxes(layout.nodes);
+    const row = boxes.get("DeadJob.job")!;
+    const job = boxes.get("Job")!;
+    const edge = layout.edges.find((e) => e.id === "edge:references:DeadJob.job->Job")!;
+    const start = edge.points[0]!;
+    const end = edge.points.at(-1)!;
+    expect(start.x).toBe(row.x + row.width);
+    expect(start.y).toBe(row.y + row.height / 2);
+    expect(end.x).toBe(job.x);
+    // the header band: above the first row of Job
+    expect(end.y).toBeGreaterThan(job.y);
+    expect(end.y).toBeLessThan(boxes.get("Job.id")!.y);
+  });
+
+  // a data map laid out to the right is one long row of tall tables; in a tall pane, "Fit all" drew
+  // its text at 5 px. Top to bottom, the arrow still leaves its row: out of the row's side, down beside it.
+  it("lays out top to bottom, each arrow still leaving its row's side and ending on the other table's header", async () => {
+    const chain: DerivedGraph = {
+      ...graph,
+      nodes: [
+        ...graph.nodes,
+        type("Queue"),
+        field("Queue", "dead", 0, "DeadJob[]"),
+        field("Queue", "ready", 1, "Job[]"),
+      ],
+      edges: [
+        ...graph.edges,
+        ...["dead->DeadJob", "ready->Job"].map((pair) => {
+          const [row, to] = pair.split("->") as [string, string];
+          return {
+            ...graph.edges[0]!,
+            id: `edge:references:Queue.${row}->${to}`,
+            from: `Queue.${row}`,
+            to,
+          };
+        }),
+      ],
+    };
+    const layout = await layoutGraph(chain, { direction: "DOWN" });
+    expect(layout.direction).toBe("DOWN");
+    const boxes = absoluteBoxes(layout.nodes);
+    const queue = boxes.get("Queue")!;
+    const job = boxes.get("Job")!;
+    // Queue above DeadJob above Job
+    expect(queue.y + queue.height).toBeLessThan(boxes.get("DeadJob")!.y);
+    expect(boxes.get("DeadJob")!.y + boxes.get("DeadJob")!.height).toBeLessThan(job.y);
+    const lanes = new Set<number>();
+    for (const id of ["edge:references:Queue.ready->Job", "edge:references:Queue.dead->DeadJob"]) {
+      const edge = layout.edges.find((e) => e.id === id)!;
+      const row = boxes.get(edge.from)!;
+      const to = boxes.get(edge.to)!;
+      const [start, turn, down] = edge.points;
+      expect(start).toEqual({ x: row.x + row.width, y: row.y + row.height / 2 });
+      // a short run to the right, into a lane of its own beside the table, then down past it
+      expect(turn!.y).toBe(start!.y);
+      expect(turn!.x).toBeGreaterThan(start!.x);
+      expect(down!.x).toBe(turn!.x);
+      expect(down!.y).toBeGreaterThanOrEqual(queue.y + queue.height);
+      lanes.add(turn!.x);
+      const end = edge.points.at(-1)!;
+      expect(end.y).toBe(to.y);
+      expect(end.x).toBeGreaterThan(to.x);
+      expect(end.x).toBeLessThan(to.x + to.width);
+    }
+    expect(lanes.size).toBe(2);
+  });
+
+  // ky's data map: "HTTPError extends KyError" turned inside the NormalizedOptions table and left its top,
+  // so it read "HTTPError extends NormalizedOptions"
+  it("routes an arrow around a table it would turn inside, never through it", async () => {
+    const rows = (t: string, names: string[], types: Record<string, string> = {}) =>
+      names.map((n, i) => field(t, n, i, types[n] ?? "string"));
+    const extend = (from: string, to: string) => ({
+      ...graph.edges[0]!,
+      id: `edge:extends:${from}->${to}`,
+      kind: "extends" as const,
+      from,
+      to,
+    });
+    const hold = (from: string, to: string) => ({
+      ...graph.edges[0]!,
+      id: `edge:references:${from}->${to}`,
+      from,
+      to,
+    });
+    const ky: DerivedGraph = {
+      nodes: [
+        { ...type("KyError"), symbolKind: "class" },
+        ...rows("KyError", ["name"]),
+        { ...type("TimeoutError"), symbolKind: "class" },
+        ...rows("TimeoutError", ["name", "request"]),
+        { ...type("ResponseSizeError"), symbolKind: "class" },
+        ...rows("ResponseSizeError", ["name", "request", "maxResponseSize"]),
+        { ...type("HTTPError"), symbolKind: "class" },
+        ...rows("HTTPError", ["name", "response", "request", "options", "data"], {
+          options: "NormalizedOptions",
+        }),
+        type("NormalizedOptions"),
+        ...rows("NormalizedOptions", [
+          "method",
+          "credentials",
+          "headers",
+          "retry",
+          "baseUrl",
+          "prefix",
+          "onDownloadProgress",
+          "onUploadProgress",
+        ]),
+        type("Options"),
+        ...rows("Options", ["method", "headers", "signal"]),
+      ],
+      edges: [
+        extend("HTTPError", "KyError"),
+        extend("ResponseSizeError", "KyError"),
+        extend("TimeoutError", "KyError"),
+        hold("HTTPError.options", "NormalizedOptions"),
+        hold("NormalizedOptions.baseUrl", "Options"),
+        hold("NormalizedOptions.onDownloadProgress", "Options"),
+        hold("NormalizedOptions.onUploadProgress", "Options"),
+      ],
+      stubs: [],
+      ghosts: [],
+    };
+    const layout = await layoutGraph(ky);
+    const boxes = absoluteBoxes(layout.nodes);
+    const table = (id: string) => (boxes.has(id) && !id.includes(".") ? id : id.split(".")[0]!);
+    const through = layout.edges.flatMap((edge) =>
+      layout.nodes
+        .filter((n) => n.id !== table(edge.from) && n.id !== table(edge.to))
+        .filter((n) => {
+          const b = boxes.get(n.id)!;
+          return edge.points.some((p, i) => {
+            const q = edge.points[i + 1] ?? p;
+            return (
+              Math.max(p.x, q.x) > b.x &&
+              Math.min(p.x, q.x) < b.x + b.width &&
+              Math.max(p.y, q.y) > b.y &&
+              Math.min(p.y, q.y) < b.y + b.height
+            );
+          });
+        })
+        .map((n) => `${edge.id} through ${n.id}`),
+    );
+    expect(through).toEqual([]);
+    // it goes up 10 px left of the table, the nearer side
+    const route = layout.edges.find((e) => e.id === "edge:extends:HTTPError->KyError")!.points;
+    const options = boxes.get("NormalizedOptions")!;
+    expect(route.map((p) => p.x)).toContain(options.x - 10);
+  });
+
+  it("is laid out in the direction that draws it larger in the pane", async () => {
+    expect((await layoutGraphFitting(graph, { width: 300, height: 1200 })).direction).toBe("DOWN");
+    expect((await layoutGraphFitting(graph, { width: 1200, height: 300 })).direction).toBe("RIGHT");
+  });
+});
+
+// the table read "runner.Config" but its row's type "Config"; the table "Retry" but the row "config.Retry"
+describe("a row's type names the table it holds as the map does", () => {
+  it("qualifies or unqualifies the type's name to the table's, and leaves other types as written", () => {
+    expect(rowTypeText("Config", "runner.Config")).toBe("runner.Config");
+    expect(rowTypeText("*Config", "runner.Config")).toBe("*runner.Config");
+    expect(rowTypeText("config.Retry", "Retry")).toBe("Retry");
+    expect(rowTypeText("[]Job", "Job")).toBe("[]Job");
+    expect(rowTypeText("Array<(worker: Worker) => void>", undefined)).toBe(
+      "Array<(worker: Worker) => void>",
+    );
+    // (two mentions: which one is the table is not clear, so the code's words stay)
+    expect(rowTypeText("Map<Job, Job>", "queue.Job")).toBe("Map<Job, Job>");
+  });
+});
+
+describe("a box summary's code", () => {
+  // "Keeps each `Job` in order" showed both backticks on the box, and the parts panel drew code
+  it("is drawn as runs of words and code, the backticks dropped, a span going on to the next line", () => {
+    expect(codeRuns(["Keeps each `Job` in", "order until `Worker", "takes` it."])).toEqual([
+      [
+        { text: "Keeps each ", code: false },
+        { text: "Job", code: true },
+        { text: " in", code: false },
+      ],
+      [
+        { text: "order until ", code: false },
+        { text: "Worker", code: true },
+      ],
+      [
+        { text: "takes", code: true },
+        { text: " it.", code: false },
+      ],
+    ]);
   });
 });

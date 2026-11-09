@@ -294,7 +294,7 @@ async function extractFile(
         if (errors) {
           result.outcome.status = "partial";
           result.outcome.limitations.push(
-            "Syntax errors may leave symbols and relationships incomplete.",
+            "Syntax errors may leave symbols and references incomplete.",
           );
         }
         if (errors && !isTestData(source.path)) result.syntaxErrors = errors;

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Span } from "../src/index.js";
-import { extract, indexFiles, symbol, symbolLines } from "./helpers.js";
+import { extract, hasRef, indexFiles, symbol, symbolLines } from "./helpers.js";
 
 const src = (...lines: string[]): string => lines.join("\n") + "\n";
 
@@ -110,6 +110,43 @@ describe("Python symbols: kinds and paths (ARCHITECTURE.md §3 table)", () => {
       "variable C.o 16-16",
       "variable C.q 17-17",
     ]);
+  });
+
+  it("attributes `__init__` sets on `self` are fields of the class, once each, after what the class body declares", async () => {
+    const source = src(
+      "class Queue:", // 1
+      "    limit: int", // 2
+      "", // 3
+      "    def __init__(self, config: Config) -> None:", // 4
+      "        self._ready: list[Job] = []", // 5
+      "        self.limit = config.limit", // 6  declared in the class body already
+      "        self.dead = []", // 7
+      "        if config.trace:", // 8
+      "            self.tracer = Tracer()", // 9
+      "        self.dead = [1]", // 10 set twice: one field
+      "        other.x = 1", // 11 not the receiver
+      "        def later():", // 12
+      "            self.inner = 1", // 13 a nested function's assignment is not the constructor's
+      "", // 14
+      "    def push(self, job: Job) -> None:", // 15
+      "        self.pushed = job", // 16 set outside __init__: not a field
+    );
+    expect(await symbolsOf(source)).toEqual([
+      "class Queue 1-16",
+      "variable Queue.limit 2-2",
+      "method Queue.__init__ 4-13",
+      "variable Queue._ready 5-5",
+      "variable Queue.dead 7-7",
+      "variable Queue.tracer 9-9",
+      "function Queue.__init__.later 12-13",
+      "method Queue.push 15-16",
+    ]);
+    const { index } = await indexFiles({
+      "a.py": source + src("class Job: ...", "class Config: ...", "class Tracer: ..."),
+    });
+    expect(symbol(index, "a.py", "Queue._ready")!.parent).toBe("a.py#Queue");
+    // the annotation's type is a reference from the field, as for a field the class body declares
+    expect(hasRef(index, "a.py#Queue._ready", "a.py#Job", "type-ref")).toBe(true);
   });
 
   it("PEP 695 type aliases are `type` symbols", async () => {

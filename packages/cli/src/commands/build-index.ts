@@ -1,7 +1,7 @@
 import { readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { LanguageInfo } from "@xpl/core";
-import { describeAnalysis } from "@xpl/core";
+import { describeAnalysis, HEURISTIC_REFS_LIMIT } from "@xpl/core";
 import { buildIndex, writeIndex } from "@xpl/indexer";
 import { scipProviders } from "../index-options.js";
 import type { CommandSpec } from "../command.js";
@@ -11,8 +11,46 @@ import { displayPath, toPosix } from "../fsutil.js";
 import { EXPLAINER_DIR, EXPLAINER_SUFFIX, readExplainerFile } from "../repo.js";
 
 const PRECISE = ["auto", "off", "require"] as const;
+/** The limit `@xpl/indexer` records for precise relationship results (analysis.ts). */
+const PRECISE_LIMIT =
+  "A tool can miss a reference, so an empty result does not prove there is none.";
 
-/** Explainers bound to another index than `commit`: they need `xpl resolve --write`. */
+/**
+ * The coverage lines of `describeAnalysis`, easier to scan: one language per line in name order, the provider only
+ * when it is not the language itself (`typescript`, not `typescript (typescript)`), and the file-anchor line of
+ * every file first, as `all 13 files`.
+ */
+export function coverageDetails(
+  details: readonly string[],
+  files: number,
+  languages: Readonly<Record<string, LanguageInfo>>,
+): string[] {
+  /** A language whose every file a precise tool analyzed: its heuristic hints are not what it uses. */
+  const precise = (language: string) =>
+    languages[language]?.refs === "precise" && (languages[language]?.heuristicFiles ?? 0) === 0;
+  const parsed = details.flatMap((line) => {
+    const m = /^(\S+) \(([^)]+)\): (.*)$/.exec(line);
+    if (!m) return [{ key: "~", line }];
+    const [, langs, provider, rest] = m as unknown as [string, string, string, string];
+    if (provider === "files") return [{ key: "", line: `all ${plural(files, "file")}: ${rest}` }];
+    if (provider === langs && precise(langs) && rest.includes(HEURISTIC_REFS_LIMIT)) return [];
+    // a tool that analyzed every file but does not report what it may miss: "partial" reads as broken
+    const all = /^(.*) partial \((\d+)\/\2 files analyzed\)\. (.*)$/.exec(rest);
+    const text =
+      provider !== langs && all && all[3] === PRECISE_LIMIT
+        ? `${all[1]} precise (${all[2]}/${all[2]} files analyzed). The tool does not report what it may have missed.`
+        : rest;
+    const head = provider === langs ? langs : `${langs} (${provider})`;
+    return [{ key: langs, line: `${head}: ${text}` }];
+  });
+  // stable: a language's lines keep their order (symbols, then relationships)
+  return parsed
+    .map((p, i) => ({ ...p, i }))
+    .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : a.i - b.i))
+    .map((p) => p.line);
+}
+
+/** Explainers bound to another index than `commit`: they need `xpl resolve <explainer> --write`. */
 function explainersNeedingResolve(root: string, commit: string): string[] {
   const dir = join(root, EXPLAINER_DIR);
   let names: string[];
@@ -46,37 +84,38 @@ export function describeRefs(info: LanguageInfo): string {
   return `precise ${Math.max(0, info.files - heuristic)}/${info.files}${tool}, ${heuristic} heuristic`;
 }
 
+/**
+ * One plain line per language whose code links are limited (`xpl index` without --verbose): references matched by
+ * name, or a file with no symbols. Config languages (yaml, json, toml) have no references by design: the table says
+ * `refs: none`, and nothing more is needed.
+ */
+export function limitLines(languages: Readonly<Record<string, LanguageInfo>>): string[] {
+  return Object.entries(languages).flatMap(([name, info]) => {
+    if (info.refs === "heuristic")
+      return [`${name}: references matched by name; some can be missing.`];
+    if (info.refs === "precise" && (info.heuristicFiles ?? 0) > 0)
+      return [
+        `${name}: references of ${plural(info.heuristicFiles!, "file")} matched by name; some can be missing.`,
+      ];
+    if (info.symbols === 0 && info.refs === "none")
+      return [`${name}: file only; no symbols or references.`];
+    return [];
+  });
+}
+
 export const indexCommand: CommandSpec = {
   name: "index",
   usage:
-    "xpl index [--precise auto|off|require] [--commit c] [--no-cache] [--scip artifact|manifest.json]",
-  summary: "Build and write the symbol index; print languages and excluded source candidates",
+    "xpl index [--precise auto|off|require] [--commit <c>] [--no-cache] [--scip <artifact|manifest.json>] [--verbose]",
+  summary: "Build and write the symbol index; print the languages and the excluded files",
   details: [
-    "Indexes every text file under --root (git-aware) and writes .explainer/index-<commit>.json.",
-    "Interactive stderr shows phases and file counts; redirected stderr and --json omit progress.",
-    "Ctrl+C cancels between files/phases and stops SCIP tools. Before publication, the previous complete",
-    "index is retained (or no index is created); extraction cache entries may remain. Exit code: 130.",
-    "Reuses file-local tree-sitter, Rust, Ruby and PHP tags facts from .explainer/cache by default.",
-    "Directory aliases into the repository (including symlinks and bind mounts) bypass cache reads and writes.",
-    "--no-cache neither reads nor writes that cache. Source discovery, hashes, heuristic resolution and semantic tools",
-    "still run on every build. Hits/misses and extraction wall time exclude resolution and semantic tools.",
-    "The commit id is the short HEAD for a clean top-level git tree, else wt-<hash> of the files.",
-    "--precise auto uses SCIP indexers when available (heuristic references otherwise, with a warning);",
-    "off never runs them; syntax-only providers (Rust, Ruby and PHP tags) still run. require fails instead of falling back.",
-    "Each language line ends with how far its references can be trusted: `refs: precise (tool)`, `refs: heuristic`",
-    "(hints: confirm each call with `xpl show`), `refs: none` (Ruby, PHP, yaml, json, toml, text without an artifact provider),",
-    "or, when the precise tool did not",
-    "describe every file, `refs: precise 64/82 (scip-python@0.6.6), 18 heuristic`: the references of those 18 files",
-    "are hints.",
-    "Analysis coverage lists independent source and relationship abilities, analyzed files, limits and failures.",
-    "Excluded file counts and up to three paths per reason cover enumerated candidates only; git-ignored files",
-    "and directories skipped by the fallback walk are not counted.",
-    "Empty relationships do not prove complete coverage. Saved indexes and exported viewers retain this report.",
-    "--scip imports a generated artifact with embedded source text, or a JSON manifest naming its artifact.",
-    "Textless artifacts require artifactSha256 and pre-generation sourceHashes in the manifest.",
-    "Unspecified positions require a verified manifest.defaultEncoding. Unknown extensions stay text.",
-    "This replaces automatic SCIP tools; registered syntax providers (Rust, Ruby and PHP tags) still run.",
-    "--precise off cannot import an artifact. require needs precise coverage for each programming language.",
+    "Writes .explainer/index-<commit>.json: the commit is the short HEAD of a clean git tree, else wt-<hash>.",
+    "Each language line ends with how far its references can be trusted.",
+    "`refs: precise (tool)`: a language tool resolved them. `refs: heuristic`: matched by name; check calls.",
+    "`refs: none` (Ruby, PHP, yaml, json, toml, text without an artifact provider): no references.",
+    "--precise auto runs a SCIP tool when it can, else matches by name and warns; require fails instead.",
+    "--scip reads a SCIP artifact you made. Facts of unchanged files come from .explainer/cache.",
+    "Ctrl+C stops the build (exit 130). The old index stays until the new one is complete.",
   ],
   options: {
     "no-cache": {
@@ -86,14 +125,18 @@ export const indexCommand: CommandSpec = {
     scip: {
       type: "string",
       arg: "<artifact|manifest.json>",
-      desc: "Import source-verified SCIP declarations and supported references",
+      desc: "Read declarations and references from a SCIP artifact",
     },
     precise: {
       type: "string",
       arg: "auto|off|require",
-      desc: "Reference resolution: SCIP when available (auto, default), never (off), or fail (require)",
+      desc: "auto (default): SCIP when it can run; off: never; require: fail without it",
     },
     commit: { type: "string", arg: "<c>", desc: "Commit id to record instead of the computed one" },
+    verbose: {
+      type: "boolean",
+      desc: "Also print the cache, timing and coverage lines",
+    },
   },
   positionals: [],
   async run(ctx, args) {
@@ -109,7 +152,16 @@ export const indexCommand: CommandSpec = {
     let lastPhase = "";
     let lastUpdate = 0;
     const progress = (event: import("@xpl/indexer").IndexProgress) => {
-      if (ctx.json || !ctx.io.isTTY) return;
+      if (ctx.json) return;
+      // a SCIP tool can run for a minute: say so even when stderr is not a terminal (an agent's shell)
+      const tool = event.phase === "Provider" ? event.provider : undefined;
+      if (tool?.startsWith("scip-") && tool !== "scip-artifact") {
+        ctx.io.err(
+          `index: running ${tool} for precise references (it can take a minute; \`--precise off\` skips it)`,
+        );
+        return;
+      }
+      if (!ctx.io.isTTY) return;
       const phase = event.provider ? `${event.phase} ${event.provider}` : event.phase;
       const now = Date.now();
       if (phase === lastPhase && now - lastUpdate < 1000 && event.completed !== event.total) return;
@@ -138,7 +190,7 @@ export const indexCommand: CommandSpec = {
     } catch (error) {
       if (signal.aborted)
         throw new CliError(
-          "Indexing cancelled; no partial index was published. Any previous complete index is retained.",
+          "Indexing canceled: xpl wrote no index and kept the last complete one.",
           130,
         );
       throw new CliError(errorMessage(error));
@@ -181,18 +233,35 @@ export const indexCommand: CommandSpec = {
       ),
     ];
     const { extraction, work } = result;
-    lines.push(
-      "",
-      `Extraction (${extraction.enabled ? "cache enabled" : "cache disabled"}): ${extraction.hits} hits, ${extraction.misses} misses, ${extraction.wallMs.toFixed(1)} ms wall; file-local tree-sitter and tags only.`,
-    );
+    const verbose = args.flag("verbose");
+    const coverage = describeAnalysis(index);
+    if (!verbose) {
+      const details = coverageDetails(coverage.details, index.files.length, index.languages);
+      const failed = details.filter((line) => / failed \(/.test(line));
+      // symbols found by tags (Rust, Ruby, PHP): some declarations have no symbol
+      const partialSymbols = details.flatMap((line) => {
+        const m = /^([\w-]+)(?: \([^)]+\))?: named symbols\b.* partial \(/.exec(line);
+        return m ? [`${m[1]}: some symbols can be missing (partial extraction).`] : [];
+      });
+      const limits = [...partialSymbols, ...limitLines(index.languages), ...failed];
+      if (limits.length > 0) lines.push("", ...limits);
+    }
+    if (verbose)
+      lines.push(
+        "",
+        `Extraction (${extraction.enabled ? "cache enabled" : "cache disabled"}): ${plural(extraction.hits, "hit")}, ${plural(extraction.misses, "miss", "misses")} of the ${plural(extraction.hits + extraction.misses, "file")} with a grammar, ${extraction.wallMs.toFixed(1)} ms wall; file-local tree-sitter and tags only.`,
+      );
     if (extraction.writeFailures)
       lines.push(`Cache writes failed: ${extraction.writeFailures}; fresh facts were used.`);
     if (extraction.bypassReason) lines.push(`Cache bypassed: ${extraction.bypassReason}.`);
-    lines.push(
-      `Fresh work: heuristic resolution ${work.heuristicResolutionMs.toFixed(1)} ms wall; semantic providers ${work.semanticRuns} runs, ${work.semanticMs.toFixed(1)} ms wall.`,
-    );
-    const coverage = describeAnalysis(index);
-    lines.push("", coverage.summary, ...coverage.details);
+    if (verbose) {
+      lines.push(
+        `Fresh work: heuristic resolution ${work.heuristicResolutionMs.toFixed(1)} ms wall; semantic providers ${work.semanticRuns} runs, ${work.semanticMs.toFixed(1)} ms wall.`,
+        "",
+        coverage.summary,
+        ...coverageDetails(coverage.details, index.files.length, index.languages),
+      );
+    }
     const { exclusions } = result;
     const excluded = exclusions.reasons.map(
       ({ reason, count, examples }) =>
@@ -200,7 +269,9 @@ export const indexCommand: CommandSpec = {
     );
     lines.push(
       "",
-      `Excluded from ${exclusions.scope}: ${excluded.length ? excluded.join("; ") : "none"}.`,
+      excluded.length
+        ? `Excluded from ${exclusions.scope}: ${excluded.join("; ")}.`
+        : "Excluded files: none.",
       exclusions.scope === "git candidates"
         ? "Git-ignored files are not counted."
         : exclusions.scope === "walked files"
@@ -210,7 +281,7 @@ export const indexCommand: CommandSpec = {
     if (stale.length > 0) {
       lines.push(
         "",
-        `hint: ${plural(stale.length, "explainer")} (${stale.join(", ")}) ${stale.length === 1 ? "is" : "are"} bound to another index; run \`xpl resolve <name> --write\` to move ${stale.length === 1 ? "it" : "them"} to this one.`,
+        `hint: ${plural(stale.length, "guide")} (${stale.join(", ")}) ${stale.length === 1 ? "is" : "are"} bound to another index; run ${stale.map((name) => `\`xpl resolve ${name} --write\``).join(", ")} to move ${stale.length === 1 ? "it" : "them"} to this one.`,
       );
     }
     ctx.out(lines.join("\n"));

@@ -25,8 +25,8 @@ may write), `ViewerBundle` (all the viewer knows), `window.__xpl` test hooks.
 
 Run the `how` skill on every subsystem the change touches, and read the matching `docs/ARCHITECTURE.md`
 section. Note the invariants you must keep: core stays browser-safe and pure; references keep their
-`precise`/`heuristic` label; user provenance wins over `llm` patches; one index at the head of a change; the
-explainer file is written only by `xpl apply` and `xpl change`.
+`precise`/`heuristic` label; user provenance wins over `llm` patches; one index at the head of a change; agents
+change the explainer file only through `xpl apply` and `xpl change`, and never hand-edit it.
 
 ## 2. Sketch
 

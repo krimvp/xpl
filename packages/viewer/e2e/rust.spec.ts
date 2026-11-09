@@ -20,20 +20,22 @@ test("Rust symbol selection highlights source and reports bounded heuristic call
   await expect(traitPane.locator('.cm-line[data-line="22"]')).toContainText(
     "fn pop(&mut self) -> Option<Job>;",
   );
-  const notice = page.getByTestId("analysis-coverage");
-  await notice.locator("summary").click();
-  await expect(notice).toContainText(
-    "rust (rust-tags): named symbols, full declaration ranges, nesting partial (9/9 files analyzed)",
+  await expect(page.getByTestId("analysis-coverage").locator("summary")).toHaveText(
+    "Some arrows may be missing: xpl could not analyze all the code in 3 files this guide links to.",
   );
-  await expect(notice).toContainText("rust (rust-tags): calls partial (9/9 files analyzed)");
-  await expect(notice).toContainText(
-    "Heuristic calls cover unambiguous same-file root functions and statically identified receivers with explicit crate imports.",
-  );
-  await expect(notice).toContainText(
-    "rust (rust-tags): imports, inheritance, implementations, type references, reads, writes unsupported (0/9 files analyzed)",
-  );
-  await expect(notice).toContainText("Syntax tags omit macro-generated declarations");
-  await expect(notice).not.toContainText("rust-analyzer");
   await expect(page.locator(".diagram .edge")).not.toHaveCount(0);
+  // what xpl could read, one plain line per language: About this guide, on the reading page (the tools' own
+  // report is for authors, with `xpl index --verbose`)
+  await page.goto(RUST_BUNDLE.href);
+  await page.getByTestId("explanation-info").locator(":scope > summary").click();
+  const notice = page.getByTestId("analysis-details");
+  await notice.locator("summary").click();
+  await expect(notice.locator("summary")).toHaveText(
+    "What xpl could read: 13 files. Some languages only in part.",
+  );
+  await expect(notice).toContainText(
+    "Rust (9 files): names in part; calls and imports matched by name, so some can be missing; no inherits, implements, type uses, reads or writes.",
+  );
+  await expect(notice).not.toContainText("rust-analyzer");
   expect(problems).toEqual([]);
 });

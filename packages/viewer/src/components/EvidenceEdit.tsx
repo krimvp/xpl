@@ -34,7 +34,7 @@ export function EvidenceEdit({
           store.updateEditDraft(id, draft.edit.before);
         }}
       >
-        Edit evidence
+        Edit code links
       </button>
     );
 
@@ -54,17 +54,14 @@ export function EvidenceEdit({
   return (
     <form
       className="text-edit evidence-edit"
-      aria-label="Edit source evidence"
+      aria-label="Edit code links"
       onSubmit={(event) => {
         event.preventDefault();
         void save();
       }}
     >
-      <h3>Source evidence</h3>
-      <p>
-        Source stays read-only. Select lines to check a replacement, then explicitly replace, remove
-        or add evidence.
-      </p>
+      <h3>Code links</h3>
+      <p>The code is read-only. Select lines, then replace, remove or add a code link.</p>
       <fieldset disabled={state.editBusy}>
         <label>
           Evidence role
@@ -179,10 +176,10 @@ export function EvidenceEdit({
         {state.editError && <p role="alert">{state.editError}</p>}
         <div className="actions">
           <p role="status">
-            {state.editBusy ? "Saving…" : dirty ? "Unsaved evidence draft" : "No changes"}
+            {state.editBusy ? "Saving…" : dirty ? "Unsaved code-link changes" : "No changes"}
           </p>
           <button type="submit" className="btn" disabled={!dirty}>
-            Save evidence
+            Save code links
           </button>
           <button type="button" className="btn" onClick={() => store.cancelEdit(id)}>
             Cancel

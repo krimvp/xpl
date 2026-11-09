@@ -199,6 +199,16 @@ describe("workspace packages", () => {
     ]);
   });
 
+  it("maps a tsconfig outDir back to its rootDir, so a package can import itself by its own name", () => {
+    const self = {
+      "package.json": `{"name": "ky", "exports": {"types": "./distribution/index.d.ts", "default": "./distribution/index.js"}}`,
+      "tsconfig.dist.json": `{"extends": "./tsconfig", "compilerOptions": {"rootDir": "./source", "outDir": "./distribution"}}`,
+      "source/index.ts": "",
+      "test-d/options.ts": "",
+    };
+    expect(resolve(self, "ky", "test-d/options.ts")).toEqual(["source/index.ts"]);
+  });
+
   it("leaves packages that are not in the repository external", () => {
     expect(resolve(files, "react", "packages/app/src/main.ts")).toEqual([]);
     expect(resolve(files, "@acme/other", "packages/app/src/main.ts")).toEqual([]);
@@ -272,5 +282,21 @@ describe("cross-package references", () => {
       "packages/core/src/index.ts# -> packages/core/src/queue.ts#Queue (import)",
     );
     expect(refs.some((r) => r.includes("readFileSync"))).toBe(false);
+  });
+
+  it("a type test that imports the package by its own name references the source", async () => {
+    const { index } = await indexFiles({
+      "package.json": `{"name": "ky", "exports": {"types": "./distribution/index.d.ts", "default": "./distribution/index.js"}}`,
+      "tsconfig.dist.json": `{"compilerOptions": {"rootDir": "./source", "outDir": "./distribution"}}`,
+      "source/index.ts": src("export type { RetryOptions } from './retry.js';"),
+      "source/retry.ts": src("export type RetryOptions = { limit?: number };"),
+      "test-d/options.ts": src(
+        "import type { RetryOptions } from 'ky';",
+        "export const check = (o: RetryOptions) => o.limit;",
+      ),
+    });
+    const refs = refTriples(index);
+    expect(refs).toContain("test-d/options.ts# -> source/retry.ts#RetryOptions (type-ref)");
+    expect(refs).toContain("test-d/options.ts#check -> source/retry.ts#RetryOptions (type-ref)");
   });
 });

@@ -2,18 +2,21 @@
  * The icon in the corner of a diagram box: what the box is, at a glance. Architecture boxes show their role
  * (a server for a service, a cylinder for a database, a globe for an outside system); boxes of code show
  * their level (a book for the repo, a folder, a file, stacked layers for a group) and symbols a letter
- * (C class, I interface, ƒ function, m method, ...). Drawn here, in a 16x16 box, so no icon set is bundled.
+ * (C class, S struct, I interface, ƒ function, m method, ...). Drawn here, in a 16x16 box, so no icon set is bundled.
  */
 import type { ReactNode } from "react";
 
 /** Letters for kinds of symbols, drawn in a rounded square. */
 const LETTERS: Record<string, string> = {
   class: "C",
+  struct: "S",
   interface: "I",
   function: "ƒ",
   method: "m",
   type: "T",
   variable: "x",
+  constant: "x",
+  field: "x",
   enum: "E",
   key: "k",
   symbol: "•",
@@ -66,6 +69,12 @@ const SHAPES: Record<string, ReactNode> = {
       <path d="M1.5 8h13" />
     </>
   ),
+  browser: (
+    <>
+      <rect x={1.5} y={2.5} width={13} height={11} rx={2} />
+      <path d="M1.5 6h13M4 4.25h.01M6 4.25h.01" />
+    </>
+  ),
   // ── levels of code ──
   repo: <path d="M3 2.5h9.5v11h-8A1.5 1.5 0 0 1 3 12zM3 12a1.5 1.5 0 0 1 1.5-1.5h8" />,
   dir: (
@@ -77,10 +86,7 @@ const SHAPES: Record<string, ReactNode> = {
   ),
 };
 
-/** The name of the icon a box shows: its role, else the kind of code it is. */
-export function iconName(box: { role?: string | undefined; kindClass: string }): string {
-  return box.role ?? box.kindClass;
-}
+export { iconName } from "../keyMarks.js";
 
 /** The icon, with its top-left corner at (x, y). */
 export function BoxIcon({ name, x, y }: { name: string; x: number; y: number }) {
@@ -94,7 +100,7 @@ export function BoxIcon({ name, x, y }: { name: string; x: number; y: number }) 
     >
       {letter !== undefined ? (
         <>
-          <rect x={1} y={1} width={14} height={14} rx={3.5} />
+          <rect className="icon-letter" x={1} y={1} width={14} height={14} rx={3.5} />
           <text x={8} y={12}>
             {letter}
           </text>

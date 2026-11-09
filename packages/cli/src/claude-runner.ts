@@ -37,12 +37,12 @@ function failure(text: string): string {
       text,
     )
   )
-    return "Claude authentication failed. Log in with the installed Claude Code CLI outside xpl, then explicitly retry this job.";
+    return "Claude authentication failed. Log in with the installed Claude Code CLI outside xpl, then retry this job.";
   if (/rate.?limit|usage limit|quota|429/i.test(text))
-    return "Claude is rate limited. Wait for the provider limit to reset, then explicitly retry this job.";
+    return "Claude is rate limited. Wait for the provider limit to reset, then retry this job.";
   if (/EACCES|EPERM|permission denied|read-only file system/i.test(text))
     return "Claude cannot access its runtime state or proposal output. Inspect the local sandbox/permissions and retry outside that restriction; xpl does not change credentials or user configuration.";
-  return `Claude failed: ${text.trim().slice(-2000) || "no diagnostic output"}. Inspect the installed CLI/provider configuration, then explicitly retry.`;
+  return `Claude failed: ${text.trim().slice(-2000) || "no diagnostic output"}. Check the installed CLI and provider settings, then retry.`;
 }
 
 function runner(ctx: Ctx, options: { skillDir?: string; timeoutMs?: number } = {}) {
@@ -61,7 +61,7 @@ function runner(ctx: Ctx, options: { skillDir?: string; timeoutMs?: number } = {
       verifySkill(skillDir);
     } catch (error) {
       throw new CliError(
-        `Installed code-explainer skill unavailable: ${errorMessage(error)}. Run xpl skill install --dir <folder>, select it with service --skill-dir <folder>, and retry.`,
+        `the installed code-explainer skill is missing: ${errorMessage(error)}. Run \`xpl skill install --dir <folder>\`, then \`xpl service start --skill-dir <folder>\`.`,
       );
     }
     const root = await realpath(ctx.root);
@@ -160,13 +160,14 @@ function runner(ctx: Ctx, options: { skillDir?: string; timeoutMs?: number } = {
           child.once("error", reject);
         });
         const ended = new Promise<number | null>((resolve, reject) => {
-          abort = () => reject(new CliError("Claude attempt cancelled; output discarded."));
+          abort = () =>
+            reject(new CliError("the Claude run was canceled: xpl kept none of its output"));
           signal.addEventListener("abort", abort, { once: true });
           timer = setTimeout(
             () =>
               reject(
                 new CliError(
-                  `Claude timed out after ${timeoutMs} ms. Inspect provider/tool availability or increase service --job-timeout, then explicitly retry.`,
+                  `Claude timed out after ${timeoutMs / 1000} s. Check that Claude Code and its tools can run, or start the service with a longer \`xpl service start --job-timeout <seconds>\`, then retry.`,
                 ),
               ),
             timeoutMs,
@@ -231,7 +232,7 @@ function runner(ctx: Ctx, options: { skillDir?: string; timeoutMs?: number } = {
       }
       if (!data || typeof data !== "object" || Array.isArray(data))
         throw new CliError(
-          "Claude returned invalid JSON diagnostics. Inspect the installed CLI and explicitly retry.",
+          "Claude returned invalid JSON diagnostics. Check the installed CLI, then retry.",
         );
       const result = data as { is_error?: boolean; result?: string; errors?: string[] };
       if (
@@ -240,7 +241,7 @@ function runner(ctx: Ctx, options: { skillDir?: string; timeoutMs?: number } = {
           (!Array.isArray(result.errors) || result.errors.some((e) => typeof e !== "string")))
       )
         throw new CliError(
-          "Claude returned invalid JSON diagnostics. Inspect the installed CLI and explicitly retry.",
+          "Claude returned invalid JSON diagnostics. Check the installed CLI, then retry.",
         );
       if (result.is_error)
         throw new CliError(failure(result.result ?? result.errors?.join("\n") ?? text));
@@ -263,7 +264,7 @@ function runner(ctx: Ctx, options: { skillDir?: string; timeoutMs?: number } = {
         proposals = JSON.parse(await readFile(output, "utf8"));
       } catch {
         throw new CliError(
-          "Claude proposal contains invalid JSON. Explicitly retry the configured runner; no proposal was published.",
+          "Claude proposal contains invalid JSON. Retry the job; no proposal was published.",
         );
       }
       if (

@@ -22,6 +22,7 @@ import {
   bundleOf,
   cloneDir,
   editFile,
+  fullIndex,
   indexedFixture,
   invoke,
   PATCH_PATH,
@@ -386,7 +387,7 @@ describe("xpl view", () => {
     const result = await view.stop();
     expect(result.code).toBe(0);
     expect(result.out).toBe(
-      `serving .explainer/demo.explainer.json at ${view.server.url}  (Ctrl-C to stop)`,
+      `serving .explainer/demo.explainer.json at ${view.server.url}  (Ctrl+C to stop)`,
     );
     await expect(fetch(`${view.url}/api/bundle`)).rejects.toThrow();
   });
@@ -960,6 +961,40 @@ describe("xpl view", () => {
     expect(readJson(dir, ".explainer/requests.json")).toHaveLength(12);
   });
 
+  it("stores one request when the same question is saved twice under new ids", async () => {
+    const dir = cloneDir(demo);
+    const view = await serve(dir);
+    const context = artifactIdentity(
+      readJson<Explainer>(dir, ".explainer/demo.explainer.json"),
+      fullIndex(dir),
+    );
+    const at = "2026-10-04T12:00:00.000Z";
+    const save = (id: string) =>
+      fetch(`${view.url}/api/requests`, {
+        method: "POST",
+        headers: JSON_HEADERS,
+        body: JSON.stringify({
+          id,
+          elementId: "file:src/worker.ts",
+          kind: "explain",
+          note: "Does a timeout count as a failed attempt?",
+          at,
+          context,
+          outcome: { revision: 0, status: "pending", reason: "Awaiting a revision pass.", at },
+        }),
+      });
+    const first = await save("r1");
+    expect(first.status).toBe(201);
+    expect((await json(first)).request.id).toBe("r1");
+    const second = await save("r2");
+    expect(second.status).toBe(201);
+    // the second save answers with the request already stored
+    expect((await json(second)).request.id).toBe("r1");
+    expect(readJson(dir, ".explainer/requests.json").map((r: { id: string }) => r.id)).toEqual([
+      "r1",
+    ]);
+  });
+
   it("re-reads the explainer on every request, so `xpl apply` shows up without a restart", async () => {
     const dir = cloneDir(demo);
     const view = await serve(dir);
@@ -1114,7 +1149,7 @@ describe("xpl view", () => {
       env: viewerEnv,
     });
     expect(noExplainer.code).toBe(1);
-    expect(noExplainer.err).toContain('no explainer "ghost"');
+    expect(noExplainer.err).toContain('no guide "ghost"');
     const badPort = await invoke(["view", "demo", "--port", "70000", "--root", demo], {
       cwd: demo,
       env: viewerEnv,

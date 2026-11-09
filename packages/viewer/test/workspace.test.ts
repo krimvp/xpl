@@ -1,10 +1,26 @@
-import { ExplainerModel, processFlow, type SequenceView } from "@xpl/core";
+import {
+  deriveGraph,
+  ExplainerModel,
+  processFlow,
+  type GraphView,
+  type SequenceView,
+} from "@xpl/core";
 import { describe, expect, it } from "vitest";
 import { ViewerStore } from "../src/store.js";
 import { makeBundle } from "./world.js";
 import { readLaunchParams } from "../src/data.js";
 import { searchFor } from "../src/url.js";
-import { aroundFlow, flowRelated, topicElements } from "../src/workspace.js";
+import {
+  aroundFlow,
+  flowRelated,
+  hasFlowTab,
+  hasMapTab,
+  layoutView,
+  startOrder,
+  topicElements,
+  workspaceMap,
+} from "../src/workspace.js";
+import { tabsLine } from "../src/components/ExplanationInfo.js";
 
 describe("explanation workspace", () => {
   it("starts with the guide but preserves explicit explore and present launches", () => {
@@ -203,5 +219,86 @@ it("restores a step, explicit view, selection and range together", () => {
     tour: { tourId: "tour:demo", step: 1 },
     applied: { stepId: "t2" },
     cursor: { file: "src/a.ts", fromLine: 12, toLine: 12, fromCol: 6, toCol: 9 },
+  });
+});
+
+describe("one direction per view", () => {
+  // one layer per file, then one per method: long one way and thin the other, so the pane decides
+  const graph = () => {
+    const bundle = makeBundle();
+    const explainer = structuredClone(bundle.explainer);
+    const view = explainer.views.find((v) => v.id === "view:overview") as GraphView;
+    view.include = ["file:src/a.ts", "file:src/b.ts", "sym:src/a.ts#A.run", "sym:src/b.ts#B.go"];
+    return deriveGraph(view, new ExplainerModel(explainer, bundle.index));
+  };
+  const lay = (id: string, width: number, height: number) =>
+    layoutView(id, graph(), { width, height }, undefined, undefined, undefined, undefined);
+
+  it("the first pane a view is drawn in picks the direction; later panes only zoom", async () => {
+    expect((await lay("view:once", 1200, 300)).direction).toBe("RIGHT");
+    // (the same view in a tall pane: a Tour picture after the Map, a phone turned, Show code)
+    expect((await lay("view:once", 300, 1200)).direction).toBe("RIGHT");
+    // another view picks its own
+    expect((await lay("view:other", 300, 1200)).direction).toBe("DOWN");
+  });
+});
+
+// a guide with no map got a made-up "System map" of its flow's one or two boxes, drawn at twice the size
+describe("the map a guide without one gets", () => {
+  const withoutMap = (participants?: string[]) => {
+    const bundle = makeBundle();
+    const explainer = bundle.explainer;
+    explainer.views = explainer.views.filter((view) => view.type !== "graph");
+    for (const tour of explainer.tours)
+      for (const step of tour.steps) if (step.view === "view:overview") step.view = "view:flow";
+    if (participants)
+      (explainer.views.find((v) => v.id === "view:flow") as SequenceView).participants =
+        participants;
+    return new ViewerStore(bundle, { perspective: "map" }).getState();
+  };
+
+  it("is named after the flow whose parts it draws, not a system map", () => {
+    const map = workspaceMap(withoutMap());
+    expect(map.generated).toBe(true);
+    expect(map.view.title).toBe("Parts of “Flow”");
+  });
+
+  it("gets no Map tab when it would draw fewer than 3 boxes; a guide with a map always has one", () => {
+    expect(hasMapTab(withoutMap())).toBe(false);
+    expect(
+      hasMapTab(withoutMap(["sym:src/a.ts#A.run", "sym:src/a.ts#A.stop", "file:src/b.ts"])),
+    ).toBe(true);
+    expect(hasMapTab(new ViewerStore(makeBundle()).getState())).toBe(true);
+  });
+});
+
+// a guide with no flow or sequence showed a Flow tab that listed the tour's steps under the name "Flow"
+describe("the Flow tab", () => {
+  it("is there only when the guide has a flow or a sequence, and the tabs line names only the tabs shown", () => {
+    const bundle = makeBundle();
+    expect(hasFlowTab(new ViewerStore(bundle).getState())).toBe(true);
+    bundle.explainer.views = bundle.explainer.views.filter((view) => view.type === "graph");
+    for (const tour of bundle.explainer.tours)
+      for (const step of tour.steps) step.view = "view:overview";
+    const state = new ViewerStore(bundle).getState();
+    expect(hasFlowTab(state)).toBe(false);
+    expect(tabsLine({ map: hasMapTab(state), flow: hasFlowTab(state) })).toBe(
+      "Tour: the steps, in order. Map: the parts and what each calls. Code: the files.",
+    );
+  });
+});
+
+describe("where a map starts", () => {
+  it("skips a tour step about every box of the map: it names no part to start on", () => {
+    const bundle = makeBundle();
+    const steps = bundle.explainer.tours[0]!.steps;
+    // a draft map's first step names all of its boxes, the next one the box to start from
+    steps.unshift(
+      { id: "all", view: "view:overview", focus: ["grp:core", "file:config/c.yaml"] },
+      { id: "start", view: "view:overview", focus: ["file:config/c.yaml"] },
+    );
+    const model = new ExplainerModel(bundle.explainer, bundle.index);
+    const view = bundle.explainer.views.find((v) => v.id === "view:overview") as GraphView;
+    expect(startOrder(model, view, "tour:demo")[0]).toBe("file:config/c.yaml");
   });
 });

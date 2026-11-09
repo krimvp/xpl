@@ -96,8 +96,9 @@ async function open(page: Page, search = "?mode=explore"): Promise<void> {
 
 const canvas = (page: Page) => page.locator(".panzoom");
 const zoomOf = async (page: Page) => Number(await canvas(page).getAttribute("data-zoom"));
-const badge = (page: Page) => page.getByTestId("pz-badge");
-const fitButton = (page: Page) => page.getByRole("button", { name: "Fit to view" });
+/** The one fit control: "Fit all" (marked while part of a big diagram is out of sight), or "Readable size". */
+const badge = (page: Page) => page.getByTestId("pz-fit");
+const fitButton = badge;
 
 async function showPipeline(page: Page): Promise<void> {
   await page.evaluate(() => window.__xpl!.setView("view:pipeline"));
@@ -153,7 +154,9 @@ for (const viewport of viewports) {
         await expect(page.locator(".graph")).toHaveAttribute("data-direction", viewport.direction);
       }
       await expect(badge(page)).toBeVisible();
-      await expect(badge(page)).toHaveText("Fit all");
+      await expect(badge(page)).toHaveClass(/is-cue/);
+      // it says how many boxes are out of sight
+      await expect(badge(page)).toHaveText(/^Fit all \(\d+ out of sight\)$/);
       // ... and every label at that zoom is readable: a 14px label is about 10px on screen
       const label = await byId(page, FIRST).locator("text.label").boundingBox();
       expect(label!.height).toBeGreaterThan(9);
@@ -172,14 +175,7 @@ for (const viewport of viewports) {
       await expectZoom(page, 0.75);
       expect(await inPane(page, FIRST)).toBe(true);
       expect(await inPane(page, LAST)).toBe(false);
-      await expect(badge(page)).toHaveText("Fit all");
-
-      // The badge fits all of it too, and so does the 0 key.
-      await badge(page).click();
-      await expect.poll(() => zoomOf(page)).toBeLessThan(0.6);
-      expect(await inPaneAll(page, IDS)).toBe(true);
-      await badge(page).click();
-      await expectZoom(page, 0.75);
+      await expect(badge(page)).toHaveText(/^Fit all/);
       await canvas(page).focus();
       await page.keyboard.press("0");
       await expect.poll(() => zoomOf(page)).toBeLessThan(0.6);
@@ -203,14 +199,15 @@ for (const viewport of viewports) {
       // Zooming with the buttons is the user's: the badge stays, the zoom is theirs.
       await page.getByRole("button", { name: "Zoom in" }).click();
       expect(await zoomOf(page)).toBeCloseTo(0.9375, 3);
-      await expect(badge(page)).toHaveText("Fit all");
+      await expect(badge(page)).toHaveText(/^Fit all/);
 
-      // A small diagram has no floor to apply and no badge: it is fitted as before.
+      // A small diagram has no floor to apply: a plain Fit all, not marked as a cue; it is fitted as before.
       await page.evaluate(() => window.__xpl!.setView("view:overview"));
       await expect(page.locator('.diagram[data-view-id="view:overview"]')).toBeVisible();
       await expect(byId(page, "grp:scheduling")).toBeVisible();
       await expect.poll(() => zoomOf(page)).toBeGreaterThan(0.6);
-      await expect(badge(page)).toHaveCount(0);
+      await expect(badge(page)).toHaveText("Fit all");
+      await expect(badge(page)).not.toHaveClass(/is-cue/);
 
       // Back in the big one: it starts over, at the floor.
       await page.evaluate(() => window.__xpl!.setView("view:pipeline"));
@@ -235,7 +232,7 @@ test.describe("what a big diagram starts on", () => {
     await expectZoom(page, PRESENT_ZOOM);
     expect(await inPane(page, LAST)).toBe(true);
     expect(await inPane(page, FIRST)).toBe(false);
-    await expect(badge(page)).toHaveText("Fit all");
+    await expect(badge(page)).toHaveClass(/is-cue/);
     await page.screenshot({ path: screenshotPath("large-graph-step-last") });
 
     // Step 2 focuses Stage 1, in the same view: the diagram moves to it.
@@ -246,7 +243,9 @@ test.describe("what a big diagram starts on", () => {
     expect(await inPane(page, FIRST)).toBe(true);
     expect(await inPane(page, LAST)).toBe(false);
 
-    // A detour (the user moves the diagram, then a step comes again) starts the step over.
+    // A detour (the user moves the diagram, then a step comes again) starts the step over. (The zoom buttons
+    // come with the mouse.)
+    await page.mouse.move(200, 300);
     await page.getByRole("button", { name: "Zoom out" }).click();
     expect(await zoomOf(page)).toBeLessThan(0.9);
     await page.keyboard.press("ArrowLeft");
@@ -258,7 +257,7 @@ test.describe("what a big diagram starts on", () => {
     await page.keyboard.press("End");
     await expect(page.getByTestId("tour-counter")).toHaveText("3 / 3");
     await expect(byId(page, "grp:scheduling")).toBeVisible();
-    await expect(badge(page)).toHaveCount(0);
+    await expect(badge(page)).not.toHaveClass(/is-cue/);
     await expect.poll(() => zoomOf(page)).toBeGreaterThan(0.75);
     expect(problems).toEqual([]);
   });
@@ -283,18 +282,19 @@ test.describe("what a big diagram starts on", () => {
   });
 });
 
-test("a short pane (a laptop at 200%): Fit all sits among the zoom buttons, not on the boxes", async ({
+test("a short pane (a laptop at 200%): the fit control is among the zoom buttons, not on the boxes", async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 720, height: 450 });
+  // (Explore gives the diagram the panels' height until a selection: 720x450 is no longer short)
+  await page.setViewportSize({ width: 720, height: 360 });
   await open(page, "?mode=explore");
   await showPipeline(page);
   const pane = (await canvas(page).boundingBox())!;
   expect(pane.height).toBeLessThan(240);
-  await expect(page.locator(".pz-toolbar [data-testid=pz-badge]")).toBeVisible();
+  await expect(page.locator(".pz-toolbar [data-testid=pz-fit]")).toBeVisible();
   await badge(page).click();
   await expect(badge(page)).toHaveText("Readable size");
-  // a tall pane keeps the pill in its corner
+  // no second fit button: no pill in the corner of a tall pane either
   await page.setViewportSize({ width: 1440, height: 900 });
-  await expect(page.locator(".panzoom > [data-testid=pz-badge]")).toBeVisible();
+  await expect(page.locator(".panzoom > [data-testid=pz-badge]")).toHaveCount(0);
 });

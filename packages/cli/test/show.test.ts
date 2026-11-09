@@ -20,6 +20,16 @@ const base = () => dir;
 const DISPATCH = "sym:src/runner.ts#Runner.dispatch";
 
 describe("xpl show", () => {
+  it("an id the index does not know, with nothing close to it, says how to find one", async () => {
+    const { code, err } = await xpl(dir, "show", "nope");
+    expect(code).toBe(1);
+    expect(err).toContain('"nope" is not a file, directory or symbol in the index.');
+    expect(err).toContain("Find ids with `xpl search nope` or `xpl outline`.");
+    // a file path: the search word is its name, not its extension
+    const file = await xpl(dir, "show", "file:src/nope.ts");
+    expect(file.err).toContain("Find ids with `xpl search nope` or `xpl outline`.");
+  });
+
   it("prints the header and every line with its absolute line and 0-based offset", async () => {
     const { code, out, err } = await xpl(dir, "show", DISPATCH);
     expect(err).toBe("");
@@ -57,12 +67,16 @@ describe("xpl show", () => {
     // the empty line after the final newline, as the index's does, though the display leaves it out)
     expect(err).toBe("");
     const lines = out.split("\n");
-    expect(lines[0]).toMatch(/^file:src\/queue\.ts \(typescript\) src\/queue\.ts:1-104 sha256-v2:/);
+    expect(lines[0]).toMatch(/^file:src\/queue\.ts \(typescript\) src\/queue\.ts:1-103 sha256-v2:/);
     expect(lines[1]).toMatch(/^ {2}1 {3}0│ export interface Job \{$/);
     expect(out).toMatch(
       /^ 87 {2}86│ {3}async requeue\(job: Job, delayMs: number\): Promise<void> \{$/m,
     );
     expect(lines.at(-1)).toMatch(/^103 102│ \}$/);
+    // `refs` and `outline` count the file's lines the same way (`wc -l` says 103)
+    expect((await xpl(dir, "refs", "file:src/queue.ts")).out.split("\n")[0]).toBe(
+      "file:src/queue.ts (typescript) src/queue.ts:1-103",
+    );
   });
 
   it("--context adds surrounding lines without offsets", async () => {
@@ -224,7 +238,7 @@ describe("xpl show", () => {
     expect(dirAsFile.err).toContain("is a directory; use dir:src");
     const group = await xpl(dir, "show", "grp:scheduling");
     expect(group.code).toBe(1);
-    expect(group.err).toContain("only exist inside an explainer");
+    expect(group.err).toContain("exist only in a guide");
   });
 
   it("warns when the code changed since indexing, and still prints", async () => {

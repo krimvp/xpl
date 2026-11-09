@@ -9,7 +9,8 @@
  * - Every box gets a name and a one-sentence summary to write. The TODO of a file carries what the index knows: its
  *   header comment, what it defines, who uses it and what it uses. That is usually enough to write the sentence
  *   without opening the file.
- * - A tour "start here": the top map, then each top-level folder.
+ * - A tour "start here": the top map, then each top-level folder, then where a newcomer starts reading: the entry
+ *   file (the shallowest file with a `main` function, else with an entry name such as `main`, `index` or `app`).
  * - With a change recorded (`xpl change`), a tour of the changed files on their folder's map, one step per file,
  *   asking how each change serves what was asked. Its id names the head commit, so a later change gets a new tour.
  *
@@ -31,6 +32,8 @@ import {
   type PatchView,
 } from "@xpl/core";
 import {
+  ENTRY_NAMES,
+  isMainSymbol,
   NOT_DESIGN,
   aboutAnchor,
   OVERVIEW_EXCLUDE,
@@ -48,6 +51,8 @@ import { plural } from "./format.js";
 export const MAP_LIMITS = {
   /** A folder map with more boxes than this gets a note: group them, or split the folder. */
   boxes: 30,
+  /** A new folder map with more boxes than this opens as a dependency matrix (the reader can switch). */
+  matrixBoxes: 12,
   /** Names in a TODO hint (definitions, users, used files). */
   hints: 4,
   /** Top-level folders the start tour visits. */
@@ -76,28 +81,43 @@ function viewIdOf(root: string, path: string): string {
  */
 export function headerComment(lines: readonly string[] | undefined): string | undefined {
   if (!lines) return undefined;
-  const text: string[] = [];
+  let text: string[] = [];
   let i = 0;
-  while (i < lines.length && /^\s*(?:#!|#.*coding[:=]|$)/.test(lines[i]!)) i++;
-  const first = lines[i]?.trim() ?? "";
-  const block = /^(?:\/\*\*?|"""|''')/.exec(first);
   /** The line after the comment. */
-  let after = i;
-  if (block) {
-    const close = block[0].startsWith("/*") ? "*/" : block[0];
-    for (let n = i; n < lines.length && n < i + 20; n++) {
-      let line = lines[n]!.trim();
-      if (n === i) line = line.slice(block[0].length);
-      const end = line.indexOf(close);
-      if (end !== -1) line = line.slice(0, end);
-      text.push(line.replace(/^\*\s?/, ""));
-      after = n + 1;
-      if (end !== -1) break;
+  let after = 0;
+  // a license or banner comment (`/*! MIT … */`, `// Copyright …`, an SPDX line) says nothing about the file: the
+  // comment after it is the header
+  for (let comments = 0; comments < 4; comments++) {
+    text = [];
+    while (i < lines.length && /^\s*(?:#!|#.*coding[:=]|$)/.test(lines[i]!)) i++;
+    const first = lines[i]?.trim() ?? "";
+    const block = /^(?:\/\*[*!]?|"""|''')/.exec(first);
+    after = i;
+    if (block) {
+      const close = block[0].startsWith("/*") ? "*/" : block[0];
+      for (let n = i; n < lines.length && n < i + 20; n++) {
+        let line = lines[n]!.trim();
+        if (n === i) line = line.slice(block[0].length);
+        const end = line.indexOf(close);
+        if (end !== -1) line = line.slice(0, end);
+        text.push(line.replace(/^\*\s?/, ""));
+        after = n + 1;
+        if (end !== -1) break;
+      }
+    } else if (/^(?:\/\/|#)/.test(first)) {
+      for (; after < lines.length && /^\s*(?:\/\/|#)/.test(lines[after]!); after++) {
+        text.push(lines[after]!.trim().replace(/^(?:\/\/+|#+)\s?/, ""));
+      }
     }
-  } else if (/^(?:\/\/|#)/.test(first)) {
-    for (; after < lines.length && /^\s*(?:\/\/|#)/.test(lines[after]!); after++) {
-      text.push(lines[after]!.trim().replace(/^(?:\/\/+|#+)\s?/, ""));
-    }
+    const banner =
+      first.startsWith("/*!") ||
+      /\b(?:copyright|spdx-license-identifier|licensed under)\b|©|\(c\)\s*\d{4}|\b(?:MIT|Apache|BSD|GPL|ISC|MPL)[- ](?:licen[cs]e|\d)/i.test(
+        text.join(" "),
+      );
+    if (!banner) break;
+    text = [];
+    if (after === i) break;
+    i = after;
   }
   // a comment right above a declaration is that declaration's doc, not the file's
   const next = lines[after]?.trim() ?? "";
@@ -246,6 +266,7 @@ export function draftMap(input: DraftInput): Draft {
   const computed = new Set<string>();
   const crowded: string[] = [];
   const grouping: string[] = [];
+  const matrices: string[] = [];
 
   /**
    * Groups of the files of one folder that use each other: pairs joined by the most references first, a group at
@@ -414,7 +435,9 @@ export function draftMap(input: DraftInput): Draft {
         ...(hasRequests ? { edgeKinds: [...DEFAULT_EDGE_KINDS, "requests" as const] } : {}),
         excludeFiles: [...OVERVIEW_EXCLUDE],
         boxText: "summary",
+        ...(include.length > MAP_LIMITS.matrixBoxes ? { render: "matrix" as const } : {}),
       });
+      if (include.length > MAP_LIMITS.matrixBoxes) matrices.push(path === root ? "the top" : path);
     }
     for (const dir of folder.dirs) {
       const inner = folderOf(dir);
@@ -558,6 +581,22 @@ export function draftMap(input: DraftInput): Draft {
     else tours.push({ id: tour.id, steps });
   }
 
+  /** Where a newcomer starts reading: the shallowest mapped file with a `main` (Java's in a class), else with an entry name. */
+  const entryFile = (): { file: string; symbol?: string } | undefined => {
+    const depth = (file: string) => file.split("/").length;
+    const first = (files: string[]) =>
+      files.sort((a, b) => depth(a) - depth(b) || a.localeCompare(b))[0];
+    const mainOf = (file: string) => model.symbolsInFile(file).find((s) => isMainSymbol(model, s));
+    const withMain = first(allMapped.filter((f) => mainOf(f) !== undefined));
+    if (withMain) return { file: withMain, symbol: mainOf(withMain)!.path };
+    const named = first(
+      allMapped.filter((f) => ENTRY_NAMES.test(baseName(f).replace(/\.[^.]+$/, ""))),
+    );
+    return named
+      ? { file: named, ...(definitions(named)[0] ? { symbol: definitions(named)[0] } : {}) }
+      : undefined;
+  };
+
   if (!tourIds.has("tour:map")) {
     const parts = [...topFolder.dirs]
       .sort((a, b) => mappedUnder(b).length - mappedUnder(a).length || a.localeCompare(b))
@@ -588,6 +627,30 @@ export function draftMap(input: DraftInput): Draft {
         ),
       ),
     ];
+    const entry = entryFile();
+    if (entry) {
+      steps.push(
+        tourStep(
+          model,
+          `t${steps.length + 1}`,
+          viewOfFile.get(entry.file) ?? "view:map",
+          [`file:${entry.file}`],
+          note(
+            `Where to go next: ${todo("where a newcomer starts reading, as a plain statement")}`,
+            todo(`why to start at \`${entry.file}\`: what runs first and which parts it calls.`),
+          ),
+          [
+            entry.symbol
+              ? { file: entry.file, symbol: entry.symbol, role: "definition" }
+              : undefined,
+          ],
+        ),
+      );
+    } else {
+      notes.push(
+        "no entry file found (no `main` function and no file with an entry name such as main, index, app or cli): the start tour has no step on where to start reading; add one if the project has a clear first file",
+      );
+    }
     tours.push({
       id: "tour:map",
       title: todo("start here: about 5 plain words"),
@@ -669,9 +732,16 @@ export function draftMap(input: DraftInput): Draft {
   const empty = model.files.filter(
     (f) => isCodeFile(f.path) && !offMap(f.path) && hollow(f.path),
   ).length;
+  // settings, package and text files are not boxes: say which, so a reader asking "where is the setting?" knows
+  const notCode = model.files
+    .map((f) => f.path)
+    .filter((path) => !isCodeFile(path) && !offMap(path));
   notes.unshift(
     `${plural(allMapped.length, "code file")} on ${plural(computed.size, "map")}; ${plural(left, "file")} left off (tests, examples, fixtures, docs and benchmarks)` +
-      (empty > 0 ? `; ${plural(empty, "empty file")} left off (they define and use nothing)` : ""),
+      (empty > 0 ? `; ${plural(empty, "empty file")} left off (they define and use nothing)` : "") +
+      (notCode.length > 0
+        ? `; ${notCode.length === 1 ? "1 file that is not code has" : `${notCode.length} files that are not code have`} no box: ${nameList(notCode, MAP_LIMITS.hints)}`
+        : ""),
   );
   if (grouping.length > 0) {
     notes.push(
@@ -681,6 +751,11 @@ export function draftMap(input: DraftInput): Draft {
   if (crowded.length > 0) {
     notes.push(
       `maps with more than ${MAP_LIMITS.boxes} boxes: ${crowded.join(", ")}. Consider grp boxes for the files that work together`,
+    );
+  }
+  if (matrices.length > 0) {
+    notes.push(
+      `maps with more than ${MAP_LIMITS.matrixBoxes} boxes open as a dependency matrix (\`render: "matrix"\`; the reader can switch to boxes): ${matrices.join(", ")}. Remove the field to open one as boxes and arrows`,
     );
   }
 

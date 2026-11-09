@@ -130,4 +130,50 @@ describe.each([
     ).toBeGreaterThanOrEqual(4.5);
     expect(contrast(v("--warn"), v("--warn-soft"))).toBeGreaterThanOrEqual(4.5);
   });
+
+  // WCAG 1.4.11: a line or a border that a reader must see to read a diagram needs 3:1 on the canvas. A
+  // box's fill is close to the canvas, so its border is its only edge; a heuristic arrow is told apart by
+  // its dash, not by fading it.
+  it("an arrow's words while the arrow steps back: 3:1 on the canvas, quieter than muted text", () => {
+    const dim = contrast(v("--edge-label-dim"), v("--canvas"));
+    expect(dim).toBeGreaterThanOrEqual(3);
+    expect(dim).toBeLessThan(contrast(v("--muted"), v("--canvas")));
+  });
+
+  // orange meant two things, the diagram element that holds the caret and the code's "called here"
+  it("the caret's mark on a diagram: 3:1 on the canvas, its text readable on its tint, not the call-site hue", () => {
+    expect(contrast(v("--match"), v("--canvas"))).toBeGreaterThanOrEqual(3);
+    expect(contrast(v("--fg"), over(v("--match-soft"), v("--canvas")))).toBeGreaterThanOrEqual(4.5);
+    const hue = ([r, g, b]: Rgba) => {
+      const max = Math.max(r, g, b),
+        min = Math.min(r, g, b),
+        d = max - min;
+      const h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+      return (h * 60 + 360) % 360;
+    };
+    const apart = Math.abs(hue(v("--match")) - hue(v("--hl-call-site-bar")));
+    expect(Math.min(apart, 360 - apart)).toBeGreaterThanOrEqual(60);
+  });
+
+  it("diagram lines and box borders on the canvas", () => {
+    const canvas = v("--canvas");
+    const low = ["--edge", "--edge-heuristic", "--edge-stub", "--ghost-border", "--node-border"]
+      .map((k) => [k, contrast(v(k), canvas)] as const)
+      .filter(([, ratio]) => ratio < 3)
+      .map(([k, ratio]) => `${k} ${ratio.toFixed(2)}`);
+    expect(low).toEqual([]);
+  });
+
+  // The dependency matrix (MatrixView) tells a cell's trust by its stripes and marks the diagonal and an
+  // arrow back up the order: each of these marks needs 3:1 on the panel the grid is drawn on.
+  it("matrix stripes, diagonal and back-arrow flag on the panel", () => {
+    const panel = v("--panel");
+    const low = ["--matrix-mark", "--warn"]
+      .map((k) => [k, contrast(v(k), panel)] as const)
+      .filter(([, ratio]) => ratio < 3)
+      .map(([k, ratio]) => `${k} ${ratio.toFixed(2)}`);
+    expect(low).toEqual([]);
+    // the numbers stay readable where a stripe runs under them
+    expect(contrast(v("--fg"), v("--matrix-mark"))).toBeGreaterThanOrEqual(3);
+  });
 });

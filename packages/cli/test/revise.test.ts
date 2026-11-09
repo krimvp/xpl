@@ -527,11 +527,11 @@ it("prints skipped user-field warnings and readiness repair findings in plain re
     .toContain(
       "warning nodes[0].label [sym:src/runner.ts#Runner.dispatch]: label of sym:src/runner.ts#Runner.dispatch was edited by the user and is kept as it is",
     );
-  expect.soft(review.out).toContain("Not ready (workspace): 1 errors, 0 warnings.");
+  expect.soft(review.out).toContain("not ready: 1 errors, 0 warnings.");
   expect
     .soft(review.out)
     .toContain(
-      "error sym:src/runner.ts#Runner.dispatch.summary (todo-left): 1 TODO placeholder left: text nobody has written yet write what the TODO asks for, check it against the code, and remove the TODO",
+      "error sym:src/runner.ts#Runner.dispatch, field summary (todo-left): 1 TODO placeholder left: text nobody has written yet; fix: write what the TODO asks for, check it against the code, and remove the TODO",
     );
 });
 
@@ -772,7 +772,7 @@ it.each(["remove", "reanchor"] as const)(
     expect((await xpl(root, "revise", "demo", "--run", run, "--proposal", remove)).code).toBe(0);
     const implicit = await xplJson(root, "revise", "demo", "--run", run, "--decisions", choose());
     expect(implicit.code).toBe(1);
-    expect(implicit.json.error).toMatch(/missing anchor.*explicitly/);
+    expect(implicit.json.error).toMatch(/missing anchor on .*: decide /);
     expect(readJson(root, ".explainer/demo.explainer.json")).toEqual(before);
     const explicit = await xplJson(
       root,
@@ -939,6 +939,13 @@ it("reviews recorded proposals and commits only accepted requests while retainin
   const selected = await xplJson(root, "revise", "demo", "--select", "correct-runner,expand-queue");
   expect(selected.code, selected.out).toBe(0);
   const run = selected.json.runId;
+  // the text output shows what each reader asked, under the request's id
+  expect((await xpl(root, "revise", "demo", "--run", run)).out.split("\n").slice(1, 5)).toEqual([
+    "correct-runner: current context",
+    '  "Explain this code."',
+    "expand-queue: current context",
+    '  "Explain this code."',
+  ]);
   const reviewed = await xplJson(root, "revise", "demo", "--run", run, "--proposal", proposal);
   expect(reviewed.code, reviewed.out).toBe(0);
   expect(

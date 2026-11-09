@@ -7,7 +7,9 @@ import {
   type IndexModel,
   type IndexedSymbol,
 } from "@xpl/core";
+import { ParserPool } from "@xpl/indexer";
 import type { CommandSpec } from "../command.js";
+import { controlBlocksOf } from "../control-blocks.js";
 import {
   DRAFT_LIMITS,
   draftChange,
@@ -16,20 +18,23 @@ import {
   inheritedEntry,
   type PathEntry,
   draftRepo,
+  continueStepIds,
+  PATH_ROOM,
   type Draft,
   type DraftKind,
 } from "../draft.js";
-import { MAP_LIMITS, draftMap } from "../draft-map.js";
+import { draftMap } from "../draft-map.js";
 import { CLASS_ENTRY_KINDS, CLASS_LIMITS, draftClass } from "../draft-class.js";
-import { STATES_LIMITS, draftStates } from "../draft-states.js";
+import { draftStates, statesHint } from "../draft-states.js";
+import { DATA_LIMITS, draftData } from "../draft-data.js";
 import { CliError, UsageError, errorMessage } from "../errors.js";
 import { resolveCommit } from "../git.js";
-import { plural, renderIssues } from "../format.js";
+import { plural, renderIssues, withArticle } from "../format.js";
 import { atomicWrite, displayPath, jsonFile } from "../fsutil.js";
-import { loadExplainer, openWorkspace } from "../repo.js";
-import { resolveTarget } from "../target.js";
+import { loadReadExplainer, openWorkspace } from "../repo.js";
+import { REPO_TARGET, resolveTarget, type Target } from "../target.js";
 
-const KINDS: readonly DraftKind[] = ["change", "repo", "path", "map", "class", "states"];
+const KINDS: readonly DraftKind[] = ["change", "repo", "path", "map", "class", "states", "data"];
 
 /** What a draft holds, for the summary line and `--json`. */
 export interface DraftCounts {
@@ -37,6 +42,8 @@ export interface DraftCounts {
   /** Graph views (maps). */
   maps: number;
   boxes: number;
+  /** Of `boxes`, the rows of a data map's tables (included ids whose parent is included). */
+  rows: number;
   participants: number;
   sequenceSteps: number;
   overlays: number;
@@ -72,13 +79,17 @@ export function draftCounts(patch: ExplainerPatch): DraftCounts {
   const views = patch.views ?? [];
   const nodes = patch.nodes ?? [];
   let boxes = 0;
+  let rows = 0;
   let maps = 0;
   let participants = 0;
   let sequenceSteps = 0;
   for (const view of views) {
     if (view.type === "graph") {
       maps++;
-      boxes += view.include?.length ?? 0;
+      const include = view.include ?? [];
+      boxes += include.length;
+      if (view.boxText === "members")
+        rows += include.filter((id) => include.includes(id.slice(0, id.lastIndexOf(".")))).length;
     } else {
       participants += view.participants?.length ?? 0;
       sequenceSteps += view.steps?.length ?? 0;
@@ -88,6 +99,7 @@ export function draftCounts(patch: ExplainerPatch): DraftCounts {
     views: views.length,
     maps,
     boxes,
+    rows,
     participants,
     sequenceSteps,
     overlays: nodes.filter((n) => !n.id.startsWith("grp:")).length,
@@ -103,16 +115,24 @@ function summaryLine(kind: DraftKind, name: string, counts: DraftCounts): string
     kind === "states"
       ? `a flow of ${plural(counts.sequenceSteps, "step")} (one per state, one per transition)`
       : kind === "path"
-        ? counts.views > 1
-          ? `${counts.views} sequences of ${plural(counts.sequenceSteps, "call")} in all`
-          : `a sequence of ${plural(counts.sequenceSteps, "call")} between ${plural(counts.participants, "participant")}`
-        : counts.maps > 1
-          ? `${counts.maps} maps of ${plural(counts.boxes, "box", "boxes")} in all`
-          : `a map of ${plural(counts.boxes, "box", "boxes")}`;
+        ? (counts.views - counts.maps > 1
+            ? `${counts.views - counts.maps} sequences of ${plural(counts.sequenceSteps, "call")} in all`
+            : `a sequence of ${plural(counts.sequenceSteps, "call")} between ${plural(counts.participants, "participant")}`) +
+          (counts.maps > 0 ? ` after a map of the ${plural(counts.boxes, "file")} it crosses` : "")
+        : kind === "data"
+          ? `a data map of ${plural(counts.boxes - counts.rows, "type")} (a table each) with ${plural(counts.rows, "field row")} (a row needs no text)`
+          : counts.maps > 1
+            ? `${counts.maps} maps of ${plural(counts.boxes, "box", "boxes")} in all`
+            : `a map of ${plural(counts.boxes, "box", "boxes")}`;
   return (
     `draft ${kind} for ${name}: ${picture}, ${plural(counts.overlays, "summary", "summaries")}` +
     (counts.groups > 0 ? `, ${plural(counts.groups, "group")}` : "") +
-    `, a tour of ${plural(counts.tourSteps, "step")}, ${plural(counts.anchors, "anchor")}, ` +
+    `, a tour of ${plural(counts.tourSteps, "step")}` +
+    // the step budgets are ceilings: a small type or a quick map takes fewer steps
+    (counts.tourSteps > 0 && counts.tourSteps < 5
+      ? " (short is right for a small subject: do not pad it)"
+      : "") +
+    `, ${plural(counts.anchors, "anchor")}, ` +
     `${plural(counts.todos, "TODO")} to write`
   );
 }
@@ -140,88 +160,59 @@ function pathEntry(model: IndexModel, arg: string): PathEntry {
   return { symbol: target.symbol };
 }
 
+/** A row of the table of kinds in the help: the kind and its arguments, then the text in one column. */
+const row = (kind: string) => `  ${kind}`.padEnd(30);
+
 export const draftCommand: CommandSpec = {
   name: "draft",
-  usage: "xpl draft change|repo|path|map|class|states <explainer> [<entry id> ...] [-o <file>]",
+  usage:
+    "xpl draft change|repo|path|map|class|states|data [explainer] [<entry id> ...] [--audience <reader>] [--question <question>] [-o <file>]",
   summary:
-    "Print a patch skeleton for a change, a repo, a path, a map, a class or the states of a type; you write the TODO text",
+    "Print a patch skeleton with TODOs to write: a change, repo, path, map, class, states or data",
   details: [
-    "Builds a provisional patch from indexed references and the change record, with",
-    "`TODO: <what to write>` in every text a person must write. `xpl apply` accepts it as it is; `xpl lint` reports",
-    "each TODO left (`todo-left`). Write the text, check it against the code, then apply.",
-    "Use --audience and --question to focus the draft. Imports suggest architecture; they do not prove",
-    "who uses the project. Path sequences list selected call sites, not every runtime branch or invocation.",
-    "  change <explainer>        needs the change record (`xpl change <explainer> <base>..<head>` first). A map of",
-    `                            the change (changed symbols, or their files when many; direct callers outside`,
-    `                            tests; one group box for the tests), and a tour in review order: what changes for`,
-    `                            users, where it enters, one step per changed piece, who else is affected, tests,`,
-    `                            risks (at most ${DRAFT_LIMITS.changeSteps} steps). Every changed file is anchored, tests too.`,
-    `  repo <explainer>          two levels. A system map: the project as a service box (one per program under`,
-    `                            services/, apps/ or cmd/), who reaches it and what it relies on (databases, caches,`,
-    `                            queues, other APIs, found from the import lines). Each service box opens a map of its`,
-    `                            parts: the top-level folders or files (below src in a src layout; at most`,
-    `                            ${DRAFT_LIMITS.mapBoxes} boxes) and the outside systems they use. A tour from the top down.`,
-    "                            It needs a supported source language; unsupported files stay text and",
-    "                            cannot form repository levels. Inspect text with `xpl show file:<path>`.",
-    "  path <explainer> <entry> [<entry> ...]",
-    "                            a sequence of the calls the entry symbol makes (depth 1, in source order, at most",
-    `                            ${DRAFT_LIMITS.participants} participants and ${DRAFT_LIMITS.pathCalls} calls), and a tour with one step per main call.`,
-    "                            Calls to helpers of the entry's own class get a lifeline of their own; recursion is a",
-    "                            call to itself; one-line helpers, type conversions and data built from a type are left",
-    "                            out (the notes list them), and so are the calls that reach the least code when there",
-    "                            are too many. Several entries: one sequence each, in one tour (a question with two",
-    "                            halves). A method a class inherits (`sym:a.py#Child.run`) starts at the base that",
-    "                            defines it, and self calls go where the class's method order finds them.",
-    "  map <explainer>           a quick map of every code file outside tests: one map per folder, a folder box opens",
-    "                            the map of its files. Each box gets a name and one sentence to write; a file's TODO",
-    "                            holds its header comment, what it defines, who uses it and what it uses. A start tour,",
-    "                            and with a change recorded a tour of the changed files (how each serves the request).",
-    `                            Run again after the code changed: only new files are drafted, boxes of files that`,
-    `                            are gone are removed, written text stays (a moved file keeps its own), and the map's`,
-    `                            tours drop what is gone. Maps over ${MAP_LIMITS.boxes} boxes get a note.`,
-    "  class <explainer> <entry>  the type hierarchy around a class or interface: what it extends and implements (all",
-    "                            the way up) and what extends or implements it (two levels down), on one map of",
-    `                            extends and implements arrows (at most ${CLASS_LIMITS.boxes} boxes), each with a summary TODO that`,
-    "                            names its kind, links and methods; a tour: the entry, then each type next to it.",
-    "  states <explainer> <entry>",
-    "                            the states of a status type on one flow: a TypeScript enum or union of string",
-    "                            literals, a Python Enum class, or a Go type with a const block of its values (in its",
-    "                            file). A stage per state, anchored where the code sets it (an assignment, a return,",
-    "                            an object key, a React setter) and tests it (a comparison, is, case); a stage per",
-    "                            transition where one function tests a state and then sets another under that test",
-    "                            (both sites anchored). Comments and other strings do not count. The notes name the",
-    `                            states never set or tested and the other uses. At most ${STATES_LIMITS.states} states and`,
-    `                            ${STATES_LIMITS.transitions} transitions; a tour: the type, then each state.`,
-    'Change and repo maps get `stubs: {mode: "none"}` (a folder map keeps its stubs: what uses it and what it uses);',
-    "tour steps hold at most 2 code ranges. Ids already in the explainer are not reused (`view:change-map-2`; a map",
-    "keeps its own view ids and updates them), and nodes it already explains get no new summary.",
-    "Prints the patch on stdout (the summary on stderr), or writes it with -o and prints the summary.",
-    "Then: write the text, `xpl lint <explainer> --patch <file>`, `xpl apply <explainer> <file>`.",
-    "Exit codes: 0 ok, 1 no change recorded, an unknown entry, or nothing to draft, 2 usage error.",
+    "Prints a patch with `TODO: <what to write>` in each text a person writes. `xpl apply` accepts it as it is.",
+    "Boxes, steps and code links come from the index. Imports suggest the architecture; they do not prove it.",
+    `${row("change [explainer]")}the change map and a review tour (at most ${DRAFT_LIMITS.changeSteps} steps); run \`xpl change\` first`,
+    `${row("repo [explainer]")}a system map, a map of each service's parts, a tour of at most ${DRAFT_LIMITS.repoSteps - PATH_ROOM} steps`,
+    `${row("path [explainer] <entry>")}the calls an entry makes, framed by its loops and branches; a tour of at most ${DRAFT_LIMITS.pathSteps} steps`,
+    `${row("map [explainer]")}a map per folder of every code file outside tests; run it again after changes`,
+    `${row("class [explainer] <entry>")}the type hierarchy around a class or an interface (at most ${CLASS_LIMITS.boxes} boxes)`,
+    `${row("states [explainer] <entry>")}the states of a status type on one flow, with where the code sets and tests each`,
+    `${row("data [explainer] [<scope>]")}the types the code keeps and how they link, on one data map (at most ${DATA_LIMITS.boxes} boxes)`,
+    "[path] Several path entries make one tour.",
+    "Ids in the guide are not reused. New tour steps follow the guide's own.",
+    "Prints the patch, or writes it with -o. Then: `xpl lint <explainer> --patch <file>`, `xpl apply`.",
+    "[all] Exit codes: 0 ok, 1 no change recorded, an unknown entry or scope, or nothing to draft, 2 usage error.",
+    "[change] Exit codes: 0 ok, 1 no change recorded or nothing to draft, 2 usage error.",
+    "[path,class,states] Exit codes: 0 ok, 1 an unknown entry or nothing to draft, 2 usage error.",
+    "[data] Exit codes: 0 ok, 1 an unknown scope or nothing to draft, 2 usage error.",
+    "[repo,map] Exit codes: 0 ok, 1 nothing to draft, 2 usage error.",
   ],
   options: {
     out: { type: "string", short: "o", arg: "<file>", desc: "Write the patch to a file" },
-    audience: { type: "string", arg: "<reader>", desc: "Who this explanation is for" },
+    audience: { type: "string", arg: "<reader>", desc: "Who the guide is for" },
     question: {
       type: "string",
       arg: "<question>",
-      desc: "The question the explanation should answer",
+      desc: "The question the guide answers",
     },
   },
   positionals: [
-    { name: "change|repo|path|map|class|states" },
-    { name: "explainer" },
+    { name: "change|repo|path|map|class|states|data" },
+    { name: "explainer", required: false },
     { name: "entry", required: false, rest: true },
   ],
   async run(ctx, args) {
     const kind = args.positionals[0] as DraftKind;
     if (!KINDS.includes(kind)) {
       throw new UsageError(
-        `unknown draft "${args.positionals[0]}": use change, repo, path, map, class or states`,
+        `unknown draft "${args.positionals[0]}": use change, repo, path, map, class, states or data`,
       );
     }
-    const name = args.positionals[1]!;
-    const entryArgs = args.positionals.slice(2);
+    // a guide name never holds `:`, `#` or `/`: a second argument that does is the entry, for the only guide
+    const second = args.positionals[1];
+    const named = second !== undefined && !/[:#/]/.test(second);
+    const entryArgs = args.positionals.slice(named ? 2 : 1);
     const entryArg = entryArgs[0];
     if (kind === "path" && entryArg === undefined) {
       throw new UsageError(
@@ -238,12 +229,23 @@ export const draftCommand: CommandSpec = {
         "draft states takes one <entry>: a type that enumerates states, e.g. sym:src/status.ts#Status",
       );
     }
-    if (kind !== "path" && kind !== "class" && kind !== "states" && entryArg !== undefined) {
+    if (kind === "data" && entryArgs.length > 1) {
       throw new UsageError(
-        `unexpected argument "${entryArg}": only draft path, class and states take an entry`,
+        "draft data takes one <scope> at most: a folder, a file or a type, e.g. dir:src or sym:src/queue.ts#Job",
       );
     }
-    const loaded = loadExplainer(ctx, name);
+    if (
+      kind !== "path" &&
+      kind !== "class" &&
+      kind !== "states" &&
+      kind !== "data" &&
+      entryArg !== undefined
+    ) {
+      throw new UsageError(
+        `unexpected argument "${entryArg}": only draft path, class, states and data take an entry`,
+      );
+    }
+    const loaded = loadReadExplainer(ctx, named ? second : undefined, "draft");
     const change = loaded.explainer.change;
     if (kind === "change" && !change) {
       throw new CliError(
@@ -263,21 +265,48 @@ export const draftCommand: CommandSpec = {
       );
     }
     const entries: PathEntry[] = [];
-    if (kind === "path") for (const arg of entryArgs) entries.push(pathEntry(ws.model, arg));
+    if (kind === "path") {
+      for (const arg of entryArgs) entries.push(pathEntry(ws.model, arg));
+      // the loops and branches of each entry, from its syntax tree: the frames of its sequence
+      const pool = new ParserPool();
+      try {
+        for (const entry of entries) {
+          const { file, range } = entry.symbol;
+          const language = ws.model.file(file)?.language;
+          const lines = ws.texts.lines(file);
+          if (!language || !lines) continue;
+          try {
+            entry.blocks = await controlBlocksOf(pool, file, language, lines.join("\n"), {
+              start: range.startLine,
+              end: range.endLine,
+            });
+          } catch {
+            // no grammar to read the file with: a sequence without frames
+          }
+        }
+      } finally {
+        await pool.dispose();
+      }
+    }
     let classEntry: IndexedSymbol | undefined;
     if (kind === "class") {
       const target = resolveTarget(ws.model, entryArg!);
       const sym = target.type === "symbol" ? target.symbol : undefined;
       if (!sym || !CLASS_ENTRY_KINDS.has(sym.kind)) {
         throw new CliError(
-          `the entry must be a class or an interface, not ${target.id} (${sym ? `a ${sym.kind}` : `a ${target.type}`}): \`xpl outline --kind class,interface\` lists them`,
+          `the entry must be a class or an interface, not ${target.id} (${withArticle(sym ? sym.kind : target.type)}): \`xpl outline --kind class,interface\` lists them`,
         );
       }
       classEntry = sym;
     }
     let statesEntry: IndexedSymbol | undefined;
     if (kind === "states") {
-      const target = resolveTarget(ws.model, entryArg!);
+      const hash = entryArg!.indexOf("#");
+      const file = hash > 0 ? entryArg!.slice(0, hash).replace(/^sym:/, "") : "";
+      const target = resolveTarget(ws.model, entryArg!, {
+        kinds: new Set(["enum", "type", "class"]),
+        kindHint: statesHint(ws.model.file(file)?.language),
+      });
       if (target.type !== "symbol") {
         throw new CliError(
           `the entry must be a type that enumerates states, not ${target.id}: \`xpl outline --kind enum,type,class\` lists them`,
@@ -285,6 +314,9 @@ export const draftCommand: CommandSpec = {
       }
       statesEntry = target.symbol;
     }
+
+    const dataScope: Target =
+      kind === "data" && entryArg !== undefined ? resolveTarget(ws.model, entryArg) : REPO_TARGET;
 
     // A map finds moved files by their text at the commit their box was written at: git reads it by full SHA.
     const commits = new Map<string, string>();
@@ -311,7 +343,9 @@ export const draftCommand: CommandSpec = {
                 ? draftClass(input, classEntry!)
                 : kind === "states"
                   ? draftStates(input, statesEntry!)
-                  : draftPath(input, entries);
+                  : kind === "data"
+                    ? draftData(input, dataScope)
+                    : draftPath(input, entries);
     } catch (error) {
       throw new CliError(`nothing to draft: ${errorMessage(error)}`);
     }
@@ -329,13 +363,31 @@ export const draftCommand: CommandSpec = {
       }
     }
 
+    continueStepIds(draft.patch, loaded.explainer);
     // The draft must apply as it is: check it the way `xpl apply` does, in memory.
     const check = applyPatch(loaded.explainer, draft.patch, ws.model, ws.texts, { actor: "llm" });
     if (!check.ok) {
+      // the code moved since `xpl index`: not a bug of the draft
+      const stale = [
+        ...new Set(
+          check.issues
+            .filter((issue) => issue.severity === "error")
+            .map(
+              (issue) => /^index for (.+) does not match its current text/.exec(issue.message)?.[1],
+            ),
+        ),
+      ];
+      if (stale.length > 0 && stale.every((file) => file !== undefined))
+        throw new CliError(
+          `the draft cannot be built: the code changed after \`xpl index\` (${stale.join(", ")}). ` +
+            `Run \`xpl index\`, then \`xpl resolve ${loaded.name} --write\`, and draft again.`,
+          1,
+          { issues: check.issues },
+        );
       throw new CliError(
         [
           `the draft does not apply to ${loaded.rel} (a bug in xpl draft; please report it):`,
-          ...renderIssues(check.issues),
+          ...renderIssues(check.issues, loaded.name),
         ].join("\n"),
         1,
         { issues: check.issues },
@@ -349,7 +401,9 @@ export const draftCommand: CommandSpec = {
         1,
       );
     }
-    const warnings = check.issues.map((issue) => `${issue.path}: ${issue.message}`);
+    const warnings = check.issues.map(
+      (issue) => `${issue.path}: ${issue.message.replaceAll("<explainer>", loaded.name)}`,
+    );
     const counts = draftCounts(draft.patch);
     const outOption = args.str("out");
     const outPath = outOption !== undefined ? resolve(ctx.cwd, outOption) : undefined;
@@ -361,7 +415,7 @@ export const draftCommand: CommandSpec = {
         path: loaded.rel,
         ...(outPath ? { out: displayPath(ctx.cwd, outPath) } : {}),
         counts,
-        notes: draft.notes,
+        notes: draft.notes.map((n) => n.replaceAll("<explainer>", loaded.name)),
         ...(warnings.length > 0 ? { applyWarnings: warnings } : {}),
         patch: draft.patch,
       });
@@ -370,8 +424,8 @@ export const draftCommand: CommandSpec = {
     const target = outOption ?? "<file>";
     const lines = [
       summaryLine(kind, loaded.name, counts),
-      ...draft.notes.map((n) => `note: ${n}`),
-      ...warnings.map((w) => `apply warning: ${w}`),
+      ...draft.notes.map((n) => `note: ${n.replaceAll("<explainer>", loaded.name)}`),
+      ...warnings.map((w) => `warning (when you apply): ${w}`),
       `next: ${outOption ? "" : "save the patch to a file outside the repo (or use -o), "}write each TODO, then ` +
         `\`xpl lint ${loaded.name} --patch ${target}\` and \`xpl apply ${loaded.name} ${target}\``,
     ];

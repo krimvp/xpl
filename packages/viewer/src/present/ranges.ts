@@ -1,8 +1,8 @@
 /**
  * Two places in one file that a step focuses, far apart (a call site and the helper it calls, a check and
  * the enum it orders by): one pane scrolled to the first would never show the second. A talk shows each
- * place in a pane of its own, stacked like the panes of two files; reading, a pane says "range 1 / 2" and
- * steps between them (RangeStepper).
+ * place in a pane of its own, stacked like the panes of two files; reading, a pane says "1 / 2 in this
+ * file" and steps between them (RangeStepper).
  */
 import type { FocusRange } from "@xpl/core";
 import type { PaneSpec } from "../derive.js";

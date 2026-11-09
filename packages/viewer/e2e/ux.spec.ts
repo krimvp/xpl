@@ -106,6 +106,30 @@ async function headerControls(page: Page): Promise<string[]> {
   );
 }
 
+test("a phone reader keeps the theme button in the header, and the Map leads to Explore", async ({
+  page,
+}) => {
+  const size = { width: 390, height: 844 };
+  await openVariant(page, () => undefined, "", size);
+  const header = page.locator(".header");
+  await expect(header.locator(".theme-btn")).toBeVisible();
+  for (const control of await header.locator("button:visible, select:visible").all()) {
+    const at = (await control.boundingBox())!;
+    expect(at.x).toBeGreaterThanOrEqual(0);
+    expect(at.x + at.width).toBeLessThanOrEqual(size.width);
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+    size.width,
+  );
+  await page.getByTestId("perspective-map").click();
+  // on a phone the way to Explore sits behind "About this map" with the caption's question, when the map has
+  // one; a map with nothing else to hide shows the link itself
+  const about = page.getByRole("button", { name: "About this map" });
+  if (await about.isVisible()) await about.click();
+  await page.getByTestId("explore-link").click();
+  await expect.poll(() => stateOf(page).then((s) => s.perspective)).toBe("explore");
+});
+
 test.describe("one header in every mode", () => {
   for (const size of [
     { width: 1280, height: 720 },
@@ -154,24 +178,25 @@ test.describe("one header in every mode", () => {
         "Present",
         "edit",
       ]);
-      for (const gone of ["Tours", "Read", "Explore", "Download explainer JSON"])
+      for (const gone of ["Tours", "Read", "Explore", "Download the guide as JSON"])
         await expect(header.getByRole("button", { name: gone, exact: true })).toHaveCount(0);
       await expect(page.locator(".diagram-caption .stubs-control")).toHaveCount(0);
       // the view's toggles are in the Edit menu, under "This view"
       const menu = await openEditMenu(page);
       await expect(menu.getByRole("menuitem")).toHaveText([
         /Back to reading/,
-        /Edit the guide's steps/,
-        /Record author review/,
+        /Edit the tour/,
+        /Mark as reviewed/,
         /Save as HTML/,
-        /Download explainer JSON/,
+        /Download the guide as JSON/,
       ]);
       await expect(menu.getByRole("group", { name: "This view" })).toContainText("Stubs");
       await expect(menu.locator("[data-edge-kind]")).toHaveCount(8); // one per derived edge kind, requests included
       await page.keyboard.press("Escape");
       await fits();
 
-      // Present: the tour picker and the step progress, then Exit and Edit
+      // Present: the tour picker and the step progress, then Exit and Edit (Search and Feedback are for a
+      // reader at their own pace, not for a room)
       await page.getByTestId("mode-present").click();
       await expect(header).toHaveAttribute("data-mode", "present");
       expect(await headerControls(page)).toEqual([
@@ -179,8 +204,6 @@ test.describe("one header in every mode", () => {
         "tour",
         "progress",
         "theme",
-        "Search",
-        "Feedback",
         "Exit",
         "edit",
       ]);
@@ -222,37 +245,43 @@ test.describe("Present: a flow step", () => {
       const problems = watchProblems(page);
       await openVariant(page, withEightStageFlow, "?mode=present&tour=tour:intro&step=2", size);
       await expect(byId(page, "dispatch:5")).toHaveClass(/is-selected/);
-      // a tour with a flow step gives the diagram more of the width
+      // a tour with a flow step gives the diagram more of the width, and a flow too big to read whole asks
+      // for more (up to 65%), as a map does
+      await expect(page.getByTestId("present")).toHaveAttribute("data-room", "wide");
       const flowPane = (await page.locator(".present-left").boundingBox())!.width;
       expect(flowPane).toBeGreaterThan(size.width * 0.5);
       // read from the back of the room: the flow starts with its text at 16px
       expect(await smallestDiagramText(page)).toBeGreaterThanOrEqual(15.9);
       await expect.poll(() => selectedInPane(page)).toBe(true);
-      // "Fit all", when it is offered, shows every stage
-      const badge = page.getByTestId("pz-badge");
-      if ((await badge.count()) > 0 && (await badge.textContent()) === "Fit all") {
-        // it stays off the picture until the mouse moves
-        const opacity = () => badge.evaluate((el) => getComputedStyle(el).opacity);
-        expect(await opacity()).toBe("0");
-        await page.mouse.move(size.width / 4, size.height / 3);
-        await expect.poll(opacity).toBe("1");
-        await badge.click();
-        await expect
-          .poll(() =>
-            page.evaluate(() => {
-              const pane = document.querySelector(".panzoom")!.getBoundingClientRect();
-              return [...document.querySelectorAll(".flow-stage")].every((el) => {
-                const r = el.getBoundingClientRect();
-                return r.top >= pane.top - 1 && r.bottom <= pane.bottom + 1;
-              });
-            }),
-          )
-          .toBe(true);
-      }
-      // one split for the whole tour: a graph step keeps the same columns (the slide does not jump)
+      // part of the 8-stage flow is out of sight at 16px: "Fit all" is a cue, and it shows every stage
+      const badge = page.getByTestId("pz-fit");
+      await expect(badge).toHaveClass(/is-cue/);
+      // while part of the flow is out of sight it stays on the slide, alone; the zoom buttons come
+      // with the mouse
+      await expect(badge).toBeVisible();
+      await expect(page.getByRole("button", { name: "Zoom in" })).toBeHidden();
+      await page.mouse.move(size.width / 4, size.height / 3);
+      await expect(page.getByRole("button", { name: "Zoom in" })).toBeVisible();
+      await badge.click();
+      await expect
+        .poll(() =>
+          page.evaluate(() => {
+            const pane = document.querySelector(".panzoom")!.getBoundingClientRect();
+            return [...document.querySelectorAll(".flow-stage")].every((el) => {
+              const r = el.getBoundingClientRect();
+              return r.top >= pane.top - 1 && r.bottom <= pane.bottom + 1;
+            });
+          }),
+        )
+        .toBe(true);
+      // one split for the whole tour: a graph step that reads whole keeps the tour's wide split, without the
+      // room the flow step asked for
       await page.keyboard.press("ArrowLeft");
       await expect(byId(page, "grp:scheduling")).toHaveClass(/is-selected/);
-      expect((await page.locator(".present-left").boundingBox())!.width).toBeCloseTo(flowPane, 0);
+      await expect(page.getByTestId("present")).not.toHaveAttribute("data-room");
+      const mapPane = (await page.locator(".present-left").boundingBox())!.width;
+      expect(mapPane).toBeGreaterThanOrEqual(340);
+      expect(mapPane).toBeLessThan(flowPane);
       expect(problems).toEqual([]);
     });
   }
@@ -260,7 +289,18 @@ test.describe("Present: a flow step", () => {
   test("flow boxes are named by their actor (the step's from), not by where the call goes", async ({
     page,
   }) => {
-    await openVariant(page, withEightStageFlow, "?perspective=flow&view=view:dispatch");
+    // (two of eight stages done elsewhere: no part does four in five, so no box leaves its actor out)
+    await openVariant(
+      page,
+      (bundle) => {
+        withEightStageFlow(bundle);
+        const view = bundle.explainer.views.find((v: Loose) => v.id === "view:dispatch");
+        view.steps[6].from = QUEUE;
+        view.steps[6].to = QUEUE;
+      },
+      "?perspective=flow&view=view:dispatch",
+    );
+    await expect(page.getByTestId("caption-owner")).toHaveCount(0);
     const owner = (id: string) => byId(page, id).locator(".flow-owner");
     // "Acknowledge the job" is done by the runner, handing the job to the queue
     await expect(owner("dispatch:5")).toHaveText("Runner.dispatch → queue.ts");
@@ -287,6 +327,17 @@ test.describe("Present: a flow step", () => {
     // the runner's own boxes say nothing more; a box that hands work on says where it goes
     await expect(owner("dispatch:2")).toHaveCount(0);
     await expect(owner("dispatch:5")).toHaveText("→ queue.ts");
+  });
+
+  // ky's retry decision: 11 of 12 boxes repeated "Ky.#calculateRetryDelay"
+  test("a flow whose steps nearly all start in one part names it once; the other box names its own", async ({
+    page,
+  }) => {
+    await openVariant(page, withEightStageFlow, "?perspective=flow&view=view:dispatch");
+    await expect(page.getByTestId("caption-owner")).toHaveText("The steps of Runner.dispatch");
+    const owner = (id: string) => byId(page, id).locator(".flow-owner");
+    await expect(owner("dispatch:2")).toHaveCount(0);
+    await expect(owner("dispatch:4")).toHaveText("worker.ts");
   });
 });
 
@@ -441,20 +492,39 @@ test.describe("the Guide", () => {
       "run(job)",
       "requeue(job, backoff)",
     ]);
-    await expect(sequence.locator(".frame-kind")).toHaveText("loop");
-    await expect(sequence.locator(".frame-label")).toHaveText("[until success or maxRetries]");
-    const retry = sequence.locator('[data-frame-id="frame:retry"] .frame-box');
-    const loop = (await retry.boundingBox())!;
-    const pop = (await sequence.locator('[data-element-id="dispatch:1"] .label').boundingBox())!;
-    expect(pop.y + pop.height).toBeLessThan(loop.y);
-    for (const id of ["dispatch:2", "dispatch:3"]) {
-      const call = (await sequence.locator(`[data-element-id="${id}"] .label`).boundingBox())!;
-      expect(call.y).toBeGreaterThan(loop.y);
-      expect(call.y + call.height).toBeLessThan(loop.y + loop.height);
-    }
+    await expect(sequence.locator(".frame-kind")).toHaveText(["loop", "opt"]);
+    await expect(sequence.locator(".frame-label")).toHaveText([
+      "[while the runner is running]",
+      "[the attempt failed and retries are left]",
+    ]);
+    // pop() is the first call inside the loop; only a failed attempt with retries left is requeued
+    const inside = async (frame: string) =>
+      (await sequence.locator(`[data-frame-id="${frame}"] .frame-box`).boundingBox())!;
+    const label = async (id: string) =>
+      (await sequence.locator(`[data-element-id="${id}"] .label`).boundingBox())!;
+    // the numbers, so a failure says how far the call's label is from the frame's edge
+    const expectWithin = (
+      box: { y: number; height: number },
+      call: { y: number; height: number },
+      id: string,
+    ) => {
+      expect(call.y, `${id} top`).toBeGreaterThan(box.y);
+      expect(call.y + call.height, `${id} bottom`).toBeLessThan(box.y + box.height);
+    };
+    const loop = await inside("frame:dispatch-loop");
+    const retry = await inside("frame:retry");
+    for (const id of ["dispatch:1", "dispatch:2", "dispatch:3"])
+      expectWithin(loop, await label(id), id);
+    expectWithin(retry, await label("dispatch:3"), "dispatch:3");
+    // run(job) sits above the retry frame
+    const run = await label("dispatch:2");
+    expect(run.y + run.height).toBeLessThanOrEqual(retry.y);
     await expect(sequence.locator('[data-element-id="dispatch:3"]')).toHaveClass(/is-selected/);
 
-    await page.getByRole("button", { name: "Show source", exact: true }).click();
+    await page
+      .locator(".workspace-location")
+      .getByRole("button", { name: "Show code", exact: true })
+      .click();
     await sequence.locator('[data-element-id="dispatch:2"] .label').click();
     await sequence.locator('[data-element-id="dispatch:3"] .label').click();
     const runner = page.locator('.workspace-source .pane[data-file="src/runner.ts"]');
@@ -467,7 +537,10 @@ test.describe("the Guide", () => {
       sequence.locator('[data-element-id="sym:src/runner.ts#Runner.dispatch"]'),
     ).toHaveClass(/is-match/);
 
-    await page.getByRole("button", { name: "Hide source", exact: true }).click();
+    await page
+      .locator(".workspace-location")
+      .getByRole("button", { name: "Hide code", exact: true })
+      .click();
     await page.setViewportSize({ width: 390, height: 844 });
     const pane = (await page.locator(".workspace-diagram .panzoom").boundingBox())!;
     await expect
@@ -599,7 +672,7 @@ test.describe("Save as HTML", () => {
     );
     await page.goto("http://xpl.test/?mode=present&tour=tour:intro&step=1");
     await page.waitForFunction(() => window.__xpl !== undefined);
-    await expect(page.getByTestId("draft-banner")).toContainText("Draft preview");
+    await expect(page.getByTestId("draft-pill")).toHaveText("Draft");
     await expect(page.getByTestId("tour-title")).toHaveText("Said in the meeting");
     await expect(page.getByTestId("tour-note")).toHaveText("A new note.");
     expect((await stateOf(page)).dirty).toBe(false);

@@ -8,7 +8,7 @@
  * a file opened on purpose (the tree, "Files in this change") takes the column by itself until the selection
  * changes. A changed file's header steps through its changes (‹ change 2 / 3 ›, or n / p in the code), and a
  * pane scrolled into the middle of a function says which one ("in Runner.dispatch"). Places of one file far
- * apart step the same way (‹ range 1 / 2 ›, RangeStepper); a talk gives each of them a pane of its own.
+ * apart step the same way (‹ 1 / 2 in this file ›, RangeStepper); a talk gives each of them a pane of its own.
  */
 import type { EditorView } from "@codemirror/view";
 import {
@@ -26,6 +26,7 @@ import {
 import {
   memo,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -52,6 +53,7 @@ import {
 import { symbolAtWord } from "../callers.js";
 import { useDerived, useStore, useViewerState } from "../hooks.js";
 import { talkPanes, type TalkPane } from "../present/ranges.js";
+import { renderMarkdown } from "../markdown.js";
 import { roleWords } from "../readerWords.js";
 import type { Cursor, ViewerStore } from "../store.js";
 import { RangeStepper } from "./RangeStepper.js";
@@ -117,12 +119,9 @@ export function EditorStack() {
         <div className="empty-hint">
           <h2>No code on screen</h2>
           <p>
-            Click a box, an arrow, a step or a concept and its code shows up here, highlighted and
-            with everything else dimmed. Or pick a file in the tree.
+            Click a box, an arrow or a step, and its code shows here. Or click a file in the list.
           </p>
-          <p>
-            You can also click into the code: the diagram elements that explain that line light up.
-          </p>
+          <p>Click a line of code, and the boxes and steps that explain it light up.</p>
         </div>
       </div>
     );
@@ -367,6 +366,17 @@ const EditorPane = memo(function EditorPane({
     () => (showChanges ? paneDiff(pane.side, changed, baseLines, baseError, headLines) : null),
     [showChanges, pane.side, changed, baseLines, baseError, headLines],
   );
+  const prose = useMemo(
+    () =>
+      wantLines !== undefined &&
+      /\.(md|markdown)$/i.test(pane.file) &&
+      pane.focused &&
+      !base &&
+      text
+        ? renderMarkdown(focusText(splitLines(text), pane.ranges))
+        : undefined,
+    [wantLines, pane.file, pane.focused, pane.ranges, base, text],
+  );
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   /** Counts editors created; lets the caret effect tell "just created" from "moved later". */
@@ -421,6 +431,11 @@ const EditorPane = memo(function EditorPane({
     if (editor) applyDiff(editor, diff);
   }, [diff, text, pane.file, language]);
 
+  // ‹ change 2 / 3 ›: steps through the changes of the file, whole ones in view.
+  const hunks = useMemo(() => paneHunks(diff), [diff]);
+  const [hunkAt, setHunkAt] = useState(-1);
+  useEffect(() => setHunkAt(-1), [hunks, focusToken]);
+
   // Scroll to the range the step is about when the focus changes (or the file is opened again): the first
   // one in the step's order (`pane.lead`), else the lowest.
   useEffect(() => {
@@ -432,17 +447,33 @@ const EditorPane = memo(function EditorPane({
       diff?.removed
         ?.filter((block) => block.place === "before" && block.at === first)
         .reduce((sum, block) => sum + (block.text ? block.count : 1), 0) ?? 0;
-    const margin = (wantLines !== undefined ? 22 : 44) + above * editor.defaultLineHeight;
-    if (first !== undefined) scrollToLine(editor, first, margin);
+    // A talk (`wantLines`) shows one whole line above the focus, never a sliver of one: the margin is
+    // that line's height, wrapped or not.
+    const lineAbove =
+      first !== undefined && first > 1 && first <= editor.state.doc.lines
+        ? editor.lineBlockAt(editor.state.doc.line(first - 1).from).height
+        : 0;
+    const margin = (wantLines !== undefined ? lineAbove : 44) + above * editor.defaultLineHeight;
+    // A change guide: when the range runs on past the screen before its first change (a whole file), the
+    // pane opens on that change, not on the imports at the top.
+    const range = pane.ranges.find((r) => r.range.startLine <= first! && r.range.endLine >= first!);
+    const fits = Math.max(
+      8,
+      Math.floor(editor.scrollDOM.clientHeight / editor.defaultLineHeight) - 2,
+    );
+    const change =
+      first !== undefined && range
+        ? hunks.find((h) => h.from >= first && h.from <= range.range.endLine)
+        : undefined;
+    if (change && change.from > first! + fits) {
+      scrollToHunk(editor, change);
+      setHunkAt(hunks.indexOf(change));
+    } else if (first !== undefined) scrollToLine(editor, first, margin);
     else if (openToken > 0) scrollToLine(editor, 1);
     // `pane.ranges` belongs to this very `focusToken`; the token is what says "the focus changed". (The
     // diff is applied by the effect above in the same commit; turning it on or off does not scroll.)
   }, [focusToken, openToken, text, pane.file, language, wantLines !== undefined]);
 
-  // ‹ change 2 / 3 ›: steps through the changes of the file, whole ones in view.
-  const hunks = useMemo(() => paneHunks(diff), [diff]);
-  const [hunkAt, setHunkAt] = useState(-1);
-  useEffect(() => setHunkAt(-1), [hunks, focusToken]);
   const goToHunk = (step: 1 | -1) => {
     const editor = view.current;
     if (!editor || hunks.length === 0) return;
@@ -607,7 +638,7 @@ const EditorPane = memo(function EditorPane({
           title={shown}
           style={{ minWidth: `${Math.min(basename.length, 40)}ch` }}
         >
-          {slash !== -1 && <span className="dir">{shown.slice(0, slash + 1)}</span>}
+          {slash !== -1 && <FolderPath path={shown.slice(0, slash)} />}
           <b>{basename}</b>
         </span>
         {inside && !folded && (
@@ -633,12 +664,15 @@ const EditorPane = memo(function EditorPane({
             {language} · {lines} lines
           </span>
         )}
-        {!folded && (
+        {/* Shown once lines are selected (a disabled button read as broken), in Explore only (a reader asks
+            with Feedback in the header). It keeps its place while hidden: a drag that selects lines
+            must not move the code under the pointer. */}
+        {!folded && !reader && (
           <button
-            className="pane-toggle"
+            className={"pane-toggle pane-ask" + (cursor ? "" : " is-idle")}
             type="button"
             disabled={!cursor}
-            title={cursor ? "Ask about these exact source lines" : "Select code lines first"}
+            title="Ask about these exact source lines"
             onClick={() => store.openFeedback()}
           >
             Ask about selected lines
@@ -755,12 +789,40 @@ const EditorPane = memo(function EditorPane({
               : "Loading…"}
           </div>
         ) : (
-          <div className="editor-host" ref={host} />
+          <>
+            {/* Present: a markdown code link reads as prose, its own lines only: no raw image
+                links or headings of the lines around it on a slide. The editor stays, out of sight. */}
+            {prose !== undefined && (
+              <div
+                className="pane-prose markdown"
+                data-testid="pane-prose"
+                dangerouslySetInnerHTML={{ __html: prose }}
+              />
+            )}
+            <div className="editor-host" ref={host} hidden={prose !== undefined} />
+          </>
         )}
       </div>
     </section>
   );
 });
+
+/** The lines of a pane's focus, in order, a blank line between ranges that are apart. */
+function focusText(lines: readonly string[], ranges: PaneSpec["ranges"]): string {
+  const spans = [...ranges]
+    .map((r) => [r.range.startLine, r.range.endLine] as const)
+    .sort((a, b) => a[0] - b[0]);
+  const parts: string[] = [];
+  let last = 0;
+  for (const [from, to] of spans) {
+    const start = Math.max(from, last + 1);
+    if (start > to) continue;
+    if (parts.length > 0 && start > last + 1) parts.push("");
+    parts.push(...lines.slice(start - 1, to));
+    last = to;
+  }
+  return parts.join("\n");
+}
 
 /**
  * Names in a pane's code: "Who calls it" picks the symbol and shows its callers (the topic column, brought on
@@ -811,4 +873,43 @@ function changeLabel(file: ChangedFile): { text: string; title: string } {
     case "deleted":
       return { text: "Removed", title: "This change removes the file" };
   }
+}
+
+/**
+ * A pane's folder, cut at its start a whole folder at a time when the header is narrow: "…/types/" next to
+ * the name, never "s/" or "pes/", stray letters that read as part of it. (CSS ellipsis cuts letters.)
+ */
+function FolderPath({ path }: { path: string }) {
+  const box = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const dir = box.current;
+    if (!dir) return;
+    const fit = () => {
+      const parts = [...dir.querySelectorAll<HTMLElement>(".dir-part")];
+      const more = dir.querySelector<HTMLElement>(".dir-more")!;
+      for (const part of parts) part.hidden = false;
+      more.hidden = true;
+      for (const part of parts) {
+        if (dir.scrollWidth <= dir.clientWidth) break;
+        part.hidden = true;
+        more.hidden = false;
+      }
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(dir.parentElement ?? dir);
+    return () => observer.disconnect();
+  }, [path]);
+  return (
+    <span className="dir" ref={box}>
+      <span className="dir-more" hidden>
+        …/
+      </span>
+      {path.split("/").map((part, at) => (
+        <span className="dir-part" key={at}>
+          {part}/
+        </span>
+      ))}
+    </span>
+  );
 }

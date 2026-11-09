@@ -88,9 +88,9 @@ test("a return without a step is an arrow out of its box, back to whoever made t
     .locator(".flow-transition.is-return text")
     .evaluate((text) => [...text.querySelectorAll("tspan")].map((t) => t.textContent).join(" "));
   expect(words).toBe("done (up one level)");
-  // it leaves the box and ends above it, on no other box
+  // it leaves the box (its shape, not the frame name above it) and ends above it, on no other box
   const box = (await page
-    .locator(`.flow-stage[data-stage-id="${flow.steps![2]!.id}"]`)
+    .locator(`.flow-stage[data-stage-id="${flow.steps![2]!.id}"] > rect`)
     .boundingBox())!;
   const line = (await back.locator("polyline").boundingBox())!;
   expect(line.x).toBeGreaterThan(box.x + box.width / 2);
@@ -107,7 +107,9 @@ test("a flow of one file reads code first: the code is the main pane, the flow a
   await expect(page.locator(".workspace.is-code-first")).toBeVisible();
   await expect(page.locator(".workspace-source .code-area")).toBeVisible();
   await expect(page.locator(".flow-diagram.is-outline")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Show source" })).toHaveCount(0);
+  await expect(
+    page.locator(".workspace-location").getByRole("button", { name: "Show code", exact: true }),
+  ).toHaveCount(0);
   const outline = (await page.locator(".workspace-primary").boundingBox())!;
   const source = (await page.locator(".workspace-source").boundingBox())!;
   expect(outline.width).toBeLessThan(source.width / 2);

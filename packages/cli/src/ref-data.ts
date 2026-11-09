@@ -195,6 +195,19 @@ export function countByKind(entries: readonly RefEntry[]): string {
     .join(", ");
 }
 
+/**
+ * The incoming references of the interface members a symbol implements: in Go almost every call of a method
+ * goes through an interface, so these are its callers (`show --refs`; `refs --in` lists them as `impl` hops).
+ */
+export function viaInterfaceRefs(model: IndexModel, target: Target): RefEntry[] {
+  if (target.type !== "symbol") return [];
+  return implementedBy(model, target.symbolId).flatMap((impl) =>
+    model.symbol(impl.id)
+      ? collectRefs(model, resolveTarget(model, elementIdForSymbolId(impl.id)), "in")
+      : [],
+  );
+}
+
 // ─── Call hierarchy ─────────────────────────────────────────────────────────────────────────────
 
 export interface RefNode {

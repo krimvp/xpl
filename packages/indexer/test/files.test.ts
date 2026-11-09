@@ -171,6 +171,16 @@ describe("discoverFiles in a git work tree", () => {
       "sub/.explainer/y.json": "{}\n",
     });
     expect(await paths(dir)).toEqual(["a.ts"]);
+    // xpl's own folder is not a candidate a person left out: the report does not list it (its cache grows on
+    // every run); a nested one is someone's copy and stays listed
+    const generated = (await discoverFiles(dir)).exclusions.reasons.find(
+      (r) => r.reason === "generated",
+    );
+    expect(generated).toEqual({
+      reason: "generated",
+      count: 1,
+      examples: ["sub/.explainer/y.json"],
+    });
   });
 
   it("keeps dot-directories that git tracks (unlike the walk)", async () => {

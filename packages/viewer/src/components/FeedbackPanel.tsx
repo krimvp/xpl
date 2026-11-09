@@ -1,7 +1,6 @@
 /** Questions and answers are feedback history; guide changes still require explicit revision review. */
 import { useEffect, useRef, useState } from "react";
 import {
-  artifactIdentity,
   feedbackContextReason,
   hashText,
   type FeedbackKind,
@@ -10,6 +9,24 @@ import {
 } from "@xpl/core";
 import { useDerived, useStore, useViewerState } from "../hooks.js";
 import { messageOf } from "../data.js";
+import { identityOf } from "../derive.js";
+import { keepTabInside } from "../focusTrap.js";
+
+/** A request as a reader names it: what they asked for, about what. */
+const KIND_WORDS: Record<FeedbackKind, string> = {
+  explain: "Question about",
+  correct: "Correction to",
+  expand: "More detail on",
+};
+
+/** Where a request stands, in a reader's words (the stored status is an author word). */
+const STATUS_WORDS: Record<string, string> = {
+  pending: "Waiting for the author",
+  addressed: "The author answered it in the guide",
+  unresolved: "The author could not settle it yet",
+  rejected: "The author decided not to change the guide",
+  outdated: "The guide changed since you asked",
+};
 
 /** Lines of evidence read per reference when looking for the boxes that hold it (a long range is a hint, not a tour). */
 const MAP_LINES = 200;
@@ -77,7 +94,7 @@ function AnswerEvidence({
           if (text === undefined || !source || hashText(text) !== source.hash) {
             setRecorded(true);
             setError(
-              "Current source differs or is unavailable. These highlighted lines are the recorded answer evidence.",
+              "Current source differs or is unavailable. These highlighted lines are the code the answer used.",
             );
             return;
           }
@@ -87,7 +104,8 @@ function AnswerEvidence({
           store.closeFeedback();
         }}
       >
-        {reference.file}:{reference.fromLine}–{reference.toLine} ({reference.side})
+        {reference.file}, lines {reference.fromLine}–{reference.toLine}
+        {reference.side === "base" ? " (before the change)" : ""}
       </button>
       {error && <p role="status">{error}</p>}
       <pre aria-label={recorded ? "Highlighted recorded source" : "Recorded source excerpt"}>
@@ -108,14 +126,14 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
   const id =
     state.selection[state.selection.length - 1] ??
     (state.cursor ? `file:${state.cursor.file}` : undefined);
-  const current = artifactIdentity(state.explainer, state.model.index.index);
+  const current = identityOf(state.explainer, state.model.index.index);
   useEffect(() => {
     panel.current?.focus();
     void store
       .refreshFeedback()
       .catch((error) =>
         setMessage(
-          `Could not read disk feedback: ${messageOf(error)}. Your browser feedback can still be exported.`,
+          `Could not read the saved requests: ${messageOf(error)}. The ones in this browser can still be exported.`,
         ),
       );
   }, [store]);
@@ -125,6 +143,11 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
     return () => clearInterval(timer);
   }, [store]);
   const connected = state.connection.status === "connected";
+  // A page with no local service (a shared HTML file) cannot reach an agent: it saves for the author.
+  const live = state.serverMode;
+  const author = state.perspective === "explore";
+  const guide = store.library.guideId ?? "<guide>";
+  const importCommand = `xpl feedback ${guide} --import feedback.json`;
   const act = async (action: () => Promise<void>) => {
     setBusy(true);
     try {
@@ -146,7 +169,7 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
         if (event.key === "Escape") {
           event.stopPropagation();
           onClose();
-        }
+        } else keepTabInside(event, panel.current);
       }}
     >
       <header className="tp-head">
@@ -155,38 +178,52 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
           ×
         </button>
       </header>
-      <p className="tp-intro">
-        Ask a question for a source-linked answer from the connected local worker. Answers never
-        edit the guide. Saving for the next revision pass does not start generation. Offline, export
-        the JSON, run <code>xpl feedback &lt;guide&gt; --import feedback.json</code> locally, then
-        invoke <code>/code-explainer feedback</code> in your chosen agent.
-      </p>
+      {live ? (
+        <p className="tp-intro">
+          Ask a question: your agent answers with links to the code. An answer never changes the
+          guide. &ldquo;Save for later&rdquo; keeps your request and starts nothing.
+        </p>
+      ) : (
+        <>
+          <p className="tp-intro" data-testid="feedback-offline-intro">
+            Your note stays in this browser. Export it and send the file to whoever gave you this
+            page. You see the answer when they send you a new page.
+          </p>
+          <details className="feedback-author">
+            <summary>For the author</summary>
+            <p>
+              Run <code>{importCommand}</code>, then <code>/code-explainer feedback</code> in your
+              agent.
+            </p>
+          </details>
+        </>
+      )}
       <p>
         {id ? (
           <>
             Selected: <strong>{state.model.label(id)}</strong>
           </>
         ) : (
-          "Select an element or code lines to attach feedback."
+          "Click a box, a step or lines of code to attach your note to."
         )}
         {state.cursor && (
           <>
             {" "}
             · {state.cursor.file}:{state.cursor.fromLine}–{state.cursor.toLine} (
-            {state.cursor.side === "base" ? "before" : "current"} source)
+            {state.cursor.side === "base" ? "before the change" : "current code"})
           </>
         )}
       </p>
       <label>
-        Request{" "}
+        Kind of note{" "}
         <select
           aria-label="Request kind"
           value={kind}
           onChange={(event) => setKind(event.target.value as FeedbackKind)}
         >
-          <option value="correct">Correction</option>
-          <option value="explain">Explanation</option>
-          <option value="expand">Expansion</option>
+          <option value="explain">A question</option>
+          <option value="correct">A correction</option>
+          <option value="expand">Ask for more detail</option>
         </select>
       </label>
       <label>
@@ -202,7 +239,7 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
         />
       </label>
       <div className="actions">
-        {kind === "explain" && (
+        {live && kind === "explain" && (
           <button
             className="btn is-primary"
             type="button"
@@ -213,8 +250,8 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
                 const reason = await store.askQuestion(id, note);
                 setMessage(
                   reason
-                    ? `Saved as pending feedback. ${reason} Export feedback JSON, import with xpl feedback <guide> --import feedback.json, then run /code-explainer feedback for the next explicit pass.`
-                    : "Question submitted. Progress and the answer stay with this feedback.",
+                    ? `Saved for later. ${reason} Export the feedback JSON, run ${importCommand}, then /code-explainer feedback in your agent.`
+                    : "Question sent. Its answer shows here when it is ready.",
                 );
                 setNote("");
               })
@@ -224,7 +261,7 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
           </button>
         )}
         <button
-          className="btn"
+          className={live ? "btn" : "btn is-primary"}
           type="button"
           disabled={!id || busy}
           onClick={async () => {
@@ -235,19 +272,19 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
               setNote("");
               setMessage(
                 state.serverMode
-                  ? "Saved to disk for the next explicit pass."
-                  : "Saved in this browser. Export feedback JSON to carry it to your repository.",
+                  ? "Saved. The author sees it the next time they run /code-explainer feedback."
+                  : "Saved in this browser. Export it and send the file to the author.",
               );
             } catch (error) {
               setMessage(
-                `Disk save failed: ${messageOf(error)}. The request remains in this page; export it for retry.`,
+                `Could not save: ${messageOf(error)}. Your request is still in this page; export it to keep it.`,
               );
             } finally {
               setBusy(false);
             }
           }}
         >
-          Save for the next revision pass
+          {live ? "Save for later" : "Save for the author"}
         </button>
         <button
           className="btn"
@@ -281,7 +318,7 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
               void act(async () => {
                 await store.importFeedback(JSON.parse(await file.text()));
                 setMessage(
-                  "Imported feedback. Existing request IDs, answers and newer outcomes are preserved.",
+                  "Imported feedback. Requests already here, their answers and newer results are kept.",
                 );
               });
           }}
@@ -310,7 +347,7 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
           return (
             <li key={request.id} data-request-id={request.id}>
               <strong>
-                {request.kind}: {request.label ?? request.elementId}
+                {KIND_WORDS[request.kind]} {request.label ?? request.elementId}
               </strong>{" "}
               {request.answers?.length ? (
                 <>
@@ -321,20 +358,19 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
               {request.note && <p>{request.note}</p>}
               {request.range && (
                 <p>
-                  {request.range.file}:{request.range.fromLine}–{request.range.toLine} (
-                  {request.range.side})
+                  {request.range.file}, lines {request.range.fromLine}–{request.range.toLine}
+                  {request.range.side === "base" ? " (before the change)" : ""}
                 </p>
               )}
-              <p>
-                Revision:{" "}
-                {request.outcome.status === "pending" ? "not yet reviewed" : request.outcome.status}
-              </p>
+              <p>{STATUS_WORDS[request.outcome.status] ?? request.outcome.status}</p>
               {request.outcome.reason !== "Awaiting an explicit revision pass." && (
                 <p>{request.outcome.reason}</p>
               )}
               {outdated && <p>{outdated}</p>}
-              <code>{request.id}</code>
-              {request.kind === "explain" &&
+              {/* (the id is for the author, who matches it with `xpl feedback`) */}
+              {author && <code>{request.id}</code>}
+              {live &&
+                request.kind === "explain" &&
                 request.note &&
                 !jobs.length &&
                 !request.answers?.length && (
@@ -348,7 +384,7 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
                           setMessage("Question submitted.");
                         } catch (error) {
                           setMessage(
-                            `Question remains pending feedback. ${messageOf(error)} Run /code-explainer feedback for the next explicit pass; export JSON to carry this question offline.`,
+                            `Not sent: ${messageOf(error).replace(/\.$/, "")}. The question is saved. Run /code-explainer feedback in your agent to answer it, or export the feedback JSON to keep it.`,
                           );
                         }
                       })
@@ -398,12 +434,12 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
                   <h3>Answer</h3>
                   <p className="answer-text">{answer.text}</p>
                   <details>
-                    <summary>Answer snapshot</summary>
+                    <summary>What the answer was based on</summary>
                     <p>
-                      Explanation: <code>{answer.context.explainerHash}</code>
+                      Version of the guide: <code>{answer.context.explainerHash}</code>
                     </p>
                     <p>
-                      Source: <code>{answer.context.sourceHash}</code>
+                      Version of the code: <code>{answer.context.sourceHash}</code>
                     </p>
                   </details>
                   <ShowOnMap answer={answer} />

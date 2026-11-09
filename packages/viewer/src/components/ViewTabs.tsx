@@ -10,6 +10,7 @@ import type { View } from "@xpl/core";
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { useStore, useViewerState } from "../hooks.js";
+import { plainWords } from "../readerWords.js";
 import { revealOffset, stepIndex, stripEdges, wheelTravel, type StripEdges } from "../tabStrip.js";
 
 /**
@@ -21,7 +22,7 @@ const EDGE_ROOM = 44;
 /** What hovering a tab or a menu entry says: the full title (a tab shows only the start of it), then the question the view answers. */
 export function viewHint(view: View): string {
   const question = view.scope?.question;
-  return question ? `${view.title}\n${question}` : view.title;
+  return question ? `${view.title}\n${plainWords(question)}` : view.title;
 }
 
 /** Scrolls the strip, and nothing else on the page, so that `tab` is in sight. */
@@ -29,10 +30,14 @@ function reveal(strip: HTMLElement, tab: HTMLElement): void {
   const box = strip.getBoundingClientRect();
   const at = tab.getBoundingClientRect();
   const left = at.left - box.left + strip.scrollLeft;
+  const starts = [...strip.querySelectorAll<HTMLElement>('[role="tab"]')].map(
+    (one) => one.getBoundingClientRect().left - box.left + strip.scrollLeft,
+  );
   const next = revealOffset(
     { scrollLeft: strip.scrollLeft, width: strip.clientWidth, scrollWidth: strip.scrollWidth },
     { left, right: left + at.width },
     EDGE_ROOM,
+    starts,
   );
   if (Math.abs(next - strip.scrollLeft) >= 0.5) strip.scrollLeft = next;
 }
@@ -274,7 +279,7 @@ function ViewsMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        title="Every view of this explainer: pick one to jump to it"
+        title="Every diagram in this guide: pick one to jump to it"
         onClick={() => (open ? close(false) : show())}
         onKeyDown={(event) => {
           if (open || event.altKey || event.ctrlKey || event.metaKey) return;

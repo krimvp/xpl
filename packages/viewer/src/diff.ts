@@ -26,6 +26,7 @@ import {
   type Explainer,
   type FilePath,
   type IndexModel,
+  type Range,
 } from "@xpl/core";
 import type { PaneDiff } from "./editor.js";
 
@@ -403,28 +404,45 @@ export function languageOfPath(path: FilePath): import("@xpl/core").FileLanguage
 }
 
 /**
+ * What the change did to some lines of code (a flow step's code links): "new" when it added all of them,
+ * "changed" when it added or rewrote some, undefined when it left them alone.
+ */
+export function rangesChange(
+  code: Iterable<{ file: FilePath; range: Range }>,
+  change: ChangeRecord,
+): ChangeStatus | undefined {
+  let touched = false;
+  let allNew = true;
+  for (const { file, range } of code) {
+    const changed = changeAt(change, file);
+    const status = changed && changeStatusOfRange(changed, range);
+    if (status) touched = true;
+    if (status !== "new") allNew = false;
+  }
+  return touched ? (allNew ? "new" : "changed") : undefined;
+}
+
+/**
  * The change status of each node of a graph that the change touched (the map's "New" / "Changed" pills). A box
- * that holds code without being a file or a symbol (a group, a directory) is "changed" when one of the files
- * it covers (`filesOf`) is: a reader sees which part of the map the change is in without opening each box.
+ * that holds code without being a file or a symbol (a group, a directory) takes its status from the code it
+ * covers (`codeOf`): "new" when the change added all of it (a tests box of new test functions), else "changed"
+ * when one of its files changed. A reader sees which part of the map the change is in without opening each box.
  */
 export function changeMarks(
   nodeIds: readonly ElementId[],
   index: Pick<IndexModel, "symbol">,
   change: ChangeRecord | undefined,
-  filesOf?: (id: ElementId) => Iterable<FilePath>,
+  codeOf?: (id: ElementId) => Iterable<{ file: FilePath; range: Range }>,
 ): Map<ElementId, ChangeStatus> {
   const marks = new Map<ElementId, ChangeStatus>();
   if (!change) return marks;
   for (const id of nodeIds) {
     const status = changeStatus(id, index, change);
     if (status) marks.set(id, status);
-    else if (filesOf && !["file", "symbol"].includes(parseId(id).type)) {
-      for (const file of filesOf(id)) {
-        if (changeAt(change, file)) {
-          marks.set(id, "changed");
-          break;
-        }
-      }
+    else if (codeOf && !["file", "symbol"].includes(parseId(id).type)) {
+      const code = [...codeOf(id)];
+      if (rangesChange(code, change) === "new") marks.set(id, "new");
+      else if (code.some(({ file }) => changeAt(change, file))) marks.set(id, "changed");
     }
   }
   return marks;

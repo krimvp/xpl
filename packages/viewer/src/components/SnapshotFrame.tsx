@@ -1,6 +1,7 @@
 /** The frame of the Guide's still pictures (Snapshot.tsx), shared by every kind of diagram. */
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { snapshotView, type Box, type Focus } from "../viewport.js";
+import { wholePicture } from "../layout/graphLayout.js";
+import { snapshotView, type Box, type Focus, type Transform } from "../viewport.js";
 
 /** The picture's height at most, px. */
 export const SNAPSHOT_HEIGHT = 260;
@@ -21,6 +22,7 @@ export function SnapshotFrame({
   height,
   focus,
   where,
+  overlay,
   children,
 }: {
   width: number;
@@ -28,6 +30,8 @@ export function SnapshotFrame({
   focus: Focus | undefined;
   /** Where the rest is: "Map" or "Flow". */
   where: string;
+  /** Drawn over the picture, outside its transform: what stays at its top (a sequence's participant names). */
+  overlay?: (t: Transform, width: number) => ReactNode;
   /** The picture, or a function of the part of the diagram it shows (diagram units). */
   children: ReactNode | ((window: Box) => ReactNode);
 }) {
@@ -42,14 +46,17 @@ export function SnapshotFrame({
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
-  const placed = snapshotView(
-    paneWidth,
-    SNAPSHOT_HEIGHT,
-    { width, height },
-    focus,
-    SNAPSHOT_TALL_HEIGHT,
-    SNAPSHOT_NAMED_HEIGHT,
-  );
+  // (a step about every box: the whole diagram, smaller, never a frame of part of it)
+  const placed =
+    wholePicture(paneWidth, SNAPSHOT_NAMED_HEIGHT, { width, height }, focus) ??
+    snapshotView(
+      paneWidth,
+      SNAPSHOT_HEIGHT,
+      { width, height },
+      focus,
+      SNAPSHOT_TALL_HEIGHT,
+      SNAPSHOT_NAMED_HEIGHT,
+    );
   return (
     <div
       ref={box}
@@ -72,6 +79,7 @@ export function SnapshotFrame({
                 })
               : children}
           </g>
+          {overlay?.(placed.transform, paneWidth)}
         </svg>
       )}
       {placed && placed.hidden > 0 && (

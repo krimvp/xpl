@@ -28,11 +28,15 @@ export function ZoomTrail({ viewId }: { viewId: string }) {
             {current || present ? (
               <span aria-current={current ? "page" : undefined}>{step.label}</span>
             ) : (
-              <button type="button" onClick={() => store.goToLevel(step.viewId)}>
+              <button type="button" title={step.label} onClick={() => store.goToLevel(step.viewId)}>
                 {step.label}
               </button>
             )}
-            {!current && <span aria-hidden="true"> › </span>}
+            {!current && (
+              <span className="zoom-trail-sep" aria-hidden="true">
+                ›
+              </span>
+            )}
           </span>
         );
       })}

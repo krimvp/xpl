@@ -82,7 +82,7 @@ describe("--embed-index: what the command embeds", () => {
     for (const symbol of pruned.symbols) expect(symbols.has(JSON.stringify(symbol))).toBe(true);
     // the summary line says what that saved
     const saved =
-      /index (\d+(?:\.\d)? (?:B|KB|MB)) \((\d+(?:\.\d)? (?:B|KB|MB)) as plain JSON, pruned from (\d+(?:\.\d)? (?:B|KB|MB))\)/.exec(
+      /index (\d+(?:\.\d)? (?:B|KB|MB)) as JSON \((\d+(?:\.\d)? (?:B|KB|MB)) packed\), pruned from (\d+(?:\.\d)? (?:B|KB|MB))/.exec(
         out,
       );
     expect(saved, out).not.toBeNull();
@@ -95,7 +95,7 @@ describe("--embed-index: what the command embeds", () => {
     expect(data.index).toEqual(full);
     expect(data.index.pruned).toBeUndefined();
     expect(out).toMatch(
-      /, index \d+(\.\d)? KB \(\d+(\.\d)? KB as plain JSON\), mode explore, draft preview$/,
+      /, index \d+(\.\d)? KB as JSON \(\d+(\.\d)? KB packed\), mode explore, draft preview$/,
     );
     expect(out).not.toContain("pruned");
   });

@@ -359,7 +359,7 @@ describe("3. backoff is renamed to delay in the requeue call and its declaration
 
   it("prints both lists in the text report", async () => {
     const text = await xpl(r.dir, "resolve", NAME);
-    expect(text.out).toContain("anchors: 16 (ok 12, moved 0, drifted 4, missing 0)");
+    expect(text.out).toContain("code links: 16 (ok 12, moved 0, drifted 4, missing 0)");
     expect(text.out).toContain("drifted llm elements to re-explain (3):");
     expect(text.out).toContain(`  ${DISPATCH}  (node)  [keep userFields: summary]`);
     expect(text.out).toContain("  dispatch:3  (step in view:dispatch)");
@@ -523,7 +523,7 @@ describe("4. Queue.ack and its call are deleted", () => {
     const message = lenient.json.issues.find((i: any) => i.code === "anchor-missing").message;
     // (candidates are spelled as ids and as anchor fields; the test double comes last)
     expect(message).toBe(
-      "anchor src/queue.ts#Queue.ack is missing: symbol Queue.ack is not in src/queue.ts; did you mean " +
+      "anchor src/queue.ts#Queue.ack is missing: symbol Queue.ack is not in src/queue.ts. Did you mean: " +
         'sym:src/queue.ts#Queue.acked (anchor: file: "src/queue.ts", symbol: "Queue.acked"), ' +
         'sym:test/retry.test.ts#RecordingQueue.ack (anchor: file: "test/retry.test.ts", symbol: "RecordingQueue.ack")? ' +
         "Re-anchor it to where the code went, or drop it (resend the element without this anchor, or remove the element).",
@@ -674,7 +674,7 @@ describe("other edits", () => {
     ]);
     for (const m of missing) {
       expect(m.reason, m.elementId).toBe(
-        "file src/queue.ts is not in the index; did you mean src/jobs/queue.ts?",
+        "file src/queue.ts is not in the index. Did you mean: src/jobs/queue.ts?",
       );
     }
     expect(r.resolve.counts).toEqual({ ok: 13, moved: 0, drifted: 0, missing: 3 });
@@ -1028,7 +1028,7 @@ describe("all five edits in one second commit", () => {
     const text = await xpl(dir, "status", NAME);
     expect(text.code).toBe(0);
     expect(text.out).toMatch(
-      /^to do: \d+ unexplained, 5 drifted \(1 user-owned: ask the user\), 1 missing anchors, 0 requests$/m,
+      /^to do: \d+ with no text, 5 changed code links \(1 user-owned: ask the user\), 1 missing code links, 0 requests$/m,
     );
     const section = (from: string, to?: string) => {
       const start = text.out.indexOf(from);
@@ -1041,9 +1041,9 @@ describe("all five edits in one second commit", () => {
       expect(llm).toContain(id);
     expect(llm).not.toContain("concept:retry-tuning");
     expect(llm).not.toContain("concept:ack-semantics");
-    const other = section("drifted, but not llm-owned (left alone) (1):", "missing anchors (1)");
+    const other = section("drifted, but not llm-owned (left alone) (1):", "missing code links (1)");
     expect(other).toContain("concept:retry-tuning");
-    const missing = section("missing anchors (1):");
+    const missing = section("missing code links (1):");
     expect(missing).toContain("concept:ack-semantics");
     expect(missing).toContain("src/queue.ts#Queue.ack [definition]");
     expect(missing).toContain("symbol Queue.ack is not in src/queue.ts");
@@ -1220,7 +1220,7 @@ describe("all five edits in one second commit", () => {
     const missing = errors[1].message as string;
     expect(missing).toContain("anchor src/queue.ts#Queue.ack is missing");
     expect(missing).toContain("symbol Queue.ack is not in src/queue.ts");
-    expect(missing).toMatch(/did you mean /);
+    expect(missing).toMatch(/Did you mean: /);
     expect(missing).toContain("Re-anchor it to where the code went, or drop it");
     // the drifted anchor of a user-owned concept: an llm cannot repair it, and the message says so
     const drifted = errors[0].message as string;

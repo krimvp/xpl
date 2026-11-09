@@ -169,6 +169,9 @@ export function sideToward(box: Box, toward: Point, direction: Direction): Side 
   return toward[main] >= centre ? "end" : "start";
 }
 
+/** The least room between two arrows that leave one side of a box, px, where the side has it (`spreadPorts`). */
+const PORT_GAP = 16;
+
 /**
  * The cross coordinate of every port, by `edgeId:from` / `edgeId:to`: the ports of one side of one box are
  * spread evenly in the order of where they go, so arrows leave side by side. Wide ports use more of
@@ -179,6 +182,7 @@ export function spreadPorts(
   boxes: ReadonlyMap<string, Box>,
   direction: Direction,
   wide = false,
+  roomy?: ReadonlySet<string>,
 ): Map<string, number> {
   const { cross } = axes(direction);
   const groups = new Map<string, string[]>();
@@ -202,6 +206,17 @@ export function spreadPorts(
         : 0.2 + (0.6 * (i + 1)) / (keys.length + 1);
       out.set(key, start + size * fraction);
     });
+    // the boxes in `roomy` (a table folded to one box): ports at least `PORT_GAP` apart where the side has
+    // room (in its middle 70%); its middle 60% put two arrows 8-10 px apart, side by side, words on each other
+    if (!wide && keys.length > 1 && roomy?.has(ports.get(keys[0]!)!.box)) {
+      const gap = Math.min(PORT_GAP, (size * 0.7) / (keys.length - 1));
+      const first = out.get(keys[0]!)!;
+      const step = out.get(keys[1]!)! - first;
+      if (step < gap) {
+        const middle = start + size / 2;
+        keys.forEach((key, i) => out.set(key, middle + (i - (keys.length - 1) / 2) * gap));
+      }
+    }
   }
   return out;
 }
@@ -322,4 +337,90 @@ export function separateTracks(routes: Point[][], direction: Direction, gap = 8)
       turn.route[turn.i + 1]![main] = value;
     });
   }
+}
+
+/**
+ * Detours orthogonal segments around other boxes: after pinned positions replace dagre's, or where a route
+ * still runs through a box. A bend inside a box first moves out of it, with the segment it starts (its
+ * other end not an end of the route), to the nearer side: a route that turned inside a table read as an
+ * arrow into that table.
+ */
+export function aroundBoxes(points: Point[], boxes: Box[]): Point[] {
+  let route = points.map((p) => ({ ...p }));
+  const inside = (box: Box, p: Point) =>
+    p.x >= box.x && p.x <= box.x + box.width && p.y >= box.y && p.y <= box.y + box.height;
+  const within = (box: Box, p: Point) =>
+    p.x > box.x && p.x < box.x + box.width && p.y > box.y && p.y < box.y + box.height;
+  for (let pass = 0; pass < 32; pass++) {
+    let changed = false;
+    for (let i = 1; i < route.length - 1 && !changed; i++) {
+      const p = route[i]!;
+      const box = boxes.find((b) => within(b, p));
+      if (!box) continue;
+      // each way out: the segment before or after the bend, moved across; the nearest that can move
+      const moves: { cost: number; apply: () => void }[] = [];
+      for (const j of [i - 1, i + 1]) {
+        if (j <= 0 || j >= route.length - 1) continue;
+        const q = route[j]!;
+        const axis = q.x === p.x ? "x" : q.y === p.y ? "y" : undefined;
+        if (!axis) continue;
+        const size = axis === "x" ? "width" : "height";
+        for (const to of [box[axis] - 10, box[axis] + box[size] + 10])
+          moves.push({
+            cost: Math.abs(to - p[axis]),
+            apply: () => {
+              p[axis] = to;
+              q[axis] = to;
+            },
+          });
+      }
+      const best = moves.sort((a, b) => a.cost - b.cost)[0];
+      if (!best) continue;
+      best.apply();
+      changed = true;
+    }
+    for (let i = 1; i < route.length && !changed; i++) {
+      const a = route[i - 1]!,
+        b = route[i]!;
+      const horizontal = a.y === b.y;
+      const obstacle = boxes.find(
+        (box) =>
+          !inside(box, a) &&
+          !inside(box, b) &&
+          (horizontal
+            ? a.y > box.y &&
+              a.y < box.y + box.height &&
+              Math.max(a.x, b.x) > box.x &&
+              Math.min(a.x, b.x) < box.x + box.width
+            : a.x === b.x &&
+              a.x > box.x &&
+              a.x < box.x + box.width &&
+              Math.max(a.y, b.y) > box.y &&
+              Math.min(a.y, b.y) < box.y + box.height),
+      );
+      if (!obstacle) continue;
+      const cross = horizontal ? "y" : "x",
+        along = horizontal ? "x" : "y";
+      const size = horizontal ? "height" : "width",
+        length = horizontal ? "width" : "height";
+      const low = obstacle[cross] - 10,
+        high = obstacle[cross] + obstacle[size] + 10;
+      const offset = Math.abs(a[cross] - low) <= Math.abs(a[cross] - high) ? low : high;
+      const forward = a[along] < b[along];
+      const entry = forward ? obstacle[along] - 10 : obstacle[along] + obstacle[length] + 10;
+      const exit = forward ? obstacle[along] + obstacle[length] + 10 : obstacle[along] - 10;
+      route = [
+        ...route.slice(0, i),
+        { ...a, [along]: entry },
+        { ...a, [along]: entry, [cross]: offset },
+        { ...b, [along]: exit, [cross]: offset },
+        { ...b, [along]: exit },
+        ...route.slice(i),
+      ];
+      changed = true;
+      break;
+    }
+    if (!changed) break;
+  }
+  return route;
 }

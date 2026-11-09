@@ -15,7 +15,7 @@ import {
   type ExplainerModel,
   type TourStep,
 } from "@xpl/core";
-import { ExplanationInfo } from "./ExplanationInfo.js";
+import { ExplanationInfo, tabsLine } from "./ExplanationInfo.js";
 import { callersOf, changeSummary, type Caller } from "../callers.js";
 import { overrideFocus } from "../derive.js";
 import { changeFiles, changeOf, STATUS_WORDS } from "../diff.js";
@@ -23,6 +23,8 @@ import { readLaunchParams } from "../data.js";
 import { useStore, useViewerState } from "../hooks.js";
 import { renderInline, renderMarkdown } from "../markdown.js";
 import { stepTests } from "../stepTests.js";
+import { isFormField } from "../present/keys.js";
+import { hasFlowTab, hasMapTab } from "../workspace.js";
 import { stepText, stepTitle } from "../stepTitle.js";
 import { TourPicker } from "./Header.js";
 import { Snapshot } from "./Snapshot.js";
@@ -63,7 +65,8 @@ export function Guide({
   const active =
     state.applied && state.applied.tourId === tour?.id ? state.applied.stepId : undefined;
 
-  // The section being read: the last one whose top has passed a third of the way down the scroller.
+  // The section being read: the last one whose top has passed the middle of the scroller (a step whose
+  // heading and picture fill the lower half is the one read, not the one above it).
   const [reading, setReading] = useState<string | undefined>(undefined);
   useEffect(() => {
     const element = body.current;
@@ -74,7 +77,7 @@ export function Guide({
         : element.closest<HTMLElement>(".workspace-columns");
     if (!scroller) return;
     const update = () => {
-      const line = scroller.getBoundingClientRect().top + scroller.clientHeight / 3;
+      const line = scroller.getBoundingClientRect().top + scroller.clientHeight / 2;
       let current: string | undefined;
       for (const section of element.querySelectorAll<HTMLElement>("[data-section-id]")) {
         if (section.getBoundingClientRect().top <= line) current = section.dataset.sectionId;
@@ -91,7 +94,35 @@ export function Guide({
     return () => scroller.removeEventListener("scroll", update);
   }, [tour?.id]);
   const current = reading ?? active;
+  // J and K step through the tour, unless the key is meant for a text field, the code or a menu.
+  const currentRef = useRef(current);
+  currentRef.current = current;
+  useEffect(() => {
+    if (!tour) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.ctrlKey || event.metaKey || event.altKey || event.defaultPrevented) return;
+      const by = event.key === "j" ? 1 : event.key === "k" ? -1 : 0;
+      if (by === 0 || isFormField(event.target)) return;
+      if (event.target instanceof Element && event.target.closest(".cm-editor, [role=menu]"))
+        return;
+      const at = tour.steps.findIndex((step) => step.id === currentRef.current);
+      const next = Math.min(tour.steps.length - 1, Math.max(0, at + by));
+      if (next === at) return;
+      event.preventDefault();
+      store.previewStep(tour.id, next);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [tour, store]);
   useEffect(() => onReading?.(reading), [reading, onReading]);
+  // The step on screen, for the reading tabs: Map, Flow or Code clicked while another step than the
+  // applied one is on screen opens on that step (WorkspaceTabs).
+  useEffect(() => {
+    readingStep.current = reading && tour ? { tourId: tour.id, stepId: reading } : undefined;
+    return () => {
+      readingStep.current = undefined;
+    };
+  }, [reading, tour]);
 
   useEffect(() => {
     if (
@@ -160,18 +191,20 @@ export function Guide({
       <div className="guide-fallback">
         {staleLink && (
           <p className="guide-link-notice" role="alert" tabIndex={-1} ref={staleNotice}>
-            This linked guide is no longer available. Choose a topic below.
+            This link points at a tour that is no longer here. Click a diagram below.
           </p>
         )}
         <p className="eyebrow">Start here</p>
         <h2>{state.explainer.title}</h2>
         <Audience />
         <ExplanationInfo />
-        <p>Choose a topic below, or open the map to see the parts of the code.</p>
+        <p>Click a diagram below, or open the map to see the parts of the code.</p>
         {state.model.views.map((view) => (
           <section className="guide-section" key={view.id}>
             <h3>{view.title}</h3>
-            <p>{view.scope?.question}</p>
+            {view.scope?.question && (
+              <p dangerouslySetInnerHTML={{ __html: renderInline(view.scope.question) }} />
+            )}
             {state.model.concepts.map((concept) => (
               <p key={concept.id}>
                 <button className="link" onClick={() => store.select([concept.id])}>
@@ -187,11 +220,11 @@ export function Guide({
                 store.setPerspective(view.type === "graph" ? "map" : "flow");
               }}
             >
-              Show this topic
+              Open this diagram
             </button>
           </section>
         ))}
-        {state.model.views.length === 0 && <p>This explainer has no topics yet.</p>}
+        {state.model.views.length === 0 && <p>This guide has no diagrams yet.</p>}
       </div>
     );
 
@@ -200,8 +233,8 @@ export function Guide({
     typeof tour.summary === "string" && tour.summary.trim() ? tour.summary : undefined;
   return (
     <div className="guide-layout" data-testid="guide">
-      <nav className="guide-contents" aria-label="Guide contents">
-        <p className="eyebrow">In this guide</p>
+      <nav className="guide-contents" aria-label="Tour steps">
+        <p className="eyebrow">In this tour</p>
         {tour.steps.map((step, index) => (
           <button
             key={step.id}
@@ -213,12 +246,15 @@ export function Guide({
             {title(step)}
           </button>
         ))}
+        <p className="guide-keys" data-testid="guide-keys">
+          Keys: <kbd>J</kbd> next step, <kbd>K</kbd> previous step.
+        </p>
       </nav>
       <div className="guide-body" ref={body}>
         {staleLink && (
           <p className="guide-link-notice" role="alert" tabIndex={-1} ref={staleNotice}>
-            This linked step is no longer in this guide. Start at the guide's beginning or choose a
-            step below.
+            This link points at a step that is no longer in this tour. Start at the first step or
+            pick one below.
           </p>
         )}
         {/* A phone: the steps as one picker that scrolls away with the text (the list above is hidden). */}
@@ -257,6 +293,9 @@ export function Guide({
           />
         )}
         <ChangeOmissions />
+        <p className="guide-tabs-line" data-testid="tabs-line">
+          {tabsLine({ map: hasMapTab(state), flow: hasFlowTab(state) })}
+        </p>
         <ExplanationInfo />
         <ChangeFiles />
         {tour.steps.map((step, index) => (
@@ -266,7 +305,7 @@ export function Guide({
             index={index}
             tourId={tour.id}
             active={step.id === active}
-            linked={step.id === active && !staleLink}
+            presentable={!staleLink}
           />
         ))}
       </div>
@@ -280,13 +319,48 @@ function ChangeOmissions() {
   if (!change) return null;
   const omissions = changeOmissions(change, state.model.index.index);
   if (omissions.length === 0) return null;
+  // The files' own lines read plainly; the tools' reports ("<provider> report: …") are for whoever checks
+  // the analysis: one plain line, the reports folded under it.
+  const index = state.model.index.index;
+  // A language a SCIP tool covers: its name-matching report says nothing the reader needs.
+  const precise = (language: string | undefined) =>
+    !!language && index.languages[language]?.refs === "precise";
+  const reports = omissions.filter(
+    (item) => /^\S+ report: /.test(item) && !precise(item.slice(0, item.indexOf(" "))),
+  );
+  const files = omissions.filter((item) => !/^\S+ report: /.test(item));
+  if (files.length === 0 && reports.length === 0) return null;
+  const languageOf = new Map(index.files.map((file) => [file.path, file.language]));
+  const allPrecise = change.files
+    .filter((file) => file.status !== "deleted")
+    .every((file) => {
+      const language = languageOf.get(file.path);
+      return !language || index.languages[language]?.refs !== "heuristic" || precise(language);
+    });
+  // Only the tools' limits: not something a person left out.
+  const heading = files.length > 0 ? "Not checked" : "Limits of the code analysis";
   return (
-    <section className="change-omissions" data-testid="change-omissions" aria-label="Not checked">
-      <h3>Not checked</h3>
+    <section className="change-omissions" data-testid="change-omissions" aria-label={heading}>
+      <h3>{heading}</h3>
       <ul>
-        {omissions.map((item) => (
+        {files.map((item) => (
           <li key={item}>{item}</li>
         ))}
+        {reports.length > 0 && (
+          <li>
+            {allPrecise
+              ? "A language tool found the arrows in the changed files; a tool can still miss one."
+              : "Some arrows in the changed files may be missing, or matched by name only."}
+            <details>
+              <summary>What the code analysis reported ({reports.length})</summary>
+              <ul>
+                {reports.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </details>
+          </li>
+        )}
       </ul>
     </section>
   );
@@ -314,13 +388,14 @@ function GuideSection({
   index,
   tourId,
   active,
-  linked,
+  presentable,
 }: {
   step: TourStep;
   index: number;
   tourId: string;
   active: boolean;
-  linked: boolean;
+  /** False while the page's link names a step that is gone: the reader picks a step first. */
+  presentable: boolean;
 }) {
   const store = useStore();
   const state = useViewerState();
@@ -372,6 +447,21 @@ function GuideSection({
       ? [{ id, from: element.step.from, label: element.step.label }]
       : [];
   });
+  // Calls between the same two parts share one card (two "This call" cards in a row read as a repeat).
+  const callGroups = new Map<string, { id: string; label: string }[]>();
+  for (const id of step.focus) {
+    const element = state.model.element(id);
+    if (element?.type !== "step" || element.step.from === element.step.to) continue;
+    const key = `${element.step.from}\u0000${element.step.to}`;
+    callGroups.set(key, [...(callGroups.get(key) ?? []), { id, label: element.step.label }]);
+  }
+  // The two ends of each call the section shows: the "In the code" card does not list them a second time.
+  const callEnds = new Set(
+    step.focus.flatMap((id) => {
+      const element = state.model.element(id);
+      return element?.type === "step" ? [element.step.from, element.step.to] : [];
+    }),
+  );
   // a11y: every step has the same buttons and lists; their names say which step they belong to
   const where = `step ${index + 1}: ${title}`;
   const link = new URL(location.href);
@@ -389,16 +479,6 @@ function GuideSection({
       ) : (
         <h3 tabIndex={-1}>{title}</h3>
       )}
-      <div className="guide-section-actions">
-        <a href={link.href} aria-label={`Link to ${where}`}>
-          Link to this step
-        </a>
-        {linked && (
-          <button type="button" className="btn" onClick={() => store.present(tourId, index)}>
-            Continue from this step
-          </button>
-        )}
-      </div>
       <div className="guide-explanation">
         <div className="guide-prose">
           {body && (
@@ -419,16 +499,16 @@ function GuideSection({
               ) : null;
             })}
         </div>
-        <GuideSource step={step} tourId={tourId} index={index} />
+        {/* The picture beside the text it explains (under it on a narrow screen); the code comes after. */}
+        {view && (
+          <Snapshot
+            view={view}
+            focus={step.focus}
+            onOpen={() => show(view.type === "graph" ? "map" : "flow")}
+            context={where}
+          />
+        )}
       </div>
-      {view && (
-        <Snapshot
-          view={view}
-          focus={step.focus}
-          onOpen={() => show(view.type === "graph" ? "map" : "flow")}
-          context={where}
-        />
-      )}
       {step.focus.map((id) => {
         const element = state.model.element(id);
         const members =
@@ -474,9 +554,16 @@ function GuideSection({
               </figure>
             );
           }
+          const group = callGroups.get(`${from}\u0000${to}`) ?? [{ id, label }];
+          if (group[0]!.id !== id) return null;
+          const labels = group.map((call) => call.label);
           return (
-            <figure className="guide-mini" key={id} aria-label={`Interaction: ${label}`}>
-              <figcaption>This call</figcaption>
+            <figure
+              className="guide-mini"
+              key={id}
+              aria-label={`Interaction: ${labels.join("; ")}`}
+            >
+              <figcaption>{labels.length > 1 ? "These calls" : "This call"}</figcaption>
               <div className="guide-mini-row">
                 <button className="guide-mini-node" onClick={() => store.select([from])}>
                   {state.model.label(from)}
@@ -485,7 +572,7 @@ function GuideSection({
                   className="guide-mini-link"
                   onClick={() => store.previewStep(tourId, index)}
                 >
-                  {label}
+                  {labels.join(" · ")}
                   <span aria-hidden="true">→</span>
                 </button>
                 <button className="guide-mini-node" onClick={() => store.select([to])}>
@@ -495,23 +582,51 @@ function GuideSection({
             </figure>
           );
         }
-        return members.length > 0 && !onlyTests ? (
+        // one chip per name and code: two elements with the same name and lines are one link
+        const seen = new Set<string>();
+        const fresh = members.filter((member) => {
+          if (callEnds.has(member)) return false;
+          const at = codeFocus([member], state.model)[0];
+          const key = `${state.model.label(member)}\0${at ? `${at.file}:${at.range.startLine}-${at.range.endLine}` : member}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        // a name that is still there twice (steps of two diagrams): each says which diagram it is in
+        const twice = new Set(
+          fresh
+            .map((member) => state.model.label(member))
+            .filter((label, i, all) => all.indexOf(label) !== i),
+        );
+        const chipName = (member: string) => {
+          const element = state.model.element(member);
+          const label = state.model.label(member);
+          return twice.has(label) && element?.type === "step" ? (
+            <>
+              {label} <span className="guide-mini-where">· {element.view.title}</span>
+            </>
+          ) : (
+            label
+          );
+        };
+        return fresh.length > 0 && !onlyTests ? (
           <figure className="guide-mini" key={id}>
-            <figcaption>{element?.type === "concept" ? "Where this applies" : "Parts"}</figcaption>
+            <figcaption>In the code</figcaption>
             <div className="guide-mini-row">
-              {members.map((member) => (
+              {fresh.map((member) => (
                 <button
                   className="guide-mini-node"
                   key={member}
                   onClick={() => store.select([member])}
                 >
-                  {state.model.label(member)}
+                  {chipName(member)}
                 </button>
               ))}
             </div>
           </figure>
         ) : null;
       })}
+      <GuideSource step={step} tourId={tourId} index={index} />
       {tests.length > 0 && (
         <section
           className="guide-tests"
@@ -540,44 +655,79 @@ function GuideSection({
           </ul>
         </section>
       )}
-      {changeCallers.length > 0 && (
-        <section
-          className="guide-tests"
-          data-testid="guide-callers"
-          aria-label={`Code that calls what changed, step ${index + 1}`}
-        >
-          <h4>Code that calls what changed</h4>
-          <ul>
-            {changeCallers.map((caller) => (
-              <li key={caller.from}>
-                <button
-                  type="button"
-                  className="guide-test"
-                  title={`Open ${caller.file} at line ${caller.line}`}
-                  onClick={() => {
-                    store.previewStep(tourId, index);
-                    store.openFile(caller.file, caller.line);
-                    store.setPerspective("code");
-                  }}
-                >
-                  <code>{caller.label}</code>
-                  <span className="guide-test-file">
-                    {caller.file}, line {caller.line}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      {/* the code that calls what changed, then the tests that do: a test is no caller to review */}
+      {(
+        [
+          ["guide-callers", "Code that calls what changed", false],
+          ["guide-test-callers", "Tests that call what changed", true],
+        ] as const
+      ).map(([testId, heading, test]) => {
+        const callers = changeCallers.filter((caller) => isTestFile(caller.file) === test);
+        return (
+          callers.length > 0 && (
+            <section
+              key={testId}
+              className="guide-tests"
+              data-testid={testId}
+              aria-label={`${heading}, step ${index + 1}`}
+            >
+              <h4>{heading}</h4>
+              <ul>
+                {callers.map((caller) => (
+                  <li key={caller.from}>
+                    <button
+                      type="button"
+                      className="guide-test"
+                      title={`Open ${caller.file} at line ${caller.line}`}
+                      onClick={() => {
+                        store.previewStep(tourId, index);
+                        store.openFile(caller.file, caller.line);
+                        store.setPerspective("code");
+                      }}
+                    >
+                      <code>{caller.label}</code>
+                      <span className="guide-test-file">
+                        {caller.file}, line {caller.line}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )
+        );
+      })}
+      {/* The step's tools come after its text and its code: the title leads straight into the text. */}
       <div className="section-actions">
-        <button className="btn" aria-label={`Show the code, ${where}`} onClick={() => show("code")}>
-          Show the code
+        <button
+          className="btn section-show-code"
+          aria-label={`Show code, ${where}`}
+          onClick={() => show("code")}
+        >
+          Show code
         </button>
+        <a className="btn" href={link.href} aria-label={`Link to ${where}`}>
+          Link to this step
+        </a>
+        {presentable && (
+          <button
+            type="button"
+            className="btn"
+            aria-label={`Present from ${where}`}
+            onClick={() => store.present(tourId, index)}
+          >
+            Present from this step
+          </button>
+        )}
       </div>
     </section>
   );
 }
+
+/** The Tour's step on screen while the Tour is open (set by `Guide`, read by the reading tabs). */
+export const readingStep: { current: { tourId: string; stepId: string } | undefined } = {
+  current: undefined,
+};
 
 /** The summary of a node, concept, edge or sequence step (what stands in for a missing note). */
 function summaryOf(id: string, model: ExplainerModel): string | undefined {

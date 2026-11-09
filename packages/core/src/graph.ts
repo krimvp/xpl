@@ -5,10 +5,19 @@
  * policy that keeps them readable is in stubs.ts). Also the pure view edits the viewer applies:
  * expanding a stub, drilling into a node, collapsing one, the default `include`.
  */
+import type { GetText } from "./anchors.js";
 import { DEFAULT_EDGE_KINDS } from "./constants.js";
 import { globMatcher } from "./glob.js";
-import { derivedEdgeId, elementIdForSymbolId, parseId, REF_TO_EDGE_KIND, REPO_ID } from "./ids.js";
-import type { IndexModel } from "./index-model.js";
+import {
+  derivedEdgeId,
+  elementIdForSymbolId,
+  parseId,
+  REF_TO_EDGE_KIND,
+  REPO_ID,
+  symbolIdForElementId,
+} from "./ids.js";
+import { isTestFile, type IndexModel } from "./index-model.js";
+import { implementationsOf, type Implementation } from "./implementations.js";
 import type { ExplainerModel } from "./model.js";
 import type {
   Anchor,
@@ -40,6 +49,11 @@ export interface GraphNode {
   kind: Node["kind"];
   /** For symbol nodes: the indexed symbol's kind. */
   symbolKind?: IndexedSymbol["kind"];
+  /**
+   * The reader's word for `symbolKind` when it differs from it (`ModelNode.kindWord`): "struct", "field";
+   * "constant" for a value declared `const` (read from `DeriveOptions.text`).
+   */
+  kindWord?: string;
   /** Some included node renders inside this one. */
   container: boolean;
   /** The included element this node renders inside (its container), if any. */
@@ -56,6 +70,12 @@ export interface GraphNode {
   summary?: string;
   /** An idea linked to no code (`Node.sketch`). */
   sketch?: boolean;
+  /** A type box that draws its children as the rows of one table (`GraphView.boxText: "members"`). */
+  rows?: boolean;
+  /** A row of such a box: its place in the table, from 0, in the order the code declares the rows. */
+  row?: number;
+  /** A row: the type its declaration line names (`number` for `attempts: number`), if any. */
+  memberType?: string;
 }
 
 /**
@@ -69,6 +89,7 @@ export interface DerivedEdge {
   from: ElementId;
   to: ElementId;
   kind: Edge["kind"];
+  /** The stored edge's label; "holds" for a field's arrow on a `boxText: "members"` view (from a row). */
   label?: string;
   summary?: string;
   /** Number of index references aggregated (1 for a stored edge). */
@@ -98,6 +119,77 @@ export interface DerivedGraph {
 export interface DeriveOptions {
   /** Overrides `view.edgeKinds` (and the default `calls`, `extends`, `implements`). */
   edgeKinds?: readonly Edge["kind"][];
+  /** Source text, for the type of each row on a `boxText: "members"` view (rows show no type without it). */
+  text?: GetText;
+}
+
+/** Symbol kinds that a `boxText: "members"` view draws as a table of rows. */
+const TYPE_KINDS: ReadonlySet<IndexedSymbol["kind"]> = new Set([
+  "class",
+  "interface",
+  "type",
+  "enum",
+]);
+
+/**
+ * The type a field's declaration line names, read off the text after its name: `attempts: number;` (TypeScript),
+ * `attempts: int = 0` (Python) and `Attempts int // note` (Go) all give the type. Undefined when the line names
+ * none (`x = 0`) or does not hold the name.
+ */
+function memberType(line: string, name: string): string | undefined {
+  const start = wordAt(line, name);
+  if (start < 0) return undefined;
+  const rest = line
+    .slice(start + name.length)
+    .replace(/^[?!]/, "")
+    .replace(/\s(?:\/\/|#).*$/, "") // a comment at the end
+    .replace(/\s`[^`]*`\s*$/, ""); // a Go struct tag
+  const colon = /^\s*:\s*/.exec(rest);
+  let type: string;
+  if (colon) type = rest.slice(colon[0].length).split(/\s=(?!>)|;/)[0]!;
+  else if (/^\s+[\w*[\]().]/.test(rest)) type = rest;
+  else return undefined;
+  type = type.trim().replace(/[,;]$/, "").trim();
+  if (type === "" || /^[={]/.test(type)) return undefined;
+  return type;
+}
+
+/**
+ * A type's text without the function types in it (each becomes `fn`): TypeScript `(w: Worker) => void`, Go
+ * `func(w *Worker) error`, Python `Callable[[Worker], None]`. What is left names the types a value holds.
+ */
+function withoutFunctions(type: string): string {
+  const patterns = [
+    /\([^()]*\)\s*=>\s*(?:[\w.$]+(?:<[^<>]*>)?(?:\[\])*)/,
+    /\bfunc\s*\([^()]*\)\s*(?:\([^()]*\)|[\w.*[\]]+)?/,
+    /\bCallable\[(?:[^[\]]|\[[^[\]]*\])*\]/,
+  ];
+  let text = type;
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const pattern of patterns) {
+      const next = text.replace(pattern, "fn");
+      if (next !== text) [text, changed] = [next, true];
+    }
+  }
+  return text;
+}
+
+/**
+ * A type's text without its indexed accesses (each becomes `member`): TypeScript `Options['baseUrl']` is the type of
+ * one member of Options, not an Options. An array type (`Worker[]`) stays.
+ */
+function withoutIndexedAccess(type: string): string {
+  return type.replace(/[\w.$]+(?:<[^<>]*>)?\s*\[\s*[^\]\s][^\]]*\]/g, "member");
+}
+
+/** Where `name` stands in `line` as a whole word (not part of a longer name), or -1. */
+function wordAt(line: string, name: string): number {
+  const word = (c: string | undefined) => c !== undefined && /[\w$]/.test(c);
+  for (let at = line.indexOf(name); at >= 0; at = line.indexOf(name, at + 1)) {
+    if (!word(line[at - 1]) && !word(line[at + name.length])) return at;
+  }
+  return -1;
 }
 
 /** Sites and definitions kept per derived edge. */
@@ -388,6 +480,13 @@ export function deriveGraph(
   const rep = new Representation(model, include);
   const dropRef = excludedRefs(view, model, includeIds);
   const policy = resolveStubPolicy(view.stubs);
+  const members = view.boxText === "members";
+  const isType = (id: ElementId): boolean => {
+    const node = model.node(id);
+    return (
+      node?.kind === "symbol" && node.symbolKind !== undefined && TYPE_KINDS.has(node.symbolKind)
+    );
+  };
 
   // Nodes with render parents.
   const parents = new Map<ElementId, ElementId>();
@@ -487,6 +586,46 @@ export function deriveGraph(
   const throughVia = (inside: ElementId, outside: ElementId) =>
     viaEnds.get(inside)?.some((via) => model.subtreeContains(via, outside)) ?? false;
 
+  const addEdge = (kind: Edge["kind"], a: ElementId, b: ElementId, ref: Reference) => {
+    const id = derivedEdgeId(kind, a, b);
+    let agg = edgeAggs.get(id);
+    if (!agg) {
+      agg = { kind, from: a, to: b, refs: [], resolution: ref.resolution };
+      edgeAggs.set(id, agg);
+    }
+    agg.refs.push(ref);
+    if (ref.resolution !== agg.resolution) agg.resolution = "mixed";
+  };
+  // A call of an interface method runs its implementation: when the index knows exactly one outside test
+  // files, the call also reaches the implementation's box (Go code calls a queue through an interface it
+  // declares itself, so the call alone never leaves the caller's file).
+  const dispatchMemo = new Map<SymbolId, Implementation | null>();
+  const dispatched = (ref: Reference): Reference | undefined => {
+    let impl = dispatchMemo.get(ref.to);
+    if (impl === undefined) {
+      const found =
+        index.parentSymbol(ref.to)?.kind === "interface"
+          ? implementationsOf(index, ref.to).filter((i) => {
+              const file = index.fileOfSymbolId(i.id);
+              return file !== undefined && !isTestFile(file);
+            })
+          : [];
+      impl = found.length === 1 ? found[0]! : null;
+      dispatchMemo.set(ref.to, impl);
+    }
+    if (impl === null) return undefined;
+    return {
+      ...ref,
+      to: impl.id,
+      resolution: impl.resolution === "precise" ? ref.resolution : "heuristic",
+    };
+  };
+
+  // the derived edges from a folded table's fields (`members`): named "holds" like the rows' own arrows
+  const heldByFolded = new Set<ElementId>();
+  const hasRows = new Set(parents.values());
+  const isFieldOf = (id: ElementId, type: ElementId): boolean =>
+    model.node(id)?.symbolKind === "variable" && model.parent(id) === type;
   for (const ref of index.refs) {
     const kind = REF_TO_EDGE_KIND[ref.kind];
     if (!kind || !kinds.has(kind)) continue;
@@ -496,18 +635,23 @@ export function deriveGraph(
     if (dropRef?.(ref)) continue;
     const a = rep.repr(fromEl);
     const b = rep.repr(toEl);
+    // a data-model view draws what the types hold, not the uses inside a type's methods; a field of a folded
+    // table (its rows not shown) still holds what it holds: its arrow starts at the table
+    const lifted = members && a !== undefined && a !== fromEl && isType(a);
+    const field = lifted && kind === "references" && !hasRows.has(a) && isFieldOf(fromEl, a);
+    if (lifted && !field) continue;
+    if (a !== undefined && kind === "calls") {
+      const hop = dispatched(ref);
+      const implEl = hop && !dropRef?.(hop) ? endpoint(hop.to) : undefined;
+      const c = implEl === undefined ? undefined : rep.repr(implEl);
+      if (hop && c !== undefined && c !== a && c !== b && !nested(a, c)) addEdge(kind, a, c, hop);
+    }
     if (a !== undefined && b !== undefined) {
       // a call of a symbol to itself (recursion) is a loop on its box, when the box is that symbol
       const loop = a === b && kind === "calls" && a === fromEl && b === toEl;
       if (a === b ? !loop : nested(a, b)) continue;
-      const id = derivedEdgeId(kind, a, b);
-      let agg = edgeAggs.get(id);
-      if (!agg) {
-        agg = { kind, from: a, to: b, refs: [], resolution: ref.resolution };
-        edgeAggs.set(id, agg);
-      }
-      agg.refs.push(ref);
-      if (ref.resolution !== agg.resolution) agg.resolution = "mixed";
+      addEdge(kind, a, b, ref);
+      if (field) heldByFolded.add(derivedEdgeId(kind, a, b));
     } else if (a !== undefined) {
       if (!throughVia(a, toEl)) addStub("out", a, toEl, kind);
     } else if (b !== undefined && !throughVia(b, fromEl)) addStub("in", b, fromEl, kind);
@@ -610,6 +754,34 @@ export function deriveGraph(
     if (parent !== undefined) finalParent.set(id, parent);
   }
   const containers = new Set(finalParent.values());
+  // a type box whose children are all plain boxes is a table: one row per child
+  const tables = new Set<ElementId>();
+  if (members) {
+    for (const id of containers) if (isType(id)) tables.add(id);
+    for (const [child, parent] of finalParent) if (containers.has(child)) tables.delete(parent);
+  }
+  const symbolOf = (id: ElementId) => model.index.symbol(symbolIdForElementId(id) ?? "");
+  const typeOf = (id: ElementId): string | undefined => {
+    const sym = symbolOf(id);
+    const line = sym && opts.text?.(sym.file)?.split("\n")[sym.range.startLine - 1];
+    return line ? memberType(line, sym.path.split(".").pop()!) : undefined;
+  };
+  // a value declared `const` (`export const applyCommand = {…}`) is a constant to its reader, not a variable
+  const isConstant = (id: ElementId): boolean => {
+    const sym = symbolOf(id);
+    const line = sym && opts.text?.(sym.file)?.split("\n")[sym.range.startLine - 1];
+    return line !== undefined && /^\s*(?:export\s+)?(?:declare\s+)?const\s/.test(line);
+  };
+  // rows in the order the code declares them
+  const rowOf = new Map<ElementId, number>();
+  for (const table of tables) {
+    const line = (id: ElementId) => symbolOf(id)?.range.startLine ?? Infinity;
+    [...finalParent]
+      .filter(([, parent]) => parent === table)
+      .map(([child]) => child)
+      .sort((a, b) => line(a) - line(b) || cmp(a, b))
+      .forEach((child, i) => rowOf.set(child, i));
+  }
   const nodes: GraphNode[] = visibleIds.map((id) => {
     const node = model.node(id)!;
     const out: GraphNode = {
@@ -619,6 +791,8 @@ export function deriveGraph(
       container: containers.has(id),
     };
     if (node.symbolKind !== undefined) out.symbolKind = node.symbolKind;
+    if (node.kindWord !== undefined) out.kindWord = node.kindWord;
+    else if (node.symbolKind === "variable" && isConstant(id)) out.kindWord = "constant";
     if (node.role !== undefined) out.role = node.role;
     if (node.tech !== undefined) out.tech = node.tech;
     if (node.opens !== undefined) {
@@ -629,12 +803,59 @@ export function deriveGraph(
     if (node.sketch === true) out.sketch = true;
     const parent = finalParent.get(id);
     if (parent !== undefined) out.parent = parent;
+    if (tables.has(id)) out.rows = true;
+    const row = rowOf.get(id);
+    if (row !== undefined) {
+      out.row = row;
+      const type = typeOf(id);
+      if (type !== undefined) out.memberType = type;
+    }
     return out;
   });
 
+  // a row whose type names the other type only in a function's signature (`Array<(worker: Worker) => void>`)
+  // holds functions, not that type, and one that names it only to take a member's type (`Options['baseUrl']`)
+  // holds that member's type: no arrow
+  const holdsNothingOf = (edge: DerivedEdge): boolean => {
+    if (edge.kind !== "references" || !rowOf.has(edge.from)) return false;
+    const type = typeOf(edge.from);
+    const name = symbolOf(edge.to)?.path.split(".").pop();
+    return (
+      type !== undefined &&
+      name !== undefined &&
+      wordAt(type, name) >= 0 &&
+      wordAt(withoutIndexedAccess(withoutFunctions(type)), name) < 0
+    );
+  };
   const outEdges = [...edges.values()]
     .filter((e) => !hidden.has(e.id) && !hidden.has(e.from) && !hidden.has(e.to))
+    .filter((e) => !holdsNothingOf(e))
     .sort((a, b) => cmp(a.id, b.id));
+  // a row's arrow: the field holds a value of that type ("Queue.ready holds Job")
+  // an interface or a parent type lifted to a box that is no type (a file, a folder, a group): "Job queue
+  // implements Runner" would say the queue is a kind of runner; it implements an interface in it
+  // Go has no inheritance: its `extends` references are embedded fields and interface elements ("embeds")
+  const fromGo = (id: ElementId): boolean => {
+    const parsed = parseId(id);
+    const file =
+      parsed.type === "file" ? parsed.path : parsed.type === "symbol" ? parsed.file : undefined;
+    return file !== undefined && index.file(file)?.language === "go";
+  };
+  for (const edge of outEdges) {
+    if (edge.stored || edge.label !== undefined) continue;
+    const type = isType(edge.to);
+    if (edge.kind === "implements" && !type) edge.label = "implements an interface in";
+    else if (edge.kind === "extends" && fromGo(edge.from))
+      edge.label = type ? "embeds" : "embeds a type in";
+    else if (edge.kind === "extends" && !type) edge.label = "extends a type in";
+  }
+  for (const edge of outEdges)
+    if (
+      edge.kind === "references" &&
+      (rowOf.has(edge.from) || heldByFolded.has(edge.id)) &&
+      edge.label === undefined
+    )
+      edge.label = "holds";
   const { stubs, ghosts } = planStubs([...stubAggs.values()], {
     model,
     policy,

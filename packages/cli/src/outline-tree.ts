@@ -6,8 +6,16 @@
  * ones that stay inside it. A directory's subtree is its files, a file's is its module scope plus all
  * its symbols, a symbol's is itself and its descendants.
  */
-import { baseName, dirOf, parseId, symId, type IndexModel, type IndexedSymbol } from "@xpl/core";
-import { rangeText } from "./format.js";
+import {
+  baseName,
+  CODE_LANGUAGES,
+  dirOf,
+  parseId,
+  symId,
+  type IndexModel,
+  type IndexedSymbol,
+} from "@xpl/core";
+import { kindWord, rangeText } from "./format.js";
 
 export interface OutlineNode {
   id: string;
@@ -15,6 +23,8 @@ export interface OutlineNode {
   label: string;
   /** `repo`, `dir`, the file's language, or the symbol's kind. */
   kind: string;
+  /** The kind in the language's own word (`kindWord`), for the text output. */
+  word?: string;
   range?: { startLine: number; endLine: number };
   /** Files below (repo and dir). */
   files?: number;
@@ -105,6 +115,11 @@ export interface OutlineOptions {
    * parent symbols) is listed too, so the matches keep their place; everything else is left out.
    */
   kinds?: ReadonlySet<string>;
+  /**
+   * The lines of a file as an editor numbers them, when the text is at hand. The index counts the empty "line"
+   * after a final newline (`IndexedFile.lines`, the region whole-file anchors hash); `wc -l` and editors do not.
+   */
+  fileLines?: (path: string) => number | undefined;
 }
 
 /** The symbol kinds a `--kind` filter takes (`IndexedSymbol.kind`). */
@@ -208,7 +223,7 @@ function makeNode(model: IndexModel, fans: Fans, id: string, opts: OutlineOption
         type: "file",
         label: baseName(parsed.path),
         kind: file.language,
-        range: { startLine: 1, endLine: file.lines },
+        range: { startLine: 1, endLine: opts.fileLines?.(parsed.path) ?? file.lines },
       };
     }
     case "symbol": {
@@ -218,6 +233,7 @@ function makeNode(model: IndexModel, fans: Fans, id: string, opts: OutlineOption
         type: "symbol",
         label: symbol.path.slice(symbol.path.lastIndexOf(".") + 1),
         kind: symbol.kind,
+        word: kindWord(model, symbol),
         range: { startLine: symbol.range.startLine, endLine: symbol.range.endLine },
       };
     }
@@ -247,7 +263,15 @@ export function buildOutline(model: IndexModel, id: string, opts: OutlineOptions
       node.more = ids.length;
       return;
     }
-    for (const childId of ids) {
+    for (let childId of ids) {
+      // a chain of folders that each hold one folder and nothing else (Maven's src/main/java/<package>) is
+      // one row, as IDEs show it, and one level of depth
+      for (;;) {
+        if (!childId.startsWith("dir:")) break;
+        const inner = childIds(model, childId, opts.keys, filter).ids;
+        if (inner.length !== 1 || !inner[0]!.startsWith("dir:")) break;
+        childId = inner[0]!;
+      }
       const child = makeNode(model, fans, childId, opts);
       fill(child, depth - 1);
       node.children.push(child);
@@ -265,7 +289,7 @@ export function renderOutline(root: OutlineNode): string[] {
     if (node.type === "repo") {
       parts.push(node.label, `${node.files} files, ${node.symbols} symbols`);
     } else {
-      parts.push(node.kind);
+      parts.push(node.word ?? node.kind);
       if (node.type === "dir") parts.push(`${node.files} file${node.files === 1 ? "" : "s"}`);
       if (node.range) parts.push(rangeText(node.range));
       parts.push(`in=${node.fanIn} out=${node.fanOut}${node.recursive ? "  recursive" : ""}`);
@@ -297,6 +321,13 @@ export function outlineJson(node: OutlineNode): unknown {
     ...(node.hiddenKeys > 0 ? { hiddenKeys: node.hiddenKeys } : {}),
     ...(node.children.length > 0 ? { children: node.children.map(outlineJson) } : {}),
   };
+}
+
+/** Does the tree show a code file (not only settings and text)? */
+export function outlineHasCode(root: OutlineNode): boolean {
+  return (
+    (root.type === "file" && CODE_LANGUAGES.has(root.kind)) || root.children.some(outlineHasCode)
+  );
 }
 
 /** Does the tree contain nodes with children cut off by the depth limit / hidden config keys? */

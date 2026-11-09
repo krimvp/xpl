@@ -31,7 +31,7 @@ import {
 import { asIndexModel, type IndexModel } from "./index-model.js";
 import { hopRefs, viaHops } from "./graph.js";
 import { ExplainerModel } from "./model.js";
-import { resolveFrames } from "./sequence.js";
+import { frameArms, resolveFrames } from "./sequence.js";
 import { parseGhostKey, STUB_MODES } from "./stubs.js";
 import { reviewShapeIssues } from "./review.js";
 import type {
@@ -271,7 +271,7 @@ class Validator {
     } else if (ex.index.commit !== this.index.commit) {
       this.warn(
         "index.commit",
-        `explainer was last resolved against index ${ex.index.commit}, but the index given is ${this.index.commit}; run \`xpl resolve --write\` to re-resolve the anchors`,
+        `the guide was last resolved against index ${ex.index.commit}, but the index given is ${this.index.commit}; run \`xpl resolve <explainer> --write\` to check its code links again`,
         undefined,
         "commit",
       );
@@ -323,8 +323,8 @@ class Validator {
     if (/^[0-9a-f]{7,}$/i.test(commit) && !change.head.startsWith(commit)) {
       this.warn(
         "change.head",
-        `the change ends at ${shortSha(change.head)}, but the explainer's index was built from ${commit}: ` +
-          `check out ${shortSha(change.head)}, run \`xpl index\` and \`xpl resolve <name> --write\`, ` +
+        `the change ends at ${shortSha(change.head)}, but the guide's index was built from ${commit}: ` +
+          `check out ${shortSha(change.head)}, run \`xpl index\` and \`xpl resolve <explainer> --write\`, ` +
           `or write the change again with \`xpl change <name> <base>..${commit}\``,
         undefined,
         "change",
@@ -519,10 +519,10 @@ class Validator {
   private describeNotAnId(id: string): string {
     const loose = normalizeElementId(id, this.index);
     if (loose.ok && loose.id !== id) {
-      return `"${id}" is not an element id; did you mean ${loose.id}?`;
+      return `"${id}" is not an element id. Did you mean: ${loose.id}?`;
     }
     const near = suggestIds(id, this.known().all);
-    if (near.length > 0) return `"${id}" is not an element id; did you mean ${near.join(", ")}?`;
+    if (near.length > 0) return `"${id}" is not an element id. Did you mean: ${near.join(", ")}?`;
     return `"${id}" is not an element id (expected repo, dir:<path>, file:<path>, sym:<file>#<symbol> or grp:<slug>)`;
   }
 
@@ -954,7 +954,7 @@ class Validator {
         if (!covered) {
           this.error(
             `${path}.anchors`,
-            `llm edge ${id} needs at least one anchor inside its ${label} (${end}): ${describeInside(end)}. Evidence is required at both ends (e.g. the call site and the target's definition).`,
+            `llm edge ${id} needs an anchor at its ${label === "from" ? "start" : "end"} (${label}: ${end}): ${describeInside(end)}. An arrow needs code at both ends (e.g. the call site and the target's definition).`,
             id,
             "evidence",
           );
@@ -1208,13 +1208,13 @@ class Validator {
     }
   }
 
-  /** `; did you mean src/a.ts#Class.run?` for an entry point whose file exists but whose symbol does not. */
+  /** `. Did you mean: src/a.ts#Class.run?` for an entry point whose file exists but whose symbol does not. */
   private entryPointHint(entry: unknown): string {
     if (typeof entry !== "string") return "";
     const { file, path } = splitSymbolId(entry, (candidate) => this.index.hasFile(candidate));
     if (!this.index.hasFile(file) || path === "") return "";
     const found = this.index.suggestSymbols(file, path, 3, this.hintFor(file, path) ?? {});
-    return found.length > 0 ? `; did you mean ${found.map((sym) => sym.id).join(", ")}?` : "";
+    return found.length > 0 ? `. Did you mean: ${found.map((sym) => sym.id).join(", ")}?` : "";
   }
 
   private checkGraphView(view: Record<string, unknown>, path: string, id: string): void {
@@ -1279,10 +1279,17 @@ class Validator {
       }
     }
     if (view.stubs !== undefined) this.checkStubPolicy(view.stubs, `${path}.stubs`, id);
-    if (view.boxText !== undefined && view.boxText !== "summary") {
+    if (view.boxText !== undefined && view.boxText !== "summary" && view.boxText !== "members") {
       this.error(
         `${path}.boxText`,
-        'boxText must be "summary" (each box shows its summary under its label)',
+        'boxText must be "summary" (each box shows its summary under its label) or "members" (a type box shows its fields as rows)',
+        id,
+      );
+    }
+    if (view.render !== undefined && view.render !== "matrix") {
+      this.error(
+        `${path}.render`,
+        'render must be "matrix" (the view opens as a dependency matrix)',
         id,
       );
     }
@@ -1566,6 +1573,9 @@ class Validator {
             id,
             "frame",
           );
+        } else {
+          const arms = frameArms(view, frame, from, to);
+          if (typeof arms === "string") this.error(`${at}.arms`, arms, id, "frame");
         }
       }
     });
@@ -1579,6 +1589,18 @@ class Validator {
           this.warn(
             `${path}.frames`,
             `frames ${x.frame.id} and ${y.frame.id} overlap without nesting; a frame must lie inside another or apart from it`,
+            id,
+            "frame",
+          );
+        } else if (
+          y.from <= x.to &&
+          y.to <= x.to &&
+          x.arms.length > 0 &&
+          !x.arms.some((arm) => arm.from <= y.from && y.to <= arm.to)
+        ) {
+          this.warn(
+            `${path}.frames`,
+            `frame ${y.frame.id} crosses the line between two arms of ${x.frame.id}; a frame inside an alt must lie inside one of its arms`,
             id,
             "frame",
           );

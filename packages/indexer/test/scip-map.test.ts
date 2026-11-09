@@ -468,6 +468,34 @@ export function ⟦lex⟧(): number {
     ]);
   });
 
+  it("TypeScript: a name imported from a module the tool could not find (a package's own name) is blind", async () => {
+    // scip-typescript gives the binding of an unresolved import a `local` with no definition
+    const use = marked(`import type { ⟦RetryOptions⟧ } from "ky";
+export const ⟦check⟧ = (⟦o⟧: ⟦RetryOptions⟧) => ⟦o⟧;
+`);
+    const { result } = await run({ "test-d/a.ts": use.text }, [
+      source([
+        {
+          path: "test-d/a.ts",
+          occurrences: [
+            moduleDef("test-d/a.ts"),
+            ...occs(use, [
+              [0, "local 0"],
+              [1, ts("test-d/a.ts", "check."), DEF],
+              [2, "local 1", DEF],
+              [3, "local 0"],
+              [4, "local 1"],
+            ]),
+          ],
+        },
+      ]),
+    ]);
+    expect(result.blind).toEqual([
+      { file: "test-d/a.ts", line: 1, col: 15 },
+      { file: "test-d/a.ts", line: 2, col: 26 },
+    ]);
+  });
+
   it("a local declared in a function with the function's own name is not the function: no invented recursion", async () => {
     const src = marked(`export function ⟦walk⟧(⟦node⟧: unknown): number {
   const ⟦walk⟧ = (n: unknown) => 1;
@@ -504,7 +532,8 @@ export function ⟦fact⟧(n: number): number {
   });
 
   it("does not attribute definitions nested in another symbol to that symbol (Python-style instance attributes)", async () => {
-    // `self.count = 0` in __init__ defines the attribute `Counter#count.`; the index has no symbol for it
+    // `self.count = 0` in __init__ defines the attribute `Counter#count.`; the index has it as a field of
+    // the class (`Counter.count`, over the assignment's line), not as part of `__init__`
     const py = marked(`class ⟦Counter⟧:
     def ⟦__init__⟧(self):
         self.⟦count⟧ = 0
@@ -537,7 +566,7 @@ export function ⟦fact⟧(n: number): number {
       ["python"],
     );
     // `count` is defined inside `Counter.__init__`, but it is not that method: no `write` to `__init__`
-    expect(triples(refs)).toEqual([]);
+    expect(triples(refs)).toEqual(["write pkg/a.py#Counter.bump -> pkg/a.py#Counter.count"]);
   });
 
   it("Python: a call `x.Name()` whose target is named otherwise is left to the heuristic resolver; of a symbol defined twice, the one nested around the call, else the one at its own path", async () => {

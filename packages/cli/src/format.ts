@@ -1,8 +1,43 @@
 /** Small text helpers shared by the commands. */
-import type { Issue, Range } from "@xpl/core";
+import {
+  symbolKindWord,
+  type IndexedSymbol,
+  type IndexModel,
+  type Issue,
+  type Range,
+} from "@xpl/core";
 
 export function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
+}
+
+/** `a class`, `an interface`, `an enum`: the noun with its indefinite article. */
+export function withArticle(noun: string): string {
+  return `${/^[aeiou]/i.test(noun) ? "an" : "a"} ${noun}`;
+}
+
+/**
+ * The reader's word for a symbol's kind (core `symbolKindWord`): a Go struct is `struct`, a variable declared in a
+ * type is `field`. The index and `--json` keep the stored kind (`class`, `variable`), which `--kind` filters take.
+ */
+export function kindWord(model: IndexModel, symbol: IndexedSymbol): string {
+  return (
+    symbolKindWord(
+      model.file(symbol.file)?.language,
+      symbol.kind,
+      model.parentSymbol(symbol.id)?.kind,
+    ) ?? symbol.kind
+  );
+}
+
+/**
+ * A file's last line as an editor and `wc -l` number it: a final newline ends the last line and starts none.
+ * The index counts that empty "line" (`IndexedFile.lines`, the region a whole-file anchor hashes); without the
+ * text, that count is all there is.
+ */
+export function editorLineCount(lines: readonly string[] | undefined, indexed: number): number {
+  if (!lines) return indexed;
+  return lines.length > 1 && lines.at(-1) === "" ? lines.length - 1 : lines.length;
 }
 
 export function formatBytes(bytes: number): string {
@@ -38,18 +73,22 @@ export function listText(items: readonly string[], max = 3): string {
   return items.length <= max ? items.join(", ") : `${items.slice(0, max).join(", ")}, ...`;
 }
 
-/** One line per issue: `error   nodes[1].anchors[0] (id): message`. */
-export function renderIssue(issue: Issue): string {
+/**
+ * One line per issue: `error   nodes[1].anchors[0] (id): message`. With `name`, a hint's `<explainer>` placeholder
+ * becomes the guide's name, so the command it names runs as printed.
+ */
+export function renderIssue(issue: Issue, name?: string): string {
   const where = issue.path === "" ? "(explainer)" : issue.path;
   const id =
     issue.elementId !== undefined && !where.includes(issue.elementId)
       ? ` [${issue.elementId}]`
       : "";
-  return `${issue.severity.padEnd(7)} ${where}${id}: ${issue.message}`;
+  const message = name ? issue.message.replaceAll("<explainer>", name) : issue.message;
+  return `${issue.severity.padEnd(7)} ${where}${id}: ${message}`;
 }
 
-export function renderIssues(issues: readonly Issue[]): string[] {
-  return issues.map(renderIssue);
+export function renderIssues(issues: readonly Issue[], name?: string): string[] {
+  return issues.map((issue) => renderIssue(issue, name));
 }
 
 /** `2 errors, 1 warning`. */

@@ -17,6 +17,8 @@
   --fg: #1c2127;
   --muted: #55616f;
   --faint: #5e6876;
+  /* an arrow's words while the arrow steps back (`.edge.is-dim`): 3:1 or more on the canvas */
+  --edge-label-dim: #7d8591;
   --border: #dbe0e7;
   --border-strong: #bcc5d0;
   --hover: rgba(28, 33, 39, 0.06);
@@ -24,8 +26,9 @@
   --accent: #2160d6;
   --accent-fg: #ffffff;
   --accent-soft: #e2ebfc;
-  --match: #d97706;
-  --match-soft: #fdebc6;
+  /* What holds the caret, on a diagram: magenta, not the code's orange for "called here". */
+  --match: #c0267e;
+  --match-soft: #fbe3f1;
   --related: #0b7a6a;
   --related-soft: #d3f0ea;
   --danger: #b83227;
@@ -42,15 +45,22 @@
   --pill-fg-l: 29%;
 
   --node-bg: #ffffff;
-  --node-border: #b3bdca;
+  --node-border: #848f9c;
   --store-bg: #fdf3e6;
   --container-bg: rgba(43, 106, 224, 0.05);
   --edge: #566270;
-  --edge-heuristic: #a0abb8;
+  --edge-heuristic: #7b8794;
   --edge-llm: #8b4fdc;
   --edge-user: #16994a;
-  --edge-stub: #8b95a3;
-  --ghost-border: #98a3b1;
+  --edge-stub: #7b8794;
+  /* The dependency matrix's marks (stripes, the diagonal): 3:1 on the panel, and the numbers 3:1 on them. */
+  --matrix-mark: #7b8794;
+  /* Trust is never shown by colour alone: one dash pattern per kind of line, the same in both themes,
+     on the map, the key line and the Key. Heuristic: dashed; mixed: dash-dot; outside the map: dotted. */
+  --dash-heuristic: 6 4;
+  --dash-mixed: 12 3 2 3;
+  --dash-stub: 1.5 4;
+  --ghost-border: #7d8896;
   --frame-bg: rgba(90, 100, 120, 0.05);
 
   --code-font-size: 12.5px;
@@ -123,6 +133,7 @@
   --fg: #e6e9ee;
   --muted: #a0abb8;
   --faint: #8994a2;
+  --edge-label-dim: #66707d;
   --border: #2a313b;
   --border-strong: #3d4653;
   --hover: rgba(255, 255, 255, 0.07);
@@ -130,8 +141,8 @@
   --accent: #6ea2ff;
   --accent-fg: #0b1220;
   --accent-soft: #1d2f52;
-  --match: #ffb443;
-  --match-soft: #4a3610;
+  --match: #f27cc6;
+  --match-soft: #4a1a38;
   --related: #4ad6bf;
   --related-soft: #10403a;
   --danger: #ff8078;
@@ -149,13 +160,14 @@
 
   --node-bg: #1c2129;
   --store-bg: #2b2319;
-  --node-border: #4a5566;
+  --node-border: #5e6a7b;
   --container-bg: rgba(110, 162, 255, 0.07);
   --edge: #9ba7b6;
   --edge-heuristic: #596574;
   --edge-llm: #b58cff;
   --edge-user: #4ade80;
-  --edge-stub: #75818f;
+  --edge-stub: #8794a2;
+  --matrix-mark: #6f7b8a;
   --ghost-border: #66727f;
   --frame-bg: rgba(160, 175, 200, 0.06);
 
@@ -289,6 +301,16 @@ code {
   display: none;
 }
 
+/* A phone: the notes above the page take at most a strip of it; more scroll inside the strip, so the guide
+   keeps the screen (three notes took 380px of 844). */
+@media (max-width: 760px) {
+  .app:not([data-mode="present"]) > .workspace-warnings {
+    max-height: 96px;
+    overflow-y: auto;
+    border-bottom: 1px solid var(--border-strong);
+  }
+}
+
 .analysis-coverage {
   padding: 6px 16px;
   background: var(--panel-2);
@@ -331,6 +353,36 @@ code {
 
 .drift-banner button {
   flex-shrink: 0;
+}
+
+/* a draft's bar: one line; open, the list of what the author has left, scrolled when long */
+.draft-banner {
+  display: block;
+}
+.draft-banner summary {
+  cursor: pointer;
+}
+.draft-banner-open {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.draft-banner ul {
+  margin: 6px 0 2px;
+  padding-left: 18px;
+  max-height: 30vh;
+  overflow-y: auto;
+}
+
+@media (max-width: 640px) {
+  .draft-banner {
+    padding: 4px 12px;
+    font-size: 12px;
+  }
+  .draft-banner:not([open]) summary {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
 }
 
 /* ── Header ───────────────────────────────────────────────────────────────────────────────────── */
@@ -430,6 +482,17 @@ code {
 /* "Edit": the author tools, in a menu under the button (right-aligned: the button is at the row's end). */
 .edit-menu {
   position: relative;
+}
+
+/* Present: the author's "Edit" stays out of the room's sight until the mouse moves (PresentMode
+   `data-pointer`), the header is pointed at, or the keyboard reaches it. */
+.header.is-present .edit-menu {
+  transition: opacity 0.15s;
+}
+.app:not(:has(.present[data-pointer]))
+  .header.is-present:not(:hover)
+  .edit-menu:not(:focus-within) {
+  opacity: 0;
 }
 
 .edit-btn {
@@ -571,6 +634,17 @@ code {
   max-width: 16ch;
 }
 
+/* A saved draft: one word beside the title, not a bar across the page. */
+.draft-pill {
+  flex: none;
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
 .spacer {
   flex: 1;
 }
@@ -690,7 +764,8 @@ code {
 }
 
 .tab.is-active {
-  max-width: 34ch;
+  /* (the open view's whole title; the strip scrolls) */
+  max-width: 64ch;
   background: var(--panel);
   color: var(--fg);
   font-weight: 600;
@@ -833,9 +908,33 @@ code {
     display: none;
   }
 
-  /* No room for it in a narrow header: the page follows the device (Auto) or the choice made on a wider one. */
-  .theme-btn {
+  /* The second row holds the theme button, Search, Feedback, Present and Edit: a little less gap fits them
+     in 390px. */
+  .header {
+    column-gap: 8px;
+  }
+}
+
+/* a11y: a short, narrow screen (a laptop at 200% zoom: 720x450 or 640x360 CSS pixels) keeps the reading
+   header to one row: the logo goes, the title gives way, the buttons are a little tighter. The diagram
+   gets the height a second row took. */
+@media (max-height: 560px) and (max-width: 1100px) {
+  .header.is-reading {
+    flex-wrap: nowrap;
+    column-gap: 6px;
+    padding-inline: 8px;
+  }
+  .header.is-reading .logo {
     display: none;
+  }
+  .header.is-reading .brand {
+    flex: 0 1 auto;
+  }
+  .header.is-reading .btn {
+    padding: 3px 8px;
+  }
+  .header.is-reading .workspace-tabs button {
+    padding: 5px 8px;
   }
 }
 
@@ -940,6 +1039,13 @@ code {
   background: var(--panel);
   cursor: pointer;
   white-space: nowrap;
+}
+
+/* A button whose label holds a title (Details: "Open its own map: ..."): it wraps inside a phone's pane. */
+.btn.is-wrapping {
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
 }
 
 .btn:hover:not(:disabled) {
@@ -1070,9 +1176,10 @@ code {
   min-width: 0;
 }
 
+/* (the diagram, then one line of concept chips: the diagram keeps the height) */
 .left {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) 8px var(--lower-height, 280px);
+  grid-template-rows: minmax(0, 1fr) auto;
   min-height: 0;
   min-width: 0;
   padding: 8px 0 8px 8px;
@@ -1084,26 +1191,126 @@ code {
   padding: 8px 8px 8px 0;
 }
 
-.lower {
+/* What is selected sits at the top of the code column, not under the diagram (the row splitter
+   between them resizes it). */
+.right.has-details {
   display: grid;
-  grid-template-columns: minmax(190px, 36%) minmax(0, 1fr);
-  gap: 8px;
-  min-height: 0;
+  grid-template-rows: minmax(0, var(--lower-height, 280px)) 8px minmax(0, 1fr);
 }
-
-/* l3: a code-first view: the diagram column is a narrow outline, so its two panels sit one above the other. */
-.explore.is-code-first .lower {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, 35%) minmax(0, 1fr);
-}
-
-.lower > section {
+.right.has-details > .details {
   min-height: 0;
   overflow: auto;
   padding: 10px 12px 12px;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 8px;
+}
+
+/* no code on screen: the code column is the file tree alone (a strip when folded), and the diagram
+   takes the rest of the width. (Stacked on a narrow screen, it is the tree and one line under the diagram.) */
+@media (min-width: 901px) {
+  .explore:has(> .right > .code-area.is-idle) {
+    grid-template-columns: minmax(0, 1fr) 0 auto;
+  }
+  .explore:has(> .right > .code-area.is-idle) > .splitter.is-col {
+    visibility: hidden;
+  }
+}
+.code-area.is-idle {
+  display: flex;
+  flex-direction: column;
+  width: 220px;
+}
+.code-area.is-idle > .tree-panel {
+  flex: 1;
+  min-height: 0;
+  border-right: 0;
+}
+.code-idle-hint {
+  margin: 0;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.code-area.is-idle.is-tree-closed {
+  width: 44px;
+}
+.code-area.is-idle.is-tree-closed > .tree-panel {
+  flex: none;
+}
+.code-area.is-idle.is-tree-closed > .code-idle-hint {
+  flex: 1;
+  border-top: 0;
+  padding: 8px 0;
+  writing-mode: vertical-rl;
+  align-self: center;
+  white-space: nowrap;
+}
+@media (max-width: 900px) {
+  .right:has(> .code-area.is-idle) {
+    height: auto;
+  }
+  .code-area.is-idle,
+  .code-area.is-idle.is-tree-closed {
+    width: auto;
+  }
+  .code-area.is-idle > .tree-panel {
+    max-height: 45vh;
+  }
+  .code-area.is-idle.is-tree-closed > .code-idle-hint {
+    writing-mode: horizontal-tb;
+    white-space: normal;
+    align-self: stretch;
+  }
+}
+
+/* Concepts are one line under the diagram (concept names as chips, then a hint until the first
+   selection), so the diagram gets the height. */
+.lower.is-folded {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 8px 4px 0;
+}
+.lower.is-folded > .concepts.is-compact {
+  padding: 0;
+  background: none;
+  border: 0;
+  overflow: hidden;
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.concepts.is-compact .panel-title {
+  margin: 0;
+  flex: none;
+}
+.concepts.is-compact .concept-list {
+  flex-direction: row;
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.concepts.is-compact .concept > button {
+  flex-direction: row;
+  align-items: center;
+  width: auto;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+.lower-hint {
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .splitter {
@@ -1182,6 +1389,8 @@ code {
 
 .diagram {
   display: grid;
+  /* one column no wider than the pane: a wide drawing must not stretch the caption past a phone screen */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
   min-width: 0;
@@ -1352,11 +1561,18 @@ code {
   stroke-width: 2.2;
 }
 
+/* Solid: a dashed box means "outside this map" (ghost) or "outside this code"; linked is not one of those. */
 .lg-box.is-related {
   fill: var(--related-soft);
   stroke: var(--related);
   stroke-width: 2.2;
-  stroke-dasharray: 5 2;
+}
+
+/* the lines between a table's header and its rows (a data map's Key) */
+.lg-rule {
+  fill: none;
+  stroke: var(--node-border);
+  stroke-width: 1;
 }
 
 .lg-box.is-ghost {
@@ -1446,6 +1662,18 @@ code {
   stroke-width: 1.6;
 }
 
+/* the Key's move: an arrow with a chip on it, as a flow of states draws one */
+.lg-move-line {
+  stroke: var(--edge);
+  stroke-width: 1.6;
+}
+.lg-move-head {
+  fill: var(--edge);
+}
+.legend-panel .flow-transition {
+  cursor: default;
+}
+
 .lg-edge path {
   fill: var(--edge);
 }
@@ -1459,8 +1687,33 @@ code {
   fill: var(--edge-llm);
 }
 
+/* the heads of other kinds of arrow (keyMarks headOf): hollow for extends and implements, open for imports */
+.lg-edge path.is-hollow {
+  fill: var(--panel);
+  stroke: var(--edge);
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+}
+
+.lg-edge path.is-open {
+  fill: none;
+  stroke: var(--edge);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+}
+
 .lg-edge.is-heuristic line {
   stroke: var(--edge-heuristic);
+  stroke-dasharray: var(--dash-heuristic);
+}
+
+.lg-edge.is-mixed line {
+  stroke: var(--edge-heuristic);
+  stroke-dasharray: var(--dash-mixed);
+}
+
+.lg-edge.is-mixed path {
+  fill: var(--edge-heuristic);
 }
 
 .lg-edge.is-heuristic path {
@@ -1469,7 +1722,13 @@ code {
 
 .lg-edge.is-stub line {
   stroke: var(--edge-stub);
-  stroke-dasharray: 4 3;
+  stroke-dasharray: var(--dash-stub);
+  stroke-linecap: round;
+}
+
+/* A flow read from the code (FlowKey "projected"): its own dash, as FlowDiagram draws it. */
+.lg-edge.is-projected line {
+  stroke-dasharray: 5 4;
 }
 
 .lg-edge.is-stub path {
@@ -1504,7 +1763,7 @@ code {
   stroke: var(--warn);
 }
 
-/* "Fit all" / "Readable size": a diagram too big to read whole starts zoomed in (PanZoom, viewport.ts). */
+/* "Pan to explore": a pinned map keeps its labels readable and pans instead (PanZoom). */
 .pz-badge {
   position: absolute;
   left: 10px;
@@ -1525,11 +1784,30 @@ code {
   color: var(--accent-fg);
 }
 
+/* "Fit all" while part of a big diagram is out of sight (PanZoom): the one fit control, marked. */
+/* "Fit all" while part of the diagram is out of sight: an outlined call to action, not a filled (pressed)
+   button. */
+.pz-toolbar button.pz-fit.is-cue {
+  border: 1px solid var(--accent);
+  background: var(--panel);
+  color: var(--accent);
+  font-weight: 650;
+}
+
+/* (a phone keeps the toolbar on one row: the count is in the button's title; "+N more" goes too:
+   "Fit all" is the one way to see the rest) */
+@media (max-width: 640px) {
+  .pz-fit-count,
+  .pz-more {
+    display: none;
+  }
+}
+
 /* framing: "+N more", the step's elements the first view leaves out (PanZoom, viewport.ts frameView). */
 .pz-more {
   position: absolute;
   left: 10px;
-  bottom: 42px;
+  bottom: 10px;
   padding: 3px 12px;
   border: 1px solid var(--accent);
   border-radius: 999px;
@@ -1539,6 +1817,9 @@ code {
   font-weight: 650;
   cursor: pointer;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14);
+}
+.pz-badge ~ .pz-more {
+  bottom: 42px;
 }
 .pz-more:hover {
   background: var(--accent);
@@ -1585,8 +1866,9 @@ code {
 .kind-group {
   --k-hue: 18;
 }
+/* not the purple of an author's arrow (--edge-llm), which means "added by the author" */
 .kind-class {
-  --k-hue: 268;
+  --k-hue: 246;
 }
 .kind-interface {
   --k-hue: 305;
@@ -1665,6 +1947,50 @@ code {
   fill: var(--muted);
 }
 
+/* A code span in a box's summary (its backticks dropped): the code font, as the parts panel shows it. */
+.node .box-summary .box-code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+/* A data-model table (GraphView.boxText "members"): the type's header, then one row per field. A row is a box
+   of its own (selected, lit by the caret, hovered); at rest it is only its text and the rule above it.
+   graphLayout ROW_HEIGHT, ROW_NAME_FONT and ROW_TYPE_FONT. */
+.node.is-table > .box {
+  fill: var(--node-bg);
+}
+
+.node.is-row > .box {
+  fill: transparent;
+  stroke: none;
+}
+
+.node.is-row > .row-rule {
+  stroke: var(--node-border);
+  stroke-width: 1;
+  opacity: 0.6;
+}
+
+.node.is-row .row-name {
+  font-size: 13px;
+  font-weight: 500;
+  fill: var(--fg);
+}
+
+.node.is-row .row-type {
+  font-size: 12.5px;
+  font-weight: 400;
+  fill: var(--muted);
+  text-anchor: end;
+}
+
+/* A field's name and type are code: no contextual alternates, which draw "=>" as an arrow glyph. */
+.node.is-row .row-name,
+.node.is-row .row-type {
+  font-variant-ligatures: none;
+  font-feature-settings: "calt" 0;
+}
+
 .node .badge rect {
   fill: hsl(var(--k-hue, 220) var(--pill-s) var(--pill-bg-l));
 }
@@ -1699,6 +2025,8 @@ code {
   fill: var(--warn);
 }
 
+.node.is-hover > .box,
+.node.is-hover > .node-frame > .box,
 .node:hover > .box,
 .node:hover > .node-frame > .box {
   stroke: var(--accent);
@@ -1738,7 +2066,12 @@ code {
   fill: var(--related-soft);
   stroke: var(--related);
   stroke-width: 2.4;
-  stroke-dasharray: 7 3;
+}
+
+/* A row the step's code uses: the color of "used here" in the code pane. */
+.node.is-used:not(.is-selected) > .box {
+  fill: var(--hl-usage);
+  stroke: var(--hl-usage-bar);
 }
 
 .node.is-match > .box,
@@ -1963,7 +2296,12 @@ code {
 .edge.res-mixed .line,
 .edge.res-heuristic .line {
   stroke: var(--edge-heuristic);
-  stroke-width: 1;
+  stroke-width: 1.3;
+  stroke-dasharray: var(--dash-heuristic);
+}
+
+.edge.res-mixed .line {
+  stroke-dasharray: var(--dash-mixed);
 }
 
 .edge.res-mixed .head,
@@ -1991,8 +2329,9 @@ code {
 
 .edge.is-stub .line {
   stroke: var(--edge-stub);
-  stroke-width: 1.3;
-  stroke-dasharray: 5 4;
+  stroke-width: 1.5;
+  stroke-dasharray: var(--dash-stub);
+  stroke-linecap: round;
 }
 
 .edge.is-stub .head {
@@ -2078,15 +2417,78 @@ code {
   opacity: 0.4;
 }
 
+/* The head says the kind (keyMarks headOf): hollow for extends and implements (a class hierarchy), open for
+   imports and type references. The colour is the line's (`color` per trust and state). */
+.edge {
+  color: var(--edge);
+}
+.edge.res-mixed,
+.edge.res-heuristic {
+  color: var(--edge-heuristic);
+}
+.edge.res-llm {
+  color: var(--edge-llm);
+}
+.edge.res-user {
+  color: var(--edge-user);
+}
+.edge.is-stub {
+  color: var(--edge-stub);
+}
+.edge:hover,
+.edge.is-hover,
+.edge.is-selected {
+  color: var(--accent);
+}
+/* a row of the parts list under the pointer lights its element (PartsPanel) */
+.edge.is-hover .line {
+  stroke: var(--accent);
+}
+.edge.is-hover .head:not(.is-hollow):not(.is-open) {
+  fill: var(--accent);
+}
+.edge.is-hover.is-dim {
+  opacity: 1;
+}
+.step.is-hover .hit {
+  fill: var(--accent-soft);
+}
+.edge .head.is-hollow {
+  fill: var(--canvas);
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+.edge .head.is-open {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+/* With something selected, the arrows that do not touch it step back: its own arrows read on a busy map. */
+.edge.is-dim {
+  opacity: 0.22;
+}
+/* ... but their words stay readable: the label is not faded, it turns grey (3:1 or more). */
+.edge-labels > .edge.is-dim {
+  opacity: 1;
+}
+.edge-labels > .edge.is-dim .edge-label text {
+  fill: var(--edge-label-dim);
+  font-weight: 500;
+}
+
 /* Sequence diagrams */
 /* The participant names kept at the top of a sequence that scrolled down (SequenceView StickyHeads). */
 .sticky-heads {
   pointer-events: none;
 }
 
+/* (opaque: the words of an arrow that scrolled under the names do not show through) */
 .sticky-band {
   fill: var(--canvas);
-  opacity: 0.94;
 }
 
 .lifeline-head .head {
@@ -2133,7 +2535,6 @@ code {
   fill: var(--related-soft);
   stroke: var(--related);
   stroke-width: 2.4;
-  stroke-dasharray: 7 3;
 }
 
 .lifeline.is-match .head {
@@ -2176,14 +2577,11 @@ code {
   stroke-linecap: round;
 }
 
+/* (no halo: the label's plate keeps the lifelines off the words, and a canvas halo would show inside a frame) */
 .step .label {
   font-size: 13.5px;
   font-weight: 500;
   fill: var(--fg);
-  paint-order: stroke;
-  stroke: var(--canvas);
-  stroke-width: 4px;
-  stroke-linejoin: round;
 }
 
 .step.is-selected .hit {
@@ -2205,7 +2603,6 @@ code {
 
 .step.is-selected .label {
   font-weight: 700;
-  stroke: var(--accent-soft);
 }
 
 .step.is-related .hit {
@@ -2222,10 +2619,6 @@ code {
   stroke: var(--match);
 }
 
-.step.is-match .label {
-  stroke: var(--match-soft);
-}
-
 .frame * {
   pointer-events: none;
 }
@@ -2234,6 +2627,11 @@ code {
   fill: var(--frame-bg);
   stroke: var(--border-strong);
   stroke-width: 1.2;
+}
+/* one tint for the outermost frame only: nested frames are outlines, so loop > opt > alt > alt does not
+   darken toward black under the innermost words */
+.frame.is-nested .frame-box {
+  fill: none;
 }
 
 .frame .frame-tab {
@@ -2248,10 +2646,72 @@ code {
   fill: var(--muted);
 }
 
+/* the condition on a halo of the canvas: a lifeline never runs through "[until …]" */
+.frame-label {
+  paint-order: stroke;
+  stroke: var(--canvas);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
 .frame-label {
   font-size: 12px;
   font-weight: 500;
   fill: var(--muted);
+}
+
+/* An arm's condition reads as well as a call's words: their size (its tone stays the conditions' one). */
+.frame-label.arm-label {
+  font-size: 13px;
+}
+
+/* What an alt with arms decides: set apart from the conditions in brackets, which share one tone. */
+.frame-label.frame-title {
+  font-style: italic;
+  font-weight: 650;
+  fill: var(--fg);
+}
+
+/* the arms of an alt: a dashed line between two, and each condition a button that selects the arm's steps;
+   a frame's name a button that selects all of its steps */
+.frame .frame-divider {
+  stroke: var(--border-strong);
+  stroke-width: 1.2;
+  stroke-dasharray: 6 4;
+}
+.sequence:not(.is-still) .frame-arm .hit,
+.sequence:not(.is-still) .frame-head .hit {
+  pointer-events: all;
+  cursor: pointer;
+}
+.frame-arm .hit,
+.frame-head .hit {
+  fill: transparent;
+}
+.frame-arm:hover .hit,
+.frame-head:hover .hit {
+  fill: var(--hover);
+}
+.frame-arm:focus-visible,
+.frame-head:focus-visible {
+  outline: none;
+}
+.frame-arm:focus-visible .hit,
+.frame-head:focus-visible .hit {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.frame-arm.is-selected .hit,
+.frame-head.is-selected .hit {
+  fill: var(--accent-soft);
+}
+.frame-arm.is-selected .arm-label,
+.frame-head.is-selected .frame-label {
+  font-weight: 700;
+}
+.frame-arm.is-match .hit {
+  fill: var(--match-soft);
+  stroke: var(--match);
+  stroke-width: 1.6;
 }
 
 /* ── Badges, roles ────────────────────────────────────────────────────────────────────────────── */
@@ -3079,11 +3539,12 @@ code {
   white-space: nowrap;
 }
 
-/* When the pane is narrow the directory gives way, never the file name. */
+/* When the pane is narrow the directory gives way, never the file name. It is cut at its start, a whole
+   folder at a time, next to the name ("…/types/", EditorStack FolderPath). */
 .pane-file .dir {
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--muted);
 }
 
@@ -3136,6 +3597,18 @@ code {
 .editor-host {
   position: absolute;
   inset: 0;
+}
+
+/* Present: a markdown code link as prose (EditorStack `prose`), marked like the focused lines of code. */
+.pane-prose {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  padding: 12px 18px;
+  border-left: 4px solid var(--accent);
+  background: var(--panel);
+  font-size: calc(var(--code-font-size, 15px) * 1.05);
+  line-height: 1.5;
 }
 
 .editor-host .cm-editor {
@@ -3395,6 +3868,9 @@ code {
   align-items: center;
   gap: 5px;
 }
+.pane-ask.is-idle {
+  visibility: hidden;
+}
 .pane-toggle-box {
   display: inline-grid;
   place-items: center;
@@ -3440,9 +3916,14 @@ code {
   .pane-ranges {
     order: 11;
   }
-  /* "in X" takes what is left of the first row (ellipsized) instead of pushing the roles down. */
+  /* "in X" takes what is left of the first row (ellipsized) instead of pushing the roles down. The path
+     too: counted at its whole width, it sent the "called here" pill to a row of its own. */
   .pane-inside {
     flex: 1 1 0;
+  }
+  .pane-file {
+    flex: 1 1 0;
+    max-width: max-content;
   }
 }
 
@@ -3482,9 +3963,12 @@ code {
 }
 
 /* A flow is tall and branches sideways: a tour with a flow step gives the diagram more of the width (the
-   code beside it wraps its long lines), for all of its steps (PresentMode: one split per tour). */
-.present[data-split="wide"] {
-  grid-template-columns: minmax(340px, 52%) minmax(0, 1fr);
+   code beside it wraps its long lines), for all of its steps (PresentMode: one split per tour). Only beside
+   the code: on a phone the slide stacks (the split outranked the phone rule and left the code 24px). */
+@media (min-width: 641px) {
+  .present[data-split="wide"] {
+    grid-template-columns: minmax(340px, 52%) minmax(0, 1fr);
+  }
 }
 
 /* r3-frame: ... but the code keeps room for the lines the tour focuses (`--code-columns`, present/split.ts:
@@ -3499,6 +3983,38 @@ code {
       )
       minmax(0, 1fr);
   }
+}
+
+/* a slide whose diagram does not read whole at the 12px floor gets the width it asks for
+   (PresentMode `--diagram-need`, the widest its step asked for), up to 65% of the screen; the code gives
+   the room. A diagram still too big then starts on the step's focus, "Fit all" in sight. */
+@media (min-width: 641px) {
+  .present[data-room] {
+    grid-template-columns: minmax(300px, min(65%, max(40%, var(--diagram-need)))) minmax(0, 1fr);
+  }
+  .present[data-room][data-split="wide"][style] {
+    grid-template-columns: minmax(340px, min(65%, max(52%, var(--diagram-need)))) minmax(0, 1fr);
+  }
+}
+
+/* present: no code on screen (PresentMode `data-code`): the diagram takes the code column's width. */
+.present[data-code="none"],
+.present[data-code="none"][data-split],
+.present[data-code="none"][data-room],
+.present[data-code="none"][data-room][data-split="wide"][style] {
+  grid-template-columns: minmax(0, 1fr);
+}
+.present[data-code="none"] > .present-right {
+  display: none;
+}
+
+/* present: the Edit menu (a presenter's tools, not the audience's) shows once the mouse moves over the
+   page, or when it has the keyboard focus, like the zoom buttons. */
+.app:has(> .present:not([data-pointer])) .header .edit-menu:not(:focus-within) {
+  opacity: 0;
+}
+.app:has(> .present) .header .edit-menu {
+  transition: opacity 0.15s;
 }
 
 /* present: the slide takes the keyboard focus when a talk starts; no ring around the whole screen. */
@@ -3549,6 +4065,12 @@ code {
   flex: 1 1 0;
   min-width: 0;
 }
+/* While part of the diagram is out of sight the "Fit all" cue stays in the bar, and the question gives way:
+   beside the cue it kept a few letters. The title says it on hover. (A second line for it would shrink the
+   diagram after it was framed, and move the frame.) */
+.present .diagram-caption:has(.pz-fit.is-cue) .caption-question {
+  display: none;
+}
 
 .present .diagram-caption .zoom-trail {
   flex-wrap: nowrap;
@@ -3558,12 +4080,33 @@ code {
   white-space: nowrap;
 }
 
+/* present: the zoom toolbar sits in the diagram's title bar (PanZoom ToolbarSlot), off the picture: "Fit all"
+   never covers a box, fitted or not. While it is hidden it takes no room (it is still a Tab stop): the
+   question has the bar's width, not the few letters the toolbar left it. The title stays where it is. */
+.present .caption-tools {
+  position: relative;
+  flex: none;
+  margin-left: auto;
+}
+.present:not([data-pointer]) .pz-toolbar:not(:focus-within):not(:has(> .pz-fit.is-cue)) {
+  position: absolute;
+  right: 0;
+}
 .present .pz-toolbar {
+  position: static;
+  padding: 1px;
+  box-shadow: none;
   opacity: 0;
   transition: opacity 0.15s;
 }
+.present[data-pointer] .pz-toolbar {
+  opacity: 1;
+}
+/* (a talk saves no image and reads no text view: the title bar keeps its room for the title) */
+.present .pz-toolbar > :is(.pz-save, .pz-text) {
+  display: none;
+}
 
-.present .panzoom:hover .pz-toolbar,
 .present .pz-toolbar:focus-within {
   opacity: 1;
 }
@@ -3574,9 +4117,49 @@ code {
   transition: opacity 0.15s;
 }
 
-.present:not([data-pointer]) .pz-badge:not(:focus-visible),
-.present:not([data-pointer]) .panzoom:hover .pz-toolbar:not(:focus-within) {
+.present:not([data-pointer]) .pz-badge:not(:focus-visible) {
   opacity: 0;
+}
+
+/* while part of the diagram is out of sight, "Fit all" stays on the slide, alone (the other buttons
+   come with the mouse): the room sees that there is more, and the presenter needs no hover to show it. */
+.present .pz-toolbar:has(> .pz-fit.is-cue) {
+  opacity: 1;
+}
+.present:not([data-pointer]) .pz-toolbar:has(> .pz-fit.is-cue):not(:focus-within) {
+  border-color: transparent;
+  background: transparent;
+}
+.present:not([data-pointer]) .pz-toolbar:has(> .pz-fit.is-cue):not(:focus-within) > :not(.pz-fit) {
+  visibility: hidden;
+  position: absolute;
+}
+
+/* present: a lower level names its parent box once ("xpl ›"), not every level above it: the title
+   is the one thing the room reads. */
+.present .diagram-caption .zoom-trail > span:not(:last-child) {
+  display: none;
+}
+.present .diagram-caption .zoom-trail {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+.present .diagram-caption .zoom-trail > span:last-child::after {
+  content: " ›";
+}
+
+/* present on a phone or a touch screen: no pointer to reveal the toolbar, so "Fit all" shows, alone
+   (the other buttons would cover the slide); the title bar is the title, without the question. */
+@media (max-width: 640px), (hover: none) {
+  .present .pz-toolbar {
+    opacity: 1;
+  }
+  .present .pz-toolbar > :not(.pz-fit) {
+    display: none;
+  }
+  .present .diagram-caption .caption-question {
+    display: none;
+  }
 }
 
 /* present: on a short screen the diagram's title bar keeps to one line. */
@@ -4064,9 +4647,11 @@ code {
     padding-left: 8px;
   }
 
-  .lower {
-    grid-template-columns: minmax(0, 1fr);
-    overflow: auto;
+  .lower.is-folded {
+    flex-wrap: wrap;
+  }
+  .lower-hint {
+    white-space: normal;
   }
 
   .tour-panel {
@@ -4156,7 +4741,7 @@ code {
 
 .node.role-external,
 .node.role-person {
-  --k-hue: 268;
+  --k-hue: 220;
 }
 
 /* The icon left of a box's label (components/icons.tsx): what the box is, in the colour of its kind. */
@@ -4174,8 +4759,9 @@ code {
   stroke: none;
 }
 
-/* A symbol's icon is a letter in a tinted square (C class, ƒ function, ...). */
-.node .box-icon rect:only-of-type {
+/* A symbol's icon is a letter in a tinted square (C class, ƒ function, ...). (Only that square: the browser
+   and storage icons have one rect too, their frame, and lost it.) */
+.node .box-icon .icon-letter {
   fill: hsl(var(--k-hue, 220) var(--pill-s) var(--pill-bg-l));
   stroke: none;
 }
@@ -4224,6 +4810,11 @@ code {
   gap: 4px;
   font-size: 13px;
   color: var(--muted);
+}
+
+/* (padding, not spaces: in a one-line trail each level is a flex box, which drops a space at its ends) */
+.zoom-trail-sep {
+  padding: 0 4px;
 }
 
 .zoom-trail button {
@@ -4407,6 +4998,22 @@ code {
 .review-dialog select[multiple] {
   min-height: 100px;
 }
+/* the fields one under the other, with room between them; the button keeps its own width */
+.review-fields {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  margin-block: 16px;
+}
+.review-fields > label,
+.review-fields > p {
+  align-self: stretch;
+  margin: 0;
+}
+.review-dialog p {
+  margin-block: 0 10px;
+}
 .review-dialog [data-testid="review-inspection"] {
   overflow-wrap: anywhere;
 }
@@ -4530,6 +5137,21 @@ code {
 }
 .graph-author summary {
   cursor: pointer;
+}
+/* Explore's diagram can take most of the width: "Edit map" stays by the title, clear of the panels that
+   open over the right of the page (Jobs, Search), and its controls open to the right of it. */
+.explore .diagram-caption > .caption-question {
+  order: 2;
+  flex: 1 1 0;
+  min-width: 0;
+}
+.explore .diagram-caption > .graph-author {
+  order: 1;
+  margin-left: 0;
+}
+.explore .diagram-caption .graph-author-controls {
+  left: 0;
+  right: auto;
 }
 .graph-author-controls {
   position: absolute;
@@ -4819,4 +5441,702 @@ code {
 }
 .panzoom:focus-visible > .pz-keyboard-hint {
   opacity: 1;
+}
+
+/* ── Diagrams: the key line, quiet stubs, the toolbar on a phone, step numbers, the
+   parts panel ("On this map"). ─────────────────────────────────────────────────────────────────────────── */
+
+/* The map's canvas takes what the key line above it leaves. */
+.graph-host {
+  display: flex;
+  flex-direction: column;
+}
+.graph-host > .panzoom {
+  flex: 1 1 0;
+  min-height: 0;
+  height: auto;
+}
+.panzoom {
+  display: flex;
+  flex-direction: column;
+}
+/* (the live canvas only: a still picture's svg is not in a flex box, and `height: auto` there is 150 px) */
+.panzoom > .pz-svg {
+  flex: 1 1 0;
+  min-height: 0;
+  height: auto;
+}
+
+/* The colours of the arrows in one line (Legend.tsx KeyLine), on the canvas' own background. */
+.key-line {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  margin: 0;
+  padding: 5px 12px;
+  list-style: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--canvas);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.key-line-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+/* a short arrow (or a dashed box), drawn with the Key's classes: the colour and dash of the marks it names */
+.key-swatch {
+  flex: 0 0 auto;
+  overflow: visible;
+}
+/* On a phone the key line is one row that scrolls sideways: the diagram keeps the height. */
+@media (max-width: 640px) {
+  .key-line {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    white-space: nowrap;
+    scrollbar-width: none;
+    mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+  }
+  .key-line-item {
+    flex: 0 0 auto;
+  }
+}
+/* a short screen (200% zoom): the map keeps the height; the Key button still says it all */
+@media (max-height: 560px) {
+  .key-line {
+    display: none;
+  }
+}
+
+/* A stub a reader is not looking at (GraphView quietStub): its ghost box stays, the line does not. */
+.edge.is-stub.is-stub-quiet {
+  visibility: hidden;
+}
+
+/* On a phone the zoom buttons sit above the canvas, not over its first boxes. */
+@media (max-width: 640px) {
+  :where(.workspace, .explore) .pz-toolbar {
+    position: static;
+    order: -1;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    border-width: 0 0 1px;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .diagram-text-view {
+    padding-top: 16px;
+  }
+}
+
+/* Sequence: each arrow's words on a plate (no lifeline through them), its number where it starts. */
+.step .label-plate {
+  fill: var(--canvas);
+}
+.step .label-plate-tint {
+  fill: var(--frame-bg);
+}
+.step.is-selected .label-plate-tint,
+.step.is-match .label-plate-tint {
+  fill: none;
+}
+.step.is-selected .label-plate {
+  fill: var(--accent-soft);
+}
+.step.is-match .label-plate {
+  fill: var(--match-soft);
+}
+.step-number circle {
+  fill: var(--panel);
+  stroke: var(--edge);
+  stroke-width: 1.3;
+}
+.step-number text {
+  font-size: 12px;
+  font-weight: 700;
+  text-anchor: middle;
+  fill: var(--fg);
+}
+.step.is-selected .step-number circle {
+  fill: var(--accent);
+  stroke: var(--accent);
+}
+.step.is-selected .step-number text {
+  fill: var(--accent-fg);
+}
+.flow-step-number circle {
+  fill: var(--panel);
+  stroke: var(--border-strong);
+  stroke-width: 1.3;
+}
+.flow-stage .flow-step-number text {
+  font-size: 13px;
+  font-weight: 700;
+  text-anchor: middle;
+  fill: var(--fg);
+}
+.flow-stage.is-selected .flow-step-number circle {
+  fill: var(--accent);
+  stroke: var(--accent);
+}
+.flow-stage.is-selected .flow-step-number text {
+  fill: var(--accent-fg);
+}
+
+/* "On this map" (PartsPanel.tsx): the diagram's parts as a list of buttons, each picking its element. */
+.parts-panel {
+  margin: 0 0 16px;
+}
+.parts-hint {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.parts-panel .parts-heading {
+  margin: 16px 0 8px;
+}
+.parts-panel .parts-heading:first-child {
+  margin-top: 0;
+}
+.parts-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.parts-list > li {
+  margin: 0 0 4px;
+}
+/* the row's text lines up with the headings; its hover background reaches past them */
+.parts-list {
+  margin-inline: -10px;
+}
+.parts-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 8px;
+  align-items: baseline;
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+}
+.parts-row > :not(.parts-number) {
+  grid-column: 1 / -1;
+}
+.is-steps .parts-row > :not(.parts-number) {
+  grid-column: 2;
+}
+.parts-row:hover,
+.parts-row:focus-visible {
+  border-color: var(--border);
+  background: var(--panel-2);
+}
+.parts-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.parts-row.is-match {
+  border-color: var(--match);
+  background: var(--match-soft);
+}
+.parts-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.parts-kind,
+.parts-ends,
+.parts-links {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.parts-summary {
+  color: var(--fg);
+}
+/* the Selected heading of an arrow: "CLI → Indexer · heuristic: matched by name" above its label */
+.topic-summary .topic-ends {
+  margin: 2px 0 -4px;
+}
+.parts-number {
+  grid-row: 1 / span 3;
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--panel);
+  font-size: 11px;
+  font-weight: 700;
+}
+/* a flow of states: a state's mark is a small pill, a move's an arrow; neither is numbered */
+.parts-number.is-role:empty {
+  min-width: 22px;
+  height: 12px;
+  margin-top: 4px;
+  border-width: 2px;
+}
+.parts-number.is-role:not(:empty) {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 14px;
+}
+.parts-outside {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* a short screen (200% zoom): the diagram keeps the height; its Text view lists the same parts */
+@media (max-height: 560px) {
+  .parts-panel {
+    display: none;
+  }
+}
+
+/* A map as a dependency matrix (MatrixView.tsx): a row and a numbered column per box, the arrows in the cells.
+   Trust by fill, never by colour alone: solid where the code was found, stripes where it was matched by
+   name, long stripes where partly, an outline for the author's arrow, a dotted outline outside the map. The
+   stripes and the diagonal use --matrix-mark (3:1 on the panel, contrast.test.ts). The table scrolls in its
+   own frame; the headers stay in sight and are opaque, so cells never show through them. */
+.matrix {
+  /* inside the graph host's box, however wide the table: the table scrolls, not the page */
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+}
+.matrix-bar {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.matrix-key {
+  flex: 1;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.matrix-key-back {
+  display: inline;
+}
+.matrix-tools {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.matrix-tools button,
+.matrix-toggle {
+  min-width: 26px;
+  height: 24px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.matrix-tools button:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+.matrix-tools button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+.matrix-scroll {
+  flex: 1;
+  min-height: 0;
+  padding: 12px 16px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.matrix-text {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.matrix-picture {
+  position: absolute;
+  overflow: hidden;
+}
+/* Cells grow on a small map (size-l, size-m) and keep a 30px floor on a big one; wide counts widen them. */
+/* (in the middle of its pane: a small matrix pinned to the left left most of the pane empty beside it) */
+.matrix-grid {
+  --matrix-cell: 30px;
+  margin: 0 auto;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.matrix-grid.size-m {
+  --matrix-cell: 38px;
+  font-size: 14px;
+}
+.matrix-grid.size-l {
+  --matrix-cell: 48px;
+  font-size: 15px;
+}
+.matrix-grid th,
+.matrix-grid td {
+  height: var(--matrix-cell);
+  padding: 0;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  outline: none;
+}
+.matrix-grid thead th,
+.matrix-corner {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  min-width: max(var(--matrix-cell), calc(var(--matrix-digits, 2) * 1ch + 14px));
+  background: var(--panel);
+  color: var(--muted);
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+}
+.matrix-corner {
+  left: 0;
+  z-index: 3;
+  cursor: default;
+}
+.matrix-row {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  max-width: 220px;
+  padding: 0 10px 0 6px !important;
+  background: var(--panel);
+  color: var(--fg);
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+/* a container's boxes: a bar down their row headers, under the container's band */
+.matrix-row.in-group {
+  padding-left: 14px !important;
+  box-shadow: inset 3px 0 0 var(--border-strong);
+}
+.matrix-grid .is-outside-head {
+  color: var(--muted);
+  font-style: italic;
+  cursor: default;
+}
+/* A container's boxes under one band with its name, as the parts list indents them under it. */
+.matrix-group th {
+  height: auto;
+  padding: 6px 0 2px !important;
+  border-right: 0;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-align: left;
+  text-transform: uppercase;
+}
+.matrix-group th span {
+  position: sticky;
+  left: 6px;
+}
+.matrix-num {
+  display: inline-block;
+  min-width: 2.2ch;
+  margin-right: 6px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  text-align: right;
+}
+.matrix-cell {
+  min-width: max(var(--matrix-cell), calc(var(--matrix-digits, 2) * 1ch + 14px));
+  text-align: center;
+}
+.matrix-cell.is-diagonal {
+  background: var(--matrix-mark);
+}
+.matrix-cell.has-arrow {
+  position: relative;
+  color: var(--fg);
+  font-weight: 650;
+  /* a halo in the panel colour keeps the number clear of the stripes under it */
+  text-shadow:
+    0 0 2px var(--panel),
+    0 0 3px var(--panel);
+  cursor: pointer;
+}
+/* a count on a plate of the panel colour: the stripes of a heuristic cell do not run through its digits */
+.matrix-count {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--panel);
+}
+.matrix-cell.res-precise,
+.matrix-cell.res-static,
+.matrix-swatch.res-precise {
+  background: color-mix(in srgb, var(--edge) 24%, var(--panel));
+}
+.matrix-cell.res-heuristic,
+.matrix-swatch.res-heuristic {
+  background: repeating-linear-gradient(135deg, var(--matrix-mark) 0 1.5px, var(--panel) 1.5px 5px);
+}
+.matrix-cell.res-mixed,
+.matrix-swatch.res-mixed {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--matrix-mark) 0 1.5px,
+    var(--panel) 1.5px 5px,
+    color-mix(in srgb, var(--edge) 24%, var(--panel)) 5px 12px
+  );
+}
+.matrix-cell.res-llm,
+.matrix-swatch.res-llm {
+  box-shadow: inset 0 0 0 2px var(--edge-llm);
+}
+.matrix-cell.res-user,
+.matrix-swatch.res-user {
+  box-shadow: inset 0 0 0 2px var(--edge-user);
+}
+.matrix-cell.res-outside {
+  color: var(--muted);
+}
+.matrix-cell.res-outside::before,
+.matrix-swatch.res-outside::before {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border: 2px dotted var(--edge-stub);
+  border-radius: 2px;
+  pointer-events: none;
+}
+.matrix-swatch.res-outside::before {
+  inset: 0;
+}
+/* the kinds of a cell by the map's arrowheads (▸ calls, ▹ extends, › imports), keyed when there are two */
+.matrix-kind {
+  position: absolute;
+  bottom: 1px;
+  left: 3px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1;
+}
+.matrix-key-item .matrix-kind {
+  position: static;
+  font-size: 13px;
+}
+.matrix-key-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  margin-top: 4px;
+}
+.matrix-key-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.matrix-swatch {
+  position: relative;
+  display: inline-block;
+  width: 16px;
+  height: 12px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  vertical-align: -1px;
+}
+/* An arrow back up the order: a corner flag in the warning colour, the same on the cell and in the key. */
+.matrix-cell.is-back::after,
+.matrix-swatch.is-back-swatch::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  border-top: 9px solid var(--warn);
+  border-left: 9px solid transparent;
+}
+.matrix-swatch.is-back-swatch {
+  overflow: hidden;
+}
+.matrix-swatch.is-back-swatch::after {
+  border-top-width: 8px;
+  border-left-width: 8px;
+}
+/* Hover and the picked box: opaque tints (a sticky header must hide the cells that scroll under it). */
+.matrix-grid th.is-hot,
+.matrix-cell.has-arrow:hover {
+  background-color: color-mix(in srgb, var(--fg) 7%, var(--panel));
+  color: var(--fg);
+}
+/* the picked or hovered box's row and column stay; the other arrows step back, as on the map */
+.matrix-grid.has-line .matrix-cell.has-arrow:not(.in-line, .is-selected, .is-match) {
+  opacity: 0.35;
+}
+.matrix-grid th.is-related,
+.matrix-cell.is-related {
+  box-shadow: inset 0 0 0 2px var(--related);
+}
+.matrix-grid th.is-match,
+.matrix-cell.is-match {
+  box-shadow: inset 0 0 0 3px var(--match);
+}
+.matrix-grid th.is-match {
+  background: color-mix(in srgb, var(--match) 16%, var(--panel));
+}
+/* Selected: a filled ring. Focus: a ring outside the cell, offset, in the text colour: the two never look alike. */
+.matrix-grid th.is-selected,
+.matrix-cell.is-selected {
+  box-shadow: inset 0 0 0 3px var(--accent);
+}
+.matrix-grid th.is-selected {
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+.matrix-grid [data-r]:focus-visible {
+  position: relative;
+  z-index: 4;
+  outline: 2px dashed var(--fg);
+  outline-offset: 1px;
+}
+/* the picture Save image draws (MatrixPicture): the same marks, as SVG paint */
+.mx-pic text {
+  fill: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+.mx-pic .mx-pic-head,
+.mx-pic .mx-pic-text {
+  text-anchor: middle;
+}
+.mx-pic .mx-pic-head {
+  fill: var(--muted);
+  font-weight: 600;
+}
+.mx-pic rect {
+  fill: var(--panel);
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.mx-pic .mx-pic-diagonal {
+  fill: var(--matrix-mark);
+}
+.mx-pic .res-precise,
+.mx-pic .res-static {
+  fill: color-mix(in srgb, var(--edge) 24%, var(--panel));
+}
+.mx-pic .res-heuristic {
+  stroke: var(--matrix-mark);
+  stroke-width: 2;
+  stroke-dasharray: 5 3;
+}
+.mx-pic .res-mixed {
+  stroke: var(--matrix-mark);
+  stroke-width: 2;
+  stroke-dasharray: 8 3 2 3;
+}
+.mx-pic .res-llm {
+  stroke: var(--edge-llm);
+  stroke-width: 2;
+}
+.mx-pic .res-user {
+  stroke: var(--edge-user);
+  stroke-width: 2;
+}
+.mx-pic .res-outside {
+  stroke: var(--edge-stub);
+  stroke-width: 2;
+  stroke-dasharray: 1 3;
+}
+.mx-pic .mx-pic-back {
+  fill: var(--warn);
+}
+/* A narrow pane: the zoom toolbar (with Matrix) stays one row, never taller, and scrolls sideways when the
+   buttons do not fit, rather than breaking its labels over two lines. */
+.pz-toolbar button {
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  :where(.workspace, .explore) .pz-toolbar {
+    flex-wrap: nowrap;
+    gap: 2px;
+    overflow-x: auto;
+  }
+  :where(.workspace, .explore) .pz-toolbar button {
+    padding: 0 5px;
+  }
+  .matrix-row {
+    max-width: 128px;
+  }
+  /* the tools on a row of their own, the key folded behind its button, so the grid's rows show */
+  .matrix-bar {
+    flex-wrap: wrap;
+    padding: 6px 8px;
+  }
+  .matrix-tools {
+    order: -1;
+  }
+  .matrix-key {
+    flex-basis: 100%;
+    font-size: 12px;
+  }
+  .matrix-key[data-folded] {
+    display: none;
+  }
+  .matrix-scroll {
+    padding: 6px 8px;
+  }
+}
+@media (min-width: 641px) {
+  .matrix-key-button {
+    display: none;
+  }
+}
+
+/* "Skip to the content", the first stop of the Tab key; out of sight until it has the focus. */
+.skip-link {
+  position: absolute;
+  left: 8px;
+  top: -48px;
+  z-index: 100;
+  padding: 8px 14px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 650;
+}
+.skip-link:focus {
+  top: 8px;
+}
+/* the area the skip link moves the focus to takes it without a ring around the whole page (the next
+   Tab goes on from there). */
+.app > main[tabindex="-1"]:focus {
+  outline: none;
 }

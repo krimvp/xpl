@@ -2,6 +2,7 @@
  * `xpl lint`: the reader-text checks (`lintExplainer`, on small hand-made explainers) and the command (text
  * output, `--json`, `--strict`, exit codes) on an explainer applied to the TS fixture.
  */
+import { readFileSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   deriveGraph,
@@ -14,6 +15,7 @@ import {
   codeLike,
   isLiteral,
   LINT_LIMITS,
+  LINT_RULES,
   lintExplainer,
   type LintFinding,
   type LintRule,
@@ -148,7 +150,7 @@ describe("lintExplainer", () => {
         ],
         views: [
           {
-            id: "view:flow",
+            id: "view:v",
             type: "flow",
             title: "What happens to a job",
             participants: [],
@@ -481,6 +483,38 @@ describe("lintExplainer", () => {
     expect(only(loud.findings, "absolute-word").map((f) => f.elementId)).toEqual(
       claims.map((_, i) => `sym:a#n${i}`),
     );
+  });
+
+  it("absolute-word passes a short method the step focuses, in backticks, and an example input", () => {
+    const pop = "sym:internal/queue/queue.go#Queue.Pop";
+    const steps = [
+      "### Pick\n\n`Pop` looks at every waiting job.",
+      "### Retry\n\nA job that fails every attempt goes to the dead letters. A job that never succeeds stays there.",
+      // the claims stay findings: no backticks, and a function is code, not an example input
+      "### Pick\n\nPop looks at every waiting job.",
+      "### Loop\n\nA function that never returns blocks the worker.",
+    ];
+    const { findings } = lintExplainer(
+      explainer({
+        tours: [
+          {
+            id: "tour:t",
+            title: "How a job is picked",
+            summary: "The queue picks the job. It skips jobs that wait.",
+            steps: steps.map((note, i) => ({
+              id: `t${i + 1}`,
+              view: "view:v",
+              focus: [pop],
+              note,
+            })),
+          },
+        ],
+      }),
+    );
+    expect(only(findings, "absolute-word").map((f) => f.elementId)).toEqual([
+      "tour:t/t3",
+      "tour:t/t4",
+    ]);
   });
 
   it('"all" after a list of named cases is evidence; "all three" and "each x and each y all" are not', () => {
@@ -871,13 +905,14 @@ describe("lintExplainer", () => {
       edges: "nope",
     } as unknown as Partial<Explainer>;
     const { findings } = lintExplainer(explainer(odd));
-    // the second tour: no summary, and three steps without a note (untitled)
+    // the second tour: no summary, and three steps without a note (untitled); no step shows the view
     expect(rules(findings)).toEqual([
       "tour-summary",
       "tour-summary",
       "untitled-step",
       "untitled-step",
       "untitled-step",
+      "unused-view",
     ]);
   });
 });
@@ -1062,6 +1097,45 @@ describe("order checks", () => {
     expect(only(tourOn("view:big").findings, "tour-covers-map")).toEqual([]);
     // view:map is not used by this tour
     expect(only(tourOn("view:flow").findings, "tour-covers-map")).toEqual([]);
+  });
+
+  it("tour-ends: a tour of 5 or more steps that uses a map ends on the map; talks and changes may end elsewhere", () => {
+    const steps = (last: string): [string, string[], string][] => [
+      ["view:map", ["grp:core"], "The runner has three parts"],
+      ["view:map", ["file:src/worker.ts"], "The worker runs the job"],
+      ["view:flow", ["flow:1"], "What happens to a job"],
+      ["view:map", ["file:src/metrics.ts"], "Metrics count the jobs"],
+      [last, last === "view:map" ? ["grp:tests"] : ["flow:1"], "Where to look next"],
+    ];
+    const ends = (parts: Explainer) => only(lintExplainer(parts).findings, "tour-ends");
+    const found = ends(orderTour(steps("view:flow")));
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({ elementId: "tour:o", kind: "tour", field: "steps" });
+    expect(found[0]!.message).toContain(
+      "the last step (t5) is on the flow view:flow, not on the map",
+    );
+    expect(found[0]!.hint).toContain("where next");
+    expect(ends(orderTour(steps("view:map")))).toEqual([]);
+    // other plain ways to say where next pass; "next" inside an ordinary sentence does not count
+    const endsWith = (note: string) => {
+      const t = orderTour(steps("view:map"));
+      const last = (t.tours![0]!.steps as { note: string }[]).at(-1)!;
+      last.note = note;
+      return ends(t).length;
+    };
+    expect(endsWith("### Read more\n\nThe worker file shows how a job runs.")).toBe(0);
+    expect(endsWith("### Beyond this tour\n\nOpen the CLI box for the commands.")).toBe(0);
+    expect(endsWith("### Other parts\n\nThe metrics are not on this tour.")).toBe(0);
+    expect(endsWith("### The worker loop\n\nThe next job starts when the last one ends.")).toBe(1);
+    expect(endsWith("### Summary\n\nThe runner keeps going.")).toBe(1);
+    expect(ends(orderTour(steps("view:flow").slice(1)))).toEqual([]);
+    expect(ends(orderTour(steps("view:flow"), { title: "Demo: how a job runs" }))).toEqual([]);
+    expect(
+      ends({
+        ...orderTour(steps("view:flow")),
+        change: { base: "a", head: "b", files: [] },
+      } as Explainer),
+    ).toEqual([]);
   });
 
   it("tour-length: more than 12 steps", () => {
@@ -1365,7 +1439,7 @@ describe("lintExplainer: concrete text passes", () => {
       "grp:waits",
       "sym:tree.go#nodes.findEdge",
     ]);
-    expect(only(missed.findings, "tour-covers-map")[0]!.hint).toContain("in plain words");
+    expect(only(missed.findings, "tour-covers-map")[0]!.hint).toContain("A plain-word name counts");
   });
 
   it("long-sentence in a full summary: shorten it, do not split it (tour-summary caps the sentences)", () => {
@@ -1467,6 +1541,111 @@ describe("lintExplainer: reader checks", () => {
     ]);
   });
 
+  it("many-ranges: a step with no code that focuses a folder shows each file; its own code or anchored focus is fine (needs the index)", () => {
+    const files = ["a", "b", "c"].map((n) => ({
+      path: `src/${n}.ts`,
+      language: "typescript",
+      hash: "h",
+      lines: 10,
+    }));
+    const index = {
+      schema: INDEX_SCHEMA,
+      commit: "c",
+      tool: "test",
+      languages: {},
+      files,
+      symbols: [],
+      refs: [],
+    } as unknown as SymbolIndex;
+    const step = (id: string, extra: Record<string, unknown>) => ({
+      id,
+      view: "view:v",
+      note: "### Where to go next\nThe source folder holds the runner.",
+      ...extra,
+    });
+    const doc = explainer({
+      concepts: [
+        {
+          id: "concept:c",
+          label: "Retry",
+          summary: "Failed jobs come back.",
+          anchors: ["a", "b", "c"].map((n) => ({ file: `src/${n}.ts`, role: "definition" })),
+        },
+      ],
+      tours: [
+        {
+          ...tour([]),
+          steps: [
+            step("t1", { focus: ["dir:src"] }),
+            step("t2", { focus: ["dir:src"], code: [{ file: "src/a.ts", role: "definition" }] }),
+            step("t3", { focus: ["file:src/a.ts"] }),
+            step("t4", { focus: ["concept:c"] }),
+          ],
+        },
+      ],
+    });
+    // without the index, no folder to expand
+    expect(only(lintExplainer(doc).findings, "many-ranges")).toEqual([]);
+    const { findings } = lintExplainer(doc, new ExplainerModel(doc, index));
+    expect(only(findings, "many-ranges").map((f) => [f.elementId, f.field, f.message])).toEqual([
+      [
+        "tour:t/t1",
+        "code",
+        "no `code`, so the step shows the code of its focus: 3 ranges in 3 files (at most 2)",
+      ],
+    ]);
+  });
+
+  it("many-diagrams: a tour that follows a path uses one map and one flow or sequence; a repo tour may use more", () => {
+    const views = [
+      { id: "view:files", type: "graph", title: "The files", include: ["file:src/a.ts"] },
+      { id: "view:seq", type: "sequence", title: "The calls", participants: [], steps: [] },
+      { id: "view:flow", type: "flow", title: "The decision", steps: [] },
+      { id: "view:files2", type: "graph", title: "More files", include: ["file:src/b.ts"] },
+    ];
+    const steps = (ids: string[]) =>
+      ids.map((view, i) => ({
+        id: `t${i + 1}`,
+        view,
+        focus: [],
+        note: "### The runner takes a job\nThe runner takes the next job.",
+      }));
+    const found = (
+      tourViews: string[],
+      nodes: unknown[] = [],
+      extra: Record<string, unknown> = {},
+      tourId = "tour:t",
+    ) =>
+      only(
+        lintExplainer(
+          explainer({
+            nodes,
+            views,
+            tours: [{ ...tour([]), id: tourId, steps: steps(tourViews) }],
+            ...extra,
+          }),
+        ).findings,
+        "many-diagrams",
+      ).map((f) => f.message);
+    // ky's retries guide: the map of the files, the sequence and a flow
+    expect(found(["view:files", "view:seq", "view:flow"])).toEqual([
+      "3 diagrams (1 map, 2 flows or sequences): a tour that follows a path uses at most 1 map and 1 flow or sequence",
+    ]);
+    expect(found(["view:files", "view:seq"])).toEqual([]);
+    // a map with a role box is an architecture map: a repo tour has its own budget
+    expect(
+      found(["view:files", "view:seq", "view:flow"], [{ id: "file:src/a.ts", role: "service" }]),
+    ).toEqual([]);
+    // two maps and one sequence: over the map budget
+    expect(found(["view:files", "view:files2", "view:seq"])).toEqual([
+      "3 diagrams (2 maps, 1 flow or sequence): a tour that follows a path uses at most 1 map and 1 flow or sequence",
+    ]);
+    // a change's review tour and a presentation have budgets of their own
+    const change = { change: { base: "a", head: "b", files: [] } };
+    expect(found(["view:files", "view:seq", "view:flow"], [], change)).toEqual([]);
+    expect(found(["view:files", "view:seq", "view:flow"], [], {}, "tour:talk")).toEqual([]);
+  });
+
   it("long-talk-note: a note over LONG_NOTE in a talk; other tours may say more", () => {
     const body = "The runner takes the next job from the queue. ".repeat(7).trim();
     expect(body.length).toBeGreaterThan(LINT_LIMITS.talkNoteChars);
@@ -1479,6 +1658,73 @@ describe("lintExplainer: reader checks", () => {
       const { findings } = lintExplainer(explainer({ tours: [tour([note], { id, title })] }));
       expect(only(findings, "long-talk-note"), `${id} ${title}`).toHaveLength(want);
     }
+  });
+
+  // SKILL.md "a sequence has 3-6 participants"
+  it("many-participants: a sequence a tour shows with more than 6 participants", () => {
+    const sequence = (id: string, count: number) => ({
+      id,
+      type: "sequence",
+      title: `Sequence ${id}`,
+      participants: Array.from({ length: count }, (_, i) => `sym:src/f.ts#p${i}`),
+      steps: [],
+    });
+    const step = (id: string, view: string) => ({
+      id,
+      view,
+      focus: [],
+      note: "### A call\nIt runs.",
+    });
+    const { findings } = lintExplainer(
+      explainer({
+        views: [sequence("view:seven", 7), sequence("view:six", 6), sequence("view:off", 9)],
+        tours: [{ ...tour([]), steps: [step("t1", "view:seven"), step("t2", "view:six")] }],
+      }),
+    );
+    expect(only(findings, "many-participants").map((f) => [f.elementId, f.message])).toEqual([
+      [
+        "view:seven",
+        "7 participants (more than 6) on a sequence a tour shows: the lifelines get too narrow to read",
+      ],
+    ]);
+    expect(only(findings, "many-participants")[0]!.severity).toBeUndefined();
+  });
+
+  it("long-flow: a flow a tour shows with more than 8 steps", () => {
+    const flow = (id: string, count: number) => ({
+      id,
+      type: "flow",
+      title: `Flow ${id}`,
+      participants: [],
+      steps: Array.from({ length: count }, (_, i) => ({
+        id: `${id.slice(5)}:${i + 1}`,
+        kind: "process",
+        label: `Stage ${i + 1}`,
+        anchors: [],
+      })),
+    });
+    const step = (id: string, view: string) => ({
+      id,
+      view,
+      focus: [],
+      note: "### A stage\nIt runs.",
+    });
+    const { findings } = lintExplainer(
+      explainer({
+        views: [flow("view:nine", 9), flow("view:eight", 8), flow("view:off", 12)],
+        tours: [{ ...tour([]), steps: [step("t1", "view:nine"), step("t2", "view:eight")] }],
+      }),
+    );
+    expect(
+      only(findings, "long-flow").map((f) => [f.elementId, f.field, f.message, f.hint]),
+    ).toEqual([
+      [
+        "view:nine",
+        "steps",
+        "9 steps (more than 8) on a flow a tour shows: the boxes get too small to read",
+        "split the decision into two flows (which cases, then what happens in each), or merge steps that make the same point",
+      ],
+    ]);
   });
 
   it("big-map (on include without an index); an edge from a box to itself is drawn, so it is not a finding", () => {
@@ -1696,6 +1942,890 @@ describe("lintExplainer: reader checks", () => {
   });
 });
 
+// ─── Length, voice and words: the Orwell and ASD-STE100 checks ─────────────────────────────────
+
+/** A concept with the given summary (and detail), for the element text checks. */
+const conceptWith = (id: string, summary: string, detail?: string) => ({
+  id,
+  label: "Retry policy",
+  summary,
+  ...(detail !== undefined ? { detail } : {}),
+  anchors: [],
+});
+
+describe("lintExplainer: length, voice and words", () => {
+  it("long-summary: an element summary of more than 2 sentences or 45 words; a TODO waits", () => {
+    const changelog =
+      "The queue keeps jobs. Each attempt records its worker before launch. One cleanup step owns the files.";
+    const wordy = Array.from({ length: 12 }, () => "the queue keeps jobs").join(" and ") + ".";
+    const { findings } = lintExplainer(
+      explainer({
+        concepts: [
+          conceptWith("concept:short", "The queue keeps jobs. A worker takes the oldest one."),
+          conceptWith("concept:changelog", changelog),
+          conceptWith("concept:wordy", wordy),
+          conceptWith("concept:todo", `TODO: ${changelog}`),
+        ],
+        nodes: [{ id: "file:src/queue.ts", label: "queue.ts", summary: changelog, anchors: [] }],
+      }),
+    );
+    expect(only(findings, "long-summary").map((f) => [f.elementId, f.message])).toEqual([
+      [
+        "file:src/queue.ts",
+        "3 sentences, 17 words (a summary takes at most 2 sentences and 45 words)",
+      ],
+      [
+        "concept:changelog",
+        "3 sentences, 17 words (a summary takes at most 2 sentences and 45 words)",
+      ],
+      ["concept:wordy", "1 sentence, 59 words (a summary takes at most 2 sentences and 45 words)"],
+    ]);
+    expect(only(findings, "long-summary")[0]!.hint).toContain("do not append");
+  });
+
+  it("map-box: a box a map draws with its summary takes a label of at most 5 words and one short sentence that starts with a verb", () => {
+    const long =
+      "This file is where the crate declares its public modules, so that the binary, the tests and the examples can all reach each of them by one short path.";
+    const box = (id: string, label: string, summary: string) => ({ id, label, summary });
+    const { findings } = lintExplainer(
+      explainer({
+        nodes: [
+          box("file:src/lib.rs", "The module declarations file of the crate root", long),
+          box("file:src/queue.rs", "Job queue", "Keeps jobs in order until a worker takes one."),
+          box("file:src/runner.rs", "Job dispatcher", "The dispatcher hands each job to a worker."),
+          box("file:src/bus.rs", "Event messages", "bus.rs tells listeners when a job is done."),
+          box("dir:src/jobs", "Jobs", "TODO: one plain sentence"),
+          // the same text on a box that a map does not draw with its summary: no finding
+          box("file:src/other.rs", "The module declarations file of the crate root", long),
+        ],
+        views: [
+          {
+            id: "view:map",
+            type: "graph",
+            title: "The job runner",
+            include: [
+              "file:src/lib.rs",
+              "file:src/queue.rs",
+              "file:src/runner.rs",
+              "file:src/bus.rs",
+              "dir:src/jobs",
+            ],
+            boxText: "summary",
+          },
+          { id: "view:other", type: "graph", title: "Other", include: ["file:src/other.rs"] },
+        ],
+      }),
+    );
+    expect(only(findings, "map-box").map((f) => [f.elementId, f.field, f.message])).toEqual([
+      [
+        "file:src/lib.rs",
+        "label",
+        "8 words (more than 5): a box on a map that shows summaries takes a label of 2-5 plain words",
+      ],
+      [
+        "file:src/lib.rs",
+        "summary",
+        '150 characters (more than 130); it starts with "This", not a verb: the box shows this sentence under its label',
+      ],
+      [
+        "file:src/runner.rs",
+        "summary",
+        'it starts with "The", not a verb: the box shows this sentence under its label',
+      ],
+      [
+        "file:src/bus.rs",
+        "summary",
+        'it starts with "bus.rs", not a verb: the box shows this sentence under its label',
+      ],
+    ]);
+  });
+
+  it("a draft's TODO text gets only todo-left: its sentence length, voice and words are judged once it is written", () => {
+    const todo =
+      "TODO: one plain sentence: what this file does for the project (defines `Queue`, `push` and `pop`; used by every worker, the runner and the main entry of the program).";
+    const { findings } = lintExplainer(
+      explainer({
+        nodes: [{ id: "file:src/queue.ts", label: "TODO: a name", summary: todo }],
+        concepts: [{ id: "concept:retry", label: "Retry", summary: `${todo} It is always used.` }],
+        tours: [tour([`### TODO: a title that names every part\n\n${todo}`])],
+      }),
+    );
+    expect(rules(findings).sort()).toEqual(["todo-left", "todo-left", "todo-left", "todo-left"]);
+  });
+
+  it("map-box: a file name as a label, a noun or a passive first word, and a vague verb; a draft's long TODO waits", () => {
+    const box = (id: string, label: string, summary: string) => ({ id, label, summary });
+    const todo =
+      "TODO: This file is for the queue on this path (defines `Queue`, `push` and `pop`; used by `runner.rs`, `worker.rs` and `main.rs`), in one plain sentence.";
+    expect(todo.length).toBeGreaterThan(130);
+    const boxes = [
+      box("file:src/main.ts", "main.ts", "Starts the runner and stops it on a signal."),
+      box("file:src/config.ts", "`config`", "Configuration types and defaults for the runner."),
+      box("file:src/queue.ts", "Job queue", "Job queue that holds work for the workers."),
+      box("file:src/worker.ts", "Worker", "Used by the runner to run one job."),
+      box("file:src/bus.ts", "Event bus", "Contains the listeners of each event."),
+      box("file:src/pool.ts", "Worker pool", "pool keeps the idle workers."),
+      box("file:src/stats.ts", "Run statistics", "`Stats` counts the jobs by type."),
+      box("file:src/retry.ts", "Holds retry delays", "Holding the delays of each retry."),
+      box("file:src/a.ts", "One two three four five", "Answers the question of the reader."),
+      box("file:src/b.ts", "One two three four five six", "Is where jobs wait."),
+      box("file:src/c.ts", "Setup guide", "Tells a new developer how to install and run it."),
+      // the folder's own name as its label, and a first word that ends in "ss" like a noun
+      box("dir:src/tasks", "tasks", "Process the jobs in order."),
+      box("dir:src/jobs", "Jobs", todo),
+    ];
+    const { findings } = lintExplainer(
+      explainer({
+        nodes: boxes,
+        views: [
+          {
+            id: "view:map",
+            type: "graph",
+            title: "The job runner",
+            include: boxes.map((b) => b.id),
+            boxText: "summary",
+          },
+        ],
+      }),
+    );
+    const after = ": the box shows this sentence under its label";
+    const fileName = "a file name: name what it does in 2-5 everyday words";
+    expect(only(findings, "map-box").map((f) => [f.elementId, f.field, f.message])).toEqual([
+      ["file:src/main.ts", "label", fileName],
+      ["file:src/config.ts", "label", fileName],
+      ["file:src/config.ts", "summary", `it starts with "Configuration", not a verb${after}`],
+      ["file:src/queue.ts", "summary", `it starts with "Job", the label, not a verb${after}`],
+      ["file:src/worker.ts", "summary", `it starts with "Used", not a verb in the present${after}`],
+      [
+        "file:src/bus.ts",
+        "summary",
+        `it starts with "Contains": say what it does for the project ("Keeps …", "Answers …")${after}`,
+      ],
+      ["file:src/pool.ts", "summary", `it starts with "pool", not a verb${after}`],
+      ["file:src/stats.ts", "summary", `it starts with "Stats", not a verb${after}`],
+      [
+        "file:src/retry.ts",
+        "summary",
+        `it starts with "Holding", not a verb in the present${after}`,
+      ],
+      [
+        "file:src/b.ts",
+        "label",
+        "6 words (more than 5): a box on a map that shows summaries takes a label of 2-5 plain words",
+      ],
+      ["dir:src/tasks", "label", fileName],
+      ["dir:src/tasks", "summary", `it starts with "Process", not a verb${after}`],
+    ]);
+  });
+
+  it("long-summary: the summary of a flow or sequence step counts too", () => {
+    const { findings } = lintExplainer(
+      explainer({
+        views: [
+          {
+            id: "view:s",
+            type: "sequence",
+            title: "A job runs",
+            participants: [],
+            steps: [
+              {
+                id: "s:1",
+                from: "a",
+                to: "b",
+                label: "Take a job",
+                kind: "call",
+                anchors: [],
+                summary: "The runner asks. The queue answers. The worker starts.",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(only(findings, "long-summary").map((f) => [f.elementId, f.kind, f.view])).toEqual([
+      ["s:1", "step", "view:s"],
+    ]);
+  });
+
+  it("long-detail: a detail paragraph over 80 words; short paragraphs and list items pass", () => {
+    const sentence = "The queue keeps each job until a worker takes it.";
+    const paragraph = (n: number) => Array.from({ length: n }, () => sentence).join(" ");
+    const { findings } = lintExplainer(
+      explainer({
+        concepts: [
+          // 9 sentences of 10 words: 90 words in one paragraph
+          conceptWith("concept:wall", "The queue keeps jobs.", paragraph(9)),
+          // the same words in three paragraphs, or as a list
+          conceptWith(
+            "concept:split",
+            "The queue keeps jobs.",
+            `${paragraph(3)}\n\n${paragraph(3)}\n\n${paragraph(3)}`,
+          ),
+          conceptWith(
+            "concept:list",
+            "The queue keeps jobs.",
+            Array.from({ length: 9 }, () => `- ${sentence}`).join("\n"),
+          ),
+        ],
+      }),
+    );
+    expect(only(findings, "long-detail").map((f) => [f.elementId, f.field, f.message])).toEqual([
+      ["concept:wall", "detail", "a paragraph of 90 words (more than 80)"],
+    ]);
+  });
+
+  it("passive-voice: two passive clauses in a field; one after the first sentence, adjectives and code do not count", () => {
+    const { findings } = lintExplainer(
+      explainer({
+        concepts: [
+          conceptWith(
+            "concept:two",
+            "Accepted changes are written to disk. Protected ones are skipped.",
+          ),
+          conceptWith("concept:irregular", "The map is drawn first. Then the boxes are not shown."),
+          conceptWith("concept:one", "The CLI reports it. The file is written once."),
+          conceptWith("concept:adjective", "The id is based on the path. The run is done."),
+          conceptWith("concept:code", "The `is written` flag and the `are skipped` list stay."),
+          // a gerund after "from" names its subject; "malformed" is an adjective
+          conceptWith(
+            "concept:gerund",
+            "Keeps the window from being resized. The file is malformed without a header.",
+          ),
+          conceptWith(
+            "concept:active",
+            "The CLI writes the accepted changes. It skips protected ones.",
+          ),
+        ],
+      }),
+    );
+    expect(only(findings, "passive-voice").map((f) => [f.elementId, f.message])).toEqual([
+      ["concept:two", '2 passive clauses ("are written", "are skipped"): who does it?'],
+      ["concept:irregular", '2 passive clauses ("is drawn", "are not shown"): who does it?'],
+    ]);
+    expect(only(findings, "passive-voice")[0]!.hint).toContain("name who does it");
+  });
+
+  it('bare-it: "They", "These are", "There is" start a sentence without a subject', () => {
+    const summaries = [
+      "They check the ids.",
+      "These are the queues.",
+      "Those were the old rules.",
+      "There is one queue per worker.",
+      "There are two queues.",
+      "These files hold the queue.",
+      "Theirs is the queue.",
+    ];
+    const { findings } = lintExplainer(
+      explainer({ concepts: summaries.map((s, i) => conceptWith(`concept:c${i + 1}`, s)) }),
+    );
+    expect(only(findings, "bare-it").map((f) => [f.elementId, f.message])).toEqual([
+      ["concept:c1", 'starts with a bare "They"'],
+      ["concept:c2", 'starts with a bare "These"'],
+      ["concept:c3", 'starts with a bare "Those"'],
+      ["concept:c4", 'starts with an empty "There is"'],
+      ["concept:c5", 'starts with an empty "There are"'],
+    ]);
+  });
+
+  it('we-voice: "we", "our", "us" and "let\'s" in reader text, not in code, quotes or "US"', () => {
+    const notes = [
+      "### The queue\n\nWe keep jobs in our queue.",
+      "### The retry\n\nLet's look at the retry. It gives us a second chance.",
+      '### The queue\n\nThe `we` flag and the comment "we retry here" stay. The US region runs it.',
+    ];
+    const { findings } = lintExplainer(explainer({ tours: [tour(notes)] }));
+    expect(only(findings, "we-voice").map((f) => [f.elementId, f.message])).toEqual([
+      ["tour:t/t1", '"we", "our": the guide speaks as a team the reader is not part of'],
+      ["tour:t/t2", '"let\'s", "us": the guide speaks as a team the reader is not part of'],
+    ]);
+  });
+
+  it("tool-word: xpl's own words in tour text; edge cases, code and the guide's own boxes pass", () => {
+    const notes = [
+      "### The runner\n\nThe runner node has two edges, and its anchors are the evidence.",
+      "### Edge cases\n\nAn edge case: an empty queue. The `node` field and an llm patch.",
+      "### The tree\n\nEach syntax node holds its children.",
+    ];
+    const { findings } = lintExplainer(
+      explainer({
+        tours: [
+          tour(notes, {
+            summary: "A job goes from the queue to a worker node. Failed jobs come back later.",
+          }),
+        ],
+      }),
+    );
+    expect(only(findings, "tool-word").map((f) => [f.elementId, f.message])).toEqual([
+      ["tour:t", '"node": a word of the tool, not of the code'],
+      ["tour:t/t1", '"node", "edges", "anchors", "evidence": words of the tool, not of the code'],
+      ["tour:t/t2", '"llm": a word of the tool, not of the code'],
+      ["tour:t/t3", '"node": a word of the tool, not of the code'],
+    ]);
+    expect(only(findings, "tool-word")[1]!.hint).toContain('"edges": write "arrows"');
+    // a guide whose boxes are named after the word explains that word: it is the code's word then
+    const tree = lintExplainer(
+      explainer({
+        nodes: [{ id: "file:src/node.ts", label: "Syntax nodes", anchors: [] }],
+        tours: [tour([notes[2]!])],
+      }),
+    );
+    expect(only(tree.findings, "tool-word")).toEqual([]);
+  });
+
+  it("tool-word outside tours: only xpl's senses of a word (a stub box, authored overlays, anchor evidence)", () => {
+    const { findings } = lintExplainer(
+      explainer({
+        nodes: [
+          {
+            id: "file:src/graph.ts",
+            label: "Graph",
+            summary: "Adds the authored overlays to the derived arrows.",
+            detail: "Each stub box stands for code outside the map; a ghost arrow leads to it.",
+            anchors: [],
+          },
+        ],
+        edges: [
+          {
+            id: "edge:a",
+            from: "file:src/graph.ts",
+            to: "file:src/graph.ts",
+            kind: "call",
+            summary: "The resolver passes the anchor evidence on.",
+            anchors: [],
+          },
+        ],
+        concepts: [conceptWith("concept:g", "The graph keeps nodes and edges.")],
+      }),
+    );
+    expect(only(findings, "tool-word").map((f) => [f.elementId, f.field, f.message])).toEqual([
+      ["file:src/graph.ts", "summary", '"overlays": a word of the tool, not of the code'],
+      ["file:src/graph.ts", "detail", '"stub", "ghost": words of the tool, not of the code'],
+      ["edge:a", "summary", '"evidence": a word of the tool, not of the code'],
+    ]);
+    // the code's own senses of the same words pass in a box summary (gRPC, SQL, Vite, npm, editors, compilers)
+    const code = [
+      "The client stub sends the call over gRPC.",
+      "The repository upserts the row.",
+      "The error overlay shows the stack trace.",
+      "npm checks the package provenance.",
+      "The editor shows ghost text.",
+      "Copies the body to each call-site.",
+      "Stores the evidence for each case.",
+      "Wraps the llm client.",
+    ];
+    const plain = lintExplainer(
+      explainer({
+        nodes: code.map((summary, i) => ({
+          id: `file:src/f${i}.ts`,
+          label: `Part ${i}`,
+          summary,
+          anchors: [],
+        })),
+      }),
+    );
+    expect(only(plain.findings, "tool-word")).toEqual([]);
+    // a guide whose boxes are named after the word explains that word: it is the code's word there
+    const own = lintExplainer(
+      explainer({
+        nodes: [{ id: "file:test/stubs.ts", label: "Test stubs", anchors: [] }],
+        concepts: [conceptWith("concept:s", "Each stub box returns a fixed answer.")],
+      }),
+    );
+    expect(only(own.findings, "tool-word")).toEqual([]);
+    // a test double is a stub too
+    const tests = lintExplainer(
+      explainer({
+        concepts: [conceptWith("concept:t", "The test uses a stub box for the clock.")],
+      }),
+    );
+    expect(only(tests.findings, "tool-word")).toEqual([]);
+  });
+
+  it("tool-word in a tour: every tool word, unless the guide's title, a question or a linked file uses it", () => {
+    const tourOf = (note: string, over: Record<string, unknown> = {}) =>
+      lintExplainer(
+        explainer({
+          ...over,
+          tours: [
+            {
+              id: "tour:t",
+              title: "T",
+              summary: "The overlay shows errors.",
+              steps: [{ id: "t1", view: "view:v", focus: [], note }],
+            },
+          ],
+        }),
+      );
+    const flagged = tourOf("### Errors\n\nThe error overlay shows the stack trace.");
+    expect(only(flagged.findings, "tool-word").map((f) => f.field)).toEqual(["summary", "note"]);
+    // the question the guide answers names it: the reader's own word
+    const asked = tourOf("### Errors\n\nThe error overlay shows the stack trace.", {
+      title: "How does the error overlay work?",
+    });
+    expect(only(asked.findings, "tool-word")).toEqual([]);
+  });
+
+  it("filler-word and tool-word skip quoted text: an error message is the code's words", () => {
+    const { findings } = lintExplainer(
+      explainer({
+        nodes: [
+          {
+            id: "file:src/cli.ts",
+            label: "CLI",
+            summary: 'Prints the error "simply retry later, the stub failed" and exits.',
+            anchors: [],
+          },
+        ],
+      }),
+    );
+    expect(only(findings, "filler-word")).toEqual([]);
+    expect(only(findings, "tool-word")).toEqual([]);
+  });
+
+  it("filler-word: wordy phrases, weak intensifiers, stale metaphors and long words for short ones", () => {
+    const summaries = [
+      "The runner retries in order to recover.",
+      "The queue is very fast.",
+      "The queue does the heavy lifting.",
+      "The runner utilizes a pool prior to the start.",
+      "At its core, the queue keeps jobs.",
+      // a phrase that is filler only where it opens a clause
+      "Note that the queue keeps jobs.",
+      "The panel shows a note that lists the files.",
+    ];
+    const { findings } = lintExplainer(
+      explainer({ concepts: summaries.map((s, i) => conceptWith(`concept:c${i + 1}`, s)) }),
+    );
+    expect(only(findings, "filler-word").map((f) => [f.elementId, f.message])).toEqual([
+      ["concept:c1", '"in order to": marketing or filler'],
+      ["concept:c2", '"very": marketing or filler'],
+      ["concept:c3", '"heavy lifting": marketing or filler'],
+      ["concept:c4", '"utilizes", "prior to": marketing or filler'],
+      ["concept:c5", '"at its core": marketing or filler'],
+      ["concept:c6", '"note that": marketing or filler'],
+    ]);
+    expect(only(findings, "filler-word")[0]!.hint).toBe('"in order to": write "to"');
+  });
+});
+
+describe("lintExplainer: words and voice on real code English", () => {
+  const ids = (findings: readonly LintFinding[], rule: LintRule) =>
+    only(findings, rule).map((f) => f.elementId);
+  const concepts = (summaries: string[]) =>
+    lintExplainer(
+      explainer({ concepts: summaries.map((s, i) => conceptWith(`concept:c${i + 1}`, s)) }),
+    ).findings;
+
+  it("passive-voice: one passive in the first sentence of a summary; notes and details need two", () => {
+    const { findings } = lintExplainer(
+      explainer({
+        concepts: [
+          conceptWith("concept:first", "References are lifted to the boxes of their ends."),
+          conceptWith("concept:second", "The CLI reports drift. User-owned drift is listed apart."),
+          conceptWith(
+            "concept:detail",
+            "The CLI reports drift.",
+            "User-owned drift is listed apart.",
+          ),
+        ],
+        tours: [tour(["### Drift\n\nUser-owned drift is listed apart. The CLI reports it."])],
+      }),
+    );
+    expect(only(findings, "passive-voice").map((f) => [f.elementId, f.message])).toEqual([
+      [
+        "concept:first",
+        'a passive clause ("are lifted") in the first sentence of a summary: who does it?',
+      ],
+    ]);
+  });
+
+  it("passive-voice: one passive in a note heading or a title; a label, a How-title and a clause after the main one do not count", () => {
+    const { findings } = lintExplainer(
+      explainer({
+        title: "Jobs are retried by the runner",
+        concepts: [
+          {
+            ...conceptWith("concept:c", "The runner retries a job."),
+            label: "Jobs that are retried",
+          },
+        ],
+        tours: [
+          tour([
+            "### The patch is parsed as JSON\n\nThe CLI reads the patch.",
+            "### The runner retries a job when it is told to\n\nThe runner reads the flag.",
+            "### How a failed job is retried\n\nThe runner reads the flag.",
+          ]),
+        ],
+      }),
+    );
+    expect(only(findings, "passive-voice").map((f) => [f.elementId, f.field, f.message])).toEqual([
+      ["(explainer)", "title", 'a passive clause ("are retried") in a title: who does it?'],
+      ["tour:t/t1", "note heading", 'a passive clause ("is parsed") in a title: who does it?'],
+    ]);
+  });
+
+  it("passive-voice: irregular, get-, being-, adverb and re- forms count; adjectives in -ed do not", () => {
+    const found = concepts([
+      "The flag is set by the caller.",
+      "The work is done by the worker.",
+      "The file gets written once.",
+      "The job is being retried.",
+      "The text is not yet written.",
+      "The config is quickly loaded.",
+      "The page is then re-rendered.",
+      "The value is cast to a string.",
+      // adjectives and an active "gets"
+      "The value is undefined here.",
+      "The port is unused.",
+      "The two paths are unrelated.",
+      "The call is indeed slow.",
+      "The map is outdated.",
+      "The list is nested two levels deep.",
+      "The worker gets the job.",
+    ]);
+    expect(ids(found, "passive-voice")).toEqual(
+      [1, 2, 3, 4, 5, 6, 7, 8].map((i) => `concept:c${i}`),
+    );
+    expect(only(found, "passive-voice")[3]!.message).toContain('"is being retried"');
+  });
+
+  it('bare-it: "It" may start sentence 2 of a summary whose first sentence names the thing', () => {
+    const found = concepts([
+      "Runs one attempt on a worker. It also publishes the result.",
+      "The queue keeps the jobs. It hands out the oldest one first.",
+      "It runs one attempt. It also publishes the result.",
+      "There is one queue. It holds the jobs.",
+      "The queue keeps the jobs. This is the store.",
+      "This series of calls ends in the store.",
+      "This status is final.",
+    ]);
+    expect(ids(found, "bare-it")).toEqual([
+      "concept:c3",
+      "concept:c3",
+      "concept:c4",
+      "concept:c4",
+      "concept:c5",
+    ]);
+    // a note is read on its own after a jump: "It" in its second sentence still needs a subject
+    const notes = lintExplainer(
+      explainer({ tours: [tour(["### Runs\n\nThe runner takes a job. It runs the job."])] }),
+    );
+    expect(ids(notes.findings, "bare-it")).toEqual(["tour:t/t1"]);
+  });
+
+  it("abstract-subject: a noun made of an action as the subject; a verb start, an article or code passes", () => {
+    const found = concepts([
+      "Symbol assembly assigns ids and parents.",
+      "Discovery uses git to list the files.",
+      "Graph derivation combines the references.",
+      "Anchor construction resolves the names.",
+      "Editor setup supplies the theme.",
+      // passes
+      "Runs one attempt on the worker.",
+      "Adds a job to the queue.",
+      "The derivation combines the references.",
+      "`deriveGraph` combines the references.",
+      "Each lookup returns one symbol.",
+      "Retries wait 500 ms.",
+      "Settings hold the theme.",
+      "Configuration holds the settings.",
+      "Accepting boundaries produce updates.",
+    ]);
+    expect(ids(found, "abstract-subject")).toEqual([1, 2, 3, 4, 5].map((i) => `concept:c${i}`));
+    expect(only(found, "abstract-subject")[0]).toMatchObject({
+      message: '"Symbol assembly" names an action, not the code that does it',
+    });
+    expect(only(found, "abstract-subject")[0]!.hint).toContain("make the code the subject");
+    // a note hides the code the same way; its hint has no box summary to start with a verb
+    const note = lintExplainer(
+      explainer({ tours: [tour(["### Arrows\n\nGraph derivation combines the references."])] }),
+    );
+    expect(ids(note.findings, "abstract-subject")).toEqual(["tour:t/t1"]);
+    expect(only(note.findings, "abstract-subject")[0]!.hint).not.toContain("box summary");
+  });
+
+  it("abstract-subject passes the name of a mechanism, and a text that starts with a label of the guide", () => {
+    const mechanisms = concepts([
+      "Rate limiting applies per user and per route.",
+      "Load balancing spreads requests over the pods.",
+      "Lazy loading defers the chart code.",
+      "Dependency injection wires the services.",
+    ]);
+    expect(ids(mechanisms, "abstract-subject")).toEqual([]);
+    // the whole name of a mechanism passes, not every phrase with its head noun
+    const hidden = concepts([
+      "Job scheduling picks the next job.",
+      "Config loading reads the file.",
+      "Retry handling waits a second.",
+      "Request routing sends each call to a handler.",
+    ]);
+    expect(ids(hidden, "abstract-subject")).toEqual([1, 2, 3, 4].map((i) => `concept:c${i}`));
+    // "Retry policy" is not a mechanism word, but a concept of the guide is called so
+    const named = lintExplainer(
+      explainer({
+        nodes: [
+          {
+            id: "file:src/limiter.ts",
+            label: "Rate limiter",
+            summary: "Token bucket.",
+            anchors: [],
+          },
+        ],
+        concepts: [
+          {
+            id: "concept:policy",
+            label: "Queue assignment",
+            summary: "Queue assignment picks a worker per job.",
+            anchors: [],
+          },
+          {
+            id: "concept:other",
+            label: "Other",
+            summary: "Queue assignment picks a worker. Load derivation uses the queue length.",
+            anchors: [],
+          },
+        ],
+      }),
+    );
+    // the second sentence of concept:other names no label: still a finding
+    expect(only(named.findings, "abstract-subject").map((f) => [f.elementId, f.message])).toEqual([
+      ["concept:other", '"Load derivation" names an action, not the code that does it'],
+    ]);
+  });
+
+  it("filler-word: the vague verbs and connectors of writing.md 2b; code verbs pass", () => {
+    const found = concepts([
+      "The store manages navigation and editing.",
+      "The helper takes care of the lock.",
+      "The patch preserves the fields you wrote.",
+      "The cache retains the last tree.",
+      "Additionally, the queue retries the job.",
+      "Moreover, the worker waits.",
+      "The caller explicitly passes a timeout.",
+      "The runner keeps various jobs.",
+      // code verbs: chosen by the writer, not flagged
+      "The view renders the map and the store dispatches an action.",
+      "The worker emits an event and persists the job.",
+      "The app supplies the work, and the provider provides the theme.",
+    ]);
+    expect(ids(found, "filler-word")).toEqual([1, 2, 3, 4, 5, 6, 7, 8].map((i) => `concept:c${i}`));
+    expect(only(found, "filler-word")[2]!.hint).toBe('"preserves": write "keeps"');
+    expect(only(found, "filler-word")[4]!.hint).toContain('write "also", or drop it');
+  });
+
+  it("filler-word: ordinary code English passes (mutex, first-class functions, landscape, harness, child process)", () => {
+    const found = concepts([
+      "The worker unlocks the mutex after the write.",
+      "Go has first-class functions, so the handler is a value.",
+      "On a phone in landscape, the sidebar folds away.",
+      "Each iframe runs in its own realm, with its own globals.",
+      "The runner applies the patches in order to a fresh copy.",
+      "The test harness starts a fake server.",
+      "The supervisor terminates the child process after 5 s.",
+      "Recovery terminates the old group and waits.",
+      // the same words as filler
+      "The new API has first-class support for retries.",
+      "The landscape of job queues is wide.",
+      "The runner retries in order to recover.",
+      "The tool can harness the queue.",
+    ]);
+    expect(ids(found, "filler-word")).toEqual([9, 10, 11, 12].map((i) => `concept:c${i}`));
+  });
+
+  // a quote of one word after an article or a verb is a scare quote, the writer's own word
+  it("filler-word checks a scare quote of one word, and skips a one-word message the code prints", () => {
+    const found = concepts([
+      'The pool "manages" its connections.',
+      "A “seamless” handoff passes the job on.",
+      'The CLI prints "simply" when asked.',
+    ]);
+    expect(ids(found, "filler-word")).toEqual(["concept:c1", "concept:c2"]);
+  });
+
+  // a tool word with the map's words around it means xpl's part, even with no noun after it
+  it("tool-word: xpl's sense outside tours counts when the sentence talks about the map", () => {
+    const found = concepts([
+      "Lists the boxes; the stubs show code outside this map.",
+      "The gRPC stub sends the request.",
+    ]);
+    expect(ids(found, "tool-word")).toEqual(["concept:c1"]);
+  });
+
+  // a one-word quote of a value (a region code, a mode, a key) is the code's word, not a scare quote
+  it("we-voice skips every quote; filler-word skips a one-word quote of a value, not a scare quote", () => {
+    const found = concepts([
+      'Defaults the region to "us" when none is set.',
+      'Accepts "simple" and "just" as values of the --style flag.',
+      'Stores the ratio under the key "leverage".',
+      'The status is "seamless" or "split", read from the config.',
+      'The pool "manages" its connections.',
+      'The "robust" retry loop never gives up.',
+    ]);
+    expect(ids(found, "we-voice")).toEqual([]);
+    expect(ids(found, "filler-word")).toEqual(["concept:c5", "concept:c6"]);
+  });
+
+  // the verb "maps" and code that draws a box of its own do not make a sentence about the map
+  it("tool-word: a sentence with the verb maps or a code box is not about the guide's map", () => {
+    const found = concepts([
+      "Builds the gRPC stub for each service and maps its methods to handlers.",
+      "Returns a stub response and draws a box around the error in the log.",
+      "Each stub of this map is a box for code outside it.",
+    ]);
+    expect(ids(found, "tool-word")).toEqual(["concept:c3"]);
+  });
+
+  // "in all" is "in total", a quoted test name is the code's words, a heading has its step's code
+  it('absolute-word skips "in all" and a quoted test name; a heading needs evidence like the body', () => {
+    const steps = [
+      "### Retries\nThe old code waited 3.5 s in all.",
+      '### Tests\nThe older "always fails" test now passes.',
+      "### Only a missing handler is not retryable\nThe worker marks the two failures.",
+      "### Retries\nThe runner retries in all cases.",
+    ].map((note, i) => ({
+      id: `t${i + 1}`,
+      view: "view:v",
+      focus: [],
+      note,
+      ...(i === 2 ? { code: [{ file: "src/worker.ts", role: "definition" }] } : {}),
+    }));
+    const { findings } = lintExplainer(explainer({ tours: [{ ...tour([]), steps }] }));
+    // the code under t3 does not prove a claim about every case: its heading is checked like its body
+    expect(only(findings, "absolute-word").map((f) => [f.elementId, f.field])).toEqual([
+      ["tour:t/t3", "note heading"],
+      ["tour:t/t4", "note"],
+    ]);
+  });
+
+  it('we-voice: "us" after a number is microseconds', () => {
+    expect(ids(concepts(["The value is in µs, so 1000 us is one ms."]), "we-voice")).toEqual([]);
+  });
+
+  it("dash-chain: two dashes in one sentence; one dash passes", () => {
+    const found = concepts([
+      "The runner takes a job — the oldest — and runs it.",
+      "The runner takes a job -- the oldest -- and runs it.",
+      "The runner takes the oldest job — then runs it.",
+    ]);
+    expect(ids(found, "dash-chain")).toEqual(["concept:c1", "concept:c2"]);
+    expect(only(found, "dash-chain")[0]!.hint).toContain("split it into sentences");
+  });
+
+  it("long-title: a title or note heading over 12 words", () => {
+    const { findings } = lintExplainer(
+      explainer({
+        tours: [
+          tour(
+            [
+              "### After resolve: the to-do list and a re-explain that leaves your edits alone\n\nThe runner takes a job.",
+              "### How the runner picks the next job\n\nThe runner takes a job.",
+              "### TODO: a plain title that says what happens in this step of the tour\n\nThe runner takes a job.",
+            ],
+            { title: "How a job runs" },
+          ),
+        ],
+      }),
+    );
+    expect(only(findings, "long-title").map((f) => [f.elementId, f.field, f.message])).toEqual([
+      ["tour:t/t1", "note heading", "13 words (a title takes at most 12)"],
+    ]);
+  });
+
+  it('connector-start: a note body that opens with "So", "But", "And", "Also" or "Then"', () => {
+    const { findings } = lintExplainer(
+      explainer({
+        tours: [
+          tour([
+            "### The map\n\nSo the map needs an index first.",
+            "### The map\n\nBut the map can be empty.",
+            "### The map\n\nThe map needs an index. So the CLI builds one.",
+            "### The map\n\nSome maps need an index.",
+          ]),
+        ],
+      }),
+    );
+    expect(ids(findings, "connector-start")).toEqual(["tour:t/t1", "tour:t/t2"]);
+    expect(only(findings, "connector-start")[0]!.message).toContain('"So"');
+  });
+});
+
+describe("lintExplainer: structure", () => {
+  const graph = (id: string) => ({ id, type: "graph", title: `The map ${id}`, include: [] });
+
+  it("unused-view: a view no tour step shows and no box opens; none when there is no tour", () => {
+    const parts = {
+      nodes: [{ id: "grp:core", label: "Core", members: [], opens: "view:inside", anchors: [] }],
+      views: [graph("view:v"), graph("view:inside"), graph("view:lost")],
+    };
+    const { findings } = lintExplainer(
+      explainer({ ...parts, tours: [tour(["### The queue\n\nThe queue keeps jobs."])] }),
+    );
+    expect(only(findings, "unused-view").map((f) => [f.elementId, f.kind, f.message])).toEqual([
+      ["view:lost", "view", "no tour step shows this view and no box opens it"],
+    ]);
+    expect(only(lintExplainer(explainer(parts)).findings, "unused-view")).toEqual([]);
+  });
+
+  it("many-concepts: more than 5 concepts, listing the ones no tour step focuses", () => {
+    const concepts = (n: number) =>
+      Array.from({ length: n }, (_, i) =>
+        conceptWith(`concept:c${i + 1}`, "The queue keeps jobs."),
+      );
+    const focused = tour(["### The queue\n\nThe queue keeps jobs."]);
+    focused.steps[0]!.focus = ["concept:c1"] as never;
+    expect(
+      only(
+        lintExplainer(explainer({ concepts: concepts(5), tours: [focused] })).findings,
+        "many-concepts",
+      ),
+    ).toEqual([]);
+    const many = only(
+      lintExplainer(explainer({ concepts: concepts(6), tours: [focused] })).findings,
+      "many-concepts",
+    );
+    expect(many.map((f) => [f.elementId, f.message, f.ids])).toEqual([
+      [
+        "(explainer)",
+        "6 concepts (more than 5); 5 of them no tour step focuses",
+        ["concept:c2", "concept:c3", "concept:c4", "concept:c5", "concept:c6"],
+      ],
+    ]);
+  });
+
+  it("duplicate-step: a note copied into another tour; short or different notes and TODOs pass", () => {
+    const copied =
+      "### One file holds the guide\n\nThe bundle writes the index, the text of each file and the viewer into one page.";
+    const other =
+      "### The viewer reads the page\n\nThe viewer reads the index and draws the map from the boxes it lists.";
+    const short = "### The queue\n\nThe queue keeps jobs.";
+    const todo =
+      "### TODO: a title\n\nTODO: say what the bundle writes into the page for the reader.";
+    const { findings } = lintExplainer(
+      explainer({
+        tours: [
+          tour([copied, other, short, todo]),
+          tour([short, copied, todo], { id: "tour:quick", title: "The short way" }),
+        ],
+      }),
+    );
+    expect(only(findings, "duplicate-step").map((f) => [f.elementId, f.message])).toEqual([
+      ["tour:quick/t2", "the same note as tour:t/t1"],
+    ]);
+  });
+
+  it("long-note: a note body over 50 words", () => {
+    const body = (n: number) => Array.from({ length: n }, () => "jobs").join(" ") + ".";
+    const { findings } = lintExplainer(
+      explainer({
+        tours: [tour([`### The queue\n\n${body(50)}`, `### The queue\n\n${body(51)}`])],
+      }),
+    );
+    expect(only(findings, "long-note").map((f) => [f.elementId, f.message])).toEqual([
+      ["tour:t/t2", "51 words (more than 50)"],
+    ]);
+  });
+});
+
 describe("xpl lint", () => {
   let demo: string;
 
@@ -1757,8 +2887,8 @@ describe("xpl lint", () => {
       {
         elementId: "view:system",
         field: "include",
-        message: expect.stringContaining("System map"),
-        hint: expect.stringContaining("source-backed relationships"),
+        message: expect.stringContaining("has 2 boxes and no arrows"),
+        hint: expect.stringContaining("arrows the code shows"),
       },
     ]);
     const ready = await xplJson<{
@@ -1770,7 +2900,7 @@ describe("xpl lint", () => {
       elementId: "view:system",
       field: "include",
       message: expect.stringContaining("System map"),
-      hint: expect.stringContaining("source-backed relationships"),
+      hint: expect.stringContaining("arrows the code shows"),
     });
 
     setMap(["grp:one", "grp:two"], [], "component");
@@ -1892,16 +3022,18 @@ describe("xpl lint", () => {
     expect((await xpl(demo, "lint", "demo", "--loud")).code).toBe(2);
     const missing = await xpl(demo, "lint", "nope");
     expect(missing.code).toBe(1);
-    expect(missing.err).toContain('no explainer "nope"');
+    expect(missing.err).toContain('no guide "nope"');
     const help = await invoke(["lint", "--help"]);
     expect(help.code).toBe(0);
-    expect(help.out).toContain("Usage: xpl lint [explainer] [--patch <file|->] [--warn-only]");
-    for (const rule of ["repeats-summary", "markdown-in-plain", "markdown-in-summary"]) {
-      expect(help.out).toContain(rule);
-    }
-    for (const rule of ["tour-first-step", "tour-covers-map", "tour-length"]) {
-      expect(help.out).toContain(rule);
-    }
+    expect(help.out).toContain(
+      "Usage: xpl lint [explainer] [--patch <file|->] [--warn-only] [--strict]",
+    );
+    // the help is short; the CLI reference lists every rule
+    const reference = readFileSync(
+      new URL("../../../skill/code-explainer/reference/cli.md", import.meta.url),
+      "utf8",
+    );
+    for (const rule of Object.keys(LINT_RULES)) expect(reference, rule).toContain(`\`${rule}\``);
   });
 
   describe("--patch", () => {
@@ -1951,7 +3083,7 @@ describe("xpl lint", () => {
       // the rejection lines are the ones apply prints
       expect(lint.out.split("\n").slice(0, -1)).toEqual(apply.out.split("\n"));
       expect(lint.out.split("\n").at(-1)).toBe(
-        "nothing linted: fix the patch, then run `xpl lint --patch` again",
+        "nothing linted: fix the patch, then run `xpl lint demo --patch bad.json` again",
       );
       const json = await xplJson(dir, "lint", "demo", "--patch", "bad.json");
       expect(json.code).toBe(1);
@@ -1963,6 +3095,74 @@ describe("xpl lint", () => {
       const missing = await xpl(dir, "lint", "demo", "--patch", "nope.json");
       expect(missing.code).toBe(1);
       expect(missing.err).toContain("cannot read patch file");
+    });
+
+    it("prints the warnings `xpl apply` would print (a step id without its view slug), before the ids are fixed", async () => {
+      const dir = cloneDir(demo);
+      expect((await xpl(dir, "new", "clean", "--title", "How a job runs")).code).toBe(0);
+      const patch = {
+        views: [
+          {
+            id: "view:retry-flow",
+            type: "flow",
+            title: "How the runner retries a job",
+            participants: ["file:src/runner.ts"],
+            steps: [
+              {
+                id: "retry:1",
+                kind: "call",
+                from: "file:src/runner.ts",
+                to: "file:src/runner.ts",
+                label: "Run the job",
+                anchors: [],
+              },
+            ],
+          },
+        ],
+      };
+      writeFile(dir, "flow.json", JSON.stringify(patch));
+      const lint = await xpl(dir, "lint", "clean", "--patch", "flow.json");
+      expect(lint.code).toBe(1);
+      expect(lint.out.split("\n")).toEqual([
+        ".explainer/clean.explainer.json with patch flow.json (1 id changed, nothing written): 3 texts checked, no findings",
+        "",
+        "`xpl apply` would warn (1); fix it in the patch now, because ids never change once applied:",
+        'warning views[0].steps[0].id [retry:1]: step id "retry:1" should start with the view slug "retry-flow:"',
+      ]);
+      expect((await xpl(dir, "lint", "clean", "--patch", "flow.json", "--warn-only")).code).toBe(0);
+      const json = await xplJson(dir, "lint", "clean", "--patch", "flow.json");
+      expect(json.json).toMatchObject({ ok: false, total: 0 });
+      expect(json.json.applyIssues).toMatchObject([
+        { severity: "warning", path: "views[0].steps[0].id" },
+      ]);
+    });
+
+    it("an apply warning about the guide, not the patch (a stale index binding), is shown apart and does not fail lint", async () => {
+      const dir = cloneDir(demo);
+      expect((await xpl(dir, "new", "clean", "--title", "How a job runs")).code).toBe(0);
+      const file = ".explainer/clean.explainer.json";
+      const guide = JSON.parse(readFile(dir, file));
+      guide.index.commit = "0000000";
+      writeFile(dir, file, JSON.stringify(guide, null, 2));
+      writeFile(dir, "title.json", JSON.stringify({ title: "How the runner runs a job" }));
+      const lint = await xpl(dir, "lint", "clean", "--patch", "title.json");
+      expect(lint.code).toBe(0);
+      const lines = lint.out.split("\n");
+      expect(lines.slice(0, 3)).toEqual([
+        "ok: .explainer/clean.explainer.json with patch title.json (1 id changed, nothing written): 1 text checked, no findings",
+        "",
+        "`xpl apply` will also warn (1), about the guide, not this patch:",
+      ]);
+      expect(lines[3]).toMatch(
+        /^warning index\.commit: the guide was last resolved against index 0000000, but the index given is /,
+      );
+      expect(lines).toHaveLength(4);
+      const json = await xplJson(dir, "lint", "clean", "--patch", "title.json");
+      expect(json.code).toBe(0);
+      expect(json.json).toMatchObject({ ok: true });
+      expect(json.json.applyIssues).toMatchObject([
+        { severity: "warning", path: "index.commit", fromPatch: false },
+      ]);
     });
 
     it("the exit code counts the findings after the patch: `lint --patch && apply` stops on one", async () => {

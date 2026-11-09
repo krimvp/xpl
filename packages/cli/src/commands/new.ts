@@ -15,21 +15,20 @@ function humanize(name: string): string {
 
 export const newCommand: CommandSpec = {
   name: "new",
-  usage: "xpl new <name> [--title t] [--repo r] [--url u]",
-  summary: "Create .explainer/<name>.explainer.json bound to the index",
+  usage: "xpl new <name> [--title <title>] [--repo <name>] [--url <url>]",
+  summary: "Create an empty guide, .explainer/<name>.explainer.json, bound to the index",
   details: [
-    "Creates an empty explainer (no nodes, edges, concepts, views or tours) bound to the selected index.",
-    "Refuses to overwrite an existing file. Fill it with `xpl apply <name> patch.json`.",
-    "The repository name (the label of the repo node) is --repo, else detected: package.json `name`, the last",
-    "element of the go.mod module, pyproject.toml `[project] name`, the git remote's base name, the directory",
-    "name. --url records where the repository lives (never taken from the git remote: it may hold credentials).",
+    "Creates an empty guide bound to the index. It does not overwrite a file that exists.",
+    "Fill it with `xpl apply <name> patch.json`.",
+    "The repository name is --repo, else package.json, go.mod, pyproject.toml, Cargo.toml, pom.xml, the git remote or the folder.",
+    "--url records where the repository lives. xpl never takes it from the git remote, which can hold secrets.",
   ],
   options: {
-    title: { type: "string", arg: "<t>", desc: "Explainer title (default: the name, humanized)" },
+    title: { type: "string", arg: "<title>", desc: "Guide title (default: the name, humanized)" },
     repo: {
       type: "string",
       arg: "<name>",
-      desc: "Repository name (default: package.json / go.mod / pyproject.toml / git remote / directory)",
+      desc: "Repository name (default: read from the project files, git or the folder)",
     },
     url: { type: "string", arg: "<url>", desc: "Repository URL to record (default: none)" },
   },
@@ -41,7 +40,7 @@ export const newCommand: CommandSpec = {
       : given;
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)) {
       throw new UsageError(
-        `invalid explainer name "${given}": use letters, digits, ".", "_" and "-", starting with a letter or digit`,
+        `invalid guide name "${given}": use letters, digits, ".", "_" and "-", starting with a letter or digit`,
       );
     }
     const path = join(ctx.root, EXPLAINER_DIR, `${name}${EXPLAINER_SUFFIX}`);
@@ -92,7 +91,7 @@ export const newCommand: CommandSpec = {
       [
         `created ${rel} (title "${title}", index ${ws.indexRel}, commit ${ws.index.commit})`,
         `repo: ${repo.name} (${repo.source})${url !== undefined ? `, ${url}` : ""}`,
-        `next: write a patch and run \`xpl apply ${name} patch.json\``,
+        `next: \`xpl draft path|repo|map|data|... ${name} -o <file>\` drafts the structure; write its TODOs, then \`xpl apply ${name} <file>\``,
       ].join("\n"),
     );
     return 0;

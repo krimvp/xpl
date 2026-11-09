@@ -169,7 +169,7 @@ describe("apply with some of the patch protected", () => {
 });
 
 describe("xpl apply --help", () => {
-  it("summarises the patch format and points at the skill's reference, not at the source", async () => {
+  it("says how a patch merges and points at the skill's reference, not at the source", async () => {
     for (const argv of [
       ["apply", "--help"],
       ["help", "apply"],
@@ -178,17 +178,11 @@ describe("xpl apply --help", () => {
       expect(code).toBe(0);
       for (const text of [
         "Usage: xpl apply <explainer> <patch.json|-> [--actor llm|user] [--dry-run]",
-        '"title"?, "scope"?: {"audience"}, "nodes"?, "edges"?, "concepts"?, "views"?, "tours"?,',
-        '"symbol"?: "Runner.dispatch"',
-        '"find"?',
-        "definition|call-site|usage|config|test",
-        "arrays and objects replace wholesale",
-        "null",
-        "includeAdd / includeRemove",
-        "excludeFiles",
+        "merge by id",
+        "Arrays and objects replace wholesale",
+        "null clears an optional field",
         "protected",
-        "reference/patch-format.md in the",
-        "code-explainer skill",
+        "reference/patch-format.md in the code-explainer skill",
         "Exit codes",
         "--dry-run",
       ]) {
@@ -196,8 +190,8 @@ describe("xpl apply --help", () => {
       }
       expect(out).not.toContain("packages/core");
       expect(out).not.toContain("patch.ts");
-      // compact: the summary fits on a screen
-      expect(out.split("\n").length).toBeLessThan(60);
+      // compact: the details are in patch-format.md
+      expect(out.split("\n").length).toBeLessThan(30);
     }
   });
 });

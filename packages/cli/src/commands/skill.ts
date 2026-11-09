@@ -8,18 +8,18 @@ export const skillCommand: CommandSpec = {
   usage: "xpl skill install [--agent claude|codex|pi|droid|devin] [--dir <path>]",
   summary: "Install or update the bundled code-explainer skill and its CLI launcher",
   details: [
-    "Installs to the selected harness's native skill directory. Claude is the default; Codex, Pi and Droid use ~/.agents/skills/code-explainer. Devin uses <repo>/.agents/skills/code-explainer.",
-    "Rerun after updating the CLI. The launcher records this installed CLI's absolute path; no source checkout is needed.",
-    "Refuses symlinks, unmanaged directories and locally edited skill files. Move them aside before reinstalling.",
-    "Installation does not start an agent. Invoke the installed skill explicitly in your harness to author explanations.",
+    "Installs the skill where the chosen agent looks for skills. Claude is the default; Codex, Pi and Droid use ~/.agents/skills/code-explainer. Devin uses <repo>/.agents/skills/code-explainer.",
+    "Run it again after you update the CLI. The launcher records the path of this CLI; no source checkout is needed.",
+    "It stops when the target is a symlink, a folder it did not install, or a skill you edited: move it away first.",
+    "It does not start the agent. To write a guide, start the skill in your agent (`/code-explainer` in Claude Code).",
   ],
   options: {
     agent: {
       type: "string",
       arg: "claude|codex|pi|droid|devin",
-      desc: "Target harness (default: claude)",
+      desc: "The agent to install for (default: claude)",
     },
-    dir: { type: "string", arg: "<path>", desc: "Destination skill directory" },
+    dir: { type: "string", arg: "<path>", desc: "The skill folder to install into" },
   },
   positionals: [{ name: "operation" }],
   async run(ctx, args) {

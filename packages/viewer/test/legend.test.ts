@@ -1,6 +1,6 @@
 /** The map's Key lists only what the map shows: outside systems, icons, corner buttons, counts (M9). */
 import { describe, expect, it } from "vitest";
-import { mapKeyShows } from "../src/keyMarks.js";
+import { keyLineItems, mapKeyShows, type LegendShows } from "../src/keyMarks.js";
 import type { LayoutEdge, LayoutNode } from "../src/layout/graphLayout.js";
 
 const node = (id: string, extra: Partial<LayoutNode> = {}): LayoutNode => ({
@@ -96,6 +96,20 @@ describe("mapKeyShows", () => {
     expect(shows.icons!.map((icon) => icon.name)).toEqual(["file", "function"]);
   });
 
+  // "Your repository (git)" and "Browser (HTML page)" got the globe of an outside system
+  it("keys a box by the icon its technology picks before its role's", () => {
+    const shows = mapKeyShows(
+      [
+        node("grp:repo", { role: "external", badge: "git" }),
+        node("grp:web", { role: "external", badge: "HTML page" }),
+        node("grp:api", { role: "external", badge: "REST API" }),
+      ],
+      [],
+      boxes(),
+    );
+    expect(shows.icons!.map((icon) => icon.name)).toEqual(["repo", "browser", "external"]);
+  });
+
   it("a box whose inside cannot be opened shows no corner button row", () => {
     const shows = mapKeyShows([node("grp:ky", { opens: "view:inside" })], [], boxes());
     expect(shows.zoom).toBe(false);
@@ -109,5 +123,78 @@ describe("mapKeyShows", () => {
     );
     expect(shows.outside).toBe(true);
     expect(shows.icons!.map((icon) => icon.name)).toEqual(["group"]);
+  });
+
+  // the Key of a data map explained boxes as files and functions, rows as "a variable", and its one
+  // kind of arrow as "uses a type", while the map labels it "holds"
+  it("a data map: tables, the arrow a row holds, and no row icons or code-box row", () => {
+    const row = node("sym:q#Queue.ready", { kindClass: "variable", badge: "variable", row: true });
+    const shows = mapKeyShows(
+      [node("sym:q#Queue", { kindClass: "class", badge: "class", rows: true, children: [row] })],
+      [
+        edge("e1", { kind: "references", title: "holds", from: row.id, to: "sym:j#Job" }),
+        edge("e2", {
+          kind: "implements",
+          title: "implements ×1",
+          counted: true,
+          label: { text: "implements ×1", x: 0, y: 0, width: 80, height: 16 },
+        }),
+      ],
+      boxes(),
+    );
+    expect(shows).toMatchObject({ tables: true, code: false, kinds: ["implements", "holds"] });
+    expect(shows.countKind).toBe("implements");
+    expect(shows.icons!.map((icon) => icon.name)).toEqual(["class"]);
+  });
+
+  // Go has no parent types: its embedded types were keyed "Extends: points at the parent class"
+  it("keys Go's embedded types as embeds, apart from a class that extends another", () => {
+    const shows = mapKeyShows(
+      [node("sym:a#A"), node("sym:b#B")],
+      [
+        edge("e1", { kind: "extends", title: "embeds" }),
+        edge("e2", { kind: "extends", title: "embeds a type in" }),
+        edge("e3", { kind: "extends" }),
+      ],
+      boxes(),
+    );
+    expect(shows.kinds).toEqual(["extends", "embeds"]);
+  });
+});
+
+// ky's "Inside ky": "→ calls · → added by the author · → found in the code", the first and last the same
+// grey arrow; its system map drew only the author's arrows and still listed "→ calls"
+describe("the key line under a map", () => {
+  const keys = (shows: Partial<LegendShows>) =>
+    keyLineItems({
+      outside: false,
+      authored: false,
+      heuristic: false,
+      change: false,
+      ...shows,
+    }).map((item) => `${item.key}: ${item.words}`);
+  it("says calls found in the code once when the map's found arrows are all calls", () => {
+    expect(keys({ kinds: ["calls"], found: true, authored: true })).toEqual([
+      "authored: added by the author, checked against the code",
+      "found: calls, found in the code",
+    ]);
+  });
+  it("names no kind on a map whose only arrows are the author's", () => {
+    expect(keys({ kinds: ["calls"], authored: true })).toEqual([
+      "authored: added by the author, checked against the code",
+    ]);
+  });
+  it("still names calls beside arrows matched by name, and every kind when the map mixes them", () => {
+    expect(keys({ kinds: ["calls"], authored: true, heuristic: true })).toEqual([
+      "kind-calls: calls",
+      "authored: added by the author, checked against the code",
+      "heuristic: matched by name",
+    ]);
+    expect(keys({ kinds: ["calls", "extends"], found: true, heuristic: true })).toEqual([
+      "kind-calls: calls",
+      "kind-extends: extends",
+      "found: found in the code",
+      "heuristic: matched by name",
+    ]);
   });
 });

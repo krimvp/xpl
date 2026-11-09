@@ -1,11 +1,10 @@
 # code-explainer skill
 
-Turns "how does X work?", "give me an overview of this repo", "explain this PR" or "help me present this code" into an interactive explainer: a short guided tour with a summary first, and maps, process flows and sequence diagrams linked both ways to the code in a built-in editor. The authoring agent writes the data (validated against a static index, so it cannot invent code); the viewer in this repo renders it.
+Turns "how does X work?", "give me an overview of this repo", "explain this PR" or "help me present this code" into a guide. A guide is a short tour with a summary first, and maps, flows and sequence diagrams linked both ways to the code. The agent writes the text as data. xpl checks every code link against a static index, so the guide cannot point at code that is not there.
 
 ## Install
 
-1. Install the CLI from npm (Node >=22.12). The full install test runs on Linux x64/WSL2;
-   platform CI checks packed install and offline reading on macOS and Windows:
+1. Install the CLI from npm (Node 22.12 or newer), and check it:
 
    ```sh
    npm install --global @krimvp/xpl
@@ -15,64 +14,50 @@ Turns "how does X work?", "give me an overview of this repo", "explain this PR" 
 2. Install the bundled skill, with a launcher bound to the installed CLI:
 
    ```sh
-   # Choose one agent; omit --agent for the default Claude Code target
-   xpl skill install --agent pi --dir <project>/.agents/skills/code-explainer
+   xpl skill install
    ```
 
-3. Check the installed launcher at `<skill-dir>/bin/xpl --version`. Claude Code is the default target. Use
-   Use `--agent codex`, `--agent pi`, `--agent droid` or `--agent devin` to select one. Omit `--agent`
-   for Claude Code. `--dir <path>` sets the destination. Run Devin's install from the target repo.
-   Codex, Pi and Factory Droid use `~/.agents/skills/code-explainer`; Devin uses the target project's
-   `.agents/skills/code-explainer`. In Devin, run `xpl skill install --agent devin` inside the connected
-   remote environment and target repo before using the launcher. Install Node >=22.12 and xpl there first;
-   the launcher has no PATH fallback, and a local install does not provision xpl remotely. Harness
-   invocation has not had live QA.
+3. Check the launcher with `<skill-dir>/bin/xpl --version`.
 
-Alternatively, from the [source repository](https://github.com/krimvp/xpl), run `npm install && npm run build`,
-then `npm pack ./packages/cli/dist` and `npm install -g --ignore-scripts ./krimvp-xpl-0.3.0.tgz`.
-A maintainer's tarball can also be installed with `npm install -g --offline --ignore-scripts <tarball>`.
-
-After updating or moving the CLI, rerun `xpl skill install` with the same destination. No source checkout
-or manual symlink is needed. Updates refuse unmanaged directories, symlinks and local skill edits; move
-the old directory aside to preserve it, then install again. `XPL_CLI=<path to xpl.mjs>` overrides the
-launcher binding. For source development, `bin/xpl` still finds `packages/cli/dist/xpl.mjs` in its checkout.
+Claude Code is the default agent. [Create a guide](reference/create.md#install) lists the other agents, their
+skill directories and invocations, updates, and the install from source. `XPL_CLI=<path to xpl.mjs>` overrides
+the launcher binding. In a source checkout, `bin/xpl` finds `packages/cli/dist/xpl.mjs` on its own.
 
 ## Use
 
-Start with [Create a guide](reference/create.md): choose the repository root, reader, question and a new or existing guide. The agent writes the patch; you do not need to construct JSON. The guide includes three installed invocation examples and recovery steps for interrupted runs.
+Start with [Create a guide](reference/create.md): choose the repository root, the reader, the question, and a new or existing guide. The agent writes the patch; you write no JSON. That page has three example prompts, and recovery steps for interrupted runs.
 
-In the repo you want to understand, ask your harness in plain words or with the skill's operations:
+In the repo you want to understand, ask your agent in plain words or with the skill's operations:
 
 - `explain how a failed job gets retried`: a tour that answers the question, with a map of the code involved and a flow of the decisions, anchored to code, config keys and tests.
-- `explain this repo`: what the project is, its parts on one map, and the main path; deeper nodes stay unexplained until you expand them.
-- Add "quickly" for a fast answer: one picture and a 5-step tour.
-- `explain change main..my-branch` (or a PR or MR you name): what changes for users, where, who else is affected, the tests and the risks. The harness reads the diff locally with git and never posts anything. The page shows the diff, the code before the change, and which boxes are new or changed.
-- `expand the queue package` (or click "Explain this" in `xpl view`; the next explicit pass records selected outcomes).
-- `feedback`: in `xpl view`, type what should change under "Explain this" ("too long", "show the caller") and send it; then invoke the skill with your harness token and `feedback`. Saved pages use Feedback > Export feedback JSON and `xpl feedback <name> --import feedback.json` first. Requests retain IDs, source ranges, original snapshot hashes and outcome reasons. Saving starts no generation.
-- `make a tour` of the views for a talk (present mode).
+- `explain this repo`: what the project is, its parts on one map, and the main path; deeper boxes stay unexplained until you expand them.
+- Add "quickly" for a fast answer: one diagram and a 5-step tour.
+- `explain change main..my-branch` (or a PR or MR you name): what changes for users, where, who else is affected, the tests and the risks. The agent reads the diff locally with git and never posts anything. The page shows the diff, the code before the change, and which boxes are new or changed.
+- `expand the queue package`, or click "Explain this" in `xpl view`.
+- `feedback`: in `xpl view`, type what should change under "Explain this" ("too long", "show the caller") and send it. Then invoke the skill with `feedback`. From a saved page, use Feedback > Export feedback JSON, then `xpl feedback <name> --import feedback.json`. Saving a request starts no work.
+- `make a tour` of the views for a presentation (Present mode).
 
-The harness indexes the repo, starts from a draft that `xpl draft` builds from the index (the structure, with no text), writes and checks the text, saves `.explainer/<name>.explainer.json`, passes `xpl ready <name>`, and gives you an HTML bundle (`xpl bundle`, self-contained, the default in cloud sessions) or a local viewer (`xpl view`). `.explainer/index-*.json` is git-ignored automatically; commit the `*.explainer.json` files.
+The agent indexes the repo and starts from a draft that `xpl draft` builds from the index (the structure, with no text). It writes and checks the text, saves `.explainer/<name>.explainer.json` and passes `xpl ready <name>`. Then it gives you an HTML file (`xpl bundle`, the default in cloud sessions) or a local viewer (`xpl view`). `.explainer/index-*.json` is git-ignored automatically; commit the `*.explainer.json` files.
 
-The index gets precise references from SCIP indexers when they can run (`npx` for TypeScript and Python, the Go toolchain for Go); without them it falls back to heuristic references and says so.
+The index gets precise references from SCIP indexers when they can run: `npx` for TypeScript and Python, the Go toolchain for Go. Without them it falls back to heuristic references and says so.
 
-`xpl index --precise off`, local viewing and self-contained HTML reading/export need no hosted xpl service
-after setup. Precise tool bootstrap, toolchains and dependencies may need network access. Agent authoring
-has separate harness authentication and provider network requirements. Generation runs only when you
-invoke the skill; no continuously running authoring worker is required.
-
-Invoke the skill with the selected harness's token: `/code-explainer` in Claude Code or Factory Droid,
-`$code-explainer` in Codex, `/skill:code-explainer` in Pi, or `@skills:code-explainer` in Devin. These
-invocations have not had live QA.
+`xpl index --precise off`, local viewing and the HTML file need no hosted xpl service after setup. Precise
+tools, toolchains and dependencies may need network access. To write a guide, your agent needs its own
+sign-in to its model provider. The skill runs only when you start it, with the token from
+[Create a guide](reference/create.md).
 
 ## Contents
 
 | Path                          | What                                                                                                 |
 | ----------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `SKILL.md`                    | the skill: workflow, the three scopes, drafts, tour, accuracy, hard rules                            |
+| `SKILL.md`                    | the skill: hard rules, the decision path, the scopes, the tour spine and budgets, accuracy           |
 | `bin/xpl`                     | launcher bound by the installer to the installed CLI; `XPL_CLI` overrides it                         |
-| `reference/create.md`         | installed creation prompts, new/existing target selection and recovery                               |
-| `reference/writing.md`        | plain-language rules, what goes in which field, before/after rewrites                                |
+| `reference/create.md`         | install, example prompts, new or existing target, the PR handoff and recovery                        |
+| `reference/quick.md`          | what every patch needs, which diagram answers which question, what the index misses                  |
+| `reference/revise.md`         | how to answer saved feedback                                                                         |
+| `reference/writing.md`        | plain-language rules (Orwell, ASD-STE100), the word list, the fields, before/after rewrites          |
 | `reference/explain-change.md` | how to explain a PR, MR or branch diff: before/after checks, callers, tests                          |
+| `reference/explain-map.md`    | how to map every file in plain words, and keep the map current                                       |
 | `reference/patch-format.md`   | every patch element with examples, merge rules, rejection messages and fixes                         |
 | `reference/cli.md`            | every command with options and sample output                                                         |
 | `reference/examples/`         | worked patches to imitate: `go-retry` (a question), `py-overview` (a repo, from the system map down) |

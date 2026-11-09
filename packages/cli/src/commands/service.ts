@@ -1,4 +1,4 @@
-/** Repository-scoped ownership around the existing viewer server. No PID is ever signalled. */
+/** Repository-scoped ownership around the existing viewer server. No PID is ever signaled. */
 import { spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync, readFileSync, realpathSync, openSync, closeSync } from "node:fs";
@@ -271,75 +271,47 @@ async function background(ctx: Ctx, argv: string[], dir: string): Promise<void> 
 export const serviceCommand: CommandSpec = {
   name: "service",
   usage:
-    "xpl service <start|pause|resume|stop|status> [explainer] [--background] [--port p] [--backend none|claude] [--skill-dir folder] [--job-timeout seconds] [--recover] [--watch]",
+    "xpl service start|pause|resume|stop|status [explainer] [--background] [--port <port>] [--backend none|claude] [--skill-dir <folder>] [--job-timeout <seconds>] [--recover] [--watch] [--precise auto|off|require] [--scip <artifact|manifest.json>]",
   summary: "Control a repository's optional local viewer service and source watch",
   details: [
-    "--watch opts this start into metadata polling (500 ms, then a quiet interval). It builds a full",
-    "index from source, resolver inputs and enabled provider configuration, discards superseded builds and publishes atomically.",
-    "Failures keep the last snapshot marked out of date. xpl status --all inventories guides; no prose or feedback is saved.",
-    "Watching defaults to --precise off. --precise auto|require enables semantic tools; --scip watches a supplied",
-    "artifact/manifest pair. --index cannot pin a watched service. These options must be selected on each start.",
-    "Unchanged polls read no source bytes. Git staging changes are observed; recovery retires the prior watch pointer.",
-    "Pause drains the watch and retains a stale snapshot; resume checks again. Jobs and the service stay running.",
-    "The managed viewer reports moved/drifted/missing evidence and offers an explicit xpl revise command.",
-    "Stop drains the service and jobs. No watch control accepts revisions or clears feedback.",
-    "Start runs in the foreground (Ctrl-C to stop); --background detaches the installed CLI and logs to",
-    ".explainer/service/service.log. The listener is always 127.0.0.1; no external address is accepted.",
-    "The selected guide, port and backend label persist under the canonical repository root. A later start",
-    "without a guide reuses that context. Stop the service before selecting another guide; use --root to",
-    "attach another repository's separate service. One owner per canonical root is allowed.",
-    "--index resolves from the working directory, then the repository root, as for view; its resolved",
-    "repository-local path is saved for restart.",
-    "Status reports instance UUID, PID, address, root, guide and backend. Stop verifies a secret ownership",
-    "token over loopback, never signals a PID. A dead owner is interrupted; --recover explicitly archives",
-    "its record and starts another instance. A live unverified PID or crashed writer lock needs inspection.",
-    "Managed viewer bookmarks retain root/guide and reconnect after restart. After stop, choose Use loaded",
-    "snapshot offline for manual edits and HTML export; Retry connection resumes this attachment.",
-    "--backend none (default) disables execution; claude runs the installed, already-authenticated Claude Code CLI.",
-    "--skill-dir selects the installed code-explainer skill; --job-timeout bounds each invocation (300 seconds by default).",
-    "Both settings persist for restart. Configuration means enabled, not authenticated; job failures report setup/provider errors.",
-    "Durable job history lives in .explainer/service/jobs.json. Restart marks running attempts interrupted;",
-    "cancelled/superseded proposals stay fenced. Claude reads source and writes only an owned proposal file.",
-    "Open Jobs in the viewer to start/cancel/retry, review each request and explicitly accept the reviewed revision.",
-    "Completed jobs do not apply patches. Acceptance rechecks source/readiness and records only selected outcomes.",
-    "Another view's changed decisions stop acceptance and reload the review for inspection.",
-    "Interrupted acceptance recovers through the same journal; cancelled/superseded attempts cannot apply.",
-    "Headless /api/answers jobs answer saved explain requests against frozen guide/source snapshots.",
-    "Every returned quote is checked against recorded head/base lines; answers remain in portable feedback history.",
-    "Source changes mark answer context outdated. Answers never finalize outcomes or accept guide patches.",
-    "Local serving requires no network or agent credentials. A later Claude job requires its own configured",
-    "authentication and provider network access. Manual commands and offline HTML work with the service stopped.",
+    "start serves the viewer for one guide; pause, resume and stop control it, and status reports it.",
+    "Start runs in the foreground (Ctrl+C stops it); --background runs it on its own, with a log file.",
+    "It listens on 127.0.0.1 only. The guide, port and backend are saved for the next start.",
+    "--watch indexes the code again after each edit; pause stops that and keeps the last index.",
+    "--backend claude lets the viewer's Jobs ask Claude Code for proposals. none (the default) runs nothing.",
+    "A job never applies a patch: you review and accept each one in the viewer.",
+    "--recover takes over after the owner's process has died.",
   ],
   options: {
     watch: {
       type: "boolean",
-      desc: "Opt into coherent full indexing of source/configuration edits",
+      desc: "Index the code again after each edit",
     },
     precise: {
       type: "string",
-      arg: "<off|auto|require>",
+      arg: "auto|off|require",
       desc: "With --watch: reference resolution (default off)",
     },
     scip: {
       type: "string",
       arg: "<artifact|manifest.json>",
-      desc: "With --watch: observe a supplied SCIP input",
+      desc: "With --watch: read this SCIP input",
     },
-    background: { type: "boolean", desc: "Start a detached installed CLI process" },
+    background: { type: "boolean", desc: "Run on its own, not in this terminal" },
     port: {
       type: "string",
-      arg: "<p>",
+      arg: "<port>",
       desc: "Port (saved port, else 4747 with fallback; 0 = any free port)",
     },
     backend: {
       type: "string",
-      arg: "<none|claude>",
-      desc: "Select none or the installed Claude Code proposal runner",
+      arg: "none|claude",
+      desc: "none (default) or claude: who writes proposals for viewer jobs",
     },
     "skill-dir": {
       type: "string",
       arg: "<folder>",
-      desc: "Installed code-explainer skill (saved folder, else ~/.claude/skills/code-explainer)",
+      desc: "The installed skill (default: the saved folder)",
     },
     "job-timeout": {
       type: "string",
@@ -348,7 +320,7 @@ export const serviceCommand: CommandSpec = {
     },
     recover: {
       type: "boolean",
-      desc: "Explicitly recover ownership after its recorded PID has exited",
+      desc: "Take over after the owner's process has died",
     },
   },
   positionals: [{ name: "action" }, { name: "explainer", required: false }],
@@ -392,7 +364,7 @@ export const serviceCommand: CommandSpec = {
     if (action === "pause" || action === "resume") {
       const instance = readInstance(p.instance, p.root);
       if (!instance || !(await contact(instance)))
-        throw new CliError("cannot verify service ownership; inspect xpl service status");
+        throw new CliError("cannot tell which process owns the service; run `xpl service status`");
       const response = await fetch(new URL("/api/watch", instance.url!), {
         method: "POST",
         headers: { Authorization: `Bearer ${instance.token}`, "Content-Type": "application/json" },
@@ -416,7 +388,7 @@ export const serviceCommand: CommandSpec = {
       }
       if (!(await contact(instance)))
         throw new CliError(
-          "cannot verify service ownership; inspect xpl service status. No process was signalled.",
+          "cannot tell which process owns the service; run `xpl service status`. xpl stopped no process.",
         );
       if (!(await contact(instance, true)))
         throw new CliError("service stop was not confirmed; inspect xpl service status");
@@ -435,7 +407,7 @@ export const serviceCommand: CommandSpec = {
     const guide = args.positionals[1] ?? (saved ? join(p.root, saved.guide) : undefined);
     if (!guide)
       throw new UsageError(
-        "first service start needs an explainer; use xpl service start <explainer>",
+        "the first service start needs a guide; use xpl service start <explainer>",
       );
     const loaded = loadExplainer(ctx, guide);
     loaded.abs = localPath(p.root, loaded.abs);

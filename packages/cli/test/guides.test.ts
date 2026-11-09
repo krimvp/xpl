@@ -57,7 +57,9 @@ it("lists local guides by recorded title, audience, question and snapshot withou
 
 it("reports unreadable/malformed and escaping guides separately from an empty library", async () => {
   const dir = makeTempDir();
-  expect((await xpl(dir, "guides")).out).toBe("no local guides; create one with xpl new");
+  expect((await xpl(dir, "guides")).out).toBe(
+    "no local guides; make one with `xpl start <name> --question <question> --audience <reader>`",
+  );
   const outside = makeTempDir();
   const secret = writeFile(outside, "private.json", '{"title":"outside content"}');
   writeFile(dir, ".explainer/broken.explainer.json", "not json");

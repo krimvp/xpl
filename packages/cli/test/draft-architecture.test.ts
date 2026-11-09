@@ -30,6 +30,13 @@ async function drafted(dir: string): Promise<{ patch: ExplainerPatch; notes: str
   expect(validated.out).toMatch(/no errors, no warnings$/);
   const lint = await xplJson<{ counts: Record<string, number> }>(dir, "lint", "shop");
   expect(Object.keys(lint.json.counts)).toEqual(["todo-left"]);
+  // every text `ready` requires has a TODO to write: none is left empty once the TODOs are written
+  const ready = await xplJson<{ findings: { code: string; elementId: string; field: string }[] }>(
+    dir,
+    "ready",
+    "shop",
+  );
+  expect(ready.json.findings.filter((f) => f.code === "required-content")).toEqual([]);
   return { patch, notes: json.json.notes };
 }
 
@@ -87,7 +94,7 @@ describe("xpl draft repo: one service and what it relies on", () => {
     );
   });
 
-  it("treats a declared framework as a component and does not infer a terminal user from a helper import", async () => {
+  it("treats a declared framework as the system and does not infer a terminal user from a helper import", async () => {
     const framework = makeTempDir("xpl-framework-");
     writeFile(
       framework,
@@ -111,10 +118,10 @@ describe("xpl draft repo: one service and what it relies on", () => {
       'import click\ndef helper():\n    return click.style("message")\n',
     );
     const { patch, notes } = await drafted(framework);
-    expect(patch.nodes!.find((n) => n.label === "flask")?.role).toBe("component");
+    expect(patch.nodes!.find((n) => n.label === "flask")?.role).toBe("system");
     expect(patch.nodes!.map((n) => n.id)).not.toContain("grp:user");
     expect(patch.nodes!.map((n) => n.id)).toContain("grp:your-app");
-    expect(notes.some((n) => n.startsWith("Provisional architecture"))).toBe(true);
+    expect(notes.some((n) => n.startsWith("the draft guesses the kind of project"))).toBe(true);
     expect(patch.tours![0]!.steps!.map((step) => step.note).join("\n")).not.toContain(
       "default runtime path",
     );
@@ -210,6 +217,256 @@ describe("xpl draft repo: one service and what it relies on", () => {
   });
 });
 
+describe("xpl draft repo: a program without a web or command-line framework", () => {
+  it("adds who starts it at its main function and the settings file it loads, each anchored", async () => {
+    const { patch, notes } = await drafted(copyFixture("ts-jobrunner"));
+    const service = patch.nodes!.find((node) => node.role === "service")!;
+    expect(graph(patch, "view:system")?.include).toEqual([
+      "grp:operator",
+      service.id,
+      "grp:settings",
+    ]);
+    const node = (id: string) => patch.nodes!.find((n) => n.id === id)!;
+    expect(node("grp:operator")).toMatchObject({ role: "person" });
+    expect(node("grp:operator").anchors).toEqual([
+      { file: "src/main.ts", symbol: "main", role: "definition" },
+    ]);
+    expect(node("grp:settings")).toMatchObject({ role: "storage", tech: "YAML" });
+    // the file itself, and the line of the code that loads it (never a test)
+    expect(node("grp:settings").anchors).toEqual([
+      { file: "config/default.yaml", role: "config" },
+      { file: "src/main.ts", span: { from: 39, to: 39 }, role: "usage" },
+    ]);
+    const edges = patch.edges!.map((e) => `${e.from} -> ${e.to}`);
+    expect(edges).toEqual(
+      expect.arrayContaining([
+        "grp:operator -> file:src/main.ts",
+        "file:src/main.ts -> grp:settings",
+      ]),
+    );
+    // code at both ends: where it is read, and the file read
+    expect(patch.edges!.find((e) => e.to === "grp:settings")?.anchors).toEqual([
+      { file: "src/main.ts", span: { from: 39, to: 39 }, role: "usage" },
+      { file: "config/default.yaml", role: "config" },
+    ]);
+    expect(notes).toContain(
+      "settings files the code loads (from the index): `config/default.yaml`; check that the code reads each at run time",
+    );
+  });
+
+  it("two parts that each load their own settings file: each arrow ends on a file the box anchors", async () => {
+    const dir = makeTempDir("xpl-arch-settings-");
+    writeFile(
+      dir,
+      "package.json",
+      '{"name":"root","private":true,"workspaces":["api","worker"]}\n',
+    );
+    for (const app of ["api", "worker"]) {
+      writeFile(dir, `${app}/package.json`, `{"name":"${app}"}\n`);
+      writeFile(dir, `${app}/config/${app}.yaml`, "port: 1\n");
+      writeFile(
+        dir,
+        `${app}/src/main.ts`,
+        [
+          'import { readFileSync } from "node:fs";',
+          "",
+          "export function main(): void {",
+          `  const text = readFileSync(new URL("../config/${app}.yaml", import.meta.url), "utf8");`,
+          "  console.log(text);",
+          "}",
+          "",
+          "main();",
+          "",
+        ].join("\n"),
+      );
+    }
+    // `drafted` applies and validates the draft: before, the second arrow had code only at its start
+    const { patch } = await drafted(dir);
+    const settings = patch.edges!.filter((e) => e.to === "grp:settings");
+    expect(settings.map((e) => e.anchors!.map((a) => a.file))).toEqual([
+      ["api/src/main.ts", "api/config/api.yaml"],
+      ["worker/src/main.ts", "worker/config/worker.yaml"],
+    ]);
+  });
+});
+
+describe("xpl draft repo: who starts the program", () => {
+  it("a Go server on net/http gets Clients at its ListenAndServe call, not an Operator", async () => {
+    const dir = makeTempDir("xpl-arch-nethttp-");
+    writeFile(dir, "go.mod", "module example.com/api\n\ngo 1.22\n");
+    writeFile(
+      dir,
+      "main.go",
+      [
+        "package main",
+        "",
+        'import "net/http"',
+        "",
+        "func main() {",
+        '\thttp.HandleFunc("/orders", orders)',
+        '\thttp.ListenAndServe(":8080", nil)',
+        "}",
+        "",
+      ].join("\n"),
+    );
+    writeFile(
+      dir,
+      "orders.go",
+      'package main\n\nimport "net/http"\n\nfunc orders(w http.ResponseWriter, r *http.Request) {\n\tw.WriteHeader(200)\n}\n',
+    );
+    const { patch } = await drafted(dir);
+    const ids = patch.nodes!.map((n) => n.id);
+    expect(ids).not.toContain("grp:operator");
+    const clients = patch.nodes!.find((n) => n.id === "grp:clients")!;
+    expect(clients).toMatchObject({ role: "person", tech: "HTTP" });
+    expect(clients.anchors).toEqual([{ file: "main.go", span: { from: 6, to: 6 }, role: "usage" }]);
+    expect(graph(patch, "view:system")!.include).toContain("grp:clients");
+  });
+
+  it("a Node server on node:http and a Python one on http.server count as servers too", async () => {
+    const node = makeTempDir("xpl-arch-nodehttp-");
+    writeFile(node, "package.json", '{ "name": "api", "private": true }\n');
+    writeFile(
+      node,
+      "src/server.ts",
+      'import { createServer } from "node:http";\nimport { handle } from "./handle.js";\n\nexport function main() {\n  createServer(handle).listen(8080);\n}\n',
+    );
+    writeFile(
+      node,
+      "src/handle.ts",
+      "export function handle(req: unknown, res: unknown) {\n  return [req, res];\n}\n",
+    );
+    const ts = await drafted(node);
+    expect(ts.patch.nodes!.find((n) => n.id === "grp:clients")!.anchors).toEqual([
+      { file: "src/server.ts", span: { from: 4, to: 4 }, role: "usage" },
+    ]);
+    const py = makeTempDir("xpl-arch-pyhttp-");
+    writeFile(
+      py,
+      "app/main.py",
+      "from http.server import HTTPServer\nfrom app.handler import Handler\n\n\ndef main():\n    HTTPServer(('', 8080), Handler).serve_forever()\n",
+    );
+    writeFile(py, "app/handler.py", "class Handler:\n    def do_GET(self):\n        return 200\n");
+    const python = await drafted(py);
+    expect(python.patch.nodes!.map((n) => n.id)).toContain("grp:clients");
+    expect(python.patch.nodes!.map((n) => n.id)).not.toContain("grp:operator");
+  });
+
+  it("a net/http import without a server start is a client: the Operator stays", async () => {
+    const dir = makeTempDir("xpl-arch-httpclient-");
+    writeFile(dir, "go.mod", "module example.com/fetch\n\ngo 1.22\n");
+    writeFile(
+      dir,
+      "main.go",
+      'package main\n\nimport "net/http"\n\nfunc main() {\n\tfetch("https://example.com")\n}\n',
+    );
+    writeFile(
+      dir,
+      "fetch.go",
+      'package main\n\nimport "net/http"\n\nfunc fetch(url string) {\n\thttp.Get(url)\n}\n',
+    );
+    const { patch } = await drafted(dir);
+    const ids = patch.nodes!.map((n) => n.id);
+    expect(ids).toContain("grp:operator");
+    expect(ids).not.toContain("grp:clients");
+  });
+
+  it("Go: a settings file named by a literal path, part steps at the functions other parts call, room for the path", async () => {
+    const dir = copyFixture("go-jobrunner");
+    const { patch, notes } = await drafted(dir);
+    // `path := "config/default.yaml"` in main: no read call takes the literal, but the file is the settings
+    expect(graph(patch, "view:system")?.include).toEqual([
+      "grp:operator",
+      "grp:jobrunner",
+      "grp:settings",
+    ]);
+    expect(patch.nodes!.find((n) => n.id === "grp:settings")?.anchors).toEqual([
+      { file: "config/default.yaml", role: "config" },
+      { file: "cmd/jobrunner/main.go", span: { from: 21, to: 21 }, role: "usage" },
+    ]);
+    expect(patch.edges!.map((e) => `${e.from} -> ${e.to}`)).toContain(
+      "dir:cmd/jobrunner -> grp:settings",
+    );
+    expect(notes).toContain(
+      "settings files the code names in a string (no call that loads them found): `config/default.yaml`; check that the code reads each at run time",
+    );
+    // a part's step shows what the other parts call (Runner.Dispatch, config.Load), not its first types
+    const steps = patch.tours![0]!.steps!;
+    const codeOf = (box: string) =>
+      steps.find((s) => s.focus.includes(box))?.code?.map((a) => a.symbol);
+    expect(codeOf("dir:internal/runner")).toContain("Runner.Dispatch");
+    expect(codeOf("dir:internal/config")).toContain("Load");
+    // 2 of the 9 steps are left for the main path and its risks; the notes say how to fill them
+    expect(steps.length).toBeLessThanOrEqual(7);
+    expect(notes).toContain(
+      "room is left for 2 more steps (9 at most), the main path and its risks: run `xpl draft path shop sym:cmd/jobrunner/main.go#run` and copy the steps you keep",
+    );
+    // a path drafted next numbers its steps after the tour already there, so they can be copied over
+    const path = await xplJson<DraftJson>(
+      dir,
+      "draft",
+      "path",
+      "shop",
+      "sym:cmd/jobrunner/main.go#run",
+    );
+    const taken = new Set(steps.map((s) => s.id));
+    const ids = path.json.patch.tours![0]!.steps!.map((s) => s.id);
+    expect(ids.filter((id) => taken.has(id))).toEqual([]);
+    expect(ids[0]).toBe(`t${steps.length + 1}`);
+  });
+
+  it("finds Java's main method on its class", async () => {
+    const { patch } = await drafted(copyFixture("java-jobrunner"));
+    const operator = patch.nodes!.find((n) => n.id === "grp:operator")!;
+    expect(operator.anchors).toEqual([
+      { file: "src/main/java/jobrunner/Main.java", symbol: "Main.main", role: "definition" },
+    ]);
+  });
+
+  it("several programs under cmd/: an arrow from the Operator to each, and the shared code on their maps", async () => {
+    const dir = makeTempDir("xpl-arch-cmds-");
+    writeFile(dir, "go.mod", "module example.com/shop\n\ngo 1.22\n");
+    const main = (name: string, call: string) =>
+      [
+        "package main",
+        "",
+        'import "example.com/shop/internal/store"',
+        "",
+        "func main() {",
+        `\ts := store.Open("${name}")`,
+        `\t${call}(s)`,
+        "}",
+        "",
+        `func ${call}(s *store.Store) {`,
+        "\ts.Put(1)",
+        "\ts.Put(2)",
+        "}",
+        "",
+      ].join("\n");
+    writeFile(dir, "cmd/api/main.go", main("api", "serve"));
+    writeFile(
+      dir,
+      "cmd/api/routes.go",
+      "package main\n\nfunc routes() []string {\n\treturn nil\n}\n",
+    );
+    writeFile(dir, "cmd/worker/main.go", main("worker", "work"));
+    writeFile(dir, "cmd/worker/jobs.go", "package main\n\nfunc jobs() []int {\n\treturn nil\n}\n");
+    writeFile(
+      dir,
+      "internal/store/store.go",
+      "package store\n\ntype Store struct{ n int }\n\nfunc Open(name string) *Store {\n\treturn &Store{}\n}\n\nfunc (s *Store) Put(v int) {\n\ts.n += v\n}\n",
+    );
+    const { patch } = await drafted(dir);
+    const arrows = patch.edges!.filter((e) => e.from === "grp:operator");
+    expect(arrows.map((e) => e.to).sort()).toEqual([
+      "file:cmd/api/main.go",
+      "file:cmd/worker/main.go",
+    ]);
+    expect(graph(patch, "view:api-inside")!.include).toContain("dir:internal/store");
+    expect(graph(patch, "view:worker-inside")!.include).toContain("dir:internal/store");
+  });
+});
+
 describe("xpl draft repo: several services", () => {
   const dir = makeTempDir("xpl-arch-multi-");
   writeFile(dir, "README.md", "# shop\n\nTwo services: an API and a worker.\n");
@@ -288,7 +545,7 @@ describe("xpl draft repo: a library", () => {
   writeFile(
     dir,
     "source/core/request.ts",
-    'import { retry } from "../utils/retry.js";\n\n// import got from "got";\nexport function request(url: string) {\n  return retry(() => fetch(url));\n}\n',
+    'import { retry } from "../utils/retry.js";\n\n// import got from "got";\nexport function request(url: string) {\n  return parse(retry(() => fetch(url)));\n}\nfunction parse(response: unknown) {\n  return response;\n}\n',
   );
   writeFile(
     dir,
@@ -307,8 +564,10 @@ describe("xpl draft repo: a library", () => {
     const { patch, notes } = await drafted(dir);
     const system = graph(patch, "view:system")!;
     expect(system.include).toEqual(["grp:your-app", "grp:fetchy"]);
+    // the library is the system; the app that calls it is outside the repo
+    expect(patch.nodes!.find((n) => n.id === "grp:fetchy")).toMatchObject({ role: "system" });
     const app = patch.nodes!.find((n) => n.id === "grp:your-app")!;
-    expect(app).toMatchObject({ label: "Your app", role: "system" });
+    expect(app).toMatchObject({ label: "Your app", role: "external", tech: "your app" });
     // anchored at the README line that imports the library
     expect(app.anchors).toEqual([{ file: "README.md", span: { from: 7, to: 7 }, role: "usage" }]);
     const edge = patch.edges!.find((e) => e.from === "grp:your-app")!;
@@ -317,6 +576,16 @@ describe("xpl draft repo: a library", () => {
     expect(edge.anchors![1]).toMatchObject({ file: "source/index.ts", symbol: "fetchy" });
     expect(notes.join("\n")).toContain('"Your app" stands for the code that calls it');
     expect(notes.join("\n")).not.toContain("outside systems found");
+    // the main path starts where the request goes (create only builds the client that hands it on)
+    expect(notes.join("\n")).toContain(
+      "run `xpl draft path shop sym:source/core/request.ts#request`",
+    );
+    // the last step shows where that path starts, not every file of the library
+    const last = patch.tours![0]!.steps!.at(-1)!;
+    expect(last.note).toMatch(/^### Where to go next/);
+    expect(last.code).toEqual([
+      expect.objectContaining({ file: "source/core/request.ts", symbol: "request" }),
+    ]);
     // type tests are tests: no box, and the maps leave them out
     const inside = graph(patch, "view:overview")!;
     expect(inside.include!.some((id) => id.includes("test-d"))).toBe(false);
@@ -498,4 +767,23 @@ it("drafts Rust code into a repository map labeled Rust", async () => {
     "file:src/runner.rs",
     "file:src/worker.rs",
   ]);
+});
+
+it("Ruby has no references: the draft does not send the author to `xpl draft path`, which says why it cannot draw", async () => {
+  const dir = copyFixture("rb-jobrunner");
+  const { notes } = await drafted(dir);
+  expect(notes.filter((n) => n.includes("draft path"))).toEqual([
+    "room is left for 2 more steps (9 at most), the main path and its risks: the index has no references for ruby, so `xpl draft path` cannot draw it; write those steps from `xpl show`",
+  ]);
+  const path = await xpl(
+    dir,
+    "draft",
+    "path",
+    "shop",
+    "sym:lib/jobrunner/runner.rb#Jobrunner.Runner.drain",
+  );
+  expect(path.code).toBe(1);
+  expect(path.err).toContain(
+    "ruby: the index has no references for this language, so there is no call to draw; write the steps by hand from `xpl show lib/jobrunner/runner.rb`",
+  );
 });

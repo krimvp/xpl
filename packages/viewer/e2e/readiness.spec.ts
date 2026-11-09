@@ -64,7 +64,7 @@ test("Save as HTML reports unfinished fields before download and labels an offli
     route.fulfill({ contentType: "text/html", body: html }),
   );
   await page.goto("http://xpl.test/");
-  await expect(page.getByTestId("draft-banner")).toContainText("Draft preview");
+  await expect(page.getByTestId("draft-pill")).toHaveText("Draft");
   await (await openEditMenu(page)).getByTestId("edit-save-html").click();
   await expect(page.getByRole("dialog")).toContainText(
     "cannot check whether the repository changed later",
@@ -79,9 +79,7 @@ test("a complete snapshot saves ready HTML with source, provenance, identity and
   await page.getByRole("button", { name: /^Feedback/ }).click();
   const feedback = page.getByRole("dialog", { name: "Reader feedback" });
   await feedback.getByLabel("Feedback note").fill("Explain the queue wait.");
-  await feedback
-    .getByRole("button", { name: "Save for the next revision pass", exact: true })
-    .click();
+  await feedback.getByRole("button", { name: "Save for the author", exact: true }).click();
   await expect(feedback.getByRole("status")).toContainText("Saved in this browser");
   await feedback.getByRole("button", { name: "Close feedback" }).click();
   await (await openEditMenu(page)).getByTestId("edit-save-html").click();
@@ -129,9 +127,7 @@ test("a complete snapshot saves ready HTML with source, provenance, identity and
   await page.evaluate(() => window.__xpl!.select(["sym:src/runner.ts#Runner.dispatch"]));
   await page.getByRole("button", { name: /^Feedback \(1\)/ }).click();
   await feedback.getByLabel("Feedback note").fill("Explain the ready snapshot too.");
-  await feedback
-    .getByRole("button", { name: "Save for the next revision pass", exact: true })
-    .click();
+  await feedback.getByRole("button", { name: "Save for the author", exact: true }).click();
   await expect(feedback.getByRole("status")).toContainText("Saved in this browser");
   await feedback.getByRole("button", { name: "Close feedback" }).click();
   await (await openEditMenu(page)).getByTestId("edit-save-html").click();
@@ -277,7 +273,7 @@ test("offline all-content review survives HTML reopening and explicitly gates te
   page,
 }) => {
   await openVariant(page, complete);
-  await expect(page.getByTestId("review-status")).toHaveText("Author review: unchecked");
+  await expect(page.getByTestId("review-status")).toHaveText("Not yet reviewed by a person");
   await (await openEditMenu(page)).getByTestId("edit-save-html").click();
   await expect(page.getByTestId("save-html-ready")).toBeEnabled();
   await page.getByLabel("Require a current review of all stored content (team policy)").check();
@@ -285,17 +281,15 @@ test("offline all-content review survives HTML reopening and explicitly gates te
   await expect(page.locator(".readiness-findings")).toContainText("review-required");
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await (await openEditMenu(page)).getByTestId("edit-review").click();
-  const dialog = page.getByRole("dialog", { name: "Record author review" });
-  await dialog.getByLabel("Reviewer name (self-reported)").fill("Ada");
+  const dialog = page.getByRole("dialog", { name: "Mark as reviewed" });
+  await dialog.getByLabel("Your name (xpl does not check it)").fill("Ada");
   await dialog
-    .getByLabel("Named omissions (one per line)")
+    .getByLabel("What you left out (one per line)")
     .fill("Runtime initialization was not exercised.");
-  await expect(dialog.getByTestId("review-inspection")).toContainText(
-    "All stored explanation content",
-  );
-  await dialog.getByRole("button", { name: "Record inspected review", exact: true }).click();
+  await expect(dialog.getByTestId("review-inspection")).toContainText("The whole guide");
+  await dialog.getByRole("button", { name: "Record review", exact: true }).click();
   await expect(dialog).not.toBeVisible();
-  await expect(page.getByTestId("review-status")).toHaveText("Author review: reviewed");
+  await expect(page.getByTestId("review-status")).toHaveText("Reviewed by a person");
   await page.getByTestId("explanation-info").locator(":scope > summary").click();
   await expect(page.getByTestId("explanation-info")).toContainText("Ada (self-reported)");
   await expect(page.getByTestId("explanation-info")).toContainText(
@@ -326,7 +320,7 @@ test("offline all-content review survives HTML reopening and explicitly gates te
     return route.abort();
   });
   await page.goto("http://xpl.test/");
-  await expect(page.getByTestId("review-status")).toHaveText("Author review: reviewed");
+  await expect(page.getByTestId("review-status")).toHaveText("Reviewed by a person");
   await (await openEditMenu(page)).getByTestId("edit-save-html").click();
   await expect(
     page.getByLabel("Require a current review of all stored content (team policy)"),
@@ -340,8 +334,8 @@ test("offline all-content review survives HTML reopening and explicitly gates te
     .first()
     .fill("### Changed explanation\n\nThe runner starts another dispatch pass.");
   await page.getByRole("button", { name: "Close the tour panel" }).click();
-  await page.getByRole("button", { name: "Guide", exact: true }).click();
-  await expect(page.getByTestId("review-status")).toHaveText("Author review: out of date");
+  await page.getByRole("button", { name: "Tour", exact: true }).click();
+  await expect(page.getByTestId("review-status")).toHaveText("Changed since a person reviewed it");
   await (await openEditMenu(page)).getByTestId("edit-save-html").click();
   await expect(page.getByTestId("save-review-status")).toHaveText("Author review: out of date");
   await expect(page.getByTestId("save-html-ready")).toBeDisabled();
@@ -392,20 +386,20 @@ test("live author recording sends only a review user edit and refuses changes si
   });
   await page.goto("http://xpl.test/");
   await (await openEditMenu(page)).getByTestId("edit-review").click();
-  const dialog = page.getByRole("dialog", { name: "Record author review" });
-  await dialog.getByLabel("Reviewer name (self-reported)").fill("Grace");
-  await expect(dialog.getByRole("button", { name: "Record inspected review" })).toBeEnabled();
+  const dialog = page.getByRole("dialog", { name: "Mark as reviewed" });
+  await dialog.getByLabel("Your name (xpl does not check it)").fill("Grace");
+  await expect(dialog.getByRole("button", { name: "Record review", exact: true })).toBeEnabled();
   bundle.explainer.title = "Dispatching jobs after inspection";
-  await dialog.getByRole("button", { name: "Record inspected review" }).click();
+  await dialog.getByRole("button", { name: "Record review", exact: true }).click();
   await expect(dialog.getByRole("alert")).toContainText("inspect again");
-  await expect(page.getByTestId("review-status")).toHaveText("Author review: unchecked");
-  await dialog.getByRole("button", { name: "Inspect current snapshot" }).click();
+  await expect(page.getByTestId("review-status")).toHaveText("Not yet reviewed by a person");
+  await dialog.getByRole("button", { name: "Show what I review" }).click();
   await expect(dialog.getByTestId("review-inspection")).toContainText(
     "Dispatching jobs after inspection",
   );
-  await dialog.getByRole("button", { name: "Record inspected review" }).click();
+  await dialog.getByRole("button", { name: "Record review", exact: true }).click();
   await expect(dialog).not.toBeVisible();
-  await expect(page.getByTestId("review-status")).toHaveText("Author review: reviewed");
+  await expect(page.getByTestId("review-status")).toHaveText("Reviewed by a person");
   expect(puts).toHaveLength(2);
   expect(Object.keys(puts[1] as object)).toEqual(["review"]);
   expect(bundle.explainer.review?.reviewer).toBe("Grace");
@@ -419,33 +413,67 @@ test("selected review requires reinspection, survives unrelated tour edits and c
 }) => {
   await openVariant(page, complete);
   await (await openEditMenu(page)).getByTestId("edit-review").click();
-  const dialog = page.getByRole("dialog", { name: "Record author review" });
-  await dialog.getByLabel("Reviewer name (self-reported)").fill("Ada");
-  await dialog.getByLabel("Content scope", { exact: true }).selectOption("selected");
-  await dialog.getByLabel("Stored items", { exact: true }).selectOption(["concept:retry-policy"]);
-  await expect(dialog.getByRole("button", { name: "Record inspected review" })).toBeDisabled();
-  await dialog.getByRole("button", { name: "Inspect current snapshot" }).click();
-  await expect(dialog.getByTestId("review-inspection")).toContainText("concept:retry-policy");
-  await dialog.getByRole("button", { name: "Record inspected review" }).click();
+  const dialog = page.getByRole("dialog", { name: "Mark as reviewed" });
+  await dialog.getByLabel("Your name (xpl does not check it)").fill("Ada");
+  await dialog.getByLabel("What you reviewed", { exact: true }).selectOption("selected");
+  await dialog.getByLabel("Which ones", { exact: true }).selectOption(["concept:retry-policy"]);
+  await expect(dialog.getByRole("button", { name: "Record review", exact: true })).toBeDisabled();
+  await dialog.getByRole("button", { name: "Show what I review" }).click();
+  // parts by their titles, not their ids
+  await expect(dialog.getByTestId("review-inspection")).toContainText("Retry policy");
+  await dialog.getByRole("button", { name: "Record review", exact: true }).click();
   await expect(dialog).not.toBeVisible();
-  await expect(page.getByTestId("review-status")).toHaveText("Author review: reviewed");
+  await expect(page.getByTestId("review-status")).toHaveText("Reviewed by a person");
   await openTourEditor(page);
   await page
     .getByTestId("tour-step-note")
     .first()
     .fill("### Another tour introduction\n\nThe runner starts scheduling jobs.");
   await page.getByRole("button", { name: "Close the tour panel" }).click();
-  await page.getByRole("button", { name: "Guide", exact: true }).click();
-  await expect(page.getByTestId("review-status")).toHaveText("Author review: reviewed");
+  await page.getByRole("button", { name: "Tour", exact: true }).click();
+  await expect(page.getByTestId("review-status")).toHaveText("Reviewed by a person");
   await (await openEditMenu(page)).getByTestId("edit-save-html").click();
   await expect(page.getByTestId("save-html-ready")).toBeEnabled();
   await page.getByLabel("Require a current review of all stored content (team policy)").check();
   await expect(page.getByTestId("save-html-ready")).toBeDisabled();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await (await openEditMenu(page)).getByTestId("edit-review").click();
-  await expect(dialog.getByLabel("Content scope", { exact: true })).toHaveValue("selected");
+  await expect(dialog.getByLabel("What you reviewed", { exact: true })).toHaveValue("selected");
   await expect(dialog.getByRole("button", { name: "Remove review" })).toBeEnabled();
   await dialog.getByRole("button", { name: "Remove review" }).click();
   await expect(dialog).not.toBeVisible();
-  await expect(page.getByTestId("review-status")).toHaveText("Author review: unchecked");
+  await expect(page.getByTestId("review-status")).toHaveText("Not yet reviewed by a person");
+});
+
+test("a draft's bar says what is left in words and opens the list of what to fix", async ({
+  page,
+}) => {
+  const finding = (severity: string, elementId: string, message: string) => ({
+    severity,
+    code: "x",
+    elementId,
+    field: "summary",
+    message,
+    hint: "",
+  });
+  await openVariant(page, (bundle) => {
+    bundle.exportInfo = {
+      status: "draft",
+      report: {
+        ready: false,
+        scope: "embedded-snapshot",
+        errors: 0,
+        warnings: 1,
+        findings: [finding("warning", "tour:intro", "3 diagrams: a tour uses at most 2")],
+      },
+    };
+  });
+  const bar = page.getByTestId("draft-banner");
+  // (it said "0 problems to fix before this page is finished, and 1 warning for readers")
+  await expect(bar.locator("summary")).toHaveText("Draft: 1 note for the author. Show the list");
+  await expect(bar.getByRole("listitem")).toHaveCount(0);
+  await bar.locator("summary").click();
+  await expect(bar.getByRole("listitem")).toHaveText([
+    "Note · Intro talk: 3 diagrams: a tour uses at most 2",
+  ]);
 });

@@ -19,7 +19,7 @@ import type { WatchAttention, Job, JobReviewAction, RevisionReview } from "@xpl/
  *     GET  {api}/explainer            the explainer as it is on disk now, with an ETag (304 while unchanged):
  *                                     polled, so what Claude applies shows up without a reload
  *     POST {api}/requests             save a validated FeedbackRequest with stable ID and original snapshot context
- * - without `server` every edit stays in memory (the header offers "Download explainer JSON").
+ * - without `server` every edit stays in memory (the header offers "Download the guide as JSON").
  */
 import {
   BUNDLE_SCRIPT_ID,

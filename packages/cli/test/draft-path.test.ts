@@ -6,8 +6,25 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { ExplainerPatch, SequenceView } from "@xpl/core";
-import { makeTempDir, writeFile, xpl, xplJson } from "./helpers.js";
+import {
+  deriveGraph,
+  ExplainerModel,
+  IndexModel,
+  type Explainer,
+  type ExplainerPatch,
+  type GraphView,
+  type SequenceView,
+} from "@xpl/core";
+import {
+  fullIndex,
+  copyFixture,
+  indexedFixture,
+  makeTempDir,
+  readJson,
+  writeFile,
+  xpl,
+  xplJson,
+} from "./helpers.js";
 
 interface DraftJson {
   notes: string[];
@@ -91,7 +108,9 @@ describe("xpl draft path: an algorithm that recurses", () => {
     expect(view.steps![0]!.from).toBe(view.steps![0]!.to);
     expect(view.steps![0]!.summary).toContain("call into itself");
     // (the tree-sitter index has no reference for the conversion `kind(len(path))`; scip-go has one, a `type`)
-    expect(notes.join("\n")).toContain("one-line helpers that call nothing: node.leaf");
+    expect(notes.join("\n")).toContain(
+      "one-line helpers that call nothing or only other one-liners: node.leaf",
+    );
   });
 
   it("leaves out data built from a class with no constructor", async () => {
@@ -188,6 +207,28 @@ describe("xpl draft path: nested calls of the same function", () => {
     expect(rec).toEqual(["wrap(wrap(n - 1) - 1)", "wrap(n - 1)"]);
   });
 
+  it("cuts long arguments to their names and the names of the calls in them", async () => {
+    const dir = await repo({
+      "a.ts": [
+        "export function delay(attempt: number, base: number, max: number): number {",
+        "  console.log(attempt);",
+        "  return Math.min(base * 2 ** attempt, max);",
+        "}",
+        "export function requeue(job: string, ms: number): void {",
+        "  console.log(job);",
+        "  console.log(ms);",
+        "}",
+        "export function retry(job: string, attempt: number): void {",
+        '  requeue(job, delay(attempt, Number("100"), Number("60000")));',
+        '  requeue(job, attempt > 3 ? Number("1") : Number("2") + Number("3"));',
+        "}",
+        "",
+      ].join("\n"),
+    });
+    const labels = sequence((await drafted(dir, "a.ts#retry")).patch).steps.map((s) => s.label);
+    expect(labels).toEqual(["requeue(job, delay(…))", "delay(attempt, Number(…), Number(…))"]);
+  });
+
   it("says which calls it left out when none is worth drawing", async () => {
     const dir = await repo({
       "a.ts": [
@@ -203,7 +244,42 @@ describe("xpl draft path: nested calls of the same function", () => {
     const r = await xpl(dir, "draft", "path", "d", "a.ts#Node.walk");
     expect(r.code).toBe(1);
     expect(r.err).toMatch(
-      /every call it makes is left out .*one-line helpers that call nothing: Node\.visit/,
+      /every call it makes is left out .*one-line helpers that call nothing or only other one-liners: Node\.visit/,
+    );
+  });
+});
+
+describe("xpl draft path: a helper called twice, one-line checks (ky's retry code)", () => {
+  it("draws a helper again where the main path calls it, and skips a one-line check that calls a one-line check", async () => {
+    const dir = await repo({
+      "is.ts": [
+        "export const isObject = (value: unknown): value is object => value !== null && typeof value === 'object';",
+        "export const isNonArrayObject = (value: unknown): value is object => isObject(value) && !Array.isArray(value);",
+        "export async function delay(ms: number): Promise<void> {",
+        "  console.log(ms);",
+        "  await new Promise((resolve) => setTimeout(resolve, ms));",
+        "}",
+        "",
+      ].join("\n"),
+      "retry.ts": [
+        'import { delay, isNonArrayObject } from "./is.js";',
+        "export async function retryFromError(error: unknown, wait: number, left: number): Promise<void> {",
+        "  if (wait >= left) {",
+        "    await delay(left);",
+        '    throw new Error("timed out");',
+        "  }",
+        "  if (isNonArrayObject(error)) {",
+        "    console.log(error);",
+        "  }",
+        "  await delay(wait);",
+        "}",
+        "",
+      ].join("\n"),
+    });
+    const { patch, notes } = await drafted(dir, "sym:retry.ts#retryFromError");
+    expect(sequence(patch).steps.map((s) => s.label)).toEqual(["delay(left)", "delay(wait)"]);
+    expect(notes).toContain(
+      "not drawn, one-line checks that a branch's condition makes: isNonArrayObject",
     );
   });
 });
@@ -219,13 +295,14 @@ describe("xpl draft path: a method a class inherits", () => {
     expect(view.id).toBe("view:safe-serializer-dumps");
     expect(view.participants![0]).toBe("sym:ser.py#Serializer.dumps");
     const dump = view.steps!.find((s) => s.label.startsWith("dump_payload"))!;
-    // the mixin's override runs for a SafeSerializer: its lifeline, its definition, and a hint saying why
-    expect(dump.to).toBe("sym:ser.py#SafeMixin");
+    // the mixin's override runs for a SafeSerializer: its own lifeline, its definition, and a hint saying why
+    expect(dump.to).toBe("sym:ser.py#SafeMixin.dump_payload");
     expect(dump.anchors![1]).toMatchObject({ file: "ser.py", symbol: "SafeMixin.dump_payload" });
     expect(dump.summary).toContain("SafeSerializer runs `SafeMixin.dump_payload`");
-    // a method of the entry's own class goes to the class's lifeline, never to the entry's
+    // a method of the entry's own class is a lifeline of its own, never the entry's or the class's
     const signer = view.steps!.find((s) => s.label.startsWith("make_signer"))!;
-    expect(signer.to).toBe("sym:ser.py#Serializer");
+    expect(signer.to).toBe("sym:ser.py#Serializer.make_signer");
+    expect(view.participants).not.toContain("sym:ser.py#Serializer");
     expect(view.steps!.filter((s) => s.from === s.to)).toEqual([]);
   });
 
@@ -271,7 +348,7 @@ describe("xpl draft path: a question with two halves", () => {
     const second = steps.findIndex((s) => s.view === "view:serializer-loads");
     expect(steps[second]!.focus).toEqual(["sym:ser.py#Serializer.loads"]);
     expect(steps[second]!.note).toContain("the next part of the answer");
-    expect(steps.length).toBeLessThanOrEqual(9);
+    expect(steps.length).toBeLessThanOrEqual(8);
     // a participant of both halves has one summary
     const ids = patch.nodes!.map((n) => n.id);
     expect(new Set(ids).size).toBe(ids.length);
@@ -280,6 +357,63 @@ describe("xpl draft path: a question with two halves", () => {
 
 describe("xpl draft path: too many calls", () => {
   it("keeps the calls that reach the most code, and lists what it left out", async () => {
+    const helpers = Array.from({ length: 13 }, (_, i) =>
+      [
+        "    @staticmethod",
+        `    def step${i}(x):`,
+        `        y = x + ${i}`,
+        "        z = y * 2",
+        "        return z",
+        "",
+      ].join("\n"),
+    );
+    const dir = await repo({
+      "store.py": [
+        "def encode(x):",
+        "    return str(x)",
+        "",
+        "",
+        "def write(x):",
+        "    return encode(x)",
+        "",
+        "",
+        "class Store:",
+        "    def save(self, x):",
+        "        text = write(x)",
+        "        return text",
+        "",
+      ].join("\n"),
+      "job.py": [
+        "from store import Store",
+        "",
+        "",
+        "from steps import Steps",
+        "",
+        "",
+        "class Job:",
+        "    def run(self, x):",
+        ...Array.from({ length: 13 }, (_, i) => `        x = Steps.step${i}(x)`),
+        "        return Store().save(x)",
+        "",
+      ].join("\n"),
+      "steps.py": ["class Steps:", ...helpers].join("\n"),
+    });
+    const { patch, notes } = await drafted(dir, "sym:job.py#Job.run");
+    const view = sequence(patch);
+    expect(view.steps).toHaveLength(12);
+    // the call into the store reaches the most code: it stays, though it comes last
+    expect(view.steps!.at(-1)!.label).toBe("save(x)");
+    expect(view.participants).toContain("sym:store.py#Store");
+    const left = notes.find((n) => n.startsWith("calls left out of the sequence"))!;
+    expect(left).toContain("the ones that reach the least code");
+    // bare names, as a reader writes them
+    expect(left.match(/(?<!#)\bSteps\.step\d+/g)).toHaveLength(2);
+    expect(left).not.toContain("sym:");
+  });
+});
+
+describe("xpl draft path: too many methods of its own class", () => {
+  it("gives own methods lifelines while they fit, then folds the rest into one lifeline of the class", async () => {
     const helpers = Array.from({ length: 13 }, (_, i) =>
       [
         `    def step${i}(self, x):`,
@@ -319,12 +453,231 @@ describe("xpl draft path: too many calls", () => {
     });
     const { patch, notes } = await drafted(dir, "sym:job.py#Job.run");
     const view = sequence(patch);
+    // the budget of 12 calls fills again: the cap of 6 lifelines folds methods, it does not drop their calls
     expect(view.steps).toHaveLength(12);
-    // the call into the store reaches the most code: it stays, though it comes last
+    expect(view.participants).toEqual([
+      "sym:job.py#Job.run",
+      "sym:job.py#Job.step0",
+      "sym:job.py#Job.step1",
+      "sym:job.py#Job.step2",
+      "sym:job.py#Job",
+      "sym:store.py#Store",
+    ]);
     expect(view.steps!.at(-1)!.label).toBe("save(x)");
-    expect(view.participants).toContain("sym:store.py#Store");
-    const left = notes.find((n) => n.startsWith("calls left out of the sequence"))!;
-    expect(left).toContain("the ones that reach the least code");
-    expect(left.match(/sym:job\.py#Job\.step\d+/g)).toHaveLength(2);
+    const folded = notes.find((n) => n.startsWith("methods of Job drawn on one lifeline"))!;
+    expect(folded).toBe(
+      "methods of Job drawn on one lifeline for the class (at most 6 participants): Job.step3, Job.step4, Job.step5, Job.step6, Job.step7, Job.step8, Job.step9, Job.step10",
+    );
   });
+});
+
+describe("xpl draft path: loops and branches", () => {
+  it("frames the calls of a loop and of each branch, an if that leaves early as an alt with the rest as its else, and gives a two-way branch one tour step", async () => {
+    const dir = copyFixture("ts-jobrunner");
+    expect((await xpl(dir, "index", "--precise", "off")).code).toBe(0);
+    expect((await xpl(dir, "new", "d")).code).toBe(0);
+    const { patch, notes } = await drafted(dir, "sym:src/runner.ts#Runner.dispatch");
+    const view = sequence(patch);
+    const label = (id: string) => view.steps!.find((s) => s.id === id)!.label;
+    const frames = view.frames!.map((f) => `${f.kind} ${label(f.fromStep)}..${label(f.toStep)}`);
+    // the while loop holds every call. `if (result.ok) { ack; continue }` leaves early: the retry code after it is its
+    // else, so ack and the retry branch are two arms of one alt, and requeue and deadLetter are two arms inside
+    // the second one, not calls that run after ack
+    // `if (!job) { sleep; continue }` draws no call (sleep is a library function), so the rest of the loop body is an
+    // opt whose label says the guard skips it
+    expect(frames).toEqual([
+      "loop pop()..deadLetter(job, result.error)",
+      "opt lease()..deadLetter(job, result.error)",
+      "alt ack(job)..deadLetter(job, result.error)",
+      "alt requeue(job, backoff)..deadLetter(job, result.error)",
+    ]);
+    expect(view.frames![1]!.label).toBe(
+      "TODO: when the rest of the loop body runs, in a few words (the code: `if (!job)` skips it with `continue`)",
+    );
+    const arms = (f: number) =>
+      view.frames![f]!.arms!.map((a) => [
+        a.label.match(/`[^`]+`/)?.[0] ?? a.label,
+        `${label(a.fromStep)}..${label(a.toStep)}`,
+      ]);
+    expect(arms(2)).toEqual([
+      ["`if (result.ok)`", "ack(job)..ack(job)"],
+      ["`if (result.ok)`", "requeue(job, backoff)..deadLetter(job, result.error)"],
+    ]);
+    expect(view.frames![2]!.arms![1]!.label).toMatch(/^TODO: otherwise, .*leaves early/);
+    // the frame names the decision; only its arms quote the code (no text asked for twice)
+    expect(view.frames![3]!.label).not.toContain("`");
+    expect(arms(3)).toEqual([
+      [
+        "`if (attempts <= this.config.retry.maxRetries)`",
+        "requeue(job, backoff)..requeue(job, backoff)",
+      ],
+      [
+        "TODO: otherwise, in a few words",
+        "deadLetter(job, result.error)..deadLetter(job, result.error)",
+      ],
+    ]);
+    expect(notes.join("\n")).not.toContain("an alt frame has one label");
+    const tour = patch.tours![0]!.steps!;
+    expect(tour.length).toBeLessThanOrEqual(8);
+    const branch = tour.find(
+      (s) => s.focus.length === 2 && s.focus.every((f) => f.startsWith("runner-dispatch:")),
+    )!;
+    expect(branch.focus.map(label)).toEqual([
+      "requeue(job, backoff)",
+      "deadLetter(job, result.error)",
+    ]);
+    // the success outcome keeps a step of its own (an opt or alt arm outweighs a plain call)
+    const ack = view.steps!.find((s) => s.label === "ack(job)")!.id;
+    const ackStep = tour.find((s) => s.focus.length === 1 && s.focus[0] === ack)!;
+    // nested branches get different headings: the outer one is about the arm it holds
+    expect(ackStep.note!.split("\n")[0]).toBe(
+      "### TODO: what happens in this arm (the code: `if (result.ok)`), as a plain statement",
+    );
+    expect(branch.note!.split("\n")[0]).toBe(
+      "### TODO: what this branch decides, as a plain statement",
+    );
+    // a log line is drawn, but a call that changes state gets the tour step first
+    const step = (name: string) => view.steps!.find((s) => s.label.startsWith(name))!.id;
+    expect(tour.some((s) => s.focus.includes(step("log(")))).toBe(false);
+    expect(tour.some((s) => s.focus.includes(step("lease(")))).toBe(true);
+  });
+
+  it("a Go call that computes its branch's condition runs before the frame, an early exit is an alt, and a branch with no drawn call has none", async () => {
+    const dir = await indexedFixture("go-jobrunner");
+    expect((await xpl(dir, "new", "d")).code).toBe(0);
+    const { patch } = await drafted(dir, "sym:internal/runner/runner.go#Runner.Dispatch");
+    const view = sequence(patch);
+    const label = (id: string) => view.steps!.find((s) => s.id === id)!.label;
+    // `if err := r.queue.Ack(job); err != nil { return ... }` returns from inside: Ack itself runs whenever the job
+    // worked, so it is the first arm of `if result.OK() { …; continue }`, and the inner `if err` (whose body draws no
+    // call) is no frame. The empty-queue `sleep; continue` is an alt too: the rest of the loop body is its else. A
+    // guard that returns with no drawn call (`if err != nil { return … }`) frames nothing.
+    expect(view.frames!.map((f) => `${f.kind} ${label(f.fromStep)}..${label(f.toStep)}`)).toEqual([
+      "loop Pop()..DeadLetter(job, result.Err)",
+      "alt sleep(ctx, r.cfg.IdleDelay)..DeadLetter(job, result.Err)",
+      "alt Ack(job)..DeadLetter(job, result.Err)",
+      "alt Requeue(job, backoff)..DeadLetter(job, result.Err)",
+    ]);
+    expect(view.frames![1]!.arms!.map((a) => label(a.fromStep))).toEqual([
+      "sleep(ctx, r.cfg.IdleDelay)",
+      "Lease(ctx)",
+    ]);
+    expect(view.frames![2]!.arms![0]!.label).toContain("`if result.OK()`");
+    // `result.OK()` is the alt's own guard and a one-line check: no step, no lifeline
+    expect(view.steps!.map((s) => s.label)).not.toContain("OK()");
+    expect(view.participants).not.toContain("sym:internal/worker/worker.go#Result");
+  });
+
+  it("an if, elif and else with a call in each is one alt frame with three arms", async () => {
+    const dir = await repo({
+      "jobs.py": [
+        "def ack(job):",
+        "    print('ack', job)",
+        "    return job",
+        "",
+        "",
+        "def retry(job):",
+        "    print('retry', job)",
+        "    return job",
+        "",
+        "",
+        "def park(job):",
+        "    print('park', job)",
+        "    return job",
+        "",
+        "",
+        "def settle(job, ok, left):",
+        "    if ok:",
+        "        ack(job)",
+        "    elif left > 0:",
+        "        retry(job)",
+        "    else:",
+        "        park(job)",
+        "",
+      ].join("\n"),
+    });
+    const { patch } = await drafted(dir, "sym:jobs.py#settle");
+    const view = sequence(patch);
+    expect(view.frames).toEqual([
+      expect.objectContaining({
+        kind: "alt",
+        fromStep: view.steps![0]!.id,
+        toStep: view.steps![2]!.id,
+      }),
+    ]);
+    const [a, b, c] = view.steps!.map((s) => s.id);
+    expect(view.frames![0]!.arms!.map((arm) => [arm.fromStep, arm.toStep])).toEqual([
+      [a, a],
+      [b, b],
+      [c, c],
+    ]);
+    expect(
+      view.frames![0]!.arms!.map((arm) => arm.label.match(/`[^`]+`/)?.[0] ?? arm.label),
+    ).toEqual(["`if ok:`", "`elif left > 0:`", "TODO: otherwise, in a few words"]);
+  });
+});
+
+describe("xpl draft path: Go code that calls through an interface", () => {
+  it("the file map draws the call from the runner to the queue, not only the queue implementing the runner's interface", async () => {
+    const dir = await indexedFixture("go-jobrunner");
+    expect((await xpl(dir, "new", "d")).code).toBe(0);
+    const { patch } = await drafted(dir, "sym:internal/runner/runner.go#Runner.Dispatch");
+    const files = patch.views!.find((v) => v.type === "graph") as GraphView;
+    const explainer = readJson<Explainer>(dir, ".explainer/d.explainer.json");
+    const model = new ExplainerModel(explainer, new IndexModel(fullIndex(dir)));
+    const view = model.views.find((v) => v.id === files.id) as GraphView;
+    const arrows = deriveGraph(view, model).edges.map((e) => `${e.kind} ${e.from} -> ${e.to}`);
+    expect(arrows).toContain(
+      "calls file:internal/runner/runner.go -> file:internal/queue/queue.go",
+    );
+    expect(arrows).toContain(
+      "calls file:internal/runner/runner.go -> file:internal/worker/pool.go",
+    );
+    // what implements what points the other way and answers another question: not on this map
+    expect(arrows.filter((a) => !a.startsWith("calls "))).toEqual([]);
+    // each file box gets a summary to write, so "no TODO left" means no box is left without text
+    const summaries = new Map(patch.nodes!.map((n) => [n.id, n.summary]));
+    expect(files.include!.map((id) => summaries.get(id))).toEqual(
+      files.include!.map(() => "TODO: one sentence: what this file is for on this path."),
+    );
+  });
+
+  it("every sentence of a note that speaks to the author is a TODO, so lint stops it from reaching a reader", async () => {
+    const dir = await indexedFixture("go-jobrunner");
+    expect((await xpl(dir, "new", "d")).code).toBe(0);
+    const { patch } = await drafted(dir, "sym:internal/runner/runner.go#Runner.Dispatch");
+    const sentences = patch
+      .tours![0]!.steps!.flatMap((step) => (step.note ?? "").split(/(?<=[.:)])\s+(?=[A-Z])/))
+      .filter((s) => /\b(draft|review|delete this line)\b/i.test(s));
+    expect(sentences.length).toBeGreaterThan(0);
+    expect(sentences.filter((s) => !s.startsWith("TODO:"))).toEqual([]);
+  });
+});
+
+it("code changed after `xpl index`: says to index and resolve, not that the draft has a bug", async () => {
+  const code = (n: number) =>
+    [
+      "export function a(): number {",
+      "  return b() + c();",
+      "}",
+      "",
+      "export function b(): number {",
+      "  const x = c();",
+      `  return x + ${n};`,
+      "}",
+      "",
+      "export function c(): number {",
+      "  const y = 2;",
+      "  return y;",
+      "}",
+      "",
+    ].join("\n");
+  const dir = await repo({ "src/a.ts": code(1) });
+  writeFile(dir, "src/a.ts", code(2));
+  const r = await xpl(dir, "draft", "path", "d", "sym:src/a.ts#a");
+  expect(r.code).toBe(1);
+  expect(r.err).not.toContain("a bug in xpl draft");
+  expect(r.err).toContain(
+    "error: the draft cannot be built: the code changed after `xpl index` (src/a.ts). Run `xpl index`, then `xpl resolve d --write`, and draft again.",
+  );
 });

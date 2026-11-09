@@ -30,10 +30,11 @@ try {
     cwd: fixture,
     stdio: "inherit",
   });
-  // The committed example predates required summaries. Add only reader text to its temporary copy.
+  // The committed example predates required summaries. Add only reader text to its temporary copy. Its tour
+  // and concept are user-owned, so the site's own text applies as the user's.
   execFileSync(
     process.execPath,
-    [cli, "apply", "jobrunner", join(root, "scripts/site-demo.patch.json")],
+    [cli, "apply", "jobrunner", join(root, "scripts/site-demo.patch.json"), "--actor", "user"],
     {
       cwd: fixture,
       stdio: "inherit",

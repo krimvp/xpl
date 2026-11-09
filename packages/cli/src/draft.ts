@@ -27,6 +27,7 @@
  * The drafts never overwrite: ids already used in the explainer get a suffix (`view:change-map-2`), and nodes the
  * explainer already stores get no overlay.
  */
+import { posix } from "node:path";
 import {
   CODE_LANGUAGES,
   CODE_LANGUAGE_NAMES,
@@ -57,6 +58,8 @@ import {
   type PatchTourStep,
   type PatchView,
   type Reference,
+  type SequenceArm,
+  type SequenceFrame,
   type TextCache,
 } from "@xpl/core";
 import {
@@ -68,6 +71,7 @@ import {
   workspaceParents,
 } from "./outside.js";
 import { plural } from "./format.js";
+import type { ControlBlock } from "./control-blocks.js";
 
 export const DRAFT_LIMITS = {
   /** Boxes on a drafted map (the skill: 4-8). */
@@ -78,8 +82,10 @@ export const DRAFT_LIMITS = {
   changeSteps: 12,
   /** Calls in a drafted sequence. */
   pathCalls: 12,
-  /** Calls that get a tour step of their own (the skill: 5-9 steps, the big picture first). */
+  /** Steps of a path tour, the map, the big picture and where to go next included (the skill: 5-8). */
   pathSteps: 8,
+  /** Steps of a repo tour, where to go next included (the skill: 6-9). */
+  repoSteps: 9,
   /** Participants of a drafted sequence, the entry included. */
   participants: 6,
   /** Code ranges per tour step. */
@@ -126,9 +132,28 @@ export const NOT_DESIGN: readonly string[] = [
 ];
 
 /** File and directory names that usually hold the entry point of a project. */
-const ENTRY_NAMES = /^(?:main|__main__|cli|cmd|app|apps|application|applications|index|server)$/;
+export const ENTRY_NAMES =
+  /^(?:main|__main__|cli|cmd|app|apps|application|applications|index|server)$/;
 
-export type DraftKind = "change" | "repo" | "path" | "map" | "class" | "states";
+/** The language of `file` when the index has no references for it (Ruby, PHP): no call can be drawn. */
+function noReferences(model: IndexModel, file: string | undefined): string | undefined {
+  const language = file === undefined ? undefined : model.file(file)?.language;
+  return language !== undefined && model.index.languages?.[language]?.refs === "none"
+    ? language
+    : undefined;
+}
+
+/** A program's `main`: a top-level `main` function, or Java's `main` method of a top-level class. */
+export function isMainSymbol(model: IndexModel, sym: IndexedSymbol): boolean {
+  return (
+    (sym.kind === "function" && sym.path === "main") ||
+    (sym.kind === "method" &&
+      /^[^.]+\.main$/.test(sym.path) &&
+      model.file(sym.file)?.language === "java")
+  );
+}
+
+export type DraftKind = "change" | "repo" | "path" | "map" | "class" | "states" | "data";
 
 export interface DraftInput {
   explainer: Explainer;
@@ -152,6 +177,10 @@ export interface Draft {
 // ─── Text ───────────────────────────────────────────────────────────────────────────────────────
 
 export const todo = (text: string): string => `TODO: ${text}`;
+
+/** A drawn arrow the draft stores needs a summary (`xpl ready` requires one): what it is for. */
+const ARROW_SUMMARY = todo("one plain sentence: what passes along this arrow and why.");
+
 export const tick = (text: string): string => `\`${text}\``;
 
 /** A tour note: `### <title>`, a blank line, then the body sentences (a part that starts with a newline: a block). */
@@ -212,7 +241,10 @@ export class FreeIds {
     add(explainer.views);
     add(explainer.tours);
     for (const view of Array.isArray(explainer.views) ? explainer.views : []) {
-      if (view.type !== "graph") add(view.steps);
+      if (view.type !== "graph") {
+        add(view.steps);
+        add(view.frames);
+      }
     }
   }
 
@@ -378,6 +410,35 @@ function hunkRuns(file: ChangedFile): Cluster[] {
     } else lines.push(Math.max(1, hunk.newStart));
   }
   return clusters(lines);
+}
+
+/**
+ * The code before the change of the first changed symbol of a run that lost lines: the first hunk inside it that
+ * removes or rewrites lines that hold text, as a base anchor. Undefined when every hunk only adds lines.
+ */
+function removedLines(
+  texts: TextCache,
+  change: ChangeRecord,
+  run: readonly ChangeBox[],
+): AnchorInput | undefined {
+  for (const sym of run.flatMap((box) => box.symbols)) {
+    const file = (Array.isArray(change.files) ? change.files : []).find((f) => f.path === sym.file);
+    for (const hunk of Array.isArray(file?.hunks) ? file!.hunks : []) {
+      const end = hunk.newStart + Math.max(hunk.newLines, 1) - 1;
+      if (hunk.oldLines === 0 || end < sym.range.startLine || hunk.newStart > sym.range.endLine)
+        continue;
+      const anchor = baseLines(
+        texts,
+        change,
+        file!,
+        hunk.oldStart,
+        hunk.oldStart + hunk.oldLines - 1,
+        "definition",
+      );
+      if (anchor) return anchor;
+    }
+  }
+  return undefined;
 }
 
 /** Base lines the hunks remove or rewrite, by run. */
@@ -888,6 +949,8 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
     title: "What this change touches",
     scope: { root: "repo", depth: 1 },
     include,
+    // a changed default value or type is read or named, not called: without these arrows its box floats
+    edgeKinds: ["calls", "reads", "references", "extends", "implements"],
     stubs: { mode: "none" },
   };
 
@@ -1009,13 +1072,12 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
   }
   if (unanchored.length > 0) {
     notes.push(
-      `no anchor for ${unanchored.join(", ")} (an added file the index does not hold, such as a binary file)`,
+      `no anchor for ${unanchored.join(", ")} (a changed file the index does not hold, such as a binary file or one under .explainer/)`,
     );
   }
   const otherSteps = Math.min(2, Math.ceil(leftovers.length / L.codeRanges));
 
-  const fixed =
-    1 + (entryUnit || entryBox ? 1 : 0) + (otherCallers.length > 0 ? 1 : 0) + 1 + 1 + otherSteps;
+  const fixed = 1 + (entryUnit || entryBox ? 1 : 0) + 1 + 1 + 1 + otherSteps;
   const pieceBudget = Math.max(0, L.changeSteps - fixed);
   const skipped: ChangeBox[] = [];
   while (pieces.length > pieceBudget) {
@@ -1059,7 +1121,7 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
       note(
         todo("what changes for users, as a plain statement"),
         todo(
-          "the behaviour change: before, a user saw one thing; now, another. Give an input that shows it.",
+          "the behavior change: before, a user saw one thing; now, another. Give an input that shows it.",
         ),
         alsoChanged.length > 0
           ? `Also changed: ${nameList(alsoChanged)}. ${todo("say what they change, or why the tour skips them.")}`
@@ -1118,10 +1180,13 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
     const first = run[0]!;
     const names = run.flatMap((b) => b.symbols.map((s) => displayName(s.id)));
     const fresh = run.every((b) => b.status === "new");
-    const code =
-      run.length === 1
+    const before = fresh ? undefined : removedLines(texts, change, run);
+    const code = [
+      ...(before ? [before] : []),
+      ...(run.length === 1
         ? boxAnchors(model, texts, first, L.codeRanges)
-        : run.slice(0, L.codeRanges).flatMap((b) => boxAnchors(model, texts, b, 1));
+        : run.slice(0, L.codeRanges).flatMap((b) => boxAnchors(model, texts, b, 1))),
+    ];
     steps.push(
       tourStep(
         model,
@@ -1137,7 +1202,9 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
           fresh
             ? todo(`what ${tick(names[0]!)} adds, and which code uses it.`)
             : todo(
-                "Before: what the old code did (read it with `xpl show --at base`). Now: what the new code does.",
+                before
+                  ? "Before: what the old code did (the first code link shows it). Now: what the new code does."
+                  : "Before: what the old code did (read it with `xpl show --at base`). Now: what the new code does.",
               ),
           names.length > 1 && !fresh
             ? `${nameList(names)} change in a few lines each: ${todo("say what they have in common, or give each its own step.")}`
@@ -1188,8 +1255,33 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
       );
   }
 
-  // who else is affected
-  if (otherCallers.length > 0) {
+  // who else is affected: always a step, since §5 of explain-change.md asks for more than callers
+  if (otherCallers.length === 0) {
+    const entryName = entryUnit ? displayName(entryUnit.id) : undefined;
+    // the changed types and the other changed symbols: their readers and siblings are the next place to look
+    const changedTypes = analysis.symbols.filter((sym) => !callable(sym));
+    const shown = [...changedTypes, ...analysis.symbols.filter(callable)]
+      .map((sym) => model.symbol(sym.symbolId))
+      .filter((sym): sym is IndexedSymbol => sym !== undefined);
+    steps.push(
+      tourStep(
+        model,
+        next(),
+        mapId,
+        [mainFocus],
+        note(
+          todo("who else is affected, as a plain statement"),
+          entryName
+            ? `Callers outside tests: none beyond the entry, ${tick(entryName)} (the index shows no other).`
+            : "Callers outside tests: none found in the index.",
+          todo(
+            "who reads a changed result or type, and which public entry points expose the change. Which sibling code still works the old way (explain-change.md §5)?",
+          ),
+        ),
+        shown.slice(0, L.codeRanges).map((sym) => definition(sym)),
+      ),
+    );
+  } else {
     const onMap = otherCallers.map((c) => unitOf(c)).find((u) => u !== undefined);
     const names = otherCallers.map((c) => {
       const unit = unitOf(c);
@@ -1367,13 +1459,120 @@ interface Inside {
   viewId: string;
 }
 
+/**
+ * Number the steps of the draft's new tours after the highest `t<n>` the guide's tours already use, so a step copied
+ * from one tour into another keeps an id of its own (step ids are never reused). A tour the guide holds keeps its ids.
+ */
+export function continueStepIds(patch: ExplainerPatch, explainer: Explainer): void {
+  const stored = Array.isArray(explainer.tours) ? explainer.tours : [];
+  let last = 0;
+  for (const tour of stored)
+    for (const step of tour.steps ?? []) {
+      const n = /^t(\d+)$/.exec(step.id)?.[1];
+      if (n) last = Math.max(last, Number(n));
+    }
+  if (last === 0) return;
+  const known = new Set(stored.map((t) => t.id));
+  for (const tour of patch.tours ?? []) {
+    if (known.has(tour.id)) continue;
+    for (const step of tour.steps ?? []) step.id = `t${++last}`;
+  }
+}
+
+/** Steps of a repo tour that `draft repo` leaves for the main path and its risks (the skill's spine, parts 3-4). */
+export const PATH_ROOM = 2;
+
+/**
+ * Where the work of a library's entry goes: from `start`, down the one callee that reaches nearly all (90%) of what the
+ * current function reaches, past builders and thin wrappers, until the calls spread out. For ky: createInstance hands
+ * each request to createRequest, which hands it to `Ky.create`, which splits the work between `#run`, the constructor
+ * and the body reads. A call to a class is a call to its constructor. Only calls inside code files (`isCode`) count.
+ */
+function requestPath(
+  model: IndexModel,
+  isCode: (file: string) => boolean,
+  start: IndexedSymbol,
+): IndexedSymbol {
+  const callable = (sym: IndexedSymbol | undefined): IndexedSymbol | undefined => {
+    if (!sym || !isCode(sym.file)) return undefined;
+    if (sym.kind === "function" || sym.kind === "method") return sym;
+    if (sym.kind === "class") return model.symbol(`${sym.id}.constructor`) ?? undefined;
+    return undefined;
+  };
+  const owner = (id: string): IndexedSymbol | undefined => {
+    // a call from a closure nested in a function is the function's own (createInstance.ky -> createInstance)
+    let sym = model.symbol(id);
+    while (sym && sym.kind === "function" && model.parentSymbol(sym.id)?.kind === "function")
+      sym = model.parentSymbol(sym.id);
+    return sym;
+  };
+  const callees = new Map<string, Set<string>>();
+  for (const ref of model.refs) {
+    if (ref.kind !== "call") continue;
+    const from = owner(ref.from);
+    const to = callable(model.symbol(ref.to));
+    if (!from || !to || to.id === from.id || !isCode(from.file)) continue;
+    let set = callees.get(from.id);
+    if (!set) callees.set(from.id, (set = new Set()));
+    set.add(to.id);
+  }
+  // what a function reaches without passing through the path so far (a retry that calls `#run` again reaches
+  // nothing new)
+  const reachOf = (id: string, path: ReadonlySet<string>): number => {
+    const seen = new Set<string>([id]);
+    const queue = [id];
+    while (queue.length > 0)
+      for (const next of callees.get(queue.pop()!) ?? [])
+        if (!seen.has(next) && !path.has(next)) (queue.push(next), seen.add(next));
+    return seen.size - 1;
+  };
+  let current = start;
+  const visited = new Set([start.id]);
+  for (;;) {
+    const total = reachOf(current.id, visited);
+    const ranked = [...(callees.get(current.id) ?? [])]
+      .filter((id) => !visited.has(id))
+      .map((id) => ({ id, reach: reachOf(id, visited) }))
+      .sort((a, b) => b.reach - a.reach || a.id.localeCompare(b.id));
+    const best = ranked[0];
+    // a leaf is where the work is done, not a step on the way to it
+    if (!best || best.reach === 0 || (best.reach + 1) / total < 0.9) return current;
+    current = model.symbol(best.id)!;
+    visited.add(best.id);
+  }
+}
+
+/** Settings file extensions a literal path can name. */
+const SETTINGS_FILE = /^[\w./-]+\.(?:ya?ml|json|toml|ini|conf|cfg|env)$/;
+/** Files a program names for its build or its tools, not for its settings. */
+const MANIFEST =
+  /(?:^|\/)(?:package(?:-lock)?\.json|tsconfig[\w.-]*\.json|composer\.json|pyproject\.toml|Cargo\.toml|go\.mod)$/;
+
+/** The quoted literals in `file` that name a settings file of the repository, with their lines (1-based). */
+function settingsLiterals(
+  texts: TextCache,
+  file: string,
+  model: IndexModel,
+  isCode: (path: string) => boolean,
+): { file: string; line: number; path: string }[] {
+  const out: { file: string; line: number; path: string }[] = [];
+  (texts.lines(file) ?? []).forEach((text, i) => {
+    for (const m of text.matchAll(/["'`]([^"'`\s]+)["'`]/g)) {
+      const path = posix.normalize(m[1]!);
+      if (SETTINGS_FILE.test(path) && !MANIFEST.test(path) && model.hasFile(path) && !isCode(path))
+        out.push({ file, line: i + 1, path });
+    }
+  });
+  return out;
+}
+
 export function draftRepo(input: DraftInput): Draft {
   const { explainer, model, texts } = input;
   const L = DRAFT_LIMITS;
   const ids = new FreeIds(explainer);
   const stored = storedNodeIds(explainer);
   const notes: string[] = [
-    "Provisional architecture: confirm project kind, primary users and entry points in the README and code; import lines identify dependencies.",
+    "the draft guesses the kind of project, its users and its entry points from the code and its import lines: check each in the README and the code",
   ];
   /** A box of the architecture keeps its id across drafts: the service and the outside systems are the same things. */
   const reuse = (prefix: string, slug: string): string =>
@@ -1524,6 +1723,26 @@ export function draftRepo(input: DraftInput): Draft {
     notes.push(
       `${insides.length} services found under ${nameList([...new Set(serviceRoots.map(dirOf))])}: one box each on the system map, and one map of the inside of each`,
     );
+    // code no service owns (Go's `internal/store` that two programs import) is a part of each service that uses it
+    const sharedUnder = (dir: string): Unit[] =>
+      children(dir).flatMap((unit) =>
+        serviceRoots.includes(unit.path)
+          ? []
+          : unit.dir && serviceRoots.some((root) => root.startsWith(`${unit.path}/`))
+            ? sharedUnder(unit.path)
+            : [unit],
+      );
+    const unused: string[] = [];
+    for (const unit of sharedUnder("")) {
+      const users = insides.filter(
+        (i) => i.units.length < L.mapBoxes && i.units.some((u) => between(u, unit) > 0),
+      );
+      for (const inside of users) inside.units.push(unit);
+      if (users.length === 0) unused.push(unit.path);
+    }
+    if (unused.length > 0) {
+      notes.push(`code outside the services that no service map shows: ${nameList(unused)}`);
+    }
   } else {
     const { units, offMap } = partsOf("");
     if (units.length > 0) {
@@ -1555,8 +1774,6 @@ export function draftRepo(input: DraftInput): Draft {
   const unitOfFile = new Map<string, Unit>();
   for (const inside of insides)
     for (const unit of inside.units) for (const f of unit.files) unitOfFile.set(f, unit);
-  const insideOfUnit = new Map<Unit, Inside>();
-  for (const inside of insides) for (const unit of inside.units) insideOfUnit.set(unit, inside);
   /** Per system: the first import site in each part that imports it (the evidence of its arrows). */
   const reach = new Map<string, { unit: Unit; anchor: AnchorInput }[]>();
   for (const system of systems) {
@@ -1631,9 +1848,120 @@ export function draftRepo(input: DraftInput): Draft {
             ? "1-4 words: what they do with it (for example: sends requests)"
             : "1-4 words: what passes here (for example: stores orders)",
         ),
+        summary: ARROW_SUMMARY,
         anchors: [anchor],
       });
     }
+  }
+
+  // ── Who starts a program that no web or command-line framework names: a person at its `main` function (Java's
+  // `main` method of a top-level class too), one arrow to each part that holds a `main`. And the settings files the
+  // code loads (index `resources`): one box, anchored at the file and the line that loads it.
+  const isMain = (sym: IndexedSymbol) => isMainSymbol(model, sym);
+  const mains =
+    inbound.length === 0 && !library
+      ? model.files
+          .map((f) => f.path)
+          .filter((f) => isCode(f) && unitOfFile.has(f))
+          .sort()
+          .flatMap((f) => model.symbolsInFile(f).filter(isMain).slice(0, 1))
+      : [];
+  const mainsByUnit = new Map<Unit, IndexedSymbol[]>();
+  for (const sym of mains) {
+    const unit = unitOfFile.get(sym.file)!;
+    mainsByUnit.set(unit, [...(mainsByUnit.get(unit) ?? []), sym]);
+  }
+  const entrySym = mains[0];
+  const operatorId = entrySym ? reuse("grp", "operator") : undefined;
+  if (entrySym && operatorId && !stored.has(operatorId)) {
+    const where =
+      mains.length === 1
+        ? `it starts at ${tick(entrySym.path)} in ${entrySym.file}`
+        : `${mains.length} programs start at ${tick(entrySym.path)}: ${nameList(mains.map((m) => m.file))}`;
+    nodes.push({
+      id: operatorId,
+      label: "Operator",
+      role: "person",
+      parent: "repo",
+      summary: todo(
+        `one line: who starts the program and how (${where}). Rename the box if a program, not a person, starts it.`,
+      ),
+      // evidence at both ends of each arrow: every `main` it starts
+      anchors: [...mainsByUnit.values()].map((syms) => definition(syms[0]!)),
+    });
+    for (const [unit, syms] of mainsByUnit) {
+      const slug = slugOf(mainsByUnit.size > 1 ? unit.path.replace(/\//g, "-") : unit.path);
+      edges.push({
+        id: ids.get("edge", `operator-${slug}`),
+        from: operatorId,
+        to: unit.id,
+        kind: "custom",
+        label: todo("1-4 words: how they start it (for example: runs the program)"),
+        summary: ARROW_SUMMARY,
+        anchors: [definition(syms[0]!)],
+      });
+    }
+  }
+  const loads: { unit: Unit; anchor: AnchorInput; files: string[] }[] = [];
+  for (const resource of model.index.resources ?? []) {
+    if (resource.kind !== "loads" && resource.kind !== "configures") continue;
+    const from = model.fileOfSymbolId(resource.from);
+    const unit = from ? unitOfFile.get(from) : undefined;
+    const files = resource.files.filter((f) => !isCode(f) && !outside(f));
+    if (!from || !unit || files.length === 0 || loads.some((l) => l.unit === unit)) continue;
+    const anchor = fileLines(texts, from, resource.site.startLine, resource.site.endLine, "usage");
+    if (anchor) loads.push({ unit, anchor, files });
+  }
+  // no read call takes a settings path (Go's `path := "config/default.yaml"`, passed on to `os.ReadFile`): a file the
+  // code names by a literal path, one per part, is the lead
+  const named = loads.length === 0;
+  if (named) {
+    for (const unit of insides.flatMap((i) => i.units)) {
+      const found = unit.files.flatMap((file) => settingsLiterals(texts, file, model, isCode))[0];
+      if (!found || loads.some((l) => l.unit === unit)) continue;
+      const anchor = fileLines(texts, found.file, found.line, found.line, "usage");
+      if (anchor) loads.push({ unit, anchor, files: [found.path] });
+    }
+  }
+  const settingsFiles = [...new Set(loads.flatMap((l) => l.files))].sort();
+  const settingsId = loads.length > 0 ? reuse("grp", "settings") : undefined;
+  if (settingsId && !stored.has(settingsId)) {
+    // the box anchors a file of each unit that reads settings, so that each arrow has code at its end
+    const anchored = [
+      ...new Set([...loads.map((l) => [...l.files].sort()[0]!), ...settingsFiles]),
+    ].slice(0, Math.max(L.codeRanges, loads.length));
+    const kinds = [
+      ...new Set(settingsFiles.map((f) => (model.file(f)?.language ?? "text").toUpperCase())),
+    ].filter((k) => k !== "TEXT");
+    nodes.push({
+      id: settingsId,
+      label: settingsFiles.length === 1 ? "Settings file" : "Settings files",
+      role: "storage",
+      ...(kinds.length > 0 ? { tech: kinds.join(", ") } : {}),
+      parent: "repo",
+      summary: todo(
+        `one line: what the settings decide, in plain words (found: ${nameList(settingsFiles, 3)}).`,
+      ),
+      anchors: [...anchored.map((file) => ({ file, role: "config" as const })), loads[0]!.anchor],
+    });
+    for (const { unit, anchor, files } of loads) {
+      // evidence at both ends: where the unit reads, and the file it reads (the box anchors it)
+      const read = [...files].sort()[0]!;
+      edges.push({
+        id: ids.get("edge", `${slugOf(unit.path)}-settings`),
+        from: unit.id,
+        to: settingsId,
+        kind: "custom",
+        label: todo("1-4 words: what it reads (for example: reads the settings)"),
+        summary: ARROW_SUMMARY,
+        anchors: [anchor, { file: read, role: "config" }],
+      });
+    }
+    notes.push(
+      named
+        ? `settings files the code names in a string (no call that loads them found): ${nameList(settingsFiles, 5)}; check that the code reads each at run time`
+        : `settings files the code loads (from the index): ${nameList(settingsFiles, 5)}; check that the code reads each at run time`,
+    );
   }
 
   const languageOf = (files: readonly string[]): string | undefined => {
@@ -1661,7 +1989,7 @@ export function draftRepo(input: DraftInput): Draft {
       : {
           id: inside.service,
           label: repoName,
-          role: library ? "component" : "service",
+          role: library ? "system" : "service",
           opens: inside.viewId,
           ...(language ? { tech: language } : {}),
           parent: "repo",
@@ -1670,7 +1998,7 @@ export function draftRepo(input: DraftInput): Draft {
         };
     if (!stored.has(inside.service)) nodes.push(service);
     const used = linked.filter((s) =>
-      reach.get(s.slug)!.some((r) => insideOfUnit.get(r.unit) === inside),
+      reach.get(s.slug)!.some((r) => inside.units.includes(r.unit)),
     );
     const depth = Math.max(...inside.units.map((u) => u.path.split("/").length));
     views.push({
@@ -1685,6 +2013,7 @@ export function draftRepo(input: DraftInput): Draft {
       stubs: { mode: "none" },
     });
     for (const unit of inside.units) {
+      if (nodes.some((n) => n.id === unit.id)) continue;
       const node = overlay(
         stored,
         unit.id,
@@ -1714,9 +2043,11 @@ export function draftRepo(input: DraftInput): Draft {
     ),
     scope: { root: "repo", depth: 1 },
     include: [
+      ...(operatorId ? [operatorId] : []),
       ...inbound.map((s) => systemIds.get(s.slug)!),
       ...insides.map((i) => i.service),
       ...outbound.map((s) => systemIds.get(s.slug)!),
+      ...(settingsId ? [settingsId] : []),
     ],
     excludeFiles: [...OVERVIEW_EXCLUDE],
     stubs: { mode: "none" },
@@ -1760,6 +2091,37 @@ export function draftRepo(input: DraftInput): Draft {
       )
       .slice(0, n);
   const mainTop = topSymbols(mainUnit, 1)[0];
+  /** The functions and methods of a unit that other files call most (the code that does its work), then its top symbols. */
+  const partCode = (unit: Unit, n: number): IndexedSymbol[] => {
+    const own = new Set(unit.files);
+    const calls = new Map<string, number>();
+    for (const ref of model.refs) {
+      if (ref.kind !== "call") continue;
+      const from = fileOf(ref.from);
+      const to = fileOf(ref.to);
+      if (from && to && own.has(to) && !own.has(from))
+        calls.set(ref.to, (calls.get(ref.to) ?? 0) + 1);
+    }
+    const called = [...calls]
+      .map(([id, count]) => ({ sym: model.symbol(id), count }))
+      .filter(
+        (c): c is { sym: IndexedSymbol; count: number } =>
+          c.sym !== undefined && (c.sym.kind === "function" || c.sym.kind === "method"),
+      )
+      .sort(
+        (a, b) =>
+          b.count - a.count ||
+          b.sym.range.endLine -
+            b.sym.range.startLine -
+            (a.sym.range.endLine - a.sym.range.startLine) ||
+          a.sym.id.localeCompare(b.sym.id),
+      )
+      .map((c) => c.sym);
+    const picked = called.slice(0, n);
+    for (const sym of topSymbols(unit, n))
+      if (picked.length < n && !picked.includes(sym)) picked.push(sym);
+    return picked;
+  };
 
   // ── A library: nobody reaches it through a web server or a command line; the code of an app calls it. A box
   // for that app, anchored where the README shows an import of the project, with an arrow to the service.
@@ -1784,7 +2146,8 @@ export function draftRepo(input: DraftInput): Draft {
         nodes.push({
           id: appId,
           label: "Your app",
-          role: "system",
+          role: "external",
+          tech: "your app",
           parent: "repo",
           summary: todo(`one line: how an app uses ${repoName}, in plain words.`),
           anchors: [usage],
@@ -1795,6 +2158,7 @@ export function draftRepo(input: DraftInput): Draft {
           to: main.service,
           kind: "calls",
           label: todo("1-4 words: what the app calls (for example: ky.get(), ky.post())"),
+          summary: ARROW_SUMMARY,
           anchors: [usage, callee],
         });
       }
@@ -1814,18 +2178,22 @@ export function draftRepo(input: DraftInput): Draft {
       model,
       nextId(),
       systemViewId,
-      appId ? [main.service, appId] : [main.service],
+      [main.service, ...(appId ? [appId] : []), ...(operatorId ? [operatorId] : [])],
       note(
         todo("what the project is, as a plain statement anyone can follow"),
         todo("its language, its kind and what it is for, from the README; no code names."),
-        "Architecture roles are provisional. Confirm primary users and entry points in the code.",
+        todo("check who uses it and where it starts in the code, then delete this line."),
         inbound.length > 0
           ? todo(
               `who uses it and how (${plainList(inbound.map((s) => s.label))}), in one sentence.`,
             )
           : appId
             ? todo("how an app uses it (Your app): what the app calls, in one sentence.")
-            : todo("who uses it and how, in one sentence."),
+            : operatorId
+              ? todo(
+                  "who starts the program (Operator) and what they get from it, in one sentence.",
+                )
+              : todo("who uses it and how, in one sentence."),
         otherServices.length > 0
           ? todo(
               `what each of the other services does, one short sentence each: ${nameList(otherServices, 10)}.`,
@@ -1835,27 +2203,38 @@ export function draftRepo(input: DraftInput): Draft {
       [about, mainTop ? definition(mainTop) : undefined],
     ),
   );
-  if (outbound.length > 0) {
+  if (outbound.length > 0 || settingsId) {
+    const relied = [
+      ...outbound.map((s) => ({ id: systemIds.get(s.slug)!, label: s.label })),
+      ...(settingsId ? [{ id: settingsId, label: "the settings" }] : []),
+    ];
     steps.push(
       tourStep(
         model,
         nextId(),
         systemViewId,
-        outbound.map((s) => systemIds.get(s.slug)!),
+        relied.map((r) => r.id),
         note(
           todo("what the project relies on outside its own code, as a plain statement"),
           todo(
             `one short sentence per box, in plain words: what it keeps or does for the project (${plainList(
-              outbound.map((s) => s.label),
+              relied.map((r) => r.label),
               10,
             )}).`,
           ),
-          todo("merge boxes that are the same system, and drop one the code only imports."),
-          todo(
-            "for each imported system, whether the default runtime path uses it or it is an optional integration.",
-          ),
+          outbound.length > 0
+            ? todo("merge boxes that are the same system, and drop one the code only imports.")
+            : "",
+          outbound.length > 0
+            ? todo(
+                "for each imported system, whether the default runtime path uses it or it is an optional integration.",
+              )
+            : "",
         ),
-        outbound.slice(0, L.codeRanges).map((s) => reach.get(s.slug)![0]!.anchor),
+        [
+          ...outbound.map((s) => reach.get(s.slug)![0]!.anchor),
+          ...(settingsId ? [loads[0]!.anchor] : []),
+        ].slice(0, L.codeRanges),
       ),
     );
   }
@@ -1892,7 +2271,58 @@ export function draftRepo(input: DraftInput): Draft {
       topSymbols(mainUnit, L.codeRanges).map((s) => definition(s)),
     ),
   );
-  for (const unit of order.slice(1)) {
+  // one step per part, inside the skill's budget less the 2 steps for the main path and its risks (with the step on
+  // where to go next): the last one takes the parts that are left, together
+  const room = Math.max(1, L.repoSteps - PATH_ROOM - steps.length - 1);
+  const topCallable =
+    mainTop && (mainTop.kind === "function" || mainTop.kind === "method") ? mainTop : undefined;
+  // a library's main path is the request its entry makes, not the builder that returns the entry
+  const pathFrom =
+    library && topCallable ? requestPath(model, isCode, topCallable) : (topCallable ?? entrySym);
+  const blind = noReferences(model, pathFrom?.file ?? mainUnit.files[0]);
+  notes.push(
+    `room is left for ${PATH_ROOM} more steps (${L.repoSteps} at most), the main path and its risks: ` +
+      (blind
+        ? `the index has no references for ${blind}, so \`xpl draft path\` cannot draw it; write those steps from \`xpl show\``
+        : `run \`xpl draft path <explainer> ${pathFrom ? `sym:${pathFrom.id}` : "<entry>"}\` and copy the steps you keep`),
+  );
+  // over the room, the parts with the fewest references share the last step
+  const parts = order.slice(1);
+  const big = new Set(
+    [...parts]
+      .sort((a, b) => links(b) - links(a) || parts.indexOf(a) - parts.indexOf(b))
+      .slice(0, room - 1),
+  );
+  const groups: Unit[][] =
+    parts.length > room
+      ? [...parts.filter((u) => big.has(u)).map((u) => [u]), parts.filter((u) => !big.has(u))]
+      : parts.map((unit) => [unit]);
+  for (const group of groups) {
+    if (group.length > 1) {
+      steps.push(
+        tourStep(
+          model,
+          nextId(),
+          main.viewId,
+          group.map((u) => u.id),
+          note(
+            todo("what these smaller parts are for, as a plain statement"),
+            todo(
+              `one short sentence each, in everyday words: ${nameList(
+                group.map((u) => baseName(u.path)),
+                10,
+              )}.`,
+            ),
+          ),
+          group
+            .flatMap((u) => partCode(u, 1))
+            .slice(0, L.codeRanges)
+            .map((s) => definition(s)),
+        ),
+      );
+      continue;
+    }
+    const unit = group[0]!;
     const inner = unit.dir ? unit.files.map((f) => baseName(f)) : [];
     const uses = linked.filter((s) => reach.get(s.slug)!.some((r) => r.unit === unit));
     steps.push(
@@ -1916,10 +2346,27 @@ export function draftRepo(input: DraftInput): Draft {
             : "",
           inner.length > 1 ? `Files: ${nameList(inner, 5)}.` : "",
         ),
-        topSymbols(unit, L.codeRanges).map((s) => definition(s)),
+        partCode(unit, L.codeRanges).map((s) => definition(s)),
       ),
     );
   }
+
+  steps.push(
+    tourStep(
+      model,
+      nextId(),
+      systemViewId,
+      [main.service],
+      note(
+        "Where to go next",
+        todo(
+          "the 2-3 parts or questions this tour skipped, and what each answers, one short sentence each.",
+        ),
+      ),
+      // its own code: where the main path starts (with none, the step would show every file of the service)
+      pathFrom ? [definition(pathFrom)] : [],
+    ),
+  );
 
   const patch: ExplainerPatch = {
     nodes,
@@ -1961,6 +2408,13 @@ function ownerOf(model: IndexModel, sym: IndexedSymbol): IndexedSymbol | undefin
 
 /** Kinds of symbol a call can only convert to or build data of: no code of theirs runs (Go's `nodeTyp(t)`). */
 const TYPE_KINDS: ReadonlySet<IndexedSymbol["kind"]> = new Set(["type", "interface", "enum"]);
+
+/**
+ * Names of calls that write a log line (`log`, `_log`, `logf`, `console.debug`): drawn, but they rank last for a
+ * tour step, after calls that change state or data.
+ */
+const LOG_CALL =
+  /^_*(?:log|logf|logger|debug|debugf|trace|tracef|info|infof|warn|warnf|warning|print|printf|println|console)$/i;
 
 /** The classes a class extends, in the order its declaration names them. */
 function basesOf(model: IndexModel, cls: IndexedSymbol): IndexedSymbol[] {
@@ -2025,6 +2479,8 @@ export interface PathEntry {
   symbol: IndexedSymbol;
   /** The class the method was asked on (`URLSafeTimedSerializer`), when it inherits the method from a base. */
   via?: IndexedSymbol;
+  /** The loops and branches in the entry's body (from its syntax tree): the frames of its sequence. */
+  blocks?: readonly ControlBlock[];
 }
 
 /**
@@ -2054,6 +2510,8 @@ interface Call {
   dispatched?: IndexedSymbol;
   /** How much the call matters: what it reaches and how much code is behind it (see `callScore`). */
   score: number;
+  /** A method of the entry's own class: the class's lifeline, which it folds into when lifelines run out. */
+  classLane?: string;
 }
 
 /** `pop()`, `run(job, opts)`, `Options{…}`: the call as written at the site, its arguments cut when long. */
@@ -2083,7 +2541,45 @@ function callLabel(texts: TextCache, file: string, site: Reference["site"], name
   const open = paren + name.length;
   const close = matchingClose(text, open);
   const args = close > open ? text.slice(open + 1, close).trim() : "";
-  return `${name}(${args.length > 32 || args.includes("\n") || close === -1 ? "…" : args})`;
+  if (close === -1) return `${name}(…)`;
+  return `${name}(${args.length > 32 ? shortArgs(args) : args})`;
+}
+
+/**
+ * Long arguments, cut: a name stays, a call keeps its own name (`job, backoffDelay(…)`, so the step says what it
+ * computes), anything else is `…`. All of it is `…` when even that is long.
+ */
+function shortArgs(args: string): string {
+  const parts: string[] = [];
+  let start = 0;
+  for (let i = 0; i <= args.length; i++) {
+    const c = args[i];
+    if (c === "(" || c === "[" || c === "{" || c === '"' || c === "'" || c === "`") {
+      const end =
+        c === '"' || c === "'" || c === "`" ? closingQuote(args, i) : matchingClose(args, i);
+      if (end === -1) return "…";
+      i = end;
+    } else if (c === "," || i === args.length) {
+      parts.push(args.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  const short = parts.map((part) => {
+    if (/^[\p{L}_$][\p{L}\p{N}_$.]*$/u.test(part) && part.length <= 16) return part;
+    const call = /^(?:new\s+)?([\p{L}_$][\p{L}\p{N}_$]*)\s*\(.*\)$/su.exec(part);
+    return call ? `${call[1]}(…)` : "…";
+  });
+  const text = short.join(", ");
+  return text.length > 32 || short.every((part) => part === "…") ? "…" : text;
+}
+
+/** The index of the quote that closes the one at `open`, or -1. */
+function closingQuote(text: string, open: number): number {
+  for (let i = open + 1; i < text.length; i++) {
+    if (text[i] === "\\") i++;
+    else if (text[i] === text[open]) return i;
+  }
+  return -1;
 }
 
 /** The index of the bracket that closes the one at `open` (strings skipped), or -1 when the text ends first. */
@@ -2160,6 +2656,23 @@ function bodyLines(texts: TextCache, sym: IndexedSymbol): number {
     if (!/^[\s{}()[\];]*$/.test(lines[line - 1] ?? "")) n++;
   }
   return n;
+}
+
+/**
+ * Is a call on the entry's main path: in no arm of a branch it writes (the code after an `if` that leaves early is the
+ * main path; a loop body is too)? An arm starts at its body, so a call in its condition is outside it.
+ */
+function onMainPath(blocks: readonly ControlBlock[], line: number, col: number): boolean {
+  return !blocks.some(
+    (block) =>
+      block.kind === "branch" &&
+      block.arms.some(
+        (arm) =>
+          !arm.implicit &&
+          (line > arm.start || (line === arm.start && col >= arm.startCol)) &&
+          line <= arm.end,
+      ),
+  );
 }
 
 /** How many symbols of the repository (outside tests) a symbol reaches through calls, at most 3 calls deep. */
@@ -2246,6 +2759,17 @@ function pathSequence(
   const repeated = new Map<string, number>();
   const built: string[] = [];
   const helpers: string[] = [];
+  const guards: string[] = [];
+  // the conditions of the branches: the code on an arm's first line before its body (`if result.OK() {`)
+  const guardAt = (line: number, col: number) =>
+    (entry.blocks ?? []).some(
+      (block) =>
+        block.kind === "branch" &&
+        block.arms.some(
+          (arm) =>
+            !arm.implicit && arm.condition !== "else" && arm.start === line && col < arm.startCol,
+        ),
+    );
   for (const ref of refs) {
     let callee = model.symbol(ref.to)!;
     let hop = false;
@@ -2287,32 +2811,69 @@ function pathSequence(
     const own =
       (owner !== undefined && (owner.id === entryOwner?.id || family.has(owner.id))) ||
       (owner === undefined && callee.file === sym.file && callee.kind === "function");
-    const callsMore = model.refsFrom(runs.id).some((r) => r.kind === "call" && r.to !== runs.id);
+    // a one-liner that only calls other one-liners (`isNonArrayObject` calls `isObject`) is a one-liner too
+    const callsMore = model.refsFrom(runs.id).some((r) => {
+      if (r.kind !== "call" || r.to === runs.id) return false;
+      const target = model.symbol(r.to);
+      const oneLiner =
+        (target?.kind === "function" || target?.kind === "method") && bodyLines(texts, target) <= 1;
+      return !oneLiner;
+    });
     if (!recursion && own && bodyLines(texts, runs) <= 1 && !callsMore) {
       if (!helpers.includes(runs.path)) helpers.push(runs.path);
       continue;
     }
-    // each recursive call is drawn (they usually recurse on different inputs); other callees once
-    if (!recursion && seen.has(callee.id)) {
+    // a one-line check that is the whole point of a branch's condition: the frame's guard says it
+    if (
+      !recursion &&
+      bodyLines(texts, runs) <= 1 &&
+      !callsMore &&
+      guardAt(ref.site.startLine, ref.site.startCol ?? 1)
+    ) {
+      if (!guards.includes(runs.path)) guards.push(runs.path);
+      continue;
+    }
+    // each recursive call is drawn (they usually recurse on different inputs); other callees once, at the first call,
+    // and again at the first call on the main path (in no branch arm) when the first was in a branch: the `delay` of
+    // an early exit and the `delay` of the main path both show
+    const main = onMainPath(entry.blocks ?? [], ref.site.startLine, ref.site.startCol ?? 1);
+    if (!recursion && (seen.has(`${callee.id}\0main`) || (seen.has(callee.id) && !main))) {
       repeated.set(callee.id, (repeated.get(callee.id) ?? 1) + 1);
       continue;
     }
     seen.add(callee.id);
-    // a method goes to the lifeline of its class (the entry's own class too: never the entry's lifeline, which
-    // stands for the entry alone), a function to its own; only recursion is a call of the entry to itself
-    const participant = recursion ? entryId : `sym:${(owner ?? callee).id}`;
+    if (main) seen.add(`${callee.id}\0main`);
+    // a method of the entry's own class is a lifeline of its own (`Ky.#run` calls `Ky.#retry`): the class's lifeline
+    // would stand for the entry too. A method of another class goes to the lifeline of its class, a function to its
+    // own; only recursion is a call of the entry to itself.
+    const participant = recursion ? entryId : `sym:${(owner && !own ? owner : callee).id}`;
     const skip = new Set([sym.id]);
+    const calleeName = callee.path.slice(callee.path.lastIndexOf(".") + 1);
     const score = recursion
       ? 1000
-      : 3 * Math.min(reachOf(model, runs, skip), 20) +
-        Math.min(lineCount(runs), 60) / 6 +
-        (participant.startsWith(`sym:${sym.file}#`) ? 0 : 2);
-    calls.push({ ref, callee, participant, hop, ...(dispatched ? { dispatched } : {}), score });
+      : LOG_CALL.test(calleeName)
+        ? 0
+        : 3 * Math.min(reachOf(model, runs, skip), 20) +
+          Math.min(lineCount(runs), 60) / 6 +
+          (participant.startsWith(`sym:${sym.file}#`) ? 0 : 2);
+    const classLane =
+      !recursion && own && owner && participant === `sym:${callee.id}`
+        ? `sym:${owner.id}`
+        : undefined;
+    calls.push({
+      ref,
+      callee,
+      participant,
+      hop,
+      ...(dispatched ? { dispatched } : {}),
+      score,
+      ...(classLane ? { classLane } : {}),
+    });
   }
   if (repeated.size > 0) {
     notes.push(
-      "called more than once, drawn once at the first call: " +
-        [...repeated].map(([id, n]) => `sym:${id} (${n} calls)`).join(", "),
+      "called more than once, drawn at the first call (and at the first on the main path): " +
+        [...repeated].map(([id, n]) => `${model.symbol(id)?.path ?? id} (${n} calls)`).join(", "),
     );
   }
   if (built.length > 0) {
@@ -2321,14 +2882,21 @@ function pathSequence(
     );
   }
   if (helpers.length > 0) {
-    notes.push(`not drawn, one-line helpers that call nothing: ${helpers.join(", ")}`);
+    notes.push(
+      `not drawn, one-line helpers that call nothing or only other one-liners: ${helpers.join(", ")}`,
+    );
+  }
+  if (guards.length > 0) {
+    notes.push(`not drawn, one-line checks that a branch's condition makes: ${guards.join(", ")}`);
   }
   if (calls.length === 0) {
     return {
       error:
-        built.length + helpers.length > 0
+        built.length + helpers.length + guards.length > 0
           ? `${entryId} makes no call worth drawing, every call it makes is left out (${notes.join("; ")}): start from a callee with more code, or explain it in a guide step`
-          : `${entryId} makes no call the index knows (calls into libraries outside the repository are not indexed): there is nothing to draw`,
+          : noReferences(model, sym.file)
+            ? `${noReferences(model, sym.file)}: the index has no references for this language, so there is no call to draw; write the steps by hand from \`xpl show ${sym.file}\``
+            : `${entryId} makes no call the index knows (calls into libraries outside the repository are not indexed): there is nothing to draw`,
     };
   }
 
@@ -2345,6 +2913,31 @@ function pathSequence(
     entryId,
     ...new Set(calls.map((c) => c.participant).filter((p) => p !== entryId)),
   ];
+  // Over the lifeline cap, the entry's own methods that matter least fold into one lifeline for their class
+  // (the first ones keep their own), so their calls stay: the cap folds lifelines before it drops calls.
+  const folded: Call[] = [];
+  while (participantsOf().length > L.participants) {
+    const own = calls.filter((c) => c.classLane !== undefined && c.participant !== c.classLane);
+    const laneShown = own.some((c) => participantsOf().includes(c.classLane!));
+    // folding the one method left into a new class lifeline would not save one
+    if (new Set(own.map((c) => c.participant)).size < (laneShown ? 1 : 2)) break;
+    const least = lightest(own).participant;
+    for (const c of calls) {
+      if (c.participant !== least) continue;
+      c.participant = c.classLane!;
+      folded.push(c);
+    }
+  }
+  if (folded.length > 0) {
+    const owner = ownerOf(model, folded[0]!.callee)!;
+    notes.push(
+      `methods of ${owner.path} drawn on one lifeline for the class (at most ${L.participants} participants): ` +
+        [...folded]
+          .sort((a, b) => calls.indexOf(a) - calls.indexOf(b))
+          .map((c) => c.callee.path)
+          .join(", "),
+    );
+  }
   while (participantsOf().length > L.participants) {
     // the participant whose calls matter least goes
     const weight = new Map<string, number>();
@@ -2362,7 +2955,7 @@ function pathSequence(
   if (dropped.length > 0) {
     notes.push(
       `calls left out of the sequence (at most ${L.pathCalls} calls and ${L.participants} participants), ` +
-        `the ones that reach the least code: ${dropped.map((c) => `sym:${c.callee.id}`).join(", ")}`,
+        `the ones that reach the least code: ${dropped.map((c) => c.callee.path).join(", ")}`,
     );
   }
   const participants = participantsOf();
@@ -2411,6 +3004,8 @@ function pathSequence(
     };
   });
 
+  const frames = pathFrames(entry.blocks ?? [], steps, stepSlug, ids);
+
   const view: PatchView & { type: "sequence" } = {
     id: viewId,
     type: "sequence",
@@ -2423,8 +3018,109 @@ function pathSequence(
     },
     participants,
     steps: steps.map((s) => s.step),
+    ...(frames.length > 0 ? { frames } : {}),
   };
   return { entry, entryId, view, participants, calls: steps, notes };
+}
+
+/**
+ * The arm of a drafted `alt` that holds the code after an `if` that leaves early: that code is the path itself, so
+ * its calls are not part of the branch's tour step. An `opt` drafted after a skipping guard maps to itself.
+ */
+const implicitArms = new WeakMap<SequenceFrame, SequenceArm>();
+
+/** Frames of a drafted sequence, at most this many (the outermost first). */
+const MAX_FRAMES = 5;
+
+/**
+ * The frames around the drawn calls: a `loop` around the calls in a loop, an `alt` around the calls of a branch whose
+ * calls sit in two or more of its arms (with an arm per arm that has calls), an `opt` around the calls of a branch
+ * that has calls in one arm only. Each label is a TODO that quotes the code that decides.
+ */
+function pathFrames(
+  blocks: readonly ControlBlock[],
+  steps: readonly { call: Call; step: PatchSequenceStep }[],
+  slug: string,
+  ids: FreeIds,
+): SequenceFrame[] {
+  const lineOf = (s: { call: Call }) => s.call.ref.site.startLine;
+  // a call on an arm's first line counts only from the column where the arm's body starts
+  const within = (r: { start: number; end: number; startCol?: number }) =>
+    steps.filter(
+      (s) =>
+        lineOf(s) <= r.end &&
+        (lineOf(s) > r.start ||
+          (lineOf(s) === r.start && (s.call.ref.site.startCol ?? 1) >= (r.startCol ?? 1))),
+    );
+  const frames: SequenceFrame[] = [];
+  for (const block of blocks) {
+    if (frames.length >= MAX_FRAMES) break;
+    const code = tick(block.condition);
+    let kind: SequenceFrame["kind"];
+    let inFrame: typeof steps;
+    let label: string;
+    let arms: SequenceArm[] | undefined;
+    if (block.kind === "loop") {
+      inFrame = within(block);
+      kind = "loop";
+      label = todo(`what repeats and until when, in a few words (the code: ${code})`);
+    } else {
+      const withCalls = block.arms
+        .map((arm) => ({ arm, calls: within(arm) }))
+        .filter((a) => a.calls.length > 0);
+      if (withCalls.length === 0) continue;
+      const guard =
+        withCalls.length === 1 && withCalls[0]!.arm.implicit ? withCalls[0]!.arm : undefined;
+      // a guard that returns with no drawn call (`if err != nil { return err }`) frames nothing: the code after it
+      // is the path itself. One that skips the rest of a loop body (`if (!job) { sleep(); continue }`) makes that
+      // rest an opt, so the skip is not lost.
+      const skips = guard?.leavesWith === "continue" || guard?.leavesWith === "break";
+      if (guard && !skips) continue;
+      inFrame = withCalls.flatMap((a) => a.calls);
+      kind = withCalls.length >= 2 ? "alt" : "opt";
+      // the frame names the decision; each arm quotes the code that picks it (so no code is quoted twice)
+      label =
+        kind === "alt"
+          ? todo("what is decided, in 2-4 words (the decision; each arm says its condition)")
+          : guard
+            ? todo(
+                `when the rest of the loop body runs, in a few words (the code: ${code} skips it with \`${guard.leavesWith}\`)`,
+              )
+            : todo(`when these calls run, in a few words (the code: ${code})`);
+      // each arm runs from its first call to the call before the next arm (a call in an `else if` condition
+      // stays with the arm above it): the arms split the frame's steps, as validation wants
+      if (kind === "alt") {
+        const order = steps.map((s) => s.step.id);
+        arms = withCalls.map((a, n) => ({
+          label: a.arm.implicit
+            ? todo(`otherwise, in a few words (the code after ${code}, which leaves early)`)
+            : a.arm.condition === "else"
+              ? todo("otherwise, in a few words")
+              : todo(`the condition, in a few words (the code: ${tick(a.arm.condition)})`),
+          fromStep: a.calls[0]!.step.id,
+          toStep:
+            n + 1 < withCalls.length
+              ? order[order.indexOf(withCalls[n + 1]!.calls[0]!.step.id) - 1]!
+              : inFrame.at(-1)!.step.id,
+        }));
+      }
+    }
+    if (inFrame.length === 0) continue;
+    const frame: SequenceFrame = {
+      id: ids.get("frame", `${slug}-${kind}`),
+      kind,
+      label,
+      fromStep: inFrame[0]!.step.id,
+      toStep: inFrame.at(-1)!.step.id,
+      ...(arms ? { arms } : {}),
+    };
+    const implicit = arms?.at(-1);
+    if (implicit && block.arms.at(-1)?.implicit) implicitArms.set(frame, implicit);
+    // the opt after a skipping guard is all "rest": its calls are the main path, not a branch of the tour
+    if (kind === "opt" && block.arms.at(-1)?.implicit) implicitArms.set(frame, frame);
+    frames.push(frame);
+  }
+  return frames;
 }
 
 /**
@@ -2446,11 +3142,20 @@ export function draftPath(input: DraftInput, entries: readonly PathEntry[]): Dra
       notes.push(entries.length > 1 ? `${tick(result.view.id)}: ${n}` : n);
   }
 
-  // the main calls of each sequence get a tour step; the budget is shared between the sequences
-  // (the tour stays at most one step longer than for one entry: each sequence has a big-picture step of its own)
+  // the tour stays inside the skill's budget (at most `pathSteps` steps): the map of the files (when the path crosses
+  // two or more), a big-picture step per sequence and the step on where to go next; the main calls of each sequence
+  // share what is left
+  const crossesFiles =
+    new Set(
+      sequences.flatMap((seq) =>
+        seq.participants
+          .map((id) => model.fileOfSymbolId(id.slice("sym:".length)))
+          .filter((f) => f !== undefined && !isTestFile(f)),
+      ),
+    ).size >= 2;
   const perSequence = Math.max(
-    2,
-    Math.floor((L.pathSteps + 1 - sequences.length) / sequences.length),
+    1,
+    Math.floor((L.pathSteps - (crossesFiles ? 2 : 1) - sequences.length) / sequences.length),
   );
   const nodes: PatchNode[] = [];
   const overlaid = new Set<string>();
@@ -2463,19 +3168,43 @@ export function draftPath(input: DraftInput, entries: readonly PathEntry[]): Dra
       const node = overlay(stored, id, todo("one sentence: what it does on this path."));
       if (node) nodes.push(node);
     }
-    let main = [...seq.calls];
+    // a branch (an alt or opt frame, the outermost one) is one tour step: its calls together, how it decides
+    const order = seq.calls.map((c) => c.step.id);
+    const holds = (r: { fromStep: string; toStep: string }, stepId: string) =>
+      order.indexOf(r.fromStep) <= order.indexOf(stepId) &&
+      order.indexOf(stepId) <= order.indexOf(r.toStep);
+    // (a step in the arm after an early exit is on the main path, not in that branch)
+    const branchOf = (stepId: string) =>
+      (seq.view.frames ?? []).find((f) => {
+        const rest = implicitArms.get(f);
+        return f.kind !== "loop" && holds(f, stepId) && !(rest && holds(rest, stepId));
+      });
+    type Group = { calls: typeof seq.calls; frame?: SequenceFrame };
+    const groups: Group[] = [];
+    for (const call of seq.calls) {
+      const frame = branchOf(call.step.id);
+      const last = groups.at(-1);
+      if (frame && last?.frame === frame) last.calls.push(call);
+      else groups.push({ calls: [call], ...(frame ? { frame } : {}) });
+    }
+    // a branch with two outcomes says how the path ends: it keeps its step before any single call
+    // (an opt is one of the outcomes too: the success path keeps its step before a log line)
+    const weight = (g: Group) =>
+      Math.max(...g.calls.map((c) => c.call.score)) +
+      (g.frame?.kind === "alt" ? 1000 : g.frame?.kind === "opt" ? 500 : 0);
+    let main = groups;
     const quiet: Call[] = [];
     while (main.length > perSequence) {
       const drop = [...main].sort(
-        (a, b) => a.call.score - b.call.score || main.indexOf(b) - main.indexOf(a),
+        (a, b) => weight(a) - weight(b) || main.indexOf(b) - main.indexOf(a),
       )[0]!;
-      quiet.push(drop.call);
+      quiet.push(...drop.calls.map((c) => c.call));
       main = main.filter((m) => m !== drop);
     }
     if (quiet.length > 0) {
       notes.push(
-        `${sequences.length > 1 ? `${tick(seq.view.id)}: ` : ""}calls without a tour step of their own (at most ${perSequence}): ` +
-          quiet.map((c) => `sym:${c.callee.id}`).join(", "),
+        `${sequences.length > 1 ? `${tick(seq.view.id)}: ` : ""}calls without a tour step of their own (at most ${plural(perSequence, "call step")}): ` +
+          quiet.map((c) => c.callee.path).join(", "),
       );
     }
     const quietNames = quiet.map((c) => c.callee.path);
@@ -2493,14 +3222,21 @@ export function draftPath(input: DraftInput, entries: readonly PathEntry[]): Dra
             ? todo("the answer to the question, as a plain statement")
             : todo(`the next part of the answer, from ${tick(start)}, as a plain statement`),
           todo("where this path starts, what it ends with, and which call decides the outcome."),
-          "Draft scope: selected direct call sites in source order. Review conditions, loops, repeated calls and omitted branches before publishing.",
+          // author instructions are TODOs, so that `todo-left` stops them from reaching a reader
+          todo(
+            "check the conditions, repeated calls and left-out branches in the code, then delete this line.",
+          ),
           ...seq.notes
             .filter((text) => /called more than once|calls left out of the sequence/.test(text))
             .map((text) => {
-              const targets = (text.match(/sym:[^\s,)]+/g) ?? []).map(tick).join(", ");
+              const targets = text
+                .slice(text.lastIndexOf(": ") + 2)
+                .split(", ")
+                .map((name) => tick(name.replace(/ \(\d+ calls\)$/, "")))
+                .join(", ");
               return text.startsWith("called more than once")
-                ? `Repeated targets: ${targets}. The sequence draws the first call site.`
-                : `Omitted targets: ${targets}. The draft reached its call or participant limit.`;
+                ? todo(`say if these repeated calls matter, or delete this line: ${targets}.`)
+                : todo(`say what these left-out calls do, or delete this line: ${targets}.`);
             }),
           quietNames.length > 0
             ? `Calls without a step of their own: ${nameList(quietNames)}. ${todo("say what they do in one sentence, or drop this one.")}`
@@ -2509,18 +3245,40 @@ export function draftPath(input: DraftInput, entries: readonly PathEntry[]): Dra
         [definition(seq.entry.symbol)],
       ),
     );
-    for (const { step } of main) {
+    for (const group of main) {
+      const [{ step }] = group.calls as [(typeof group.calls)[number]];
+      const branch = group.frame !== undefined;
+      // a branch whose other arm is the rest of the path (an early exit): its step is about the arm it holds, so two
+      // nested branches do not share one heading
+      const arm = group.frame?.arms?.find((a) => group.calls.every((c) => holds(a, c.step.id)));
+      const armCode =
+        group.frame && implicitArms.has(group.frame) && arm
+          ? /the code: (`[^`]+`)/.exec(arm.label)?.[1]
+          : undefined;
       tourSteps.push(
         tourStep(
           model,
           next(),
           seq.view.id,
-          [step.id],
-          note(
-            todo("what this call does for the reader, as a plain statement"),
-            todo("why this call matters here, and the condition under which it runs."),
-          ),
-          step.anchors ?? [],
+          group.calls.map((c) => c.step.id),
+          branch
+            ? note(
+                todo(
+                  armCode
+                    ? `what happens in this arm (the code: ${armCode}), as a plain statement`
+                    : "what this branch decides, as a plain statement",
+                ),
+                todo(
+                  `when each call runs (${nameList(group.calls.map((c) => c.step.label))}), in one short sentence each.`,
+                ),
+              )
+            : note(
+                todo("what this call does on this path, as a plain statement"),
+                todo("why this call matters here, and the condition under which it runs."),
+              ),
+          branch
+            ? group.calls.slice(0, L.codeRanges).map((c) => c.step.anchors![0]!)
+            : (step.anchors ?? []),
         ),
       );
     }
@@ -2528,16 +3286,83 @@ export function draftPath(input: DraftInput, entries: readonly PathEntry[]): Dra
 
   const first = sequences[0]!;
   const tourSlug = first.view.id.slice("view:".length);
+
+  // Where the path sits: when it crosses files, a small map of them comes first (the big picture before the calls).
+  const files = [
+    ...new Set(
+      sequences.flatMap((seq) =>
+        seq.participants
+          .map((id) => model.fileOfSymbolId(id.slice("sym:".length)))
+          .filter((f): f is string => f !== undefined && !isTestFile(f)),
+      ),
+    ),
+  ];
+  const views: PatchView[] = sequences.map((s) => s.view);
+  const fileIds = files.map((f) => `file:${f}`);
+  let mapId: string | undefined;
+  if (files.length >= 2) {
+    mapId = ids.get("view", `${tourSlug}-files`);
+    views.push({
+      id: mapId,
+      type: "graph",
+      title: todo(
+        "where this path runs, in plain words (for example: the files a job passes through)",
+      ),
+      scope: { root: "repo", depth: Math.max(...files.map((f) => f.split("/").length)) },
+      include: fileIds,
+      // the path is calls: what implements or extends what is another question (and points the other way)
+      edgeKinds: ["calls"],
+      stubs: { mode: "none" },
+    });
+    // the map shows each file as a box: each needs its summary, like the participants
+    for (const id of fileIds) {
+      const node = overlay(stored, id, todo("one sentence: what this file is for on this path."));
+      if (node) nodes.push(node);
+    }
+    tourSteps.unshift(
+      tourStep(
+        model,
+        "t0",
+        mapId,
+        fileIds,
+        note(
+          todo("where this path runs in the project, as a plain statement"),
+          todo(
+            "what each part is for, one short sentence each, in path order. Name a part in plain words (the runner), not by its file.",
+          ),
+        ),
+        [definition(first.entry.symbol)],
+      ),
+    );
+  }
+  tourSteps.push(
+    tourStep(
+      model,
+      "t-next",
+      mapId ?? first.view.id,
+      // no focus: the step points away from the map, at what the tour skipped
+      [],
+      note(
+        "Where to go next",
+        todo(
+          "the 2-3 calls or questions this tour skipped, and what each answers, one short sentence each.",
+        ),
+      ),
+      [],
+    ),
+  );
+  tourSteps.forEach((step, i) => (step.id = `t${i + 1}`));
+
   const patch: ExplainerPatch = {
     nodes,
-    views: sequences.map((s) => s.view),
+    views,
     tours: [
       {
         id: ids.get("tour", tourSlug),
         title: todo("the question this tour answers, in about 8 plain words"),
         summary: [
-          todo("the answer in one or two sentences, naming the key functions."),
-          todo("what the tour leaves out."),
+          todo("the answer in one sentence, in plain words."),
+          todo("then up to four reasons, and what the tour leaves out."),
         ].join(" "),
         steps: tourSteps,
       },

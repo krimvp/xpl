@@ -1,14 +1,14 @@
-import { applyPatch, ExplainerModel, type Explainer, type ExplainerPatch } from "@xpl/core";
+import {
+  applyPatch,
+  ExplainerModel,
+  validateExplainer,
+  type Explainer,
+  type ExplainerPatch,
+  type Issue,
+} from "@xpl/core";
 import type { CommandSpec } from "../command.js";
 import { plural, renderIssues } from "../format.js";
-import {
-  ABSOLUTE_WORDS,
-  LINT_LIMITS,
-  LINT_RULES,
-  lintExplainer,
-  type LintFinding,
-  type LintRule,
-} from "../lint.js";
+import { LINT_RULES, lintExplainer, type LintFinding, type LintRule } from "../lint.js";
 import { loadReadExplainer, openWorkspace, type Workspace } from "../repo.js";
 import { readPatch } from "./apply.js";
 
@@ -42,80 +42,22 @@ function countLine(findings: readonly LintFinding[]): string {
 
 export const lintCommand: CommandSpec = {
   name: "lint",
-  usage: "xpl lint [explainer] [--patch <file|->] [--warn-only]",
+  usage: "xpl lint [explainer] [--patch <file|->] [--warn-only] [--strict]",
   summary:
     "Check the reader-facing text and the tour order; --patch checks a patch before you apply it",
   details: [
-    "Reads the explainer (and the index when there is one, for the boxes and arrows of maps) and checks the",
-    "text a reader sees against the plain-language rules of the skill (reference/writing.md). Text checked: the",
-    "explainer title; tour titles, summaries and step notes; view titles; flow and sequence step labels and",
-    "summaries; the summaries and details of nodes, edges and concepts, and the labels of groups and concepts.",
-    "Findings:",
-    "  todo-left            a TODO in any authored text, including frame/transition labels, audience, technology",
-    "                       and view questions: one error per stored field, exit 1 even with --warn-only",
-    `  tour-summary         a tour without a \`summary\`, or one of fewer than ${LINT_LIMITS.summaryMinSentences} or more than ${LINT_LIMITS.summarySentences} sentences (the answer, then up to four reasons)`,
-    "  tour-first-step      the first step of a tour does not show the big picture: it focuses a test, only a",
-    "                       concept that lights up nothing, opens on a flow when the tour has a map, or its title",
-    '                       says "edge case", "corner case", "gotcha" or "open question"',
-    `  tour-covers-map      a map of at most ${LINT_LIMITS.mapBoxes} boxes that a tour uses has a box no step focuses (directly, by a`,
-    "                       member, a step or edge end, or a concept's related ids) and no note or summary names",
-    `  tour-length          a tour of more than ${LINT_LIMITS.tourSteps} steps`,
-    '  note-heading         a tour note that does not start with a "### Plain title" line',
-    "  code-title           a title (explainer, tour, view, note heading, group or concept label) that looks like",
-    "                       code: a call, an identifier with _, a dotted name, a # in a name, one camelCase word",
-    '  placeholder-title    a title such as "Fix 1", "Note" or "Step 3"',
-    `  long-sentence        a sentence over ${LINT_LIMITS.sentenceWords} words`,
-    `  long-average         a field whose sentences average over ${LINT_LIMITS.averageWords} words`,
-    '  bare-it              a sentence that starts with "It" or "This" and a verb ("It calls ...")',
-    "  filler-word          marketing or filler words (seamless, robust, leverage, simply, just, crucial, ...)",
-    `  absolute-word        ${ABSOLUTE_WORDS.join(", ")}: needs evidence`,
-    "  repeats-summary      a note sentence that repeats the summary of an element the step focuses",
-    `  long-note            a note whose text under its title is over ${LINT_LIMITS.noteWords} words`,
-    `  code-heavy           more different code names (code spans) than the reader can follow: over`,
-    `                       ${LINT_LIMITS.noteCodeNames} in a note, ${LINT_LIMITS.architectureCodeNames} in a note on an architecture map (a map with a box that`,
-    `                       has a role), ${LINT_LIMITS.summaryCodeNames} in a tour summary`,
-    "  flow-label-code      a flow step label written as code (flows name stages; sequences may show calls)",
-    "  markdown-in-plain    **bold**, __bold text__, a # heading or a [text](link) in a title or a label, which",
-    "                       the viewer shows as plain text",
-    "  markdown-in-summary  a # heading line or a [text](link) in the summary of an element or a step (inline",
-    "                       markdown such as code spans, **bold** and *emphasis* is fine there)",
-    "What the viewer will show (boxes and arrows are counted on the index; without one, big-map counts",
-    "`include` and crowded-map and system-map-no-edges are skipped):",
-    `  untitled-step        a tour step without a note, or whose note has no "### title" and a first sentence over`,
-    `                       ${LINT_LIMITS.titleSentenceChars} characters: the viewer shows that sentence cut short, or "Step N"`,
-    "  change-not-shown     a changed file (explainer of a change) whose code no tour step shows (its code ranges,",
-    "                       what it focuses, their members, ends and anchors); docs (readme, *.md), tests, lock",
-    "                       files and renames may instead be named in a tour text",
-    `  far-ranges           a tour step whose ranges in one file make more than ${LINT_LIMITS.placesPerFile} places over ${LINT_LIMITS.farRangeLines} lines`,
-    "                       apart: a slide shows a pane per place, and its last pane holds the rest",
-    "  long-talk-note       in a talk (a tour whose id or title says talk, presentation, demo or slides), a note",
-    `                       over ${LINT_LIMITS.talkNoteChars} characters under its title: Present sets it in smaller type`,
-    `  big-map              a graph view a tour shows with more than ${LINT_LIMITS.tourMapBoxes} boxes`,
-    `  crowded-map          a graph view with more than ${LINT_LIMITS.edgesPerBox} arrows (derived and stored) per box; the hint and`,
-    "                       --json (ids) list the least used drawn edges to put in the view's `hidden`",
-    "  system-map-no-edges  an indexed architecture map with a non-component role, at least two boxes and no",
-    "                       visible relationships; check whether source-backed relationships are missing",
-    "Code spans (`...`) are left out of the word checks, and example values in code spans (`503`, `-1`, `null`,",
-    '`/admin/*`, `"utf-8"`) do not count as code names. An absolute word has its evidence in the text of an',
-    "element with anchors, and in a tour note sentence that names a part the step shows (a focused element with",
-    "anchors, a symbol or a file; any focused element when the step has `code`); in an explainer of a change, a",
-    "tour sentence about what changes has the diff as its evidence. Box names match by word stems,",
-    'case-insensitive ("web server" names "Web servers"; `findEdge` names `nodes.findEdge`). Each finding names',
-    "the element, the field, a short quote and a fix. Fix them with a patch (`xpl apply`); for a finding you keep",
-    "on purpose, say why in your reply and run with --warn-only.",
-    "",
-    "--patch <file|->: lint the explainer as it would be after `xpl apply <explainer> <file>`: the patch is merged",
-    "in memory the way apply merges it (same checks, --actor llm), and nothing is written. A patch that apply would",
-    "reject prints the rejection, as apply prints it, and exits 1. Fix the findings in the patch, then apply it.",
-    "Omit the explainer when the repository has exactly one; otherwise supply its name.",
-    "Exit codes: 0 no findings; 1 any finding (so `xpl lint --patch p.json && xpl apply x p.json` stops on one;",
-    "with --warn-only only a todo-left error), or a rejected patch; 2 usage error.",
+    "Checks the text a reader sees against the writing rules of the skill (reference/writing.md).",
+    "It also checks the tour: the big picture first, every box visited, where to go next at the end.",
+    "Each finding names the element, the field, a short quote and a fix. The rules are listed in cli.md.",
+    "--patch lints the guide as it would be after `xpl apply` and prints the warnings apply would print; nothing is written.",
+    "Warnings the guide had before the patch (an old index binding) come last and do not change the exit code.",
+    "Exit codes: 0 no findings; 1 any finding or a warning the patch causes (with --warn-only, only todo-left), or a rejected patch; 2 usage.",
   ],
   options: {
     patch: {
       type: "string",
       arg: "<file|->",
-      desc: "Lint the explainer as it would be after this patch (`-`: stdin); nothing is written",
+      desc: "Lint the guide as it would be after this patch (`-`: stdin); nothing is written",
     },
     "warn-only": {
       type: "boolean",
@@ -137,6 +79,12 @@ export const lintCommand: CommandSpec = {
     let explainer: Explainer = loaded.explainer;
     let ws: Workspace | undefined;
     let patchInfo: { source: string; changed: string[]; protectedIds: string[] } | undefined;
+    /**
+     * The warnings `xpl apply` would print with this patch (protected ones are in the subject line).
+     * `fromPatch` is false for a warning the guide had before the patch (an index binding, older drift,
+     * older errors elsewhere): the patch cannot fix it, so it does not fail lint.
+     */
+    let applyIssues: (Issue & { fromPatch: boolean })[] = [];
     if (read !== undefined) {
       // The merge of `xpl apply` (core `applyPatch`), on a copy in memory: nothing is written.
       ws = await openWorkspace(ctx, { explainer: loaded });
@@ -167,8 +115,8 @@ export const lintCommand: CommandSpec = {
         ctx.out(
           [
             `rejected: ${plural(errors, "error")}, nothing was applied to ${loaded.rel} (patch from ${read.label})`,
-            ...renderIssues(result.issues),
-            "nothing linted: fix the patch, then run `xpl lint --patch` again",
+            ...renderIssues(result.issues, loaded.name),
+            `nothing linted: fix the patch, then run \`xpl lint ${loaded.name} --patch ${patchSource}\` again`,
           ].join("\n"),
         );
         return 1;
@@ -183,6 +131,17 @@ export const lintCommand: CommandSpec = {
         ),
       ];
       patchInfo = { source: read.label, changed: result.changed, protectedIds };
+      const key = (issue: Issue) => `${issue.code ?? ""}|${issue.elementId ?? ""}|${issue.message}`;
+      const before = new Set(
+        validateExplainer(loaded.explainer, ws.model, ws.texts, { mode: "strict" }).map(key),
+      );
+      applyIssues = result.issues
+        .filter((issue) => issue.code !== "protected")
+        .map((issue) => ({
+          ...issue,
+          // the summary of older errors elsewhere has no path; an index binding is never the patch's
+          fromPatch: issue.code !== "commit" && issue.path !== "" && !before.has(key(issue)),
+        }));
     }
 
     // The index (when there is one) gives the boxes and arrows of each map; lint works without it.
@@ -198,7 +157,9 @@ export const lintCommand: CommandSpec = {
       ws ? new ExplainerModel(explainer, ws.model) : undefined,
     );
     const errors = findings.filter((f) => f.severity === "error").length;
-    const code = (strict ? findings.length : errors) > 0 ? 1 : 0;
+    const patchIssues = applyIssues.filter((issue) => issue.fromPatch);
+    const guideIssues = applyIssues.filter((issue) => !issue.fromPatch);
+    const code = (strict ? findings.length + patchIssues.length : errors) > 0 ? 1 : 0;
     const counts: Record<string, number> = {};
     for (const f of findings) counts[f.rule] = (counts[f.rule] ?? 0) + 1;
 
@@ -213,6 +174,7 @@ export const lintCommand: CommandSpec = {
               ...(patchInfo.protectedIds.length > 0
                 ? { protectedIds: patchInfo.protectedIds }
                 : {}),
+              ...(applyIssues.length > 0 ? { applyIssues } : {}),
             }
           : {}),
         strict,
@@ -232,9 +194,30 @@ export const lintCommand: CommandSpec = {
           : "") +
         ")"
       : loaded.rel;
+    const applyLines = [
+      ...(patchIssues.length === 0
+        ? []
+        : [
+            "",
+            `\`xpl apply\` would warn (${patchIssues.length}); fix ${patchIssues.length === 1 ? "it" : "them"} in the patch now, because ids never change once applied:`,
+            ...renderIssues(patchIssues, loaded.name),
+          ]),
+      ...(guideIssues.length === 0
+        ? []
+        : [
+            "",
+            `\`xpl apply\` will also warn (${guideIssues.length}), about the guide, not this patch:`,
+            ...renderIssues(guideIssues, loaded.name),
+          ]),
+    ];
     if (findings.length === 0) {
-      ctx.out(`ok: ${subject}: ${plural(checked, "text")} checked, no findings`);
-      return 0;
+      ctx.out(
+        [
+          `${code === 0 && patchIssues.length === 0 ? "ok: " : ""}${subject}: ${plural(checked, "text")} checked, no findings`,
+          ...applyLines,
+        ].join("\n"),
+      );
+      return code;
     }
     const lines = [`${subject}: ${plural(checked, "text")} checked`];
     for (const [elementId, list] of byElement(findings)) {
@@ -258,6 +241,7 @@ export const lintCommand: CommandSpec = {
           : errors > 0
             ? `; ${plural(errors, "error")} (todo-left): exit 1 even with --warn-only`
             : "; warnings only (--warn-only)"),
+      ...applyLines,
     );
     ctx.out(lines.join("\n"));
     return code;

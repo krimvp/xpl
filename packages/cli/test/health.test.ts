@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { makeTempDir, writeFile, xpl, xplJson } from "./helpers.js";
+import { indexedFixture, makeTempDir, writeFile, xpl, xplJson } from "./helpers.js";
 
 /** Put together from pieces, so this file holds no string a scanner takes for a real key. */
 const AWS = ["AKIA", "Q3EGT5RL7NB2XW4Y"].join("");
@@ -62,5 +62,36 @@ describe("xpl health", () => {
         expect(result.err).not.toContain(value);
       }
     }
+  });
+});
+
+describe("xpl health on Rust", () => {
+  it("counts `mod` declarations and crate imports as uses, so no used module reads as unused", async () => {
+    const dir = makeTempDir("xpl-health-rs-");
+    writeFile(dir, "Cargo.toml", '[package]\nname = "job-runner"\nversion = "0.1.0"\n');
+    writeFile(dir, "src/lib.rs", "pub mod config;\npub mod runner;\n");
+    writeFile(dir, "src/main.rs", "use job_runner::runner::Runner;\n\nfn main() {}\n");
+    // config.rs is reached only through `pub mod config;` in lib.rs
+    writeFile(dir, "src/runner.rs", "pub struct Runner;\n");
+    writeFile(dir, "src/config.rs", "pub struct Settings;\n");
+    writeFile(dir, "src/orphan.rs", "pub struct Left;\n");
+    const indexed = await xpl(dir, "index", "--precise", "off");
+    expect(indexed.code, indexed.err).toBe(0);
+    const { code, json } = await xplJson(dir, "health");
+    expect(code).toBe(0);
+    expect(json.findings.map((f: any) => `${f.check} ${f.file}`)).toEqual([
+      "unused-file src/orphan.rs",
+    ]);
+    expect(json.notes).toEqual([]);
+  });
+});
+
+describe("xpl health on Java", () => {
+  it("does not call Main.java, the program's entry point, unused", async () => {
+    const dir = await indexedFixture("java-jobrunner");
+    const { code, json } = await xplJson(dir, "health");
+    expect(code).toBe(0);
+    expect(json.findings.map((f: any) => `${f.check} ${f.file}`)).toEqual([]);
+    expect(json.notes).toEqual([]);
   });
 });

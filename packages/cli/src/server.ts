@@ -42,6 +42,7 @@ import {
   artifactIdentity,
   applyUserEdits,
   UserEditError,
+  duplicateRequest,
   feedbackContextReason,
   parseFeedbackRequest,
 } from "@xpl/core";
@@ -624,7 +625,7 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       const state = await loadState();
       const change = state.loaded.explainer.change;
       if (change === undefined) {
-        throw new HttpError(404, "the explainer records no change, so there is no code before it");
+        throw new HttpError(404, "the guide records no change, so there is no code before it");
       }
       const changed = baseFileOf(change, path);
       if (!changed || changed.path !== path) {
@@ -766,8 +767,8 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
             throw new HttpError(400, errorMessage(error));
           }
           if (request.explainer !== undefined && request.explainer !== name)
-            throw new HttpError(400, "feedback names a different explainer");
-          await serial(() => importRequests(env.root, [request]));
+            throw new HttpError(400, "feedback names a different guide");
+          await serial(() => importRequests(env.root, [request], { dropDuplicates: true }));
           const state = await loadState();
           const contextReason =
             feedbackContextReason(request, artifactIdentity(freshExplainer(state), state.index)) ??
@@ -776,7 +777,10 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
           checkRequestStore();
           sendJson(req, res, 201, {
             ok: true,
-            request: readRequests(env.root).requests.find((r) => r.id === request.id),
+            request: (() => {
+              const saved = readRequests(env.root).requests;
+              return saved.find((r) => r.id === request.id) ?? duplicateRequest(saved, request);
+            })(),
             ...(contextReason
               ? { contextStatus: "outdated", contextReason }
               : { contextStatus: "current" }),

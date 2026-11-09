@@ -226,6 +226,26 @@ describe("heritage and type-ref sites", () => {
     ]);
   });
 
+  it("a named type in an alias's intersection is extended, as by an interface; elsewhere it is a type use", async () => {
+    const source = src(
+      "type Options = Base & ns.More<T> & { hooks: Hooks };",
+      "type Pair = (Left & { left: string }) & Right;",
+      "type Either = A | B;",
+      "function f(x: P & Q) {}",
+    );
+    expect(await sitesOf(source, "a.ts", ["extends", "implements"])).toEqual([
+      "extends Base «Base»",
+      "extends ns.More «ns.More»",
+      // the outer intersection first
+      "extends Right «Right»",
+      "extends Left «Left»",
+    ]);
+    const refs = await sitesOf(source, "a.ts", ["type-ref"]);
+    expect(refs).toContain("type-ref Hooks «Hooks»");
+    expect(refs).toContain("type-ref P «P»");
+    expect(refs.some((site) => /Base|Left|Right/.test(site))).toBe(false);
+  });
+
   it("type references in every position, but not declaration names, type parameters or heritage", async () => {
     const source = src(
       "class Box<T extends Base> implements Item {",
@@ -261,7 +281,7 @@ describe("heritage and type-ref sites", () => {
 });
 
 describe("imports", () => {
-  it("bindings for default, named, aliased, namespace, type-only and require forms", async () => {
+  it("bindings for default, named, aliased, namespace, type-only, require and await import forms", async () => {
     const source = src(
       "import def, { a, b as c, type D, type E as F } from './mod';",
       "import * as ns from '../ns.js';",
@@ -270,6 +290,8 @@ describe("imports", () => {
       "import fs = require('fs');",
       "const req = require('./req');",
       "const { r1, r2: r3 } = require('./destructured');",
+      "const dyn = await import('./dyn');",
+      "const { d1, d2: d3 } = await import('./dyn-destructured');",
     );
     const { facts } = await extract("a.ts", source);
     expect(
@@ -290,6 +312,9 @@ describe("imports", () => {
       "req <- ./req (module) «req = require('./req')»",
       "r1 <- ./destructured r1 «r1»",
       "r3 <- ./destructured r2 «r2: r3»",
+      "dyn <- ./dyn (module) «dyn = await import('./dyn')»",
+      "d1 <- ./dyn-destructured d1 «d1»",
+      "d3 <- ./dyn-destructured d2 «d2: d3»",
     ]);
   });
 
@@ -297,7 +322,7 @@ describe("imports", () => {
     const source = src(
       "import './side-effect';",
       "async function f() {",
-      "  const m = await import('./dyn');",
+      "  await import('./dyn');",
       "  require('./bare');",
       "  const n = require(dynamicName);",
       "}",

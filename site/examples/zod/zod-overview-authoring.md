@@ -50,8 +50,9 @@ npm run site
 The site check confirms the embedded index root `.`, commit `0b216ef`, and no
 local absolute path.
 
-The system map has two authored arrows. The application call is shown in
-`packages/zod/README.md` and implemented by the classic schema `parse` method. The core
-parser returns data on success and throws on issues; `safeParse` returns a success or failure
-result instead. The arrow now says **reports parse outcome** so it covers both paths.
-These arrows are reviewed source claims, not precise static call traces.
+The system map has one authored arrow, from your app to the Zod library. The call is shown in
+`packages/zod/README.md` and implemented by the classic schema `parse` method. The core parser
+returns data on success and throws on issues; `safeParse` returns a success or failure result
+instead. The arrow says **calls parse(input); gets data or an error**, so it covers both paths:
+a return value is an arrow label, not a box. This arrow is a reviewed source claim, not a
+precise static call trace.

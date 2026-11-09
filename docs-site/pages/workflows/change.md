@@ -11,6 +11,15 @@ The guide says what changes for users, where, who else is affected, and which te
 shows the diff, the code before the change, and which boxes are new or changed. For a pull request on GitHub,
 see [GitHub pull requests](pull-requests.md).
 
+![A change guide on the map of a job runner: the Scheduling box is marked Changed, metrics.ts is marked New, and an arrow named job.completed joins worker.ts to metrics.ts.](../../../docs/images/change-map-light.png)
+
 ## The commands behind it
 
-<!-- include README.md "### Explaining a change" -->
+`xpl change <guide> <base>..<head>` records the change in the guide: the base and head commits and every
+changed file with its hunks, read from git. It prints the changed symbols, their direct callers and the tests
+that reference them. Claims about the code before the change are checked against the base commit. The viewer
+marks the changed lines, and the changed words inside a rewritten line.
+
+`xpl draft change <guide>` drafts a tour of the change from what `xpl change` recorded. For a pull request
+on GitHub, `xpl pr prepare` fetches its base and head into a separate folder first; see
+[GitHub pull requests](pull-requests.md).

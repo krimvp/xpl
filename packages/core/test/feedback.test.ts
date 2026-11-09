@@ -19,12 +19,15 @@ it.each([
   [{ range: { ...request.range, file: "../outside.ts" } }, "repository-relative"],
   [{ range: { ...request.range, fromLine: 6 } }, "inclusive line numbers"],
   [{ outcome: { ...request.outcome, reason: "" } }, "reason must be"],
-  [{ outcome: { ...request.outcome, status: "approved" } }, "unknown feedback status"],
+  [
+    { outcome: { ...request.outcome, status: "approved" } },
+    'unknown feedback status "approved" (expected pending, addressed, unresolved, rejected or outdated)',
+  ],
   [{ outcome: { ...request.outcome, revision: -1 } }, "revision must be"],
   [{ outcome: { ...request.outcome, revision: 1.5 } }, "revision must be"],
   [{ outcome: { ...request.outcome, revision: Number.MAX_SAFE_INTEGER + 1 } }, "revision must be"],
   [{ context: null }, "unbound legacy feedback must be outdated"],
-  [{ kind: "generate" }, "unknown feedback kind"],
+  [{ kind: "generate" }, 'unknown feedback kind "generate" (expected correct, explain or expand)'],
 ])("rejects malformed imported request %j before storage", (change, error) => {
   expect(() =>
     parseFeedbackFile({ schema: FEEDBACK_SCHEMA, requests: [{ ...request, ...change }] }),

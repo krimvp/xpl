@@ -53,7 +53,11 @@ export async function openBundle(
  * part of it out of sight (PanZoom, "Fit all"): a spec that goes through every element fits it first.
  */
 export async function fitAll(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "Fit to view" }).click();
+  const fit = page.getByTestId("pz-fit");
+  // Read the label once the pane is measured (before that it always says "Fit all"). All of a big diagram in
+  // view already: the button offers "Readable size" instead.
+  await expect(fit).toHaveText(/^(Fit all|Readable size)/);
+  if ((await fit.textContent())?.startsWith("Fit all")) await fit.click();
 }
 
 export const focusOf = (page: Page) => page.evaluate(() => window.__xpl!.focus());
@@ -104,14 +108,14 @@ export async function openEditMenu(page: Page): Promise<Locator> {
   return menu;
 }
 
-/** Opens the tour editor (Edit > Edit the guide's steps). */
+/** Opens the tour editor (Edit > Edit the tour). */
 export async function openTourEditor(page: Page): Promise<void> {
   if ((await page.getByTestId("tour-panel").count()) > 0) return;
   await (await openEditMenu(page)).getByTestId("edit-tours").click();
   await expect(page.getByTestId("tour-panel")).toBeVisible();
 }
 
-/** Edit > Download explainer JSON; resolves to the download. */
+/** Edit > Download the guide as JSON; resolves to the download. */
 export async function downloadJson(page: Page) {
   const menu = await openEditMenu(page);
   const [download] = await Promise.all([

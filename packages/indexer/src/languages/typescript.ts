@@ -50,7 +50,7 @@ import { posix } from "node:path";
 import type { Node } from "web-tree-sitter";
 import { SpanIndex, nodeSpan, spanBetween, spanLineCount } from "../ast.js";
 import { probeModule, repoPath, resolveBareSpecifier, pathsConfigFor } from "./ts-modules.js";
-import { LocalScopes, patternNames } from "./ts-scope.js";
+import { LocalScopes, moduleCallOf, patternNames } from "./ts-scope.js";
 import type {
   ClassifiedSite,
   ExportFact,
@@ -107,6 +107,7 @@ const SCAN_TYPES = [
   "extends_clause",
   "implements_clause",
   "extends_type_clause",
+  "intersection_type",
   "type_identifier",
   "nested_type_identifier",
   "jsx_opening_element",
@@ -128,20 +129,6 @@ const SCAN_TYPES = [
 
 function isFunctionValue(node: Node | null | undefined): boolean {
   return !!node && FUNCTION_VALUE.has(node.type);
-}
-
-/** `require("./x")` with a single string literal argument (a CommonJS import, not a definition). */
-function isRequireCall(node: Node | null | undefined): boolean {
-  const call = unwrapValue(node);
-  if (call?.type !== "call_expression") return false;
-  const fn = call.childForFieldName("function");
-  const args = call.childForFieldName("arguments");
-  return (
-    fn?.type === "identifier" &&
-    fn.text === "require" &&
-    args?.namedChildCount === 1 &&
-    args.namedChild(0)?.type === "string"
-  );
 }
 
 /** The function node an initialiser evaluates to (arrow / function expression, possibly cast or parenthesised). */
@@ -174,6 +161,15 @@ function unwrapValue(node: Node | null | undefined): Node | null {
 function stringContent(node: Node): string {
   const text = node.text;
   return text.length >= 2 ? text.slice(1, -1) : text;
+}
+
+/** The object type literals a type alias's value is made of: `{...}`, or each `{...}` of an `A & {...}`. */
+function objectTypesOf(value: Node | null): Node[] {
+  if (!value) return [];
+  if (value.type === "object_type") return [value];
+  if (value.type === "parenthesized_type") return objectTypesOf(value.namedChild(0));
+  if (value.type === "intersection_type") return value.namedChildren.flatMap(objectTypesOf);
+  return [];
 }
 
 /** The name of a class member / object property, or undefined for computed names we cannot spell. */
@@ -720,9 +716,27 @@ function heritageKind(node: Node): "extends" | "implements" | undefined {
       top = parent;
       continue;
     }
+    if (parent.type === "intersection_type" && isAliasIntersection(parent)) return "extends";
     if (!HERITAGE_CLAUSES.has(parent.type)) return undefined;
     return parent.type === "implements_clause" ? "implements" : "extends";
   }
+}
+
+/** The nodes that name a type (`Base`, `ns.Base`, `Base<T>`): what an `extends` site can point at. */
+const TYPE_NAME_NODES = new Set(["type_identifier", "nested_type_identifier", "generic_type"]);
+
+/**
+ * Is this intersection the value of a type alias (`type X = Base & { ... }`, also inside parentheses)? Its named
+ * types are what `X` extends, as `interface X extends Base` says; an intersection elsewhere is a type use.
+ */
+function isAliasIntersection(node: Node): boolean {
+  let top = node;
+  while (top.parent?.type === "parenthesized_type" || top.parent?.type === "intersection_type")
+    top = top.parent;
+  return (
+    top.parent?.type === "type_alias_declaration" &&
+    top.parent.childForFieldName("value")?.id === top.id
+  );
 }
 
 /** Is this `type_identifier` a use of a type parameter (`T` inside `class C<T>`, `<T>(x: T) => …`)? */
@@ -1112,7 +1126,12 @@ class Extractor {
       }
       case "type_alias_declaration": {
         const name = node.childForFieldName("name");
-        if (name) this.emit(prefix + name.text, "type", stmt, stmt, parent);
+        if (!name) break;
+        const path = prefix + name.text;
+        this.emit(path, "type", stmt, stmt, parent);
+        // `type X = { a: T }` and `type X = A & { a: T }` hold fields like an interface.
+        for (const literal of objectTypesOf(node.childForFieldName("value")))
+          this.interfaceBody(literal, path);
         break;
       }
       case "enum_declaration": {
@@ -1251,8 +1270,8 @@ class Extractor {
   private declarators(outer: Node, declaration: Node, scope: Scope): void {
     const list = declaration.namedChildren.filter((c) => c.type === "variable_declarator");
     list.forEach((declarator, i) => {
-      // `const x = require("./x")` binds an import; it is not a definition of x.
-      if (isRequireCall(declarator.childForFieldName("value"))) return;
+      // `const x = require("./x")` and `const { x } = await import("./x")` bind imports; they define no x.
+      if (moduleCallOf(declarator.childForFieldName("value"))) return;
       const first = i === 0 ? outer : declarator;
       const last = i === list.length - 1 ? outer : declarator;
       const nameNode = declarator.childForFieldName("name");
@@ -1580,6 +1599,11 @@ class Extractor {
         case "extends_type_clause":
           for (const type of n.childrenForFieldName("type")) this.heritage("extends", type);
           break;
+        case "intersection_type":
+          if (isAliasIntersection(n))
+            for (const type of n.namedChildren)
+              if (TYPE_NAME_NODES.has(type.type)) this.heritage("extends", type);
+          break;
         case "type_identifier":
         case "nested_type_identifier":
           this.onTypeRef(n);
@@ -1842,11 +1866,11 @@ class Extractor {
   private onDeclarator(d: Node): void {
     const nameNode = d.childForFieldName("name");
     const valueNode = d.childForFieldName("value");
-    // `const x = require("./y")` / `const { a, b: c } = require("./y")`
-    const call = unwrapValue(valueNode);
-    if (call?.type === "call_expression") {
+    // `const x = require("./y")` / `const { a, b: c } = require("./y")` / `const { a } = await import("./y")`
+    const call = moduleCallOf(valueNode);
+    if (call) {
       const arg = call.childForFieldName("arguments")?.namedChild(0);
-      if (isRequireCall(call) && arg && nameNode) {
+      if (arg && nameNode) {
         const module = stringContent(arg);
         this.handled.add(call.id);
         if (nameNode.type === "identifier") {

@@ -25,15 +25,16 @@ test("map text lists only active nodes and filtered relationships with trust and
   await toggle.focus();
   await page.keyboard.press("Enter");
   const text = page.getByRole("region", { name: "Diagram as text" });
-  await expect(text.getByRole("list", { name: "Nodes" }).getByRole("button")).toHaveText([
-    "Queue.pop",
+  // in the map's reading order (the parts list's and the matrix's): the caller before what it calls
+  await expect(text.getByRole("list", { name: "Boxes" }).getByRole("button")).toHaveText([
     "Runner.dispatch",
+    "Queue.pop",
   ]);
-  const links = text.getByRole("list", { name: "Relationships" });
+  const links = text.getByRole("list", { name: "Arrows" });
   const call = links.getByRole("button", { name: "Runner.dispatch to Queue.pop: calls ×1" });
-  await expect(call).toHaveAccessibleDescription("heuristic");
+  await expect(call).toHaveAccessibleDescription("heuristic: matched by name");
   await page.keyboard.press("Tab");
-  await expect(text.getByRole("button", { name: "Queue.pop", exact: true })).toBeFocused();
+  await expect(text.getByRole("button", { name: "Runner.dispatch", exact: true })).toBeFocused();
   await page.keyboard.press("Tab");
   await page.keyboard.press("Tab");
   await expect(call).toBeFocused();
@@ -62,7 +63,9 @@ for (const type of ["sequence", "flow"] as const) {
       );
     await page.getByRole("button", { name: "Text view", exact: true }).click();
     const text = page.getByRole("region", { name: "Diagram as text" });
-    await expect(text.getByRole("list", { name: "Relationships" })).toContainText("to");
+    // a sequence lists its steps in reading order, its frames and arms among them
+    const list = type === "sequence" ? "Steps" : "Arrows";
+    await expect(text.getByRole("list", { name: list })).toContainText("to");
     const button = text.getByRole("button", { name: /requeue\(job, backoff\)/ }).first();
     await button.focus();
     await page.keyboard.press("Enter");
@@ -70,10 +73,12 @@ for (const type of ["sequence", "flow"] as const) {
     await expect
       .poll(() => linesWith(page.locator('[data-file="src/runner.ts"]'), ".xpl-hl"))
       .toEqual([76, 77, 78]);
-    await expect(text).toContainText("authored");
+    // a sequence's steps are its author's by definition: its text view lists them without saying so
+    if (type === "sequence") await expect(text).not.toContainText("drawn by the author");
     if (type === "flow") {
+      await expect(text).toContainText("drawn by the author");
       await text
-        .getByRole("list", { name: "Relationships" })
+        .getByRole("list", { name: "Arrows" })
         .getByRole("button", { name: "run(job) to requeue(job, backoff)", exact: true })
         .click();
       await expect.poll(() => selectionOf(page)).toEqual(["dispatch:2->dispatch:3:0"]);
@@ -98,7 +103,7 @@ test("flow text distinguishes outgoing relationships and endpoint source", async
     "?mode=explore&view=view:dispatch",
   );
   await page.getByRole("button", { name: "Text view", exact: true }).click();
-  const links = page.getByRole("list", { name: "Relationships" });
+  const links = page.getByRole("list", { name: "Arrows" });
   const run = links.getByRole("button", { name: "pop() to run(job): run", exact: true });
   const retry = links.getByRole("button", {
     name: "pop() to requeue(job, backoff): retry",

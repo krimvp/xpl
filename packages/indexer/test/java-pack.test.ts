@@ -1,7 +1,33 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
+import type { SymbolIndex } from "@xpl/core";
 import { extract, indexFiles, refTriples, symbolLines } from "./helpers.js";
 
 const src = (...lines: string[]) => lines.join("\n") + "\n";
+
+/** Calls made on one line of a file, as `from -> to`. */
+const callsAt = (index: SymbolIndex, file: string, line: number) =>
+  index.refs
+    .filter((r) => r.kind === "call" && r.from.startsWith(`${file}#`) && r.site.startLine === line)
+    .map((r) => `${r.from} -> ${r.to}`)
+    .sort();
+
+/** Every Java file of a fixture, by repository path. */
+function fixtureFiles(name: string): Record<string, string> {
+  const root = join(import.meta.dirname, "../../../fixtures", name);
+  const files: Record<string, string> = {};
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else if (entry.name.endsWith(".java"))
+        files[relative(root, path)] = readFileSync(path, "utf8");
+    }
+  };
+  walk(join(root, "src"));
+  return files;
+}
 
 describe("Java language pack", () => {
   it("indexes declarations and links same-package calls and construction across files", async () => {
@@ -46,6 +72,110 @@ describe("Java language pack", () => {
       "src/demo/Queue.java#Queue.Queue -> src/demo/Queue.java#Queue.job (write)",
     );
     expect(index.refs.every((ref) => ref.resolution === "heuristic")).toBe(true);
+  });
+
+  it("resolves a bare receiver through the class's fields and a bare call through the enclosing class", async () => {
+    const { index } = await indexFiles({
+      "src/p/Pool.java": src("package p;", "class Pool { void lease() {} }"),
+      "src/p/User.java": src(
+        "package p;",
+        "class User {",
+        "  private final Pool other;",
+        "  User(Pool other) { this.other = other; }",
+        "  void go() { other.lease(); helper(); stat(); }",
+        "  void shadow(Helper other) { other.lease(); }",
+        "  void helper() {}",
+        "  static void stat() {}",
+        "  class Inner { void up() { helper(); other.lease(); } }",
+        "}",
+        "class Helper { void lease() {} }",
+      ),
+    });
+    expect(callsAt(index, "src/p/User.java", 5)).toEqual([
+      "src/p/User.java#User.go -> src/p/Pool.java#Pool.lease",
+      "src/p/User.java#User.go -> src/p/User.java#User.helper",
+      "src/p/User.java#User.go -> src/p/User.java#User.stat",
+    ]);
+    // a parameter of the same name hides the field
+    expect(callsAt(index, "src/p/User.java", 6)).toEqual([
+      "src/p/User.java#User.shadow -> src/p/User.java#Helper.lease",
+    ]);
+    // an inner class reaches the outer class's methods and fields
+    expect(callsAt(index, "src/p/User.java", 9)).toEqual([
+      "src/p/User.java#User.Inner.up -> src/p/Pool.java#Pool.lease",
+      "src/p/User.java#User.Inner.up -> src/p/User.java#User.helper",
+    ]);
+  });
+
+  it("resolves a bare name to the innermost scope that declares it", async () => {
+    const { index } = await indexFiles({
+      "src/p/Pool.java": src("package p;", "class Pool { void lease() {} }"),
+      "src/p/Other.java": src("package p;", "class Other { void lease() {} }"),
+      "src/p/Outer.java": src(
+        "package p;",
+        "import java.util.List;",
+        "class Outer {",
+        "  private Pool worker;",
+        "  private Pool FAST;",
+        "  void helper() {}",
+        "  class Inner {",
+        "    void helper() {}",
+        "    void up() { helper(); }",
+        "  }",
+        "  void each(List<Other> list) {",
+        "    list.forEach(worker -> worker.lease());",
+        "    for (Other worker : list) worker.lease();",
+        "    worker.lease();",
+        "  }",
+        "  enum Mode { FAST; void go() { FAST.lease(); helper(); } void helper() {} }",
+        "}",
+        "record Lease(Pool held) { void go() { held.lease(); } }",
+        "interface Shared { Pool SHARED = new Pool(); default void go() { SHARED.lease(); } }",
+      ),
+    });
+    const outer = "src/p/Outer.java";
+    const at = (line: number) => callsAt(index, outer, line);
+    // the innermost class that declares `helper` wins
+    expect(at(9)).toEqual([`${outer}#Outer.Inner.up -> ${outer}#Outer.Inner.helper`]);
+    // a lambda parameter hides the field: its type is unknown, so no arrow
+    expect(at(12)).toEqual([]);
+    // a for-each variable hides the field and has its own type
+    expect(at(13)).toEqual([`${outer}#Outer.each -> src/p/Other.java#Other.lease`]);
+    // outside the lambda and the loop, the field is back
+    expect(at(14)).toEqual([`${outer}#Outer.each -> src/p/Pool.java#Pool.lease`]);
+    // an enum constant hides the outer field `FAST`, and the enum's own `helper` wins
+    expect(at(16)).toEqual([`${outer}#Outer.Mode.go -> ${outer}#Outer.Mode.helper`]);
+    // a record component and an interface constant are fields with a type
+    expect(at(18)).toEqual([`${outer}#Lease.go -> src/p/Pool.java#Pool.lease`]);
+    expect(at(19)).toEqual([
+      `${outer}#Shared -> src/p/Pool.java#Pool`,
+      `${outer}#Shared.go -> src/p/Pool.java#Pool.lease`,
+    ]);
+  });
+
+  it("links the java-jobrunner calls through fields and inside the same class", async () => {
+    const { index } = await indexFiles(fixtureFiles("java-jobrunner"));
+    const runner = "src/main/java/jobrunner/Runner.java";
+    const worker = "src/main/java/jobrunner/Worker.java";
+    expect(callsAt(index, runner, 33)).toEqual([
+      `${runner}#Runner.start -> ${runner}#Runner.dispatch`,
+    ]);
+    expect(callsAt(index, runner, 46)).toEqual([
+      `${runner}#Runner.dispatch -> src/main/java/jobrunner/WorkerPool.java#WorkerPool.lease`,
+    ]);
+    expect(callsAt(index, runner, 52)).toEqual([
+      `${runner}#Runner.dispatch -> src/main/java/jobrunner/WorkerPool.java#WorkerPool.release`,
+    ]);
+    expect(callsAt(index, runner, 57)).toEqual([
+      `${runner}#Runner.dispatch -> src/main/java/jobrunner/Config.java#Config.number`,
+      `${runner}#Runner.dispatch -> src/main/java/jobrunner/Config.java#Config.number`,
+      `${runner}#Runner.dispatch -> src/main/java/jobrunner/Queue.java#Queue.requeue`,
+      `${runner}#Runner.dispatch -> ${runner}#Runner.backoffDelay`,
+    ]);
+    expect(callsAt(index, worker, 40)).toEqual([
+      `${worker}#Worker.run -> src/main/java/jobrunner/EventBus.java#EventBus.JobCompleted`,
+      `${worker}#Worker.run -> src/main/java/jobrunner/EventBus.java#EventBus.emit`,
+    ]);
   });
 
   it("resolves explicit package imports and class heritage without linking external imports", async () => {

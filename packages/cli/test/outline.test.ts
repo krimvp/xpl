@@ -35,11 +35,43 @@ describe("xpl outline", () => {
     expect(lines[0]).toMatch(/^repo {2}\S+ {2}12 files, \d+ symbols$/);
     expect(out).toMatch(/^ {2}dir:src {2}dir {2}7 files {2}in=\d+ out=\d+$/m);
     expect(out).toMatch(
-      /^ {4}file:src\/runner\.ts {2}typescript {2}1-111 {2}in=\d+ out=\d+ {2}\[\+4\]$/m,
+      /^ {4}file:src\/runner\.ts {2}typescript {2}1-110 {2}in=\d+ out=\d+ {2}\[\+4\]$/m,
     );
     // depth 2 stops at files: symbols are not listed
     expect(out).not.toContain("sym:src/runner.ts#Runner");
     expect(out).toContain("[+n]: n children below the depth limit");
+  });
+
+  it("shows code files by default in a Maven layout: one row for a chain of single folders, deeper until code shows", async () => {
+    const maven = makeTempDir("xpl-outline-maven-");
+    writeFile(maven, "src/main/java/app/A.java", "package app;\nclass A { void a() {} }\n");
+    writeFile(maven, "src/main/java/app/B.java", "package app;\nclass B {}\n");
+    writeFile(maven, "src/test/java/app/ATest.java", "package app;\nclass ATest {}\n");
+    // a file at the top that is not code does not stop the search for code
+    writeFile(maven, "README.md", "# app\n");
+    expect((await xpl(maven, "index", "--precise", "off")).code).toBe(0);
+    const { code, out } = await xpl(maven, "outline");
+    expect(code).toBe(0);
+    expect(out.split("\n").map((line) => line.replace(/(\S) {2}.*$/, "$1"))).toEqual([
+      "repo",
+      "  dir:src",
+      "    dir:src/main/java/app",
+      "      file:src/main/java/app/A.java",
+      "      file:src/main/java/app/B.java",
+      "    dir:src/test/java/app",
+      "      file:src/test/java/app/ATest.java",
+      "  file:README.md",
+      "",
+      "[+n]: n children below the depth limit (raise --depth, or --under <id> to open one)",
+    ]);
+    // --json reports the depth it showed, not the default it started from
+    expect((await xplJson(maven, "outline")).json.depth).toBe(3);
+    // an explicit depth is kept as asked
+    const two = await xpl(maven, "outline", "--depth", "2");
+    expect(two.out).toMatch(
+      /^ {4}dir:src\/main\/java\/app {2}dir {2}2 files {2}in=0 out=0 {2}\[\+2\]$/m,
+    );
+    expect(two.out).not.toContain("file:src");
   });
 
   it("--under with --depth lists symbols with kind and line range", async () => {
@@ -52,7 +84,7 @@ describe("xpl outline", () => {
       "2",
     );
     expect(code).toBe(0);
-    expect(out).toMatch(/^file:src\/runner\.ts {2}typescript {2}1-111 /);
+    expect(out).toMatch(/^file:src\/runner\.ts {2}typescript {2}1-110 /);
     expect(out).toMatch(/^ {2}sym:src\/runner\.ts#Runner {2}class {2}12-93 /m);
     expect(out).toMatch(
       /^ {4}sym:src\/runner\.ts#Runner\.dispatch {2}method {2}42-88 {2}in=\d+ out=\d+$/m,
@@ -126,7 +158,7 @@ describe("xpl outline", () => {
     const hidden = await xpl(dir, "outline", "--under", "file:config/default.yaml", "--depth", "3");
     expect(hidden.out).toContain("[16 keys hidden]");
     expect(hidden.out).not.toContain("retry.maxRetries");
-    expect(hidden.out).toContain("use --keys");
+    expect(hidden.out).toContain("--keys lists them");
 
     const shown = await xpl(
       dir,
@@ -168,7 +200,8 @@ describe("xpl outline", () => {
     expect(runner).toMatchObject({
       type: "file",
       kind: "typescript",
-      range: { startLine: 1, endLine: 111 },
+      // as `wc -l` counts: the final newline ends line 110 and starts none
+      range: { startLine: 1, endLine: 110 },
     });
     const dispatch = find(json.tree, "sym:src/runner.ts#Runner.dispatch")!;
     expect(dispatch).toMatchObject({
@@ -281,10 +314,18 @@ describe("xpl outline", () => {
       expect(find(commas.json.tree, "file:src/runner.ts")).toBeDefined();
     });
 
+    // `--kind enum,type` names the candidates `draft states` points at, at any depth
+    it("searches every level when no --depth is given", async () => {
+      const { code, out } = await xpl(dir, "outline", "--kind", "type");
+      expect(code).toBe(0);
+      expect(symbols(out)).toContainEqual(["sym:src/bus.ts#Listener", "type"]);
+      expect(out).not.toContain("[+");
+    });
+
     it("counts only what matches in [+n]", async () => {
       // depth 2 from the repo stops at the files: src/queue.ts holds one class and no other match
       const { out } = await xpl(dir, "outline", "--kind", "class", "--depth", "2");
-      expect(out).toMatch(/^ {4}file:src\/queue\.ts {2}typescript {2}1-104 .* \[\+1\]$/m);
+      expect(out).toMatch(/^ {4}file:src\/queue\.ts {2}typescript {2}1-103 .* \[\+1\]$/m);
       expect(out).toMatch(/^ {4}file:src\/runner\.ts {2}typescript .* \[\+2\]$/m);
       expect(out).not.toContain("keys hidden");
     });
@@ -322,7 +363,7 @@ describe("xpl outline", () => {
       const { code, err } = await xpl(dir, "outline", "--kind", "meth");
       expect(code).toBe(2);
       expect(err).toContain(
-        'unknown symbol kind "meth" (expected: class, interface, function, method, type, variable, enum, key, other)',
+        'unknown symbol kind "meth" (expected: class, interface, function, method, type, variable, enum, key, other; Go: struct, field)',
       );
       expect((await xpl(dir, "outline", "--help")).out).toContain("--kind <k,...>");
     });
@@ -369,5 +410,42 @@ describe("xpl outline: recursion", () => {
       ["sym:a.ts#fact", true],
       ["sym:a.ts#once", false],
     ]);
+  });
+});
+
+describe("xpl outline and show on Go code", () => {
+  it("say struct and field, as Go does; --json and --kind keep the stored kinds", async () => {
+    const go = makeTempDir("xpl-outline-go-");
+    writeFile(go, "go.mod", "module example.com/q\n\ngo 1.22\n");
+    writeFile(
+      go,
+      "q.go",
+      "package q\n\ntype Job struct {\n\tID string\n}\n\nvar Default = Job{}\n",
+    );
+    expect((await xpl(go, "index", "--precise", "off")).code).toBe(0);
+    const { out } = await xpl(go, "outline", "--under", "file:q.go");
+    expect(out).toContain("sym:q.go#Job  struct  3-5");
+    expect(out).toContain("sym:q.go#Job.ID  field  4-4");
+    // a package-level variable is still a variable
+    expect(out).toContain("sym:q.go#Default  variable");
+    expect((await xpl(go, "show", "sym:q.go#Job")).out.split("\n")[0]).toMatch(
+      /^sym:q\.go#Job \(struct\) q\.go:3-5 /,
+    );
+    const json = await xplJson<{ tree: Node }>(
+      go,
+      "outline",
+      "--under",
+      "file:q.go",
+      "--kind",
+      "struct",
+    );
+    expect(find(json.json.tree, "sym:q.go#Job")?.kind).toBe("class");
+    expect(find(json.json.tree, "sym:q.go#Default")).toBeUndefined();
+    // the footer names the kind as typed, not the stored one
+    expect(
+      (await xpl(go, "outline", "--under", "file:q.go", "--kind", "field")).out.split("\n").at(-1),
+    ).toBe(
+      "--kind field: only symbols of these kinds, plus the dirs, files and parent symbols that contain them",
+    );
   });
 });

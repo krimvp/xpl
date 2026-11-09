@@ -97,13 +97,14 @@ test.describe("architecture maps", () => {
     await page.getByTestId("guide-tour-picker").selectOption("tour:completion-path");
     await expect(page.getByTestId("guide-tour-picker")).toHaveValue("tour:completion-path");
     await expect(
-      page.getByRole("navigation", { name: "Guide contents" }).getByRole("button"),
+      page.getByRole("navigation", { name: "Tour steps" }).getByRole("button"),
     ).toHaveCount(2);
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(ARCHITECTURE_BUNDLE.href + "?mode=read&perspective=map&view=view:overview");
     await page.waitForFunction(() => window.__xpl !== undefined);
-    const topic = page.getByRole("combobox", { name: "Choose a topic" });
+    // (on a phone the picker stays in sight under the title)
+    const topic = page.getByRole("combobox", { name: "Choose a diagram" });
     await topic.selectOption("view:completion-path");
     await expect(
       page.getByRole("heading", { name: "Worker setup and success events" }),
@@ -123,6 +124,7 @@ test.describe("architecture maps", () => {
     );
     await page.goto(TS_BUNDLE.href + "?perspective=flow&view=view:dispatch");
     await page.waitForFunction(() => window.__xpl !== undefined);
+    // (a sequence is named as one)
     await expect(page.locator(".workspace-caption .eyebrow")).toHaveText("Sequence");
     await expect(page.locator(".workspace-caption")).toContainText(
       "How does a job get from the queue to a worker?",
@@ -138,14 +140,17 @@ test.describe("architecture maps", () => {
     const connections = page.getByTestId("map-connections");
     await expect(connections).toBeVisible();
     await expect(connections.locator("li button")).toHaveText([
-      /From Startup\s+calls ×2 · derived · heuristic/,
-      /From Scheduling\s+calls ×4 · derived · heuristic/,
-      /To Events and metrics\s+job.completed · authored/,
+      /From Startup\s+calls ×2 · heuristic: matched by name/,
+      /From Scheduling\s+calls ×4 · heuristic: matched by name/,
+      /To Events and metrics\s+job.completed · added by the author/,
     ]);
     const event = connections.getByRole("button", { name: /To Events and metrics.*job.completed/ });
     await event.focus();
     await page.keyboard.press("Enter");
-    await expect(page.getByTestId("breadcrumb-topic")).toHaveText("job.completed");
+    // an arrow is named by its ends, its label after them
+    await expect(page.getByTestId("breadcrumb-topic")).toHaveText(
+      "Workers → metrics.py (job.completed)",
+    );
     await expect(page.locator('[data-element-id="edge:job-completed"]').first()).toHaveClass(
       /is-selected/,
     );
@@ -191,6 +196,11 @@ test.describe("architecture maps", () => {
       "data-icon",
       "storage",
     );
+    // the store's icon keeps its outline (a rule for the letter squares of symbols took it away)
+    await expect(box(page, "grp:settings-file").locator(".box-icon rect")).toHaveCSS(
+      "stroke",
+      /^(?!none)/,
+    );
     await expect(box(page, "grp:operator").locator(".box-icon")).toHaveAttribute(
       "data-icon",
       "person",
@@ -199,6 +209,13 @@ test.describe("architecture maps", () => {
     await expect(buttonsOf(page, "grp:job-runner").locator(".zoom")).toHaveCount(1);
     await expect(buttonsOf(page, "grp:settings-file").locator(".zoom")).toHaveCount(0);
     await expect(page.getByTestId("zoom-trail")).toHaveCount(0);
+    // the corner buttons sit in the name's row, which keeps room for them (a box summary's last lines
+    // ran under them at the bottom corner)
+    const service = (await box(page, "grp:job-runner").locator(".box").boundingBox())!;
+    const buttons = buttonsOf(page, "grp:job-runner").locator(".zoom, .expand-here");
+    await expect(buttons).toHaveCount(2);
+    for (const button of await buttons.all())
+      expect((await button.boundingBox())!.y - service.y).toBeLessThan(12);
   });
 
   test("the zoom button opens the inside, and the trail leads back up", async ({ page }) => {
@@ -294,12 +311,13 @@ test.describe("architecture maps", () => {
       await page.waitForFunction(() => window.__xpl !== undefined);
       const include = (await stateOf(page)).include;
       const expand = page.locator(caption).getByRole("button", {
-        name: "Show parts of Job runner here",
+        name: "Show what is inside Job runner, here",
       });
       await expect(expand).toBeVisible();
       if (perspective === "map") {
-        await expect(expand).toHaveText("Show parts");
-        const topic = page.locator(caption).getByRole("combobox", { name: "Choose a topic" });
+        await expect(expand).toHaveText("Show inside");
+        // the picker stays in sight on a phone, beside the caption's action
+        const topic = page.locator(caption).getByRole("combobox", { name: "Choose a diagram" });
         await expect
           .poll(async () => {
             const actionBounds = (await expand.boundingBox())!;
@@ -349,11 +367,11 @@ test.describe("architecture maps", () => {
     );
     await page.goto("http://xpl.test/?mode=explore&view=view:system");
     await page.waitForFunction(() => window.__xpl !== undefined);
-    await page.getByRole("button", { name: "Show parts of Job runner here" }).click();
+    await page.getByRole("button", { name: "Show what is inside Job runner, here" }).click();
     await expect(box(page, "grp:job-runner")).toHaveClass(/is-container/);
     await page.evaluate(() => window.__xpl!.setView("view:overview"));
     await expect(page.locator('.diagram[data-view-id="view:overview"]')).toBeVisible();
-    const expand = page.getByRole("button", { name: "Show parts of Scheduling here" });
+    const expand = page.getByRole("button", { name: "Show what is inside Scheduling, here" });
     await expect(expand).toBeVisible();
     await expand.click();
     await expect(box(page, "grp:scheduling")).toHaveClass(/is-container/);

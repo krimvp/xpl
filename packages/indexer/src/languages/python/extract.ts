@@ -285,6 +285,7 @@ export class Extractor implements Env {
     const isMethod = scope.kind === "class";
     this.emit(path, isMethod ? "method" : "function", outer, scope.path);
     if (isMethod) this.methodClass.set(def.id, scope.path);
+    if (isMethod && name === "__init__" && body) this.constructorFields(def, body, scope.path);
     if (body) this.visitStatements(named(body), { kind: "function", path });
   }
 
@@ -313,6 +314,43 @@ export class Extractor implements Env {
   }
 
   private readonly directNames = new Map<string, Set<string>>();
+
+  /**
+   * The attributes `__init__` sets on its receiver (`self._ready: list[Job] = []`, `self.x = ...`) are the
+   * class's fields, as the TypeScript and Go packs index a class's or struct's fields: a `variable` child of
+   * the class, over the assignment's lines. Once per name, the first assignment, and not when the class body
+   * defines the name already (a declared field, a property). Assignments in nested functions do not count.
+   */
+  private constructorFields(def: Node, body: Node, classPath: string): void {
+    const receiver = paramsOf(def)[0];
+    if (!receiver || receiver.splat || isStaticMethod(def)) return;
+    const defined = this.directNames.get(classPath);
+    const walk = (stmts: readonly Node[]): void => {
+      for (const stmt of stmts) {
+        if (definitionOf(stmt)) continue;
+        if (stmt.type !== "expression_statement") {
+          walk(nestedStatements(stmt));
+          continue;
+        }
+        const assignment = named(stmt)[0];
+        if (assignment?.type !== "assignment") continue;
+        const left = assignment.childForFieldName("left");
+        const targets =
+          left?.type === "pattern_list" || left?.type === "tuple_pattern" ? named(left) : [left];
+        for (const target of targets) {
+          if (target?.type !== "attribute") continue;
+          const object = target.childForFieldName("object");
+          const attr = target.childForFieldName("attribute");
+          if (object?.type !== "identifier" || object.text !== receiver.name || !attr) continue;
+          const path = `${classPath}.${attr.text}`;
+          if (defined?.has(attr.text) || this.variables.has(path)) continue;
+          this.variables.add(path);
+          this.emit(path, "variable", stmt, classPath);
+        }
+      }
+    };
+    walk(named(body));
+  }
 
   /** Is `name` assigned or defined by a statement directly in the scope's body (any position)? */
   private definedDirectly(scope: Scope, name: string): boolean {

@@ -24,7 +24,7 @@ export function drawnEdges(edges: readonly DerivedEdge[]): DerivedEdge[] {
       out.push(copy);
       continue;
     }
-    first.label = `${first.label ?? `${first.kind} ×${first.count}`} · ${edge.kind} ×${edge.count}`;
+    first.label = `${first.label ?? kindCount(first.kind, first.count)} · ${kindCount(edge.kind, edge.count)}`;
     first.count += edge.count;
     first.anchors = [...first.anchors, ...edge.anchors];
     if (edge.resolution !== first.resolution) first.resolution = "mixed";
@@ -33,4 +33,31 @@ export function drawnEdges(edges: readonly DerivedEdge[]): DerivedEdge[] {
   return out.map((edge) =>
     !edge.stored && edge.label !== undefined ? { ...edge, label: edge.label } : edge,
   );
+}
+
+/** A field's arrow on a data map (core labels it "holds"): the row's field holds a value of the type it points at. */
+export function isHolds(edge: { kind: string; label?: string | undefined }): boolean {
+  return edge.kind === "references" && edge.label === "holds";
+}
+
+/**
+ * The words of an arrow without a label of its own: its kind and how many references it counts ("calls ×3").
+ * A class extends or implements another once, so a count of one says nothing there: "implements".
+ */
+export function kindCount(kind: string, count: number): string {
+  return count === 1 && (kind === "extends" || kind === "implements") ? kind : `${kind} ×${count}`;
+}
+
+/**
+ * A row's type, with the type it holds named as its table on the map is: a table drawn as
+ * "runner.Config" (two types share the name) makes the row's "Config" read "runner.Config", and a table drawn
+ * as "Retry" makes "config.Retry" read "Retry". Any other type is left as the code writes it.
+ */
+export function rowTypeText(type: string, table: string | undefined): string {
+  if (!table) return type;
+  const base = table.split(".").pop()!;
+  if (!/^[A-Za-z_]\w*$/.test(base)) return type;
+  const named = new RegExp(`(?<![\\w.])(?:[A-Za-z_]\\w*\\.)*${base}(?![\\w.])`, "g");
+  const found = type.match(named);
+  return found && found.length === 1 ? type.replace(named, table) : type;
 }

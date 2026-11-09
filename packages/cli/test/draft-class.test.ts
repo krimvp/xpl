@@ -67,7 +67,12 @@ describe("xpl draft class", () => {
       ["sym:src/shape.ts#Shape"],
       ["sym:src/circle.ts#Circle"],
       ["sym:src/square.ts#Square"],
+      [],
     ]);
+    expect(patch.tours?.[0]?.steps?.at(-1)?.note).toBe(
+      "### Where to go next\n\nTODO: which type to use when, and what to read next, one short sentence each.",
+    );
+    expect(r.out).toContain("a tour of 5 steps");
 
     const applied = await xpl(dir, "apply", "shapes", out);
     expect(applied.code, applied.out).toBe(0);
@@ -95,6 +100,47 @@ describe("xpl draft class", () => {
     expect(draft.json.patch.nodes?.find((n) => n.id === "sym:src/Base.java#Base")?.summary).toBe(
       "TODO: one plain sentence: what this type is for (abstract class; implements `Handler`; methods: `name` and `handle`).",
     );
+  });
+
+  it("on Go, says 'embeds' for an embedded type and leaves test types off the map, with a note", async () => {
+    const dir = makeTempDir("xpl-class-go-");
+    writeFile(dir, "go.mod", "module example.com/jobs\n\ngo 1.22\n");
+    writeFile(
+      dir,
+      "queue/queue.go",
+      "package queue\n\ntype Queue struct{}\n\nfunc (q *Queue) Pop() int { return 0 }\n",
+    );
+    writeFile(
+      dir,
+      "runner/runner.go",
+      'package runner\n\nimport "example.com/jobs/queue"\n\ntype JobQueue interface {\n\tPop() int\n}\n\ntype Logged struct {\n\t*queue.Queue\n}\n',
+    );
+    writeFile(
+      dir,
+      "runner/runner_test.go",
+      'package runner\n\nimport "example.com/jobs/queue"\n\ntype recording struct {\n\t*queue.Queue\n}\n',
+    );
+    expect((await xpl(dir, "index", "--precise", "off")).code).toBe(0);
+    expect((await xpl(dir, "new", "jobs")).code).toBe(0);
+    const draft = await xplJson<{ patch: ExplainerPatch; notes: string[] }>(
+      dir,
+      "draft",
+      "class",
+      "jobs",
+      "sym:queue/queue.go#Queue",
+    );
+    const view = draft.json.patch.views?.[0] as GraphView;
+    expect(view.include).toEqual([
+      "sym:runner/runner.go#JobQueue",
+      "sym:queue/queue.go#Queue",
+      "sym:runner/runner.go#Logged",
+    ]);
+    expect(draft.json.patch.nodes?.map((n) => n.summary)).toEqual([
+      "TODO: one plain sentence: what this type is for (interface; implemented by `Queue` and `Logged`; methods: `Pop`).",
+      "TODO: one plain sentence: what this type is for (struct; implements `JobQueue`; embedded by `Logged`; methods: `Pop`).",
+      "TODO: one plain sentence: what this type is for (struct; embeds `Queue`; implements `JobQueue`).",
+    ]);
+    expect(draft.json.notes).toContain("left off the map: `recording` (a type in a test file)");
   });
 
   it("refuses an entry that is not a class or an interface", async () => {

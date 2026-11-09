@@ -448,6 +448,9 @@ describe("default labels", () => {
     expect(symbolLabel({ path: "workers.0.name", kind: "key" })).toBe("name");
     expect(symbolLabel({ path: "solo", kind: "function" })).toBe("solo");
     expect(symbolLabel({ path: "foo~2", kind: "function" })).toBe("foo~2");
+    // a Ruby singleton method (`def self.run` in `module Jobrunner`) is named as it is called
+    expect(symbolLabel({ path: "Jobrunner.self.run", kind: "method" })).toBe("Jobrunner.run");
+    expect(symbolLabel({ path: "A.Jobrunner.self.run", kind: "method" })).toBe("Jobrunner.run");
   });
 
   it("defaultLabel handles every structural id and falls back to the id", () => {

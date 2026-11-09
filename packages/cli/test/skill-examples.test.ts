@@ -135,6 +135,37 @@ describe("reference/patch-format.md", () => {
   });
 });
 
+describe("reference/writing.md", () => {
+  it("the model tour summaries of section 4 pass `xpl lint`, so a writer who copies them gets no finding", async () => {
+    const markdown = readFileSync(join(SKILL, "reference", "writing.md"), "utf8");
+    const section = markdown.slice(
+      markdown.indexOf("## 4. The tour summary"),
+      markdown.indexOf("## 5."),
+    );
+    const models = section
+      .split("\n")
+      .filter((line) => line.trim().startsWith("> "))
+      .map((line) => line.trim().slice(2));
+    expect(models.length).toBeGreaterThanOrEqual(2);
+    const dir = await indexedFixture("ts-jobrunner");
+    expect((await xpl(dir, "new", "doc")).code).toBe(0);
+    const patch = {
+      tours: models.map((summary, i) => ({
+        id: `tour:model-${i}`,
+        title: "A model summary",
+        summary,
+        steps: [],
+      })),
+    };
+    const linted = await invoke(["lint", "doc", "--patch", "-"], {
+      cwd: dir,
+      stdin: JSON.stringify(patch),
+    });
+    expect(linted.out).toMatch(/no findings/);
+    expect(linted.code, linted.out).toBe(0);
+  });
+});
+
 describe("reference/examples", () => {
   const cases: [string, string, string][] = [
     [
@@ -163,7 +194,7 @@ describe("reference/examples", () => {
       // it is complete: nothing the views show is left without a summary
       const status = await xpl(dir, "status", "example");
       expect(status.out).toMatch(
-        /^to do: 0 unexplained, 0 drifted, 0 missing anchors, 0 requests$/m,
+        /^to do: 0 with no text, 0 changed code links, 0 missing code links, 0 requests$/m,
       );
       // applying it again is a no-op
       const again = await xpl(dir, "apply", "example", patch);

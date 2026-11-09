@@ -3,6 +3,7 @@ import {
   deriveGraph,
   expandInPlace,
   OUTSIDE_ROLES,
+  processFlow,
   repr,
   type ElementId,
   type ExplainerModel,
@@ -12,6 +13,20 @@ import {
   type View,
 } from "@xpl/core";
 import { reachOf } from "./derive.js";
+import {
+  layoutGraph,
+  layoutGraphFitting,
+  type ChangeMarks,
+  type GraphLayout,
+} from "./layout/graphLayout.js";
+import {
+  layoutFlow,
+  layoutFlowFitting,
+  NARROW_PANE,
+  sharedActor,
+  type FlowLayout,
+  type FlowLayoutOptions,
+} from "./layout/flowLayout.js";
 import type { ViewerState } from "./store.js";
 
 export function topicElements(ids: readonly ElementId[], model: ExplainerModel): Set<ElementId> {
@@ -134,6 +149,63 @@ export function workspaceView(state: ViewerState, type: "map" | "flow"): View | 
   );
 }
 
+/**
+ * The ids a map's first view looks for its first box in (GraphView `order`): the focus of the first tour step
+ * on this map (the tour being read first), then the map's include list. A map opened with nothing selected
+ * starts on the box the tour starts on, not on whatever box the include list names first.
+ */
+export function startOrder(
+  model: ExplainerModel,
+  view: GraphView,
+  tourId?: string,
+): readonly ElementId[] {
+  const include = Array.isArray(view.include) ? view.include : [];
+  const current = tourId ? model.tour(tourId) : undefined;
+  const tours = current ? [current, ...model.tours.filter((t) => t !== current)] : model.tours;
+  // (a step about every box of the map names no part to start on: the next step that names some does)
+  const all = (focus: readonly ElementId[]) =>
+    include.length > 1 && include.every((id) => focus.includes(id));
+  for (const tour of tours)
+    for (const step of tour.steps)
+      if (
+        step.view === view.id &&
+        Array.isArray(step.focus) &&
+        step.focus.length > 0 &&
+        !all(step.focus)
+      )
+        return [...step.focus, ...include];
+  return include;
+}
+
+/** The id of the map a guide without one gets: the boxes of its flow (`workspaceMap`). */
+export const GENERATED_MAP_ID = "view:workspace-map";
+
+/** The boxes of the map a guide without one gets: its flow's parts, or the top level of the code. */
+function generatedInclude(state: ViewerState): ElementId[] {
+  const process = workspaceView(state, "flow") as SequenceView | undefined;
+  return (process?.participants ?? state.model.children("repo")).filter(
+    (id) => typeof id === "string" && state.model.hasNode(id),
+  );
+}
+
+/**
+ * True when the Map tab has a map to show: one the guide has, or one made of 3 boxes or more. A map of a flow's
+ * one or two boxes says less than the flow itself.
+ */
+export function hasMapTab(state: ViewerState): boolean {
+  return (
+    state.model.views.some((view) => view.type === "graph") || generatedInclude(state).length >= 3
+  );
+}
+
+/**
+ * True when the Flow tab has a flow or a sequence to show. A guide without one gets no Flow tab: a list of
+ * the tour's steps under the name "Flow" only repeated the Tour.
+ */
+export function hasFlowTab(state: Pick<ViewerState, "model">): boolean {
+  return state.model.views.some((view) => view.type === "sequence" || view.type === "flow");
+}
+
 export function workspaceMap(state: ViewerState) {
   const authored = workspaceView(state, "map") as GraphView | undefined;
   const process = workspaceView(state, "flow") as SequenceView | undefined;
@@ -149,15 +221,17 @@ export function workspaceMap(state: ViewerState) {
         state.expanded,
       )
     : {
-        id: "view:workspace-map",
+        id: GENERATED_MAP_ID,
         type: "graph",
-        title: "System map",
+        // what it draws, in plain words: not a "System map", which in a guide is the top level of all
+        title: process?.title ? `Parts of “${process.title}”` : "The top level of the code",
         scope: { root: "repo", depth: 1 },
-        include: process?.participants ?? state.model.children("repo"),
+        include: generatedInclude(state),
         provenance: { origin: "static" },
         stubs: { mode: "none" },
       };
-  const graph = deriveGraph(view, state.model);
+  // (the text names the type of each row of a data-model view)
+  const graph = deriveGraph(view, state.model, { text: (file) => state.files[file] });
   const included = new Set(view.include);
   const related = new Set<ElementId>();
   for (const id of topicElements(state.selection, state.model)) {
@@ -177,14 +251,27 @@ export function workspaceMap(state: ViewerState) {
  * the flow as a narrow outline beside it, which follows the selection and the caret. Without a setting: a flow or
  * sequence of three steps or more whose code (every step's anchors in the current code) is all in one file, the
  * steps of one function, where the question lives in the code and a big canvas only repeats it (review
- * 2026-10-03, senior §5).
+ * 2026-10-03, senior §5). A flow with two or more outcomes (terminal steps) is a choice between them: it is
+ * drawn as a diagram, where the outcomes sit side by side (a narrow outline cut them off).
  */
+/**
+ * The one function a flow's steps are in (`sharedActor`), by its name: said once with the flow (a caption's
+ * "all in Ky.#calculateRetryDelay"), not under every box. Undefined for a map, or steps in several parts.
+ */
+export function flowOwnerName(view: View | undefined, model: ExplainerModel): string | undefined {
+  if (view?.type !== "flow") return undefined;
+  const owner = sharedActor(processFlow(view));
+  return owner ? model.label(owner) : undefined;
+}
+
 export function codeFirstView(view: View | undefined): boolean {
   if (!view || view.type === "graph") return false;
   if (view.layout === "code-first") return true;
   if (view.layout === "diagram") return false;
   const steps = Array.isArray(view.steps) ? view.steps : [];
   if (steps.length < 3) return false;
+  if (view.type === "flow" && steps.filter((step) => step?.shape === "terminal").length >= 2)
+    return false;
   const files = new Set<string>();
   for (const step of steps) {
     const anchors = (Array.isArray(step?.anchors) ? step.anchors : []).filter(
@@ -237,4 +324,67 @@ export function stepLinks(flow: ProcessFlow, stepId: string): StepLink[] {
     }
   }
   return out;
+}
+
+/**
+ * The direction (right or down) each graph view was first laid out in, for the page's life: the Tour's
+ * picture, the Map, Present and Explore draw a view the same way round, and a pane that changes shape (Show
+ * code, a wider slide column) changes only the zoom. The first pane a view is drawn in picks it.
+ */
+const directions = new Map<string, GraphLayout["direction"]>();
+
+/** `layoutGraphFitting` the first time a view is drawn; the same direction every time after. */
+export async function layoutView(
+  viewId: string,
+  graph: Parameters<typeof layoutGraphFitting>[0],
+  viewport: { width: number; height: number } | undefined,
+  maxZoom: number | undefined,
+  padding: number | undefined,
+  changes: ChangeMarks | undefined,
+  pins: GraphView["layout"],
+): Promise<GraphLayout> {
+  const known = directions.get(viewId);
+  if (known) return layoutGraph(graph, { direction: known, pins }, changes);
+  const layout = await layoutGraphFitting(graph, viewport, maxZoom, padding, changes, pins);
+  // (a layout with no direction, the grid fallback, decides nothing)
+  if (!layout.fallback && viewport) directions.set(viewId, layout.direction);
+  return layout;
+}
+
+/** Per flow view: the direction and the number of parts it was first laid out in (as `directions`). */
+const flowShapes = new Map<string, Pick<FlowLayout, "direction" | "parts" | "column">>();
+
+/**
+ * The pane a flow's shape is chosen for: the window less the page's columns and header, the same size
+ * whichever tab or picture draws the flow first. (The real panes differ: the Tour's picture, the Flow tab,
+ * Explore and a pane that shows code. A shape picked from the first of them made one flow two layouts on one
+ * page, and the next page load could pick a third.)
+ */
+export function flowPane(): { width: number; height: number } {
+  const wide = window.innerWidth >= NARROW_PANE;
+  return {
+    width: Math.max(320, window.innerWidth - (wide ? 240 : 0)),
+    height: Math.max(320, window.innerHeight - 130),
+  };
+}
+
+/**
+ * `layoutFlowFitting` for `flowPane` the first time a flow is drawn; the same direction and parts every time
+ * after, so the Tour's picture, the Flow tab and Explore draw a flow the same way round, and "Fit all" or a
+ * pane that changes shape changes only the zoom. (Present picks its own, for its slide.)
+ */
+export async function layoutFlowView(
+  viewId: string,
+  flow: ProcessFlow,
+  options: Omit<FlowLayoutOptions, "direction" | "parts"> = {},
+): Promise<FlowLayout> {
+  const known = flowShapes.get(viewId);
+  if (known) return layoutFlow(flow, { ...options, ...known });
+  const layout = await layoutFlowFitting(flow, flowPane(), options);
+  flowShapes.set(viewId, {
+    direction: layout.direction,
+    parts: layout.parts,
+    ...(layout.column ? { column: true } : {}),
+  });
+  return layout;
 }

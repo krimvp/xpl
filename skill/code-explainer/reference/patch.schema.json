@@ -575,6 +575,17 @@
             }
           ]
         },
+        "render": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": ["matrix"]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "stubs": {
           "anyOf": [
             {
@@ -861,6 +872,26 @@
         },
         "toStep": {
           "type": "string"
+        },
+        "arms": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "fromStep": {
+                "type": "string"
+              },
+              "toStep": {
+                "type": "string"
+              }
+            },
+            "required": ["label", "fromStep", "toStep"],
+            "additionalProperties": false
+          }
         }
       },
       "required": ["id", "kind", "label", "fromStep", "toStep"],

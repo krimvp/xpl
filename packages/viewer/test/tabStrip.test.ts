@@ -38,6 +38,13 @@ describe("revealOffset: scrolling a tab into sight", () => {
     expect(revealOffset(strip(500), { left: 800, right: 880 }, 44)).toBe(524);
   });
 
+  it("scrolling forward, starts the strip at a tab's start, not mid-word in the tab before", () => {
+    // without the starts, 804: the strip shows from 848, in the middle of the tab at 700-850
+    expect(
+      revealOffset(strip(500), { left: 1000, right: 1160 }, 44, [0, 300, 700, 850, 1000]),
+    ).toBe(806);
+  });
+
   it("stays within what the strip can scroll to", () => {
     expect(revealOffset(strip(500), { left: 10, right: 120 }, 44)).toBe(0);
     expect(revealOffset(strip(0), { left: 1900, right: 2000 }, 44)).toBe(1600);

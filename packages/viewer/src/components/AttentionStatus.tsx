@@ -51,8 +51,8 @@ export function AttentionStatus() {
         </summary>
         <div className="service-disclosure">
           <p>
-            Locations follow unchanged code. Watching never rewrites prose, accepts proposals or
-            removes feedback.
+            Code links move with code that moved. Watching never changes text, accepts changes or
+            deletes feedback.
           </p>
           {watch?.stale && (
             <p>
@@ -84,7 +84,7 @@ export function AttentionStatus() {
               )}
               {g.errors.map((message, i) => (
                 <p role="alert" key={i}>
-                  {message} Inspect and repair this guide before export.
+                  {message} Fix this guide before you save it as a page.
                 </p>
               ))}
               <ul>
@@ -96,11 +96,11 @@ export function AttentionStatus() {
                         ? "Moved: locations followed unchanged code. Keep the prose."
                         : element.status === "drifted"
                           ? "Drifted: inspect the changed code and revise its explanation."
-                          : "Missing: restore the code or explicitly replace/remove its evidence."}
+                          : "Missing: restore the code, or replace or remove its code link."}
                     </p>
                     {g.path === connection.attachment!.guide && (
                       <button className="btn" onClick={() => store.select([element.id])}>
-                        Inspect element
+                        Show it
                       </button>
                     )}
                   </li>
@@ -108,7 +108,7 @@ export function AttentionStatus() {
               </ul>
               {g.counts && g.counts.drifted + g.counts.missing === 0 && !g.errors.length && (
                 <p>
-                  No changed or missing evidence. Moved locations can be saved with{" "}
+                  No code link changed or went missing. To save the code links that moved, run{" "}
                   <code>{g.resolveCommand}</code>.
                 </p>
               )}
@@ -121,8 +121,8 @@ export function AttentionStatus() {
                   </p>
                   <pre>{g.revisionCommand}</pre>
                   <p>
-                    This starts the explicit revision workflow. Inspect its diff and decisions.
-                    Accept a proposal separately; no changes are applied here.
+                    This command asks your agent for a revision. Check what it proposes, then accept
+                    it as a separate step. This panel changes nothing.
                   </p>
                 </details>
               )}

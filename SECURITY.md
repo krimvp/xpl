@@ -2,8 +2,8 @@
 
 ## Supported versions
 
-Security fixes are made for the latest release line. The current supported line is 0.1.x. Upgrade to the
-latest published version before reporting a vulnerability.
+Security fixes are made for the latest minor release, now 0.3.x (see [CHANGELOG.md](CHANGELOG.md)).
+Upgrade to the latest published version before you report a vulnerability.
 
 ## Reporting a vulnerability
 
@@ -13,11 +13,11 @@ maintainer through [GitHub](https://github.com/krimvp).
 
 ## Security model
 
-`xpl view` and `xpl service` serve repository content. They bind to loopback by default; using `--host` to
-bind another interface exposes that content to clients that can reach the host. Review the network boundary
-before doing so.
+`xpl view` and `xpl service` serve repository content. `xpl view` binds to loopback by default. Its `--host`
+option binds another interface, and then every client that can reach that interface can read the content.
+Check the network boundary before you use it. `xpl service` always binds to 127.0.0.1.
 
-The standalone HTML bundle includes source excerpts selected for the explanation and can be shared or
+The standalone HTML bundle holds the source excerpts that the guide links to, and it can be shared or
 published. Check its contents before distribution. `integrity.json` records hashes that detect missing or
 changed bundled files. It does not prove who published the package or that its contents are trustworthy.
 

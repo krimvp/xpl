@@ -7,12 +7,24 @@ import { expect, test } from "@playwright/test";
 import {
   ARCHITECTURE_BUNDLE,
   openBundle,
+  openEditMenu,
   openVariant,
   readEmbeddedBundle,
   stateOf,
   TS_BUNDLE,
   withBundle,
 } from "./helpers.js";
+
+/** True when the focus is on the last visible control of the dialog `selector` (focusTrap.ts FOCUSABLE). */
+function lastControlFocused(selector: string): boolean {
+  const root = document.querySelector(selector)!;
+  const controls = [
+    ...root.querySelectorAll<HTMLElement>(
+      "input:not(:disabled), select:not(:disabled), textarea:not(:disabled), button:not(:disabled), a[href], summary",
+    ),
+  ].filter((el) => el.getClientRects().length > 0);
+  return controls.length > 1 && document.activeElement === controls.at(-1);
+}
 
 test.describe("who the page is for", () => {
   test("the author's audience line shows under the guide's title", async ({ page }) => {
@@ -117,8 +129,9 @@ test.describe("the keyboard on a map", () => {
     const service = page.locator('.diagram [data-element-id="grp:job-runner"]');
     await page.locator('.diagram [data-element-id="grp:operator"]').click();
     await page.locator(".diagram .panzoom").focus();
-    // Tab to the service box (the operator is picked, the service has the focus)
-    for (let i = 0; i < 6; i++) {
+    // Tab past the zoom buttons (they come first) to the service box (the operator is picked, the service
+    // has the focus)
+    for (let i = 0; i < 16; i++) {
       await page.keyboard.press("Tab");
       if (await service.evaluate((el) => el === document.activeElement)) break;
     }
@@ -143,7 +156,7 @@ test.describe("the keyboard on a map", () => {
       );
     expect(names.length).toBeGreaterThan(2);
     expect(new Set(names).size).toBe(names.length);
-    expect(names[0]).toMatch(/^(Open in Map|Open in Flow|Show the code), step 1: /);
+    expect(names[0]).toMatch(/^(Open in Map|Open in Flow|Show code), step 1: /);
   });
 });
 
@@ -177,6 +190,30 @@ test.describe("short and narrow screens", () => {
     await expect(page.locator(".workspace-caption .eyebrow")).toBeHidden();
     // the location bar is one row: the topic's name gives way to the buttons
     expect((await page.locator(".workspace-location").boundingBox())!.height).toBeLessThan(48);
+  });
+
+  test("200% zoom (720×450) with a step on screen: the header is one row, the diagram half the height", async ({
+    page,
+  }) => {
+    await openVariant(
+      page,
+      (bundle) => {
+        bundle.explainer.title = "How the job runner hands out jobs and retries them";
+        // (a question would take a second caption row)
+        bundle.explainer.views[0].scope.question = "Which part hands a job to a worker?";
+      },
+      "",
+      { width: 720, height: 450 },
+    );
+    await expect.poll(async () => (await stateOf(page)).stepId).toBe("t1");
+    await page.getByTestId("perspective-map").click();
+    await expect(page.getByTestId("topic-summary")).toBeVisible();
+    // (a second header row took 40px of the 450)
+    expect((await page.locator(".header").boundingBox())!.height).toBeLessThan(48);
+    await expect(page.locator(".workspace-caption .view-question")).toBeHidden();
+    const diagram = (await page.locator(".workspace-diagram").boundingBox())!;
+    expect(diagram.height).toBeGreaterThanOrEqual(225);
+    expect(diagram.y + diagram.height).toBeLessThanOrEqual(450);
   });
 
   test("a phone: a step picker instead of the pinned list, a tour picker inside the screen", async ({
@@ -255,4 +292,81 @@ test("every code pane can be reached with the keyboard (its code is a tab stop, 
     await expect(each).toHaveAttribute("tabindex", "0");
     await expect(each).toHaveAttribute("aria-label", /source code/);
   }
+});
+
+test.describe("dialogs give the keyboard back where it was", () => {
+  test("Feedback keeps Tab inside while open, and Escape returns to its button", async ({
+    page,
+  }) => {
+    await page.goto(TS_BUNDLE.href);
+    const opener = page.getByRole("button", { name: /^Feedback/ });
+    await opener.click();
+    const panel = page.getByRole("dialog", { name: "Reader feedback" });
+    await expect(panel).toBeFocused();
+    const inside = () => page.evaluate(() => !!document.activeElement?.closest(".feedback-panel"));
+    // Shift+Tab from the panel itself goes round to its last control, never to the page behind it
+    await page.keyboard.press("Shift+Tab");
+    await expect.poll(() => page.evaluate(lastControlFocused, ".feedback-panel")).toBe(true);
+    // Tab from the panel's last control comes back to its first
+    for (let i = 0; i < 15; i++) {
+      await page.keyboard.press("Tab");
+      expect(await inside()).toBe(true);
+    }
+    await page.keyboard.press("Shift+Tab");
+    expect(await inside()).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
+    await expect(opener).toBeFocused();
+  });
+
+  test("Search keeps Tab inside both ways while open", async ({ page }) => {
+    await page.goto(TS_BUNDLE.href);
+    await page.getByRole("button", { name: "Search and guides" }).click();
+    const panel = page.getByRole("dialog", { name: "Search and guides" });
+    await expect(panel.getByRole("searchbox")).toBeFocused();
+    // Shift+Tab from the first control (Close) goes round to the last, and Tab back to the first
+    const close = panel.getByRole("button", { name: "Close search" });
+    await page.keyboard.press("Shift+Tab");
+    await expect(close).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect.poll(() => page.evaluate(lastControlFocused, ".search-library")).toBe(true);
+    await page.keyboard.press("Tab");
+    await expect(close).toBeFocused();
+  });
+
+  for (const [item, name] of [
+    ["edit-review", "Mark as reviewed"],
+    ["edit-save-html", "Save as HTML"],
+  ] as const)
+    test(`${name}: Escape gives the focus back to the Edit button`, async ({ page }) => {
+      await page.goto(TS_BUNDLE.href);
+      await (await openEditMenu(page)).getByTestId(item).click();
+      const dialog = page.getByRole("dialog");
+      await expect(dialog).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(dialog).toHaveCount(0);
+      await expect(page.getByTestId("edit-button")).toBeFocused();
+    });
+});
+
+test("a Tour picture says in words what it shows and what it lights up", async ({ page }) => {
+  await page.goto(TS_BUNDLE.href);
+  const picture = page.getByTestId("guide-snapshot").first();
+  await expect(picture).toHaveAttribute("aria-label", /^Diagram: /);
+  // (the drawing itself is hidden from screen readers: these words stand in for it)
+  await expect(picture).toHaveAccessibleDescription(
+    /^Shows \d+ boxes: .+\. Selected in this step: Scheduling\.$/,
+  );
+});
+
+test("Enter on a map box shows its code, as the diagram's keyboard hint says", async ({ page }) => {
+  await page.goto(TS_BUNDLE.href + "?perspective=map");
+  const canvas = page.locator(".workspace-diagram .panzoom");
+  await expect(canvas).toHaveAccessibleDescription(/Enter: show its code\./);
+  await expect(page.locator(".workspace-source")).toHaveCount(0);
+  const box = page.locator('.workspace-diagram [data-element-id="file:src/worker.ts"]');
+  await box.focus();
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => (await stateOf(page)).selection).toEqual(["file:src/worker.ts"]);
+  await expect(page.locator(".workspace-source .cm-editor").first()).toBeVisible();
 });

@@ -1126,7 +1126,7 @@ describe("applyPatch: includeAdd and includeRemove", () => {
       ["views[0].includeAdd[2]", "view:overview"],
     ]);
     expect(errorsOf(r)[0]!.message).toContain("src/queue.tz");
-    expect(errorsOf(r)[1]!.message).toContain("did you mean file:src/runner.ts?");
+    expect(errorsOf(r)[1]!.message).toContain("Did you mean: file:src/runner.ts?");
     // an id that only the patch's own groups make valid is fine
     const withGroup = apply({
       nodes: [{ id: "grp:new", label: "New", members: [F.metrics] }],
@@ -1684,6 +1684,41 @@ describe("applyPatch: atomicity and validation", () => {
         ],
       }).issues[0],
     ).toMatchObject({ path: "views[0].frames[0].toStep" });
+    // an alt frame's arms: stored as sent; an arm with a field of its own, or without its steps, is refused
+    const altFrame = (arms: unknown[]) =>
+      apply({
+        views: [
+          {
+            id: "view:dispatch",
+            type: "sequence",
+            frames: [
+              {
+                id: "frame:outcome",
+                kind: "alt",
+                label: "how the attempt ends",
+                fromStep: "dispatch:2",
+                toStep: "dispatch:3",
+                arms: arms as never,
+              },
+            ],
+          },
+        ],
+      });
+    const arms = [
+      { label: "ok", fromStep: "dispatch:2", toStep: "dispatch:2" },
+      { label: "else", fromStep: "dispatch:3", toStep: "dispatch:3" },
+    ];
+    const stored = altFrame(arms);
+    expect(stored.ok, JSON.stringify(stored.issues)).toBe(true);
+    expect((view(stored.explainer, "view:dispatch") as SequenceView).frames![0]!.arms).toEqual(
+      arms,
+    );
+    expect(altFrame([{ ...arms[0], anchors: [] }, arms[1]]).issues[0]).toMatchObject({
+      path: "views[0].frames[0].arms[0].anchors",
+    });
+    expect(altFrame([{ label: "ok", fromStep: "dispatch:2" }, arms[1]]).issues[0]).toMatchObject({
+      path: "views[0].frames[0].arms[0].toStep",
+    });
     expect(
       apply({
         tours: [{ id: "tour:intro", steps: [{ id: "t1", view: "view:dispatch" } as never] }],
@@ -2552,7 +2587,7 @@ describe("applyPatch: one wave of errors", () => {
         },
       ],
     });
-    expect(pathsOf(r)).toEqual(["edges[0].anchors[1]"]); // no "needs at least one anchor inside its to"
+    expect(pathsOf(r)).toEqual(["edges[0].anchors[1]"]); // no "needs an anchor at its end"
     // fix the anchor and the evidence is judged after all
     const wrongEnd = apply({
       edges: [
@@ -2626,6 +2661,16 @@ describe("applyPatch: one wave of errors", () => {
       ],
     } as never);
     expect(pathsOf(r)).toEqual(["nope", "concepts[0].anchors[0]"]);
+  });
+
+  it("an unknown patch field that is one letter off a known one names it", () => {
+    const r = apply({ node: [] } as never);
+    expect(errorsOf(r)[0]!.message).toMatch(
+      /^unknown patch field "node"\. Did you mean: nodes\? \(allowed: title, .*\bnodes\b.*\)$/,
+    );
+    expect(errorsOf(apply({ nope: [] } as never))[0]!.message).toMatch(
+      /^unknown patch field "nope" \(allowed: /,
+    );
   });
 
   it("finds the dangling reference of a removal in the same wave as a bad anchor", () => {

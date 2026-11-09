@@ -2,31 +2,51 @@
  * The diagram of the current view (graph or sequence) under a caption with its title and question. (The
  * stub and edge-kind toggles of a graph view are in the header's Edit menu, with the other author tools.)
  */
+import { useMemo, useState } from "react";
 import { useDerived, useViewerState } from "../hooks.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
 import { GraphView } from "./GraphView.js";
 import { GraphAuthor } from "./GraphAuthor.js";
+import { ToolbarSlot } from "./PanZoom.js";
 import { FlowDiagram } from "./FlowDiagram.js";
 import { ExpandInPlaceAction } from "./ExpandInPlaceAction.js";
 import { FoldBackAction } from "./FoldBackAction.js";
 import { SequenceView } from "./SequenceView.js";
 import { ZoomTrail } from "./ZoomTrail.js";
-import { codeFirstView } from "../workspace.js";
+import { codeFirstView, flowOwnerName, startOrder } from "../workspace.js";
+import { renderInline } from "../markdown.js";
+import { plainWords } from "../readerWords.js";
 
 export function DiagramPane() {
   const state = useViewerState();
   const derived = useDerived();
   const view = derived.view.view;
+  // Present: the zoom toolbar goes into the title bar, off the picture.
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
+  const tourId = state.tour?.tourId;
+  const order = useMemo(
+    // (Explore starts on the tour's box only while a tour is chosen; else on the view's own first box)
+    () =>
+      view?.type !== "graph"
+        ? undefined
+        : tourId
+          ? startOrder(state.model, view, tourId)
+          : Array.isArray(view.include)
+            ? view.include
+            : undefined,
+    [state.model, view, tourId],
+  );
   if (!view) {
     return (
       <div className="diagram">
         <div className="diagram-message">
-          This explainer has no views yet. Ask Claude to explain something.
+          This guide has no diagrams yet. Ask your agent to explain something.
         </div>
       </div>
     );
   }
   const question = view.scope?.question;
+  const owner = flowOwnerName(view, state.model);
   const present = state.mode === "present";
   // Each tour step starts the diagram over, even in the same view: it looks at the step's focus.
   const resetKey = `${view.id}#${state.stepSeq}`;
@@ -34,8 +54,27 @@ export function DiagramPane() {
     <div className="diagram" data-view-id={view.id} data-view-type={view.type}>
       <div className="diagram-caption">
         <ZoomTrail viewId={view.id} />
-        <span className="caption-title">{view.title}</span>
-        {question && <span className="caption-question">{question}</span>}
+        {/* (in Present the question gives way to the "Fit all" cue: the title says it on hover) */}
+        <span
+          className="caption-title"
+          title={present && question ? plainWords(question) : undefined}
+        >
+          {view.title}
+        </span>
+        {/* the function every step of a flow is in, once here, not under each box */}
+        {owner && (
+          <span className="caption-owner">
+            all in <code>{owner}</code>
+          </span>
+        )}
+        {/* (cut short on a narrow slide: the whole question on hover) */}
+        {question && (
+          <span
+            className="caption-question"
+            title={plainWords(question)}
+            dangerouslySetInnerHTML={{ __html: renderInline(question) }}
+          />
+        )}
         {view.type === "graph" && derived.view.graph && (
           <>
             <ExpandInPlaceAction nodes={derived.view.graph.nodes} />
@@ -43,47 +82,50 @@ export function DiagramPane() {
           </>
         )}
         {view.type === "graph" && <GraphAuthor key={view.id} view={view} />}
+        {present && <span className="caption-tools" ref={setSlot} />}
       </div>
-      <div className="diagram-body">
-        <ErrorBoundary
-          key={view.id}
-          fallback={(error) => (
-            <div className="diagram-message is-error">
-              This view could not be drawn: {error.message}
-            </div>
-          )}
-        >
-          {view.type === "graph" && derived.view.graph ? (
-            <GraphView
-              viewId={view.id}
-              resetKey={resetKey}
-              graph={derived.view.graph}
-              pins={view.layout}
-              selection={state.selection}
-              matches={derived.matches}
-              related={derived.selection.related}
-              order={Array.isArray(view.include) ? view.include : undefined}
-              present={present}
-            />
-          ) : view.type === "flow" ? (
-            <FlowDiagram view={view} outline={!present && codeFirstView(view)} />
-          ) : view.type === "sequence" ? (
-            <SequenceView
-              view={view}
-              resetKey={resetKey}
-              model={state.model}
-              selection={state.selection}
-              matches={derived.matches}
-              related={derived.selection.related}
-              present={present}
-            />
-          ) : (
-            <div className="diagram-message">
-              This viewer cannot draw views of type "{String((view as { type?: unknown }).type)}".
-            </div>
-          )}
-        </ErrorBoundary>
-      </div>
+      <ToolbarSlot.Provider value={present ? slot : undefined}>
+        <div className="diagram-body">
+          <ErrorBoundary
+            key={view.id}
+            fallback={(error) => (
+              <div className="diagram-message is-error">
+                This view could not be drawn: {error.message}
+              </div>
+            )}
+          >
+            {view.type === "graph" && derived.view.graph ? (
+              <GraphView
+                viewId={view.id}
+                resetKey={resetKey}
+                graph={derived.view.graph}
+                pins={view.layout}
+                selection={state.selection}
+                matches={derived.matches}
+                related={derived.selection.related}
+                order={order}
+                present={present}
+              />
+            ) : view.type === "flow" ? (
+              <FlowDiagram view={view} outline={!present && codeFirstView(view)} />
+            ) : view.type === "sequence" ? (
+              <SequenceView
+                view={view}
+                resetKey={resetKey}
+                model={state.model}
+                selection={state.selection}
+                matches={derived.matches}
+                related={derived.selection.related}
+                present={present}
+              />
+            ) : (
+              <div className="diagram-message">
+                This viewer cannot draw views of type "{String((view as { type?: unknown }).type)}".
+              </div>
+            )}
+          </ErrorBoundary>
+        </div>
+      </ToolbarSlot.Provider>
     </div>
   );
 }

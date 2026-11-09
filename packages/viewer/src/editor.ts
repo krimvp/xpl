@@ -842,6 +842,28 @@ export function setLineWrapping(view: EditorView, on: boolean): void {
  * A read-only editor: the document cannot change, but the caret and selection still work. The caller
  * owns the view and must `destroy()` it.
  */
+/**
+ * A jump to a line ("start" or "center": a focus, a hunk, a caller row) scrolls the pane's own scroller and
+ * nothing around it. CodeMirror's default scrolls every scrollable ancestor too, so in a stack of panes each
+ * pane pulled the column down to itself, and the last one mounted won. Caret moves ("nearest") keep the
+ * default: the column follows the caret.
+ */
+const paneOnlyScroll = EditorView.scrollHandler.of((view, range, options) => {
+  if (options.y !== "start" && options.y !== "center") return false;
+  // Called while the editor writes its layout: read the height map, not the DOM positions of the text.
+  const block = view.lineBlockAt(range.head);
+  const scroller = view.scrollDOM;
+  const content =
+    view.contentDOM.getBoundingClientRect().top -
+    scroller.getBoundingClientRect().top +
+    scroller.scrollTop;
+  scroller.scrollTop =
+    options.y === "start"
+      ? content + block.top - options.yMargin
+      : content + block.top + block.height / 2 - scroller.clientHeight / 2;
+  return true;
+});
+
 export function createReadOnlyEditor(
   parent: HTMLElement,
   doc: string,
@@ -869,6 +891,7 @@ export function createReadOnlyEditor(
     syntaxHighlighting(themedHighlight),
     baseTheme,
     focusField,
+    paneOnlyScroll,
     languageSupport(language),
   ];
   if (handlers) {
@@ -944,6 +967,7 @@ export function applyFocus(view: EditorView, focus: PaneFocus): void {
  * Scrolls so that `line` is near the top of the editor, `margin` px (default 44) below its edge. Lines the
  * change removed right above it (a block drawn before the line) are part of what to see: once they are drawn
  * (their height is only known then, a long line wraps), the editor scrolls up again if they are cut off.
+ * Without such lines the pane starts on a whole line, not half of one.
  */
 export function scrollToLine(view: EditorView, line: number, margin = 44): void {
   const doc = view.state.doc;
@@ -952,7 +976,24 @@ export function scrollToLine(view: EditorView, line: number, margin = 44): void 
   view.dispatch({
     effects: EditorView.scrollIntoView(target.from, { y: "start", yMargin: margin }),
   });
-  if (view.state.field(diffField) === NO_DIFF) return;
+  if (view.state.field(diffField) === NO_DIFF) {
+    // The pane starts on a whole line: half of a wrapped line at the top edge reads as a cut.
+    requestAnimationFrame(() => {
+      if (!view.dom.isConnected) return;
+      view.requestMeasure({
+        read(v) {
+          const at = v.scrollDOM.scrollTop - v.documentPadding.top;
+          if (at <= 0) return 0;
+          const block = v.lineBlockAtHeight(at);
+          return block.top < at - 1 ? block.bottom - at : 0;
+        },
+        write(shift, v) {
+          if (shift > 0) v.scrollDOM.scrollTop += shift;
+        },
+      });
+    });
+    return;
+  }
   requestAnimationFrame(() => {
     if (!view.dom.isConnected) return;
     view.requestMeasure({

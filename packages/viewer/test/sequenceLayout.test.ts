@@ -1,6 +1,12 @@
 import { ExplainerModel, type SequenceView } from "@xpl/core";
 import { describe, expect, it } from "vitest";
-import { layoutSequence } from "../src/layout/sequenceLayout.js";
+import {
+  ARM_TOP,
+  frameLabelWidth,
+  layoutSequence,
+  readingOrder,
+} from "../src/layout/sequenceLayout.js";
+import { textWidth } from "../src/measure.js";
 import { makeBundle } from "./world.js";
 
 const RUN = "sym:src/a.ts#A.run";
@@ -122,6 +128,147 @@ describe("layoutSequence", () => {
     expect(inside(outer, 3)).toBe(false);
     expect(inside(inner, 0)).toBe(false);
     expect(inside(inner, 1) && inside(inner, 2)).toBe(true);
+  });
+
+  it("makes a frame wide enough for its condition, however short its rows", () => {
+    const label = "until the job succeeds or it has been tried maxRetries times";
+    const { model: m, view } = model((v) => {
+      v.steps = [step("flow:1", RUN, RUN, "go()")];
+      v.frames = [{ id: "frame:alt", kind: "alt", label, fromStep: "flow:1", toStep: "flow:1" }];
+    });
+    const layout = layoutSequence(view, m);
+    const [frame] = layout.frames;
+    expect(frame!.width).toBeGreaterThanOrEqual(frameLabelWidth("alt", label));
+    expect(frame!.x + frame!.width).toBeLessThanOrEqual(layout.width);
+  });
+
+  it("splits an alt into its arms: each condition above its rows, clear of the tab and of the arm before", () => {
+    const { model: m, view } = model((v) => {
+      v.steps = [
+        step("flow:1", RUN, "file:src/b.ts", "ack(job)"),
+        step("flow:2", RUN, "file:src/b.ts", "requeue(job)"),
+        step("flow:3", RUN, "file:src/b.ts", "deadLetter(job)"),
+      ];
+      v.frames = [
+        {
+          id: "frame:end",
+          kind: "alt",
+          label: "how the attempt ends",
+          fromStep: "flow:1",
+          toStep: "flow:3",
+          arms: [
+            { label: "ok", fromStep: "flow:1", toStep: "flow:1" },
+            {
+              label: "a very long condition: retries are left",
+              fromStep: "flow:2",
+              toStep: "flow:2",
+            },
+            { label: "else", fromStep: "flow:3", toStep: "flow:3" },
+          ],
+        },
+        // a frame inside the last arm: the arm's condition sits above that frame's tab
+        {
+          id: "frame:last",
+          kind: "opt",
+          label: "dead letters on",
+          fromStep: "flow:3",
+          toStep: "flow:3",
+        },
+      ];
+    });
+    const layout = layoutSequence(view, m);
+    const [frame, inner] = layout.frames;
+    const rows = layout.rows;
+    expect(frame!.arms.map((arm) => [arm.label, arm.steps])).toEqual([
+      ["ok", ["flow:1"]],
+      ["a very long condition: retries are left", ["flow:2"]],
+      ["else", ["flow:3"]],
+    ]);
+    const [ok, retry, rest] = frame!.arms;
+    // the first condition sits under the tab, inside the frame
+    expect(ok!.top).toBeGreaterThanOrEqual(frame!.y + 20);
+    expect(ok!.top + ARM_TOP).toBeLessThanOrEqual(rows[0]!.bandTop);
+    // each later line runs between the arm before and its own condition
+    expect(retry!.top).toBeGreaterThanOrEqual(rows[0]!.bandBottom);
+    expect(retry!.top + ARM_TOP).toBeLessThanOrEqual(rows[1]!.bandTop);
+    expect(rest!.top).toBeGreaterThanOrEqual(rows[1]!.bandBottom);
+    expect(rest!.top + ARM_TOP).toBeLessThanOrEqual(inner!.y);
+    // wide enough for the longest condition, drawn 8 from the left edge
+    expect(frame!.width).toBeGreaterThan(
+      8 + textWidth("[a very long condition: retries are left]", 12, 500),
+    );
+    // without arms, the same frame takes no extra rows
+    const plain = model((v) => {
+      v.steps = view.steps;
+      v.frames = [{ ...view.frames![0]!, arms: undefined }];
+    });
+    expect(layoutSequence(plain.view, plain.model).height).toBeLessThan(
+      layout.height - 3 * ARM_TOP,
+    );
+  });
+
+  // Tab went to every arm's condition before step 1, and the text view left the frames out
+  it("reads a frame's name, then each arm's condition before its steps, in the order they are drawn", () => {
+    const { model: m, view } = model((v) => {
+      v.steps = [
+        step("flow:1", RUN, "file:src/b.ts", "pop()"),
+        step("flow:2", RUN, "file:src/b.ts", "ack(job)"),
+        step("flow:3", RUN, "file:src/b.ts", "requeue(job)"),
+      ];
+      v.frames = [
+        {
+          id: "frame:loop",
+          kind: "loop",
+          label: "while running",
+          fromStep: "flow:1",
+          toStep: "flow:3",
+        },
+        {
+          id: "frame:end",
+          kind: "alt",
+          label: "how it ends",
+          fromStep: "flow:2",
+          toStep: "flow:3",
+          arms: [
+            { label: "ok", fromStep: "flow:2", toStep: "flow:2" },
+            { label: "else", fromStep: "flow:3", toStep: "flow:3" },
+          ],
+        },
+      ];
+    });
+    const layout = layoutSequence(view, m);
+    expect(
+      readingOrder(layout).map((item) =>
+        item.kind === "step"
+          ? item.row.step.id
+          : item.kind === "frame"
+            ? `${item.box.frame.id} ${item.box.steps.join(",")}`
+            : `arm ${item.arm.label}`,
+      ),
+    ).toEqual([
+      "frame:loop flow:1,flow:2,flow:3",
+      "flow:1",
+      "frame:end flow:2,flow:3",
+      "arm ok",
+      "flow:2",
+      "arm else",
+      "flow:3",
+    ]);
+  });
+
+  it("wraps a long message over lines of about 40 characters, and says which rows sit in a frame", () => {
+    const long = "applyPatch(explainer, patch, model, texts, {actor: 'llm', check: true})";
+    const { model: m, view } = model((v) => {
+      v.steps = [step("flow:1", RUN, "file:src/b.ts", long), step("flow:2", RUN, "file:src/b.ts")];
+      v.frames = [
+        { id: "frame:l", kind: "loop", label: "each", fromStep: "flow:2", toStep: "flow:2" },
+      ];
+    });
+    const [first, second] = layoutSequence(view, m).rows;
+    expect(first!.lines.length).toBeGreaterThan(1);
+    expect(first!.lines.filter((line) => line.length > 42)).toEqual([]);
+    expect(first!.lines.join(" ").replace(/\s+/g, "")).toBe(long.replace(/\s+/g, ""));
+    expect([first!.depth, second!.depth]).toEqual([0, 1]);
   });
 
   it("copes with a view without steps, participants or frames", () => {

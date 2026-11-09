@@ -12,7 +12,7 @@ import {
 import { makeBundle, TEXTS } from "./world.js";
 import { workspaceMap, workspaceView } from "../src/workspace.js";
 import { ViewerStore } from "../src/store.js";
-import { repeatsShownCode } from "../src/relatedCards.js";
+import { mergeSameCards, readerCards, repeatsShownCode } from "../src/relatedCards.js";
 
 describe("process flows and related files", () => {
   it("supports explicit decisions, labeled branches, terminal outcomes and code anchors", () => {
@@ -142,6 +142,54 @@ describe("process flows and related files", () => {
     });
   });
 
+  it("a box that holds other code shows only the arrows drawn from or to it", () => {
+    const bundle = makeBundle();
+    bundle.index.resources = [
+      {
+        from: "src/a.ts#A.run",
+        files: ["config/c.yaml"],
+        kind: "loads",
+        site: { startLine: 12, endLine: 12 },
+        resolution: "inferred",
+      },
+    ];
+    bundle.explainer.edges.push({
+      id: "edge:core-reads",
+      from: "grp:core",
+      to: "file:config/c.yaml",
+      kind: "loads",
+      label: "Reads its settings",
+      anchors: [],
+      provenance: { origin: "user" },
+    });
+    // the box's own code links name a settings file: still no "Its settings are in" card on the box
+    bundle.explainer.nodes.find((node) => node.id === "grp:core")!.anchors =
+      bundle.explainer.concepts
+        .find((concept) => concept.id === "concept:retry")!
+        .anchors.filter((anchor) => anchor.role === "config");
+    const model = new ExplainerModel(bundle.explainer, bundle.index);
+    const ids = (links: { id: string }[]) => links.map((link) => link.id);
+    // core holds A.run, which reads c.yaml: a fact about A.run, not about the whole box
+    expect(ids(relatedFiles(["grp:core"], model))).toContain("resource:0");
+    expect(ids(readerCards(["grp:core"], model, codeFocus(["grp:core"], model)))).toEqual([
+      "edge:core-reads",
+    ]);
+    // with a box of code beside it, that one's cards come back, and the box adds its arrow
+    const both = ["grp:core", "sym:src/a.ts#A.run"];
+    expect(ids(readerCards(both, model, codeFocus(both, model)))).toEqual([
+      "resource:0",
+      "edge:core-reads",
+    ]);
+    // a step's own setting stays (its code links say so, not the box's)
+    const step = [
+      { file: "config/c.yaml", range: { startLine: 2, endLine: 4 }, role: "config" as const },
+    ].map((range) => ({ ...range, elementId: "tour:demo/t3", status: "ok" as const }));
+    expect(ids(readerCards(["grp:core"], model, step))).toEqual([
+      "anchor:config:config/c.yaml",
+      "edge:core-reads",
+    ]);
+  });
+
   it("leaves out a setting card for a file whose code the step already shows", () => {
     const model = new ExplainerModel(makeBundle().explainer, makeBundle().index);
     const focus = codeFocus(["concept:retry"], model);
@@ -156,6 +204,24 @@ describe("process flows and related files", () => {
     expect(repeatsShownCode(config, shown)).toBe(true);
     // a card from an edge or the index says how the files connect: kept
     expect(repeatsShownCode({ ...config, id: "edge:x" }, shown)).toBe(false);
+  });
+
+  it("two links to the same file of the same kind are one card, with both places in the code", () => {
+    const card = (id: string, line: number) => ({
+      id,
+      kind: "loads" as const,
+      label: "package.json",
+      files: ["package.json"],
+      evidence: [{ file: "src/cli.ts", line }],
+      resolution: "static" as const,
+    });
+    const other = { ...card("c", 9), label: "config.yaml", files: ["config.yaml"] };
+    const merged = mergeSameCards([card("a", 3), other, card("b", 7), card("d", 3)]);
+    expect(merged.map((link) => link.id)).toEqual(["a", "c"]);
+    expect(merged[0]!.evidence).toEqual([
+      { file: "src/cli.ts", line: 3 },
+      { file: "src/cli.ts", line: 7 },
+    ]);
   });
 
   it("does not truncate annotated file collections at the editor focus limit", () => {

@@ -101,6 +101,13 @@ beforeAll(async () => {
         { id: "file:src/worker.ts", summary: "Runs the assigned job with a timeout." },
         { id: "file:src/queue.ts", summary: "Stores waiting jobs and schedules retries." },
       ],
+      concepts: [
+        {
+          id: "concept:retry-policy",
+          summary:
+            "Each failed attempt doubles the wait before the next one, up to maxRetries; then the job goes to the dead-letter list.",
+        },
+      ],
       views: [
         {
           id: "view:dispatch",
@@ -241,7 +248,7 @@ describe("xpl bundle", () => {
     // the default embeds what the explainer needs, and says how much that is and what --files all would add,
     // and how much of the symbol index it kept
     expect(out).toMatch(
-      /^wrote out\.html \(\d+(\.\d)? KB\): \.explainer\/demo\.explainer\.json, 8 of 12 files embedded \(referenced: \d+(\.\d)? KB of source; --files all adds 4 files, \d+(\.\d)? KB\), index \d+(\.\d)? KB \(\d+(\.\d)? KB as plain JSON, pruned from \d+(\.\d)? KB\), mode explore$/,
+      /^wrote out\.html \(\d+(\.\d)? KB\): \.explainer\/demo\.explainer\.json, 8 of 12 files embedded \(referenced: \d+(\.\d)? KB of source; --files all adds 4 files, \d+(\.\d)? KB\), index \d+(\.\d)? KB as JSON \(\d+(\.\d)? KB packed\), pruned from \d+(\.\d)? KB, mode explore$/,
     );
 
     const html = readFile(demo, "out.html");
@@ -269,7 +276,7 @@ describe("xpl bundle", () => {
     expect(code).toBe(0);
     // --files all embeds the whole index as well: nothing to say about pruning
     expect(out).toMatch(
-      /^wrote all\.html \(\d+(\.\d)? KB\): \.explainer\/demo\.explainer\.json, 12 files embedded \(all: \d+(\.\d)? KB of source\), index \d+(\.\d)? KB \(\d+(\.\d)? KB as plain JSON\), mode explore$/,
+      /^wrote all\.html \(\d+(\.\d)? KB\): \.explainer\/demo\.explainer\.json, 12 files embedded \(all: \d+(\.\d)? KB of source\), index \d+(\.\d)? KB as JSON \(\d+(\.\d)? KB packed\), mode explore$/,
     );
     const data = bundleOf(readFile(demo, "all.html"));
     expect(Object.keys(data.files).sort()).toEqual(data.index.files.map((f) => f.path).sort());
@@ -613,7 +620,8 @@ describe("xpl bundle: what the reader would see by mistake", () => {
     const r = await bundle(dir, "-o", out);
     expect(r.code).toBe(1);
     expect(r.err).toContain("todo-left");
-    expect(r.err).toContain("concept:todo.summary");
+    // One line per finding: the message, then the fix, never glued together.
+    expect(r.err).toMatch(/concept:todo, field summary \(todo-left\): [^\n]+; fix: [^\n]+/);
     expect(existsSync(out)).toBe(false);
     const draft = await bundle(dir, "-o", out, "--draft");
     expect(draft.code).toBe(0);
@@ -697,7 +705,8 @@ describe("xpl ready", () => {
       scope: "workspace",
       decisionNote: "This is an unfinished draft.",
     });
-    expect(checked.json.findings.filter((f: any) => f.code === "todo-left")).toHaveLength(28);
+    // one per TODO the draft writes (the opt after `if (!job) { …; continue }` and the three file boxes included)
+    expect(checked.json.findings.filter((f: any) => f.code === "todo-left")).toHaveLength(39);
     const out = join(scratch, "ready.html");
     const exported = await invoke(["bundle", "path", "-o", out, "--json"], {
       cwd: dir,

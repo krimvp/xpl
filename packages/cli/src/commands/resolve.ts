@@ -3,13 +3,13 @@ import type { CommandSpec } from "../command.js";
 import { CliError } from "../errors.js";
 import { rangeText } from "../format.js";
 import { atomicWrite, withFileLock, jsonFile } from "../fsutil.js";
-import { loadExplainer, openWorkspace, resolveExplainerPath } from "../repo.js";
+import { loadExplainer, onlyExplainerName, openWorkspace, resolveExplainerPath } from "../repo.js";
 
 /** The human-readable report of a re-resolve (also used by `xpl status`). */
 export function renderResolveReport(report: ResolveReport): string[] {
   const { counts } = report;
   const lines = [
-    `anchors: ${report.total} (ok ${counts.ok}, moved ${counts.moved}, drifted ${counts.drifted}, missing ${counts.missing})`,
+    `code links: ${report.total} (ok ${counts.ok}, moved ${counts.moved}, drifted ${counts.drifted}, missing ${counts.missing})`,
   ];
   if (report.drifted.length > 0) {
     lines.push(`drifted llm elements to re-explain (${report.drifted.length}):`);
@@ -41,7 +41,7 @@ export function renderResolveReport(report: ResolveReport): string[] {
     }
   }
   if (report.missing.length > 0) {
-    lines.push(`missing anchors (${report.missing.length}): fix or drop them explicitly`);
+    lines.push(`missing code links (${report.missing.length}): fix or remove each one`);
     for (const missing of report.missing) {
       lines.push(
         `  ${missing.elementId}  ${missing.path}  ${describeAnchor(missing.anchor)} [${missing.anchor.role}]`,
@@ -54,31 +54,28 @@ export function renderResolveReport(report: ResolveReport): string[] {
 
 export const resolveCommand: CommandSpec = {
   name: "resolve",
-  usage: "xpl resolve <explainer> [--write]",
-  summary: "Re-resolve anchors; report drifted llm elements and missing anchors",
+  usage: "xpl resolve [explainer] [--write] [--allow-stale]",
+  summary: "Check each code link again; list the text to rewrite and the links whose code is gone",
   details: [
-    "Re-resolves every anchor (elements, sequence steps, tour code overrides) against the index of the",
-    "current code: ok, moved (same text, new lines: the span is updated), drifted (text changed) or",
-    "missing (symbol gone). Use it after `xpl index` on a changed tree. Unlike the other explainer",
-    "commands it ignores the explainer's own (old) index: it uses --index, else the index of the current",
-    "commit id, else the newest one.",
-    "Prints the counts, the drifted llm elements (re-explain those, skipping their userFields; never",
-    "touch origin user) and the missing anchors. --write saves the explainer with the new resolved",
-    "ranges and index binding; drifted anchors stay drifted until their element is re-explained.",
-    "--write refuses (exit 1) when the index it would resolve against no longer matches the working tree:",
-    "run `xpl index` first, so the ranges it saves are the current ones (--allow-stale overrides).",
+    "Checks every code link again against the index of the current code: ok, moved, drifted or missing.",
+    "Moved code keeps its text and gets its new lines. Drifted text needs a rewrite; missing code needs a fix.",
+    "It uses --index, else the index of the current commit, else the newest one; never the guide's old one.",
+    "--write saves the new lines and the index binding. Drifted code links stay drifted until you rewrite them.",
+    "--write refuses (exit 1) when the index does not match the working tree: run `xpl index` first.",
+    "With one guide in the repository, leave out its name.",
   ],
   options: {
-    write: { type: "boolean", desc: "Save the re-resolved explainer (default: report only)" },
+    write: { type: "boolean", desc: "Save the re-resolved guide (default: report only)" },
     "allow-stale": {
       type: "boolean",
       desc: "With --write: save even though the index does not match the working tree",
     },
   },
-  positionals: [{ name: "explainer" }],
+  positionals: [{ name: "explainer", required: false }],
   async run(ctx, args) {
-    return withFileLock(resolveExplainerPath(ctx, args.positionals[0]!), async () => {
-      const loaded = loadExplainer(ctx, args.positionals[0]!);
+    const name = args.positionals[0] ?? onlyExplainerName(ctx, "resolve");
+    return withFileLock(resolveExplainerPath(ctx, name), async () => {
+      const loaded = loadExplainer(ctx, name);
       const write = args.flag("write");
       const ws = await openWorkspace(ctx, {
         explainer: loaded,
@@ -116,7 +113,7 @@ export const resolveCommand: CommandSpec = {
           ...renderResolveReport(report),
           write
             ? `written: ${loaded.rel}`
-            : "not written: pass --write to save the re-resolved explainer",
+            : "not written: pass --write to save the guide with the new lines",
         ].join("\n"),
       );
       return 0;

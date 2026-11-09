@@ -323,6 +323,45 @@ test.describe("the change in the reading screens", () => {
     await expect(page.getByTestId("change-omissions")).toHaveCount(0);
   });
 
+  test("a guide analyzed by a language tool lists the tool's limits, not name matching", async ({
+    page,
+  }) => {
+    const { html, bundle } = readEmbeddedBundle(CHANGE_BUNDLE);
+    const data = bundle as any;
+    data.explainer.change.files = data.explainer.change.files.filter(
+      (file: any) => file.path === "src/runner.ts",
+    );
+    data.index.languages.typescript = { ...data.index.languages.typescript, refs: "precise" };
+    const report = (provider: string, limit: string) => ({
+      provider,
+      capabilities: { call: "partial" },
+      files: ["src/runner.ts"],
+      results: [
+        {
+          capabilities: ["call"],
+          status: "partial",
+          analyzedFiles: ["src/runner.ts"],
+          limitations: [limit],
+        },
+      ],
+    });
+    data.index.analysis = [
+      report("typescript", "References matched by name are hints; some can be missing."),
+      report("scip-typescript", "A tool can miss a reference."),
+    ];
+    await page.route("http://xpl.test/**", (route) =>
+      route.fulfill({ contentType: "text/html", body: withBundle(html, data) }),
+    );
+    await page.goto("http://xpl.test/");
+    const limits = page.getByRole("region", { name: "Limits of the code analysis" });
+    await expect(limits.getByRole("heading")).toHaveText("Limits of the code analysis");
+    await expect(limits).toContainText(
+      "A language tool found the arrows in the changed files; a tool can still miss one.",
+    );
+    await expect(limits).toContainText("What the code analysis reported (1)");
+    await expect(limits).not.toContainText("matched by name");
+  });
+
   test("the map marks the boxes the change touches with plain words", async ({ page }) => {
     const problems = watchProblems(page);
     await open(page, "?perspective=map");
@@ -340,12 +379,73 @@ test.describe("the change in the reading screens", () => {
     await expect(byId(page, "grp:scheduling").locator(":scope > .change-pill text")).toHaveText(
       "Changed",
     );
+    // the arrow from Scheduling to worker.ts draws no words of its own; the key line names its kind
+    await expect(page.getByTestId("key-line").locator('[data-key-item="kind-calls"]')).toHaveText(
+      "solid arrow: calls",
+    );
     // inside the group: runner.ts changed
     await byId(page, "grp:scheduling").dblclick();
     await expect(byId(page, "file:src/runner.ts").locator(".change-pill text")).toHaveText(
       "Changed",
     );
     await expect(byId(page, "file:src/queue.ts").locator(".change-pill")).toHaveCount(0);
+    expect(problems).toEqual([]);
+  });
+
+  test("a flow step whose code the change rewrites carries the same Changed pill as a box", async ({
+    page,
+  }) => {
+    const problems = watchProblems(page);
+    // the dispatch sequence drawn as a flow (boxes in order)
+    const { html, bundle } = readEmbeddedBundle(CHANGE_BUNDLE);
+    const data = bundle as any;
+    data.explainer.views.find((view: any) => view.id === "view:dispatch").type = "flow";
+    await page.route("http://xpl.test/**", (route) =>
+      route.fulfill({ contentType: "text/html", body: withBundle(html, data) }),
+    );
+    await page.goto("http://xpl.test/?perspective=flow");
+    await page.waitForFunction(() => window.__xpl !== undefined);
+    // the requeue call (runner.ts head 75-78) was rewritten; pop() and run(job) are untouched lines
+    await expect(byId(page, "dispatch:3").locator(".change-pill text")).toHaveText("Changed");
+    await expect(byId(page, "dispatch:1").locator(".change-pill")).toHaveCount(0);
+    await expect(byId(page, "dispatch:2").locator(".change-pill")).toHaveCount(0);
+    // inside the step's box
+    const box = (await byId(page, "dispatch:3").locator("rect").first().boundingBox())!;
+    const pill = (await byId(page, "dispatch:3").locator(".change-pill").boundingBox())!;
+    expect(pill.x + pill.width).toBeLessThanOrEqual(box.x + box.width);
+    expect(problems).toEqual([]);
+  });
+
+  // the pill's "New" and its place on a decision's diamond had no test
+  test('a decision step whose code the change adds says "New" on its diamond', async ({ page }) => {
+    const problems = watchProblems(page);
+    const { html, bundle } = readEmbeddedBundle(CHANGE_BUNDLE);
+    const data = bundle as any;
+    const view = data.explainer.views.find((v: any) => v.id === "view:dispatch");
+    view.type = "flow";
+    const step = view.steps.find((s: any) => s.id === "dispatch:2");
+    step.shape = "decision";
+    // src/metrics.ts is a new file: every line of it is added
+    step.anchors = [{ file: "src/metrics.ts", role: "definition", hash: "x" }];
+    await page.route("http://xpl.test/**", (route) =>
+      route.fulfill({ contentType: "text/html", body: withBundle(html, data) }),
+    );
+    await page.goto("http://xpl.test/?perspective=flow");
+    await page.waitForFunction(() => window.__xpl !== undefined);
+    const pill = byId(page, "dispatch:2").locator(".change-pill");
+    await expect(pill.locator("text")).toHaveText("New");
+    // on the diamond's upper right edge: its centre is on the diamond itself, not in the empty corner
+    // of the diamond's bounding box where a box's pill goes, and right of the middle and above it
+    const box = (await byId(page, "dispatch:2").locator(":scope > polygon").boundingBox())!;
+    const at = (await pill.boundingBox())!;
+    const [cx, cy] = [at.x + at.width / 2, at.y + at.height / 2];
+    const [mx, my] = [box.x + box.width / 2, box.y + box.height / 2];
+    expect(cx).toBeGreaterThan(mx);
+    expect(cy).toBeLessThan(my);
+    // |dx| / half-width + |dy| / half-height: 1 on the outline, more outside it
+    expect(Math.abs(cx - mx) / (box.width / 2) + Math.abs(cy - my) / (box.height / 2)).toBeLessThan(
+      1.05,
+    );
     expect(problems).toEqual([]);
   });
 
@@ -509,12 +609,26 @@ test.describe("reading a changed file", () => {
     expect(problems).toEqual([]);
   });
 
+  test("the Code tab opens a whole changed file on its first change, not on its imports", async ({
+    page,
+  }) => {
+    await open(page);
+    await expect(page.getByTestId("guide")).toBeVisible();
+    await page.getByTestId("perspective-code").click();
+    const runner = pane(page, "src/runner.ts");
+    await expect(runner.locator('.xpl-removed[data-at="after:65"]')).toBeInViewport();
+    await expect(runner.getByTestId("pane-hunks")).toContainText("change 1 / 3");
+  });
+
   test("a narrow pane keeps the file name whole and puts the change controls on a second row", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 900, height: 700 });
     await open(page, "?perspective=map");
-    await page.getByRole("button", { name: "Show source" }).click();
+    await page
+      .locator(".workspace-location")
+      .getByRole("button", { name: "Show code", exact: true })
+      .click();
     await page.evaluate(() => window.__xpl!.setCursor("src/runner.ts", 75));
     const runner = pane(page, "src/runner.ts");
     const header = runner.locator(".pane-header");
@@ -560,7 +674,7 @@ test.describe("reading the diagrams", () => {
     await page.getByTestId("legend-button").click();
     const legend = page.getByTestId("legend");
     await expect(legend).toBeVisible();
-    await expect(legend).toContainText("The one you picked");
+    await expect(legend).toContainText("Selected");
     await expect(legend).toContainText("What the change did");
     await page.keyboard.press("Escape");
     await expect(legend).toHaveCount(0);
@@ -573,22 +687,27 @@ test.describe("reading the diagrams", () => {
     expect(problems).toEqual([]);
   });
 
-  test("Present keeps one caption height for the whole tour, so the diagram does not jump", async ({
+  test("Present keeps one type size for the tour; each caption is as tall as its text, at most 40%", async ({
     page,
   }) => {
     const problems = watchProblems(page);
     await page.setViewportSize({ width: 1280, height: 720 });
     await open(page, "?mode=present");
-    const caption = page.getByTestId("tour-caption");
     const counter = page.getByTestId("tour-counter");
     const total = Number((await counter.innerText()).split("/")[1]);
-    const heights = new Set<number>();
+    const caption = () =>
+      page.getByTestId("tour-caption").evaluate((el: HTMLElement) => ({
+        size: el.dataset.size,
+        // (no empty room under the text: it is as tall as what it holds)
+        spare: el.clientHeight - el.scrollHeight,
+        atMost40: el.offsetHeight <= 0.4 * el.parentElement!.clientHeight + 1,
+      }));
+    const first = await caption();
     for (let step = 1; step <= total; step++) {
       await expect(counter).toHaveText(`${step} / ${total}`);
-      heights.add(Math.round((await caption.boundingBox())!.height));
+      await expect.poll(caption).toEqual({ size: first.size, spare: 0, atMost40: true });
       await page.keyboard.press("ArrowRight");
     }
-    expect(heights.size).toBe(1);
     expect(problems).toEqual([]);
   });
 });
@@ -751,7 +870,10 @@ test.describe("who calls this, and what the change did to it", () => {
     const problems = watchProblems(page);
     await page.setViewportSize({ width: 1440, height: 900 });
     await open(page, "?perspective=map");
-    await page.getByRole("button", { name: "Show source" }).click();
+    await page
+      .locator(".workspace-location")
+      .getByRole("button", { name: "Show code", exact: true })
+      .click();
     await page.evaluate(() => window.__xpl!.setCursor("src/runner.ts", 32));
     const line = pane(page, "src/runner.ts").locator('.cm-line[data-line="32"]');
     await expect(line).toBeVisible();
@@ -832,6 +954,14 @@ test.describe("who calls this, and what the change did to it", () => {
     const callers = page.getByTestId("guide-callers").first();
     await expect(callers).toContainText("Code that calls what changed");
     await expect(callers.getByRole("button").first()).toContainText("src/");
+    // the tests that call it are a group of their own (they were listed among the callers)
+    await expect(callers.locator(".guide-test-file")).toHaveText(["src/main.ts, line 53"]);
+    const tests = page.getByTestId("guide-test-callers").first();
+    await expect(tests.locator("h4")).toHaveText("Tests that call what changed");
+    await expect(tests.locator(".guide-test-file")).toHaveText([
+      "test/retry.test.ts, line 45",
+      "test/retry.test.ts, line 83",
+    ]);
     expect(problems).toEqual([]);
   });
 

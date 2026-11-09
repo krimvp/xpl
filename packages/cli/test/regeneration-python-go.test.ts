@@ -260,7 +260,7 @@ describe.each([python, go])("regeneration on the $name fixture", (lang) => {
         resolved: { status: "missing", range: lang.requeueRange },
       });
       const text = await xpl(r.dir, "resolve", NAME);
-      expect(text.out).toContain("missing anchors (1): fix or drop them explicitly");
+      expect(text.out).toContain("missing code links (1): fix or remove each one");
       expect(text.out).toContain(
         `  requeue:1  views[0].steps[0].anchors[1]  ${lang.queueFile}#${lang.requeue} [definition]`,
       );
@@ -315,7 +315,7 @@ describe.each([python, go])("regeneration on the $name fixture", (lang) => {
       ]);
       const text = await xpl(after.dir, "status", NAME);
       expect(text.out).toMatch(
-        /^to do: \d+ unexplained, 1 drifted, 1 missing anchors, 0 requests, 2 broken references$/m,
+        /^to do: \d+ with no text, 1 changed code links, 1 missing code links, 0 requests, 2 broken references$/m,
       );
       expect(text.out).toContain("broken references (2): ids that no longer exist in the index");
       expect(text.out).toContain("drifted llm elements to re-explain (1):");

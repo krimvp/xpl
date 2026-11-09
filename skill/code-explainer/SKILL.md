@@ -1,271 +1,183 @@
 ---
 name: code-explainer
-description: Generate an interactive code explainer, meaning a short guided tour with linked diagrams (box-and-arrow map, process flow, sequence diagram) next to a code viewer, where clicking a box, arrow or step highlights the exact code and selecting code lights up the matching diagram elements. Use when the user wants to understand how code works ("how does X work", "how does a failed job get retried"), get an architecture overview of a repo, understand or review a change (a PR, MR, branch or commit range, read locally), explore an unfamiliar codebase, see what every file of a project does (a quick map, for example of code an AI assistant wrote, kept current after each change), or prepare a code walkthrough, demo or presentation. Operations - explain <question> (part of a project), explain repo (architecture), explain map (every file, in plain words), explain change <base>..<head> (a diff), expand (grow a view), feedback (do what the user asked for in the viewer), make tour (a talk).
+description: Generate an interactive code explainer, meaning a short guided tour with linked diagrams (box-and-arrow map, process flow, sequence diagram) next to a code viewer, where clicking a box, arrow or step highlights the exact code and selecting code lights up the matching diagram elements. Use when the user wants to understand how code works ("how does X work", "how does a failed job get retried"), get an architecture overview of a repo, understand or review a change (a PR, MR, branch or commit range, read locally), explore an unfamiliar codebase, see what every file of a project does (a quick map, for example of code an AI assistant wrote, kept current after each change), or prepare a code walkthrough, demo or presentation. Operations - explain <question> (part of a project), explain repo (architecture), explain map (every file, in plain words), explain change <base>..<head> (a diff), expand (grow a view), feedback (do what the user asked for in the viewer), make tour (a presentation).
 ---
 
 # Code explainer
 
-You turn a question about code, a whole repo, or a change into an **explainer**: a guided tour with diagrams linked both ways to the code, rendered by a fixed viewer. `xpl draft` builds the structure from a static index, with `TODO` where text belongs. You write the text as JSON **patches** and check every claim; `xpl` rejects anchors it cannot resolve.
+You make a **guide**: a short tour with diagrams that link both ways to the code. The files and commands call it an explainer (`.explainer/<name>.explainer.json`). `xpl draft` builds the structure from a static index and leaves `TODO` where text belongs. You write the text as JSON **patches**. `xpl apply` rejects every anchor it cannot resolve.
 
-The reader sees the tour title and its **summary** first, then the steps (a title, a short note, one picture and its code), then the maps and the code on demand. Put the most important thing first, then go down one level at a time: **the system** (services, data stores, outside systems), **inside a service** (its parts and what each talks to), then **the code**. Explain each part by what it is for, in everyday words, before you name any code.
+The reader sees the tour title and its summary first, then the steps, then the diagrams and the code. Go down one level at a time: **the system** (services, data stores, outside systems), **inside a service**, then **the code**. Say what each part is for, in everyday words, before you name any code.
 
-## Workflow
+Terms used below:
 
-`reference/quick.md` is this workflow, the rules and the lint checks on one page.
+- **Index** (`.explainer/index-<commit>.json`): the symbols, ranges and references that static analysis found.
+- **View**: a diagram in the patch. A `graph` view is a map, a `flow` shows decisions, a `sequence` shows calls in order.
+- **Element**: a box (node), an arrow (edge), a concept or a step.
+- **Anchor**: a file, a symbol path, and a `span` (0-based line offsets from the symbol's first line) or `find` text. A base anchor (`"at": "base"`) points at the code before a recorded change.
 
-1. Gather the root, audience, question and guide name; choose new or existing (Setup). Then `xpl index`, and `xpl new <name>` for a new guide.
-2. Choose the scope, and say it in the reply.
-3. A change only: `xpl change <name> <base>..<head>` records it and prints its analysis.
-4. `xpl draft change|repo|path|map|class|states <name> [<entry id>] --audience "<reader>" --question "<question>" -o <file>` (outside the repo).
-5. Read the code. Write every `TODO`, fix the structure where the code shows the draft is wrong, add what the tour needs. Every flow and sequence participant needs a `summary` (an overlay in the same patch).
-6. `xpl lint <name> --patch <file> && xpl apply <name> <file>`: lint exits 1 on any finding, so a flawed patch is not applied.
-7. `xpl validate`, `xpl status`, `xpl anchors <name> tour:<slug>`.
-8. The accuracy pass, `xpl lint`, a newcomer's re-read.
-9. `xpl ready <name>`, then `xpl bundle <name> -o <outside-repo>/<name>.html`. Open the guide for local review or inspect the offline snapshot, then reply.
+## Hard rules
 
-## What you are making
+1. **Do not invent code.** Copy each anchor from `show`, `refs` or `search` output of this session, or use `find`; never write a hash.
+2. **Read before you claim.** A ref is a lead until you read the call. So is a caller or test that a draft marks as a guess.
+3. **Do not change the user's repo or remotes.** Never post, comment, push or change their checkout; `.explainer/` is the only exception.
+4. **Keep patches and output files outside the repo**, in the scratchpad or `$TMPDIR`.
+5. **The user's edits win.** Never overwrite `origin: "user"` elements or `userFields`; for a view or tour they edited, make a new one or ask.
+6. **Rewrite whole, never append.** When the code or the question changes, rewrite each text at its level; never add a sentence to an old summary.
+7. **`llm` edges only for what the index cannot see**, anchored at both ends (with `via`: at each hop the index does not show).
+8. **Stable ids.** Choose each slug once, in kebab-case, and never renumber or reuse a step id.
+9. **Few things at the same level:** one primary tour, the budget's concepts, and only the views a tour step uses or a box `opens`. Explain what a view shows, and leave the rest for `expand`.
+10. **Ask, do not guess**, when the scope is ambiguous or you cannot find an anchor.
+11. **Never copy a secret value**, not even in part: name the file, the line and the kind of secret.
 
-- **Index** `.explainer/index-<commit>.json`: symbols, ranges and references from static analysis.
-- **Explainer** `.explainer/<name>.explainer.json`: written only by `xpl apply` and `xpl change`; never edit it.
-- **Tour**: a `summary` and a few steps. **Views**: `graph` (a map), `flow` (decisions and branches), `sequence` (calls between participants). **Elements**: boxes, edges, concepts and steps.
-- **Architecture boxes**: a box with a `role` (`service`, `database`, `queue`, `external`, `person`, ...) and a `tech` is drawn as what it is; a box with `opens` zooms into the view that shows its inside. A database or an outside API is a group with a role and no members, anchored at the code that talks to it (`patch-format.md` 3.10).
-- **Sketch boxes**: a group with `"sketch": true`, no members and no anchors: an idea of the big picture, drawn dotted and named "sketch" on the map. For a first picture before there is code to read (an idea, a plan), or for what you understood but no one place of code shows. Never for something you can anchor (`patch-format.md` 3.12).
-- **Anchor**: a file, a symbol path, and a `span` (0-based line offsets from the symbol's first line) or `find` text, stored with a hash. A **base anchor** (`"at": "base"`) points at the code before a recorded change.
+## Start here
 
-## Setup
-
-Follow `reference/create.md` for installed entry prompts and recovery. List existing `.explainer/*.explainer.json` files and choose the intended existing guide or a new name. A name collision is not permission to extend that guide.
-
-For a GitHub PR handoff, read its `handoff.json` and `input.json`. Use the handoff's `command` prefix
-for every authoring command; it calls this installed launcher with owned Git paths and the bound CLI.
-Preserve the already prepared head index and scaffold, and complete its outside draft. Follow
-`reference/create.md` and `reference/explain-change.md`, then `xpl pr finish` for readiness, offline export
-and the base/head recheck. A superseded result stays historical; explicitly create the new PR input.
-
-1. **The CLI** is `bin/xpl` in this installed skill's directory. Below, `xpl` means that path, written in
-   full. Run it from the repo root, or pass `--root <dir>`. If it is unavailable, install the xpl npm
-   package or local tarball, then run `xpl skill install --agent <claude|codex|pi|droid|devin>` (or
-   `--dir <this skill directory>`). Claude Code is the default. Codex, Pi and Factory Droid install to
-   `~/.agents/skills/code-explainer`; Devin installs to the project `.agents/skills/code-explainer`.
-   For Devin, install Node >=22.12 and xpl inside the connected remote environment, then run
-   `xpl skill install --agent devin` in the target repo before using the launcher. It binds an absolute
-   CLI path and has no PATH fallback. Rerun install after CLI updates or moves; it refuses local edits.
-   `xpl doctor` checks Node, bundled assets, the skill, optional precise tools and available CLI updates.
-   Set `XPL_NO_UPDATE_CHECK=1` to skip its registry request. The launcher warns when its recorded skill
-   version differs from the CLI it runs. Rerun `xpl skill install` for an older skill; update the CLI for a
-   newer skill. The installed workflow
-   is verified on Linux x64 only.
-2. **Index:** `xpl index`. Run it again when the code changed or a command warns that the index `does not match the working tree`. A language with `refs: heuristic` has hints, not facts: confirm each call with `show`. `--precise off` skips optional tools for fast or offline indexing. Report the chosen mode and the actual coverage and trust labels. `--precise require` is for a user who needs precise references; if it fails, offer the explicit heuristic path without calling it precise.
-3. **Name it:** `xpl new <name> --title "..."` for a new guide; it refuses an existing name. For an explicitly selected existing guide, read its views, tours and protected fields first, then add the new question with fresh ids. The repo name in kebab-case is a useful default for an overview; separate questions may have their own guide. A change gets its own explainer, titled after it: `xpl new <repo>-pr-42 --title "PR 42: <what it does>"`. Say who the page is for, fit to its level, in one short line: `"scope": {"audience": "Overview, for anyone new to ky"}` (a repo), `"Deep dive, for engineers working on the router"` (an algorithm), `"For reviewers of this change, and anyone who uses the option"` (a change); the viewer shows it under the title (patch-format.md 3.11).
-4. **Patch files** go outside the repo (the scratchpad or `$TMPDIR`).
-
-For a manual first guide, `xpl start <name> --question "..." --audience "..."` runs index, new, draft and
-apply, and prints the outside-repository patch and notes paths. Add `--entry <symbol>` for a call sequence. The result
-still has TODO text and needs the code reading, accuracy, lint and readiness steps below.
-
-Local reading, `index --precise off`, viewing and HTML export use bundled assets without hosted xpl
-infrastructure after setup. Precise tool bootstrap and dependencies can need network access; keep the
-heuristic path and its trust labels when tools cannot run. Authoring needs the selected harness and its
-provider access, configured separately from xpl. Run generation only when the user invokes this skill;
-no resident agent worker is required. Harness-specific invocation has not had live QA. Invoke the
-installed skill as `$code-explainer` in Codex, `/skill:code-explainer` in Pi, `/code-explainer` in
-Factory Droid, or `@skills:code-explainer` in Devin. Devin cloud discovery and authentication are not
-verified by xpl.
+1. **The CLI.** It is `bin/xpl` in this skill's directory; below, `xpl` means that path, written in full. If it does not run, follow `reference/create.md`, "Install".
+2. **The target.** List `.explainer/*.explainer.json`. Extend a guide only when the user names it; a name collision is not permission to extend it. Before you extend one, read its views, tours and `userFields`, and use fresh ids.
+3. **The purpose.** Before you draft, write three lines: what the code is for, where the answer sits, and the answer. Take the first line from the README, the package metadata or the entry point; if no source says it, ask. The answer is the first sentence of the tour summary (for a repo, the first line is).
+4. **The scope.** Choose it with the table below. When the request can mean two things (which service, which branch), ask one short question with options. Otherwise state your assumption.
+5. **The diagrams.** Choose each one with `reference/quick.md`, "Choose the diagram for the question".
 
 ## Choose the scope
 
-| Request                                                          | Scope                                    | Draft                           | Tour answers                                                                                    |
-| ---------------------------------------------------------------- | ---------------------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------- |
-| "how does X work", a question about one subsystem                | `explain <question>` (part of a project) | `draft path <name> <entry id>`  | the question, from the entry point to the answer                                                |
-| "explain this repo", "give me an overview", "architecture"       | `explain repo` (whole project)           | `draft repo <name>`             | what the project is, its parts, the main path through them                                      |
-| a PR, an MR, a branch, a commit range, "my changes"              | `explain change <base>..<head>` (a diff) | `draft change <name>`           | what changes for users, where, who else is affected, tests, risks                               |
-| "what is in this app", "map every file", "what did the AI build" | `explain map` (every file, quick)        | `draft map <name>`              | what the project is and its parts; after a change, what was asked and how each change serves it |
-| "what are the kinds of X", "how do these classes relate"         | `explain <question>` (a type hierarchy)  | `draft class <name> <type id>`  | what the type is for, what it shares with the types around it, how they differ                  |
-| "what states can X be in", "what moves an order to shipped"      | `explain <question>` (a state flow)      | `draft states <name> <type id>` | what each state means, what moves the thing between states, which moves the code never makes    |
+Each scope starts its tour on a map and ends on the step in the last column.
 
-**Sketch first.** When the user wants the big picture before the code (a plan, an idea, "roughly how would this work"), or before a long read: start with a sketch view (`view:sketch`, 3-7 sketch boxes, labelled arrows) in plain words, and say in its title and in the reply that it is a sketch. Then read the code and turn each box you can anchor into a box of code (`"sketch": null` with `members` or `anchors`). Boxes that stay sketches stay marked.
+| Request                        | Scope and draft                                        | First step (a map)                       | Last step                                    |
+| ------------------------------ | ------------------------------------------------------ | ---------------------------------------- | -------------------------------------------- |
+| "how does X work"              | `explain <question>`: `draft path <name> <entry>`      | what this part is for, where it sits     | the failure path, then what the tour skipped |
+| "what kinds of X are there"    | `explain <question>`: `draft class <name> <type>`      | what the type is for                     | which one to use when                        |
+| "what states can X be in"      | `explain <question>`: `draft states <name> <type>`     | what the thing is, and why it has states | the moves the code never makes               |
+| "what data does X keep"        | `explain <question>`: `draft data <name> [<scope>]`    | the main type and what it holds          | the types left off the map                   |
+| "explain this repo"            | `explain repo`: `draft repo <name>`                    | the system map: purpose, users, needs    | the parts skipped, and 2-3 expansions        |
+| "map every file"               | `explain map`: `draft map <name>`                      | what the project is                      | where a newcomer starts reading              |
+| a PR, a branch, a commit range | `explain change <base>..<head>`: `draft change <name>` | what changes for users                   | risks and open questions                     |
 
-If the request can mean two materially different things (which service, which branch to compare with), ask one short question with concrete options. Otherwise proceed and state your assumption.
+Data map or class map, and states with no enum: `reference/quick.md`, "Choose the diagram for the question".
 
-**Fast mode.** When the user asks for a quick answer ("quickly", "the gist"), keep the draft's one picture (its map, or a path draft's sequence) and write its text. Cut the tour to about 5 steps; for a change, keep the first and the last. Add no other views, concepts or `llm` edges. The accuracy rules and checks still apply. Offer the full explainer in the reply.
+For a GitHub PR handoff (`handoff.json`), follow `reference/create.md`, "Author through the installed commands".
 
-## Reading the code
+**Sketch first.** The user may want the big picture before the code ("roughly how would this work"). Then start with a sketch view of 3-7 boxes, and say that it is a sketch (`patch-format.md` 3.12).
 
-- `xpl outline [--under <id>] [--depth n] [--kind method,function] [--keys]`: ids, lines, fan-in and fan-out (`in=`/`out=` find the hubs).
-- `xpl search <text> [-i] [--regex] [--under <dir|glob>] [--code]`: hits with the enclosing symbol id and `+offset`.
-- `xpl show <id> [--refs]`: code as `<line> <offset>│ code`, and the refs with `+offset`. `xpl show --at base <path> [--lines a-b] [--explainer <name>]`: a changed file before the change.
-- `xpl refs <id> [--in|--out] [--kind call|read] [--depth n]`: what this calls, or who calls or reads it.
+**Fast mode** ("quickly", "the gist"): keep the draft's one diagram and write its text. Cut the tour to about 5 steps; for a change, keep the first and the last step. Add no other views, concepts or `llm` edges. The accuracy rules still apply. Offer the full guide in the reply.
 
-Paste ids exactly as printed; `+34..36` is the span `{"from": 34, "to": 36}`. Options: `reference/cli.md` (look up one command; do not read it all).
+## Workflow
 
-Where the index shows less than runs:
+1. **Index:** `xpl index`, and again when the code changes or a command says the index `does not match the working tree`. On Rust, read the coverage lines `xpl index` prints before you describe a path: it has heuristic calls in a few forms. Ruby and PHP have no references, so `draft path` stops: write the map and the sequence by hand (`reference/patch-format.md` 3.6, 3.8), and draw each call on the map as an `llm` edge anchored at both ends (3.3).
+2. **Name:** `xpl new <name> --title "..."`. A change gets its own guide, titled after it: `xpl new <repo>-pr-42 --title "PR 42: <what it does>"`.
+3. **A change only:** `xpl change <name> <base>..<head>` records it and prints its analysis.
+4. **Draft:** `xpl draft <kind> <name> [<entry id>] --audience "<reader>" --question "<question>" -o <file>`, outside the repo. Each text of the draft holds `TODO: <what to write>`.
+5. **Read and write.** Read the code of each anchor, then write every `TODO`. Every box, flow step and participant a view shows needs a `summary`, and so does every arrow you store. Change the draft's structure only where the code shows it is wrong, such as a guessed caller or a box with two jobs. For what you add (groups, frames, flows, concepts, `llm` edges), read `patch-format.md` sections 1 and 2, then that template. Done when no `TODO` is left and you read every claim.
+6. **Lint, then apply:** `xpl lint <name> --patch <file> && xpl apply <name> <file>`. A rejection lists every error, with `Did you mean` and the fields to copy. Fix a `probably off by one` warning at once. Never weaken a claim to pass: what you cannot anchor, you cannot claim. Later, patch only the field that changes (`patch-format.md` section 4).
+7. **Check:** `xpl validate <name>`; `xpl status <name>` until `to do: 0 with no text`; `xpl anchors <name> tour:<slug>` shows each step's code. Done when all three are clean.
+8. **Accuracy pass and re-read.** Give a fresh subagent, if you can start one, the `xpl` path, the repo, the guide name and any change range. It checks each claim against `xpl anchors <name>` and each "before" claim against the base. It rates each claim correct, imprecise, overstated, unanchored or wrong, quotes the lines, and changes no file. Without a subagent, do a second pass yourself, one claim at a time. Fix each `xpl lint <name>` finding, or say in the reply why you kept it (`--warn-only`). Then re-read the tour as a newcomer, with the checklist in `writing.md` section 7.
+9. **Ready and show:** `xpl ready <name>`, then `xpl bundle <name> -o <outside-repo>/<name>.html` (`--files boundary` for a change or a subsystem). Record a justified omission with the same `--note "reason"` on both. Never add or remove an author review in a patch. The bundle holds the user's source: attach or publish it only when asked.
 
-- Read `xpl index`'s analysis coverage before making source claims. File anchors, symbols, full declaration ranges,
-  nesting, and relationship kinds have independent support and observed outcomes. Unsupported or failed analysis,
-  partial coverage, and legacy unknown coverage do not establish that a relationship is absent. Confirm with `show`
-  and anchor the available source; exported viewers keep these limits visible.
-
-- An interface method has no body: `refs --out` lists its implementations as `impl` lines. Anchor the one that does the work.
-- A `call` ref to a type is a construction, not a call on your path. A `call` ref to a field is a call through a stored function: anchor the field (`usage`) and the function (`refs <field> --in`).
-- A method reached through a variable (`await response(...)` runs `__call__`) has no callers in `refs --in`: `search` for the name, or find where the object is built (`refs <class> --in`).
-- A call to a base-class method with no body runs a subclass method: anchor the one that runs, and link them with an `llm` `calls` edge.
-- Event buses, DI, callbacks, HTTP handlers, queues and config keys read by name: `search` for `emit`, `on(`, `register` and the topic, route or key, then link with an `llm` edge.
-- A reaches C through B, and B is not a box on the map: one edge from A to C with `via: [B]` (drawn "via B"). A hop the index shows needs no anchors; anchor the others at both ends (`patch-format.md` 3.3).
-- A recursive function: in its flow, a `next` link with `kind: "recurse"` back to the step the call starts at (drawn "one level down"), and `kind: "return"` where a call hands its result back up, with no `step` when it goes back to whoever made the call (`patch-format.md` 3.7).
-- Calls into dependencies are not indexed: anchor the call site and describe nothing inside the library. You may name a library as the caller of your code when a line in the repo shows it (a class passed as `httpx.Client(transport=...)`): anchor that line.
-- Stay at `--depth 1` on a hub. Stop when the question is answered.
-
-## explain <question>: part of a project
-
-1. **Entry point:** `search -i` the nouns and verbs of the question; `outline --depth 2`. Pick the function where the flow starts or the decision is made.
-2. **Draft:** `xpl draft path <name> <entry id> -o q.json`: a sequence of the entry's direct calls in source order, and one tour step per main call. A question with two halves (make a token, then check it): give both entries, `xpl draft path <name> <entry> <entry2>`, for one tour through two sequences. A method the class inherits works too (`sym:a.py#Child.run`).
-3. **Trace:** `show <entry> --refs`, then the callees that matter. Note every guard on the path (`if`, early `return`, type checks).
-4. **Shape:** the draft sees one level of calls. Drop the calls that do not matter. Add a map when the answer spans several files, and start the tour on it: the parts involved as plain boxes, with the outside systems they touch (a database, an API) as role boxes, so the reader sees where the answer sits before the calls. Add a flow when the point is a decision, a second process view when the question has two halves, concepts for ideas that cross files.
-5. **Boundary:** anchor the target code, its direct callers, the callees that change the answer, and the tests that pin the behaviour.
-6. **Reply:** answer the question and name the key functions.
-
-## explain repo: the whole project
-
-Three levels, each a zoom into a box of the one above (`opens`):
-
-| Level          | Shows                                                                              | Boxes                                                |
-| -------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| 1. System map  | the service(s), who uses them, and the databases, queues and outside APIs they use | 3-7, each with a `role` and a `tech`                 |
-| 2. Inside      | the parts of one service, and the outside boxes each part talks to                 | 4-8 `component`s with plain labels, plus those boxes |
-| 3. Code (lazy) | the main path through a part: a sequence or a flow                                 | on `expand`                                          |
-
-1. **What it is:** the README and package metadata (`xpl show file:README.md`, `outline --keys` on `pyproject.toml`, `package.json`, `go.mod`): language, kind, purpose.
-2. **Draft:** `xpl draft repo <name> -o repo.json`: the system map (`view:system`), a map of the inside of each service, edges from each part to the outside systems it imports, and a tour from the top. Java files now contribute symbols and heuristic references to repository maps. Treat inferred relationships as leads: check calls, imports and outside systems against the source before explaining them. The first step on the inside lists the files left off the map, by name, in one sentence.
-3. **Outside systems:** the draft finds them from import lines; each is a hint. Check whether each is used on the default runtime path or only by an optional integration. Read the code that builds the client or reads its address: name the real system ("Orders database", not "SQL database"), merge two boxes for one system, drop a library that is only imported, and add what the imports miss (a service called through plain HTTP: `search` for its URL or config key). Each arrow gets a 1-4 word label: what passes ("stores orders", "charges cards").
-4. **Parts:** make each box one responsibility, with a label a manager understands ("Payments", not `pay_svc`). Merge folders into a group (`grp:<slug>` with `members`) where one responsibility spans several; split a box that holds two. Each box gets a one-line summary of what it is for.
-5. **Main path:** when there is an obvious entry point (`main`, `cmd/`, a server), run `xpl draft path` on it, and let its part `opens` the sequence. Copy its view, its nodes and the tour steps you keep into the repo patch, with the next free step ids.
-6. **Tour:** the system map (what it is, who uses it), what it relies on, the inside, the main path, then each remaining part, or one step that names the parts it skips.
-7. **Lazy:** leave deeper nodes unexplained; offer 2-3 expansions in the reply.
-
-## explain map: every file, in plain words
-
-A quick map for someone who wants to know what is in a project, file by file, often code an AI assistant wrote. Lighter than `explain repo`: no architecture to design, one name and one sentence per box, shown on the box.
-
-1. **Draft:** `xpl draft map <name> -o map.json`. One map per folder; a folder box zooms into its files. Each file's `TODO` lists what the index knows: its header comment, what it defines, what uses it, what it uses. Then run `xpl health`: a quick check for secrets written into the code, committed `.env` files, very large files and possibly unused files, each at a file and line.
-2. **Write every box:** a label of 2-5 plain words for what it does ("Job queue", not `queue.ts`: the path is in the box's details), and one sentence of at most about 120 characters that starts with a verb and says what it does for the project. Write it from the `TODO`'s facts; open the file (`xpl show file:<path>`) when they do not say. The reader is the owner of the project, who may not read code: everyday words, no framework names unless the user asks for a technical map. Folders get the same.
-3. **Many boxes** (more than about 150): split the patch's `nodes` by map (`view:map-<path>`) among parallel helpers if you can start them; each writes its boxes' text into its own patch and keeps the ids. Lint and apply each.
-4. **Crowded folders:** the draft groups the files of a folder of more than 30 that use each other; each group is a box that opens a map of its files. Name each group by the job its files share, regroup files that do not belong, or remove a group that is not one job.
-5. **Tour** `tour:map`: what the project is, then each top folder, one or two sentences each.
-6. **After work on the code** (yours in this conversation, or the user's): `xpl update <name> --since <base> -o map.json` (`<base>`: the commit before the work; leave out `--since` while the work is not committed, and do not commit for the user unless they ask). It indexes, moves the guide to the new index, records the change and drafts the map again. The draft holds only new files, removes the boxes of deleted ones, keeps the text (a moved file keeps its own), and, with the change recorded, adds `tour:changes-<head>`. Its summary says what was asked, in the asker's words, and what was done; each step says how that file's change serves the request.
-7. **Reply:** the bundle path, the parts of the project in 3-5 lines, and that running `xpl draft map` again keeps the map current. When `xpl health` reports high-severity findings, list each with its file, line and kind ("AWS access key in `src/config.ts`, line 12") and its fix. Never copy a secret value into the reply, a patch or the explainer, not even in part; say it is a quick check, not a security audit.
-
-## explain change <base>..<head>: a PR, an MR or a branch diff
-
-Follow `reference/explain-change.md`: recording the change, its callers and tests (use `xpl change` instead of finding them by hand), the old code (`xpl show --at base`), "before" claims, and the tour order.
-
-## Working from a draft
-
-A draft applies as it is. Each text holds `TODO: <what to write>`; each note starts `### TODO: ...`. Edit the file:
-
-- **Write every `TODO`** after you have read the code it anchors.
-- **Fix the structure only where the code shows the draft is wrong:** a caller marked "a guess" that never runs the changed code, a call that does not matter, a box with two responsibilities. Otherwise keep its ids, anchors and view settings.
-- **Add what the tour needs:** groups, flows, concepts, `llm` edges. `reference/patch-format.md` has a template per element: read sections 1 and 2, then only what you add. `reference/examples/` shows finished text.
-- **New anchors** follow `patch-format.md` section 1 (a tour step: 3.9). Anchor context code you only show with a file-relative `span` (no `symbol`), so it does not widen the bundle's boundary.
+**The reply:** first the answer in 3-6 sentences (for a question, name the key functions; for a change, the behavior change, then the risk). Then one line each: the scope and any assumption; for a change, the changed files with `+/-` counts; what you ran; what you left out; the bundle path. With what you ran, give each language's `refs:` value (precise, heuristic or none). Say that `.explainer/` was written into the repo, and that **Mark as reviewed** in the viewer records a review. Do not retell the tour.
 
 ## The tour
 
-- **Answer first.** The tour `summary` gives the answer in its first sentence (what the code does, or what the change does for its users), then up to four reasons, one sentence each. A reader who stops after the first sentence still has the answer. The steps then show the reasons in the code.
-- 5-9 steps, up to 12 for a change.
-- Top-down: the first step shows the big picture (the map). Then the main path in execution order, then the details that change the outcome. Edge cases and open questions come last. A repo tour visits every overview box or names the ones it skips.
-- Concepts before code: a step on the system map or the inside of a service names at most one piece of code; it says what the part is for and what it relies on. Code names belong to the steps about code (`xpl lint`: `code-heavy`, `long-note`).
-- Each step focuses one main element, plus at most one concept that explains it.
-- A note that compares two or three things (options, before and after, policies) may put them in a small Markdown table under its sentences (`reference/writing.md`, section 1).
-- `code` on every step: at most 2 ranges, and `editor.primary` on the file the note is about. **Range order:** the range the note talks about first; when the note is about a before and after, the before range (a base anchor), then the after range.
-- 4-8 boxes on a map (3-7 on a system map). Every graph view a tour uses has `"stubs": {"mode": "none"}`; an overview has `excludeFiles` for tests, examples and docs. The drafts set both.
+Every tour follows this spine. A change and a presentation end on their own point (the risk, or the last slide) instead of part 5. Each step holds one idea, one diagram and at most 2 code ranges.
+
+| Part                  | What it says                                                           | Diagram                                    |
+| --------------------- | ---------------------------------------------------------------------- | ------------------------------------------ |
+| Purpose (the summary) | the answer in its first sentence, then up to 4 reasons                 | none                                       |
+| 1. Big picture        | what the part is for, where it sits, who uses it                       | a map: the system, or where this part sits |
+| 2. Parts              | one step per box that matters (repo), or the 2-3 actors (question)     | the same map, with one box in focus        |
+| 3. One path in detail | the main path in run order, and the decision that changes the outcome  | one flow or sequence                       |
+| 4. Edges and risks    | guards and failure paths; for a change, what still behaves the old way | the flow, or the code                      |
+| 5. Where next         | 2-3 boxes or views the tour skipped, and the question each one answers | the map again, with those boxes in focus   |
+
+Length budgets (the other files and the drafts follow this table):
+
+| Scope            | Steps                                  | Note body (aim) | Tour summary  | Diagrams a tour uses           | Boxes per map          | Concepts |
+| ---------------- | -------------------------------------- | --------------- | ------------- | ------------------------------ | ---------------------- | -------- |
+| question, states | 5-8                                    | 25-40 words     | 2-4 sentences | 1 map, 1 flow or sequence      | 3-6                    | 0-2      |
+| class, data      | 5-8                                    | 25-40 words     | 2-4 sentences | 1 map, 1 flow if items move    | 3-6, 8 with a note     | 0-2      |
+| repo             | 6-9                                    | 25-40 words     | 3-5 sentences | system map, inside map, 1 path | 3-7 system, 4-8 inside | 0-3      |
+| change           | 6-12                                   | 25-45 words     | 3-5 sentences | the change map, 1-2 flows      | 4-8                    | 0-2      |
+| map              | 1 + top folders + where to start, ≤ 12 | 15-30 words     | 2-3 sentences | the folder maps                | one box per entry      | 0        |
+| presentation     | 5-9                                    | ≤ 280 chars     | 2-3 sentences | existing views                 | ≤ 8                    | 0-1      |
+
+This table is the one source of these numbers; the other files point here. Lint checks part of it: `tour-summary` (more than 5 sentences), `many-diagrams` (a question tour's diagrams), `many-ranges` (a step's code) and `long-flow` (a flow's steps). Keep to the rest yourself. A small subject can take fewer steps than the column: do not pad it. A second, in-detail tour of a repo may open one sequence per part, 1-2 steps each. A sequence has 3-6 participants in every scope. A flow has at most 8 steps: split a longer decision into two flows (which cases, then what happens in each). A class map or a data map may hold 8 boxes when each one answers the question; a step then names the types left off. `draft class` stops at 8 boxes, `draft data` at 6 (8 rows a table). Hard limits for every scope: a note body has 50 words at most (`long-note`). A box, concept or step `summary` has 2 sentences and 45 words at most, and says what the thing is for (`long-summary`). A `detail` paragraph has 80 words at most (`long-detail`).
+
+- **One focus.** Each step focuses one main element, plus at most one concept that explains it.
+- **Cut to the budget.** A draft can hold more steps than the budget. Merge steps that make the same point. Drop a call that does not change the answer, from the sequence and from the tour. Gaps in step ids are fine (`t1`, `t2`, `t5`).
+- **Answer first, concepts before code:** `reference/writing.md` sections 4 and 6. Code ranges and maps: `reference/quick.md`, "What every patch needs".
 
 ## Writing
 
-Read `reference/writing.md` before you write text: which field holds what, which fields take markdown, titles, the tour summary, rewrites and the checklist. `xpl lint` checks the mechanical part.
+Read `reference/writing.md` before you write text. It has the fields, the rules (Orwell's six and ASD-STE100), the word list and the checklist. In short: plain words, one topic per sentence, active voice, at most 20 words in an instruction and 25 in a description. `xpl lint` checks the mechanical part.
+
+## Reading the code
+
+Read with `xpl outline`, `search`, `show <id> --refs` and `refs <id> --in|--out`; `reference/cli.md` has the options. Paste ids exactly as printed; `+34..36` is the span `{"from": 34, "to": 36}`. A missing arrow proves nothing, and dependencies are not indexed: anchor the call site, and describe nothing inside the library. Name a library as a caller only when a line in the repo shows it. Stay at `--depth 1` on a hub, and stop when the question has its answer.
+
+Some calls do not show in `refs`: through an interface, a variable, a base class, an event or a config key. Before you say that two parts do not talk, read `reference/quick.md`, "When the index shows less than runs".
+
+## explain <question>: part of a project
+
+1. **Entry point:** `search -i` the nouns and verbs of the question, and `outline` (2 levels, or down to the first code file). Pick the function where the flow starts or the decision happens. A question with two halves takes two entries.
+2. **A choice inside one function** (which item, which branch): draft from its caller, and add a **flow** of that function (`patch-format.md` 3.7). A sequence shows only calls, so it cannot show a guard or a comparison.
+3. **Trace:** `show <entry> --refs`, then the callees that matter. Note every guard on the path (`if`, early `return`, type checks).
+4. **Shape:** keep a frame on each loop and branch, and label it; give each `alt` one labeled arm per alternative (`patch-format.md` 3.8). An `if` that ends in `continue`, `return`, `break`, `raise` or `throw` is an `alt`, not an `opt`: the code after it is its `else` arm. Add a flow when the point is a decision. Anchor the target, its direct callers, the callees that change the answer, and the tests that pin it.
+
+## explain repo: the whole project
+
+Three levels, each a zoom (`opens`) into a box of the level above:
+
+1. the system map: each box with a `role` and a `tech`;
+2. the inside of one service: its `component`s, and the outside boxes they talk to;
+3. the code of the main path: one sequence or flow in the first guide; more on `expand`.
+
+Then:
+
+1. **Draft:** `xpl draft repo` gives the system map, a map of each service's inside, and a tour. Its arrows and outside systems are leads: check each by `patch-format.md` 3.10, "Check the draft".
+2. **Main path:** the `draft repo` tour has at most 7 steps, where next included, and leaves room for 2 steps: the main path and its risks. Run `xpl draft path` on the entry point it names (`main`, `cmd/`, a server, or for a library the method each request runs through). Keep 2 of its sequence steps, the answer and its risk, and put them before `### Where to go next`. Leave out its files map and its own tour: copy only the sequence view and those steps. Their ids are new to the guide, so copy them as they are. Set `opens` on the box that holds the entry point to the sequence's view id.
+3. **Tour:** the first step on the inside names the files left off the map, in one sentence. Offer 2-3 expansions in the reply.
+
+## explain map: every file, in plain words
+
+A quick map of a project, file by file, often of code an AI assistant wrote. The reader is its owner, who may not read code. Follow `reference/explain-map.md`: `xpl draft map`, then `xpl health`. Each box gets a label of 2-5 plain words and one sentence of at most about 120 characters that starts with a verb; `xpl lint` checks both (`map-box`). The reply lists each high-severity `xpl health` finding with its file, line, kind and fix, and calls it a quick check, not a security audit.
+
+## explain change <base>..<head>: a PR, an MR or a branch diff
+
+Follow `reference/explain-change.md`. It covers the record of the change, its callers and tests, the old code (`xpl show --at base`), "before" claims and the tour order.
 
 ## Accuracy
 
-The viewer shows each claim next to its code, so a wrong claim looks checked. Check every title, label, summary, `detail` and note against the `show` output of its anchors:
+The viewer shows each claim next to its code, so a wrong claim looks checked. Check every title, label, summary, `detail` and note against the `show` output of its anchors.
 
-- **Only what the anchored code shows.** Delete what a callee does elsewhere, paths you did not read, and why the author chose it. What you cannot check, leave out and name in the reply.
-- **Guard conditions:** when the anchored lines run only under a condition, name it ("when `metrics.enabled` is true") and anchor it.
-- **Absolute words** (all, every, never, only, "the same everywhere") need proof in the anchored code. "Every caller" needs `refs --in` and an anchor for each site. Otherwise name the sites or narrow the claim. Say a proved claim next to its evidence: on the element whose anchors show it, or in a note sentence that names the part the step shows.
+- **Only what the anchored code shows.** Delete what a callee does elsewhere and paths you did not read. Leave out what you cannot check, and name it in the reply.
+- **The why needs a source:** the README, a doc, a code comment or a commit message. Anchor that line, or name the source ("The commit message says ..."). Otherwise state the consequence the code shows ("so a failed payment stops before the order is saved").
+- **Guard conditions:** when the lines run only under a condition, name it ("when `metrics.enabled` is true") and anchor it.
+- **Absolute words** (all, every, never, only) need proof in the anchored code. "Every caller" needs `refs --in` and an anchor at each site. Otherwise name the sites or narrow the claim.
 - **Lists** read as complete: check that they are, or write "for example".
 - **Code, not folklore:** "stops waiting after the timeout", not "kills the job", when the code only races a timer.
 - **Changes:** "before" claims and test claims follow `reference/explain-change.md` sections 4 and 6.
 
-## Apply and check
-
-1. `xpl lint <name> --patch <file>` lints the explainer as it would be after the patch and writes nothing; a patch that `apply` would reject prints the rejection. It exits 1 on any finding: fix the patch, then apply it once. To keep a finding on purpose, run it with `--warn-only` and say why in the reply.
-2. `xpl apply <name> <file>`. A rejection writes nothing and lists every error, with `Did you mean` and ready-to-use anchor fields. Fix a `probably off by one` warning now. Never weaken a claim to pass: what you cannot anchor you cannot claim. A `protected` warning means the user's edits were kept (`patch-format.md` section 5).
-3. `xpl validate <name>`; `xpl status <name>` until `0 unexplained`; `xpl anchors <name> tour:<slug>` shows the code of each step.
-
-## Check before you show it
-
-1. **Accuracy pass** (a change): if you can start a fresh subagent, give it the `xpl` path, the repo, the explainer name and path, and the range. Ask it to check each title, summary, note and detail against its anchors (`xpl anchors <name>`), each "before" claim against the base (`xpl show --at base <path>`, `git show <base>:<path>`), and what each cited test asserts. It rates each claim correct, imprecise, overstated, unanchored or wrong, quotes the lines, and changes no file. Without a subagent, do a second, separate pass yourself, one claim at a time. Fix what the pass finds.
-2. `xpl lint <name>`: `todo-left` must be zero before you bundle. Fix the other findings, including what the reader will see (`untitled-step`, `far-ranges`, `big-map`, `crowded-map`, `system-map-no-edges`), or say in the reply why you kept one.
-3. Re-read the tour in order as a newcomer, with the checklist in `reference/writing.md` section 7.
-4. `xpl ready <name>` combines strict validation, current-source checks, required summaries/story text and reader lint. Fix every error. Record justified omissions or warning decisions with `--note "reason"`, and pass the same note to `bundle`. The source check does not verify prose truth or every execution path. Review state is separate and optional. Authors record a scoped inspection with named omissions through Edit > Record author review; never forge or remove reviews in an LLM patch. Use `--require-review` with ready and bundle only for an explicitly chosen team policy (current all-content review).
-
-## Show the result
-
-- `xpl bundle <name> -o <name>.html`: one self-contained HTML file that works offline; for a change it shows the diff, the code before, New and Changed badges and the file list. It embeds the files the explainer refers to (`--files referenced`, the default); add `--files boundary` for a change or a subsystem, so the callers, callees and tests come along. A bundle is **what you give the user in remote or cloud sessions**: give them the path. It runs the shared ready check before writing and refuses unfinished required content, stale indexes and broken source links. Fix the findings ("After the code changed"); use `--draft` only when the user asks for a preview for repair, and say it is a draft in the reply. `--allow-drift` is a legacy draft flag. Attach or publish it only when asked: it holds their source code. `--tour tour:<slug>` opens the tour as a presentation.
-- `xpl view <name>`: a local server for a user at the machine who keeps iterating; run it in the background.
-- **The reply:** first the answer in 3-6 sentences (for a change: the behaviour change, then the risk). Then one line each: the scope and any assumption; for a change, the changed files with `+/-` counts; what you checked by running code; what you left out or could not check; the bundle path and what it embeds. Say that `.explainer/` was written into the repo. Do not retell the tour.
-
-## Change one thing cheaply
-
-Patch only what changes, and lint the patch first.
-
-- One element's text: `{id, summary}`.
-- One step of a flow or sequence: the view's `stepsUpdate` with that step.
-- One tour step: `{"tours": [{"id": "tour:x", "stepsUpdate": [{"id": "t3", "note": "..."}]}]}`. Send `steps` whole only to add, remove or reorder steps.
-- A box on a map: `includeAdd` / `includeRemove`.
-- Other lists (`members`, `participants`, `anchors`) replace wholesale (`patch-format.md` section 4).
-
 ## expand <node>
 
-`<node>` is an id or name, a ghost the user clicked (`ghost:dir:x` means `dir:x`), or a queued request.
+`<node>` is an id, a name, a box outside the map that the user clicked (`ghost:dir:x` means `dir:x`), or a saved request. Read it (`show <id> --refs`, `outline --under <id> --depth 1`), and add it and the children worth showing with `includeAdd`. A view with `origin: "user"` takes no `llm` edit: make a new view. Explain only what `status <name>` names as newly visible. For saved requests, follow "feedback"; never delete the request store.
 
-1. Resolve it to an id and read it: `show <id> --refs`, `outline --under <id> --depth 1`.
-2. Add it and the children worth showing with `includeAdd` on the graph view. A view with `origin: "user"` takes no `llm` edit: use a new view.
-3. `status <name>` names what became visible and has no summary: explain those and only those.
-4. `status` also lists durable feedback. For queued requests, use the reviewed revision workflow below and [reference/revise.md](reference/revise.md). Put expansion patches in the proposal; include any new element/view IDs explicitly when selecting the run. Never delete the store.
+## feedback
 
-## feedback [<id> <what to change>]
-
-Reader requests from the Feedback panel or "Explain this", in a saved page or `xpl view`. Saving a request never starts generation. **Ask a question** explicitly uses the connected local answer worker; without one it retains pending feedback. Answers, original snapshots and exact head/base references survive reload and feedback JSON import/export. Answering does not change the guide or finalize revision outcomes. Import an offline `feedback.json` with `xpl feedback <name> --import /path/to/feedback.json`; imports deduplicate by stable ID and take greater outcome revisions. Equal or older revisions keep the current result; timestamps never order outcomes.
-
-1. Follow [reference/revise.md](reference/revise.md). Inspect `xpl feedback <name> --json`, reindex changed source, then select immutable IDs with `xpl revise <name> --select <id,id> -o /tmp/selection.json`. Resolve in memory; keep the existing artifact until acceptance. State the selected IDs and any extra/new explanation IDs authorized with `--include`.
-2. Read the selection's original context, before/after explanation, source and moved/drifted/missing report. Write per-request ordinary patches in an outside file: `[{id, patch}]`. Preserve user-owned fields and unrelated content. Location-only moves need no prose rewrite; an empty patch is enough. Submit with `--run <run-id> --proposal /tmp/proposal.json`; inspect the resulting source and explanation diff.
-3. Ask the author to choose addressed, rejected, unresolved or outdated for each selected ID, with reasons. Accepted outdated context needs an explicit reconciliation reason. Missing anchors stay pending until the author explicitly chooses re-anchor or remove, recorded in `missing: [{id, action}]`; never silently retarget or drop them. Submit `--decisions /tmp/decisions.json` to review the exact accepted subset. Show that review before asking for acceptance. Call `--accept` only after the author accepts that candidate, or when their existing instruction explicitly accepts it. The CLI rechecks live freshness, identity and readiness; only then does it publish and record selected outcomes.
-4. After interruption, retry the same `--run <run-id> --accept`, following the reference's lock recovery instructions. Never apply the proposal separately or record its outcomes by hand: the journal prevents duplicate application and outcome increments. Failed checks leave requests retryable; new/unselected feedback and the prior artifact survive. Report each selected outcome and its reason, run `xpl ready` and export the next snapshot with `bundle`. Export feedback results as needed. Do not edit counters, order results by timestamps or delete `.explainer/requests.json`.
+Readers save requests in the Feedback panel or with "Explain this". Saving a request starts no work. Import an offline file first: `xpl feedback <name> --import <file>`. Then follow `reference/revise.md`: select the request ids, write one patch per request, and show the review. Accept only after the author agrees.
 
 ## make tour
 
-A talk built from existing views, by the rules of "The tour". Default: the newest question's views plus the overview; ask when there are several. Use a slug with `talk` (`tour:talk-retries`), so `xpl lint` keeps each note short enough for Present (`long-talk-note`). Check with `xpl anchors <name> tour:<slug>`, then `xpl bundle <name> -o talk.html --tour tour:<slug>`.
+Make a presentation from existing views. Follow "The tour" above and its presentation budget. Use the newest question's views and the overview; ask when there are several. Give it a slug with `talk` (`tour:talk-retries`), so `xpl lint` keeps each note short enough for Present. Check with `xpl anchors <name> tour:<slug>`, then `xpl bundle <name> -o talk.html --tour tour:<slug>`.
 
 ## After the code changed
 
-`xpl index`, `xpl resolve <name> --write`, then work through `xpl status <name>` with `reference/patch-format.md` section 8. For a map, `xpl draft map <name>` does the bookkeeping (explain map, step 6). Ask the user before you re-anchor or remove a missing anchor. `xpl validate <name>` must pass before you finish.
-
-## Hard rules
-
-1. **You cannot invent code.** Every anchor must resolve. Never write hashes. Copy offsets from `show`, `refs` or `search` output of this session, or use `find`.
-2. **Read before you claim.** A ref, or a caller or test that `xpl change` or a draft marks as a guess, is a hint until you have seen the call.
-3. **Read-only on the user's repo and remotes.** Never post, comment, push or change their checkout (`.explainer/` aside).
-4. **`llm` edges only for what the index cannot see**, anchored at both ends (with `via`: each hop the index does not show).
-5. **Stable ids.** Slugs are chosen once, in kebab-case. Step ids are never renumbered or reused. A change draft numbers its tour steps `t10`, `t20`, ...: a step you insert takes a free number between its neighbours (`t15`).
-6. **The user's edits win.** Never overwrite `origin: "user"` elements or `userFields`; for a view or tour they edited, make a new one or ask. `--actor user` only for text the user dictates. The viewer's Explore Details can save labels, summaries, detail and concept relations as user patches; Drafts survive navigation until save/cancel; Undo/Redo names the fields and target and keeps user ownership. Live history and undo requests are scoped to the canonical repository root and guide; offline pages keep only in-session undo. Edit evidence previews selected head/base lines as checked anchors; explicit replace/remove/add saves use the same user patches. Repair or remove every invalid anchor on the element; stale evidence is rejected, including historical undo. Exported HTML retains edits and source offline.
-7. **Few things at the same level.** One primary tour; views only when a tour step uses them or a box `opens` them; 0-3 concepts; groups only as map boxes.
-8. **Lazy.** Explain what a view shows; leave the rest for `expand`.
-9. **Ask, do not guess** when the scope is ambiguous or an anchor cannot be found.
+Run `xpl index` and `xpl resolve <name> --write`, then work through `xpl status <name>` with `reference/patch-format.md` section 8. Rewrite each drifted text by hard rule 6. For a map, `xpl update` does the bookkeeping (`reference/explain-map.md`). Ask the user before you re-anchor or remove a missing anchor. `xpl validate <name>` must pass before you finish.
 
 ## Reference
 
-- `reference/create.md`: installed creation prompts, target selection and recovery.
-- `reference/quick.md`: the one-page quick reference.
-- `reference/writing.md`: the writing rules and the checklist.
-- `reference/explain-change.md`: the guide for a PR, MR or branch.
-- `reference/patch-format.md`: a template per element, merge rules, provenance, rejections, repair.
+- `reference/quick.md`: patch needs, diagram choice, index gaps, lint.
+- `reference/writing.md`: writing rules and the checklist.
+- `reference/create.md`: install, prompts, PR handoff, recovery.
+- `reference/explain-change.md`, `reference/explain-map.md`: those two scopes.
+- `reference/patch-format.md`: element templates, merge rules, repair.
+- `reference/revise.md`: saved feedback.
 - `reference/cli.md`: every command and option.
-- `reference/examples/go-retry.patch.json` (a question) and `py-overview.patch.json` (a repo, with a system map, five-part overview, and optional completion path): finished patches for `fixtures/go-jobrunner` and `fixtures/py-jobrunner`. Read them for the text.
+- `reference/examples/`: `go-retry.patch.json` (a question) and `py-overview.patch.json` (a repo). Copy their text and the shape of their tours.

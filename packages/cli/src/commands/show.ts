@@ -10,7 +10,7 @@ import type { Args } from "../args.js";
 import type { CommandSpec } from "../command.js";
 import type { Ctx } from "../context.js";
 import { CliError, UsageError } from "../errors.js";
-import { plural, rangeText } from "../format.js";
+import { kindWord, plural, rangeText } from "../format.js";
 import { buildOutline, outlineJson, renderOutline } from "../outline-tree.js";
 import {
   collectRefs,
@@ -18,6 +18,7 @@ import {
   groupByKind,
   needsFrom,
   refLine,
+  viaInterfaceRefs,
   type RefDirection,
   type RefEntry,
 } from "../ref-data.js";
@@ -57,16 +58,25 @@ function refsSection(
   subject: string,
   entries: readonly RefEntry[],
   hint: string,
+  via: readonly RefEntry[] = [],
 ): string[] {
-  if (entries.length === 0) return [`${title}: none`];
+  const plus = via.length > 0 ? `, plus ${via.length} via interface` : "";
+  if (entries.length === 0 && via.length === 0) return [`${title}: none`];
   const ordered = groupByKind(entries);
   const shown = ordered.slice(0, MAX_REF_LINES);
-  const lines = [`${title}: ${entries.length} (${countByKind(entries)})`];
+  const lines = [
+    entries.length === 0
+      ? `${title}: none${plus}`
+      : `${title}: ${entries.length} (${countByKind(entries)})${plus}`,
+  ];
   for (const entry of shown) {
     lines.push(`  ${refLine(entry, needsFrom(entry, direction, subject))}`);
   }
   if (ordered.length > shown.length) {
     lines.push(`  ... ${ordered.length - shown.length} more; ${hint}`);
+  }
+  for (const entry of groupByKind(via).slice(0, MAX_REF_LINES)) {
+    lines.push(`  ${refLine(entry)} via ${entry.to}`);
   }
   return lines;
 }
@@ -231,6 +241,7 @@ async function showCode(
     ? {
         out: groupByKind(collectRefs(ws.model, target, "out")),
         in: groupByKind(collectRefs(ws.model, target, "in")),
+        viaInterface: groupByKind(viaInterfaceRefs(ws.model, target)),
       }
     : undefined;
 
@@ -256,7 +267,11 @@ async function showCode(
 
   const absWidth = String(Math.max(...shown.map((s) => s.line))).length;
   const offsetWidth = String(Math.max(0, ...shown.map((s) => s.offset ?? 0))).length;
-  const out = [`${target.id} (${kind}) ${file}:${rangeText(range)} ${indexedHash}`];
+  const word = whole ? kind : kindWord(ws.model, target.symbol);
+  // a file's header ends at its last line, as `wc -l` counts it (the `--json` range keeps the index's)
+  const out = [
+    `${target.id} (${word}) ${file}:${rangeText(whole ? { startLine: 1, endLine: end } : range)} ${indexedHash}`,
+  ];
   for (const s of shown) {
     const abs = String(s.line).padStart(absWidth);
     const off =
@@ -291,6 +306,7 @@ async function showCode(
         target.id,
         refs.in,
         `xpl refs ${target.id} --in --limit 0`,
+        refs.viaInterface,
       ),
     );
   }
@@ -317,12 +333,12 @@ async function showBase(ctx: Ctx, args: Args, options: CodeOptions): Promise<num
       .filter((candidate) => candidate.explainer.change !== undefined);
     if (withChange.length === 0) {
       throw new CliError(
-        "no explainer here records a change, so there is no code before it: run `xpl change <name> <base>..<head>` first",
+        "no guide here records a change, so there is no code before it: run `xpl change <name> <base>..<head>` first",
       );
     }
     if (withChange.length > 1) {
       throw new UsageError(
-        `several explainers record a change (${withChange.map((c) => c.name).join(", ")}): pick one with --explainer <name>`,
+        `several guides record a change (${withChange.map((c) => c.name).join(", ")}): pick one with --explainer <name>`,
       );
     }
     loaded = withChange[0]!;
@@ -427,23 +443,17 @@ async function showBase(ctx: Ctx, args: Args, options: CodeOptions): Promise<num
 
 export const showCommand: CommandSpec = {
   name: "show",
-  usage: "xpl show <id> [--refs] [--context n] | xpl show --at base <path> [--lines a-b]",
-  summary: "Code with 0-based offsets relative to the symbol (what spans use), plus refs",
+  usage:
+    "xpl show <id> [--refs] [--context <n>] [--lines <a-b>] [--max-lines <n>] | xpl show --at base <path> [--lines <a-b>] [--explainer <name>]",
+  summary: "Print a symbol's code with the offsets a span uses (0-based), and its references",
   details: [
-    "Header: <id> (<kind>) <file>:<first>-<last> <hash>. Then one line per code line:",
-    "  <absolute line> <offset>│ <code>",
-    "The offset is 0-based from the symbol's first line (for a file: line - 1). It is exactly what an",
-    "anchor's span {from, to} uses, e.g. offsets 34..36 for the requeue call in Runner.dispatch.",
-    "Directories and the repo list their children instead. Ids: sym:src/a.ts#A.b, file:src/a.ts, dir:src,",
-    "src/a.ts#A.b, src/a.ts.",
-    `--refs appends the references leaving and entering the element, grouped by kind: each line is`,
-    "  <kind>  <other id>  (<file>:<line>, <precise|heuristic>)  +<offset>",
-    "where +<offset> counts lines from the start of the referencing symbol: a call-site anchor's span.",
-    `Long symbols are cut after ${DEFAULT_MAX_LINES} lines (--max-lines 0 prints all; --lines 401-800 selects a part).`,
-    "--at base <path> prints a changed file as it was before the change the explainer records (`xpl change`): the",
-    "  offsets are those a base anchor's span uses (0-based from line 1 of the base file), and `-` marks the lines",
-    "  the change removes or rewrites. Paths only (the base commit is not indexed); --explainer picks the explainer",
-    "  when more than one records a change. Automatic selection reads the discovered guide files directly.",
+    "Header: <id> (<kind>) <file>:<first>-<last> <hash>. Then each code line: <line> <offset>│ <code>.",
+    "The offset counts from 0 at the symbol's first line: it is what an anchor's span {from, to} uses.",
+    "A folder or the repo lists its children. A long symbol stops after 400 lines (--max-lines, --lines).",
+    "--refs adds the references out of and into the element, by kind.",
+    "Each one's +<offset> counts from the start of the referencing symbol: a call-site anchor's span.",
+    "--at base <path> prints a file as it was before the change the guide records.",
+    "There, `-` marks the lines that the change removes or rewrites.",
   ],
   options: {
     refs: { type: "boolean", desc: "Append outgoing and incoming references grouped by kind" },
@@ -465,12 +475,12 @@ export const showCommand: CommandSpec = {
     at: {
       type: "string",
       arg: "base",
-      desc: "base: the file before the change the explainer records (see xpl change)",
+      desc: "The file before the change the guide records (see xpl change)",
     },
     explainer: {
       type: "string",
       arg: "<name>",
-      desc: "With --at base: the explainer whose change to use (default: the only one with a change)",
+      desc: "With --at base: the guide whose change to use (default: the only one with a change)",
     },
   },
   positionals: [{ name: "id" }],

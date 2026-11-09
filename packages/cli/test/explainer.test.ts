@@ -37,7 +37,7 @@ describe("xpl new", () => {
     expect(code).toBe(0);
     expect(out).toContain("created .explainer/job-runner.explainer.json");
     expect(out).toContain('title "Job runner"');
-    expect(out).toContain("xpl apply job-runner patch.json");
+    expect(out).toContain("next: `xpl draft path|repo|map|data|... job-runner -o <file>`");
     const explainer = readJson(dir, ".explainer/job-runner.explainer.json");
     expect(explainer).toMatchObject({
       schema: "code-explainer@0",
@@ -81,7 +81,7 @@ describe("xpl new", () => {
     for (const name of ["../evil", "a/b", ".hidden", "sp ace"]) {
       const { code, err } = await xpl(dir, "new", name);
       expect(code, name).toBe(2);
-      expect(err).toContain("invalid explainer name");
+      expect(err).toContain("invalid guide name");
     }
   });
 
@@ -238,8 +238,8 @@ describe("xpl apply", () => {
   it("names the explainers that exist when the name is wrong", async () => {
     const { code, err } = await xpl(demo, "apply", "demmo", PATCH_PATH);
     expect(code).toBe(1);
-    expect(err).toContain('no explainer "demmo"');
-    expect(err).toContain("Existing explainers: demo");
+    expect(err).toContain('no guide "demmo"');
+    expect(err).toContain("Guides here: demo");
   });
 
   it("finds the explainer by name, file name or path", async () => {
@@ -396,7 +396,7 @@ describe("xpl resolve", () => {
 
     const dry = await xpl(dir, "resolve", "demo");
     expect(dry.code).toBe(0);
-    expect(dry.out).toMatch(/anchors: 12 \(ok 7, moved 5, drifted 0, missing 0\)/);
+    expect(dry.out).toMatch(/code links: 12 \(ok 7, moved 5, drifted 0, missing 0\)/);
     expect(dry.out).toContain("not written: pass --write");
     expect(readJson(dir, EXPLAINER).views[1].steps[2].anchors[0].resolved.range).toEqual({
       startLine: 76,
@@ -431,7 +431,7 @@ describe("xpl resolve", () => {
 
     const { code, out } = await xpl(dir, "resolve", "demo");
     expect(code).toBe(0);
-    expect(out).toMatch(/anchors: 12 \(ok \d+, moved 0, drifted [1-9]\d*, missing 0\)/);
+    expect(out).toMatch(/code links: 12 \(ok \d+, moved 0, drifted [1-9]\d*, missing 0\)/);
     expect(out).toContain("drifted llm elements to re-explain");
     // the step whose call site was edited, with the anchor as it was written
     expect(out).toContain("dispatch:3  (step in view:dispatch)");
@@ -460,7 +460,7 @@ describe("xpl resolve", () => {
     expect((await xpl(dir, "index", "--precise", "off")).code).toBe(0);
     const { code, out } = await xpl(dir, "resolve", "demo", "--write");
     expect(code).toBe(0);
-    expect(out).toMatch(/missing anchors \(1\): fix or drop them explicitly/);
+    expect(out).toMatch(/missing code links \(1\): fix or remove each one/);
     expect(out).toContain(
       "dispatch:1  views[1].steps[0].anchors[1]  src/queue.ts#Queue.pop [definition]",
     );
@@ -492,12 +492,14 @@ describe("xpl status", () => {
     );
     expect(out).toContain("view:overview (graph): Overview");
     expect(out).toContain(
-      "nodes without summary (2 of 3): file:src/metrics.ts, file:src/worker.ts",
+      "boxes without summary (2 of 3): file:src/metrics.ts, file:src/worker.ts",
     );
-    expect(out).toContain("every stored edge is explained");
+    expect(out).toContain("every stored arrow has text");
     expect(out).toContain("view:dispatch (sequence): How a job is dispatched");
     expect(out).toContain("steps without summary (3 of 3): dispatch:1, dispatch:2, dispatch:3");
-    expect(out).toMatch(/^to do: 7 unexplained, 0 drifted, 0 missing anchors, 0 requests$/m);
+    expect(out).toMatch(
+      /^to do: 7 with no text, 0 changed code links, 0 missing code links, 0 requests$/m,
+    );
   });
 
   it("shrinks as summaries are added", async () => {
@@ -528,8 +530,26 @@ describe("xpl status", () => {
     expect(overview.nodes.unexplained).toEqual([]);
     const dispatch = json.views.find((v: any) => v.id === "view:dispatch");
     expect(dispatch.steps.unexplained).toEqual([]);
-    // still to do: the two participants of the sequence view that are files without summary (queue, runner's symbol has one)
-    expect(json.todo.unexplained).toBe(dispatch.nodes.unexplained.length);
+    // still to do: the participants of the sequence view that are files without summary (queue, runner's symbol has
+    // one), and the tour's summary
+    expect(json.todo.unexplained).toBe(dispatch.nodes.unexplained.length + 1);
+  });
+
+  it("counts a draft's TODO summary as unexplained", async () => {
+    const dir = cloneDir(demo);
+    const patch = {
+      nodes: [
+        { id: "file:src/worker.ts", summary: "TODO: one line: what this file does." },
+        { id: "file:src/metrics.ts", summary: "Counts completed jobs." },
+      ],
+    };
+    const applied = await invoke(["apply", "demo", "-"], {
+      cwd: dir,
+      stdin: JSON.stringify(patch),
+    });
+    expect(applied.code, applied.out).toBe(0);
+    const { out } = await xpl(dir, "status", "demo");
+    expect(out).toContain("boxes without summary (1 of 3): file:src/worker.ts");
   });
 
   it("includes drifted llm elements, missing anchors and queued requests", async () => {
@@ -555,9 +575,11 @@ describe("xpl status", () => {
     );
     const { code, out } = await xpl(dir, "status", "demo");
     expect(code).toBe(0);
-    expect(out).toMatch(/to do: \d+ unexplained, [1-9]\d* drifted, 1 missing anchors, 1 request$/m);
+    expect(out).toMatch(
+      /to do: \d+ with no text, [1-9]\d* changed code links, 1 missing code links, 1 request$/m,
+    );
     expect(out).toContain("drifted llm elements to re-explain");
-    expect(out).toContain("missing anchors (1)");
+    expect(out).toContain("missing code links (1)");
     expect(out).toContain(
       '2026-01-01T00:00:00.000Z  expand sym:src/runner.ts#Runner.dispatch  "why a loop?"',
     );

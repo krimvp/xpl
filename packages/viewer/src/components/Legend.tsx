@@ -1,11 +1,12 @@
 /**
  * The key of a diagram: what its boxes, outlines, lines, icons and buttons mean, behind a "Key" button beside
- * the zoom buttons. Each row draws the real mark (the same classes as the diagram, so the colours follow the
+ * the zoom buttons. Each row draws the real mark (the same classes as the diagram, so the colors follow the
  * theme) and says what it means in plain words. Rows for things the diagram does not show are left out.
  * `Legend` is the key of a map, `FlowKey` of a process flow, `SequenceKey` of a sequence diagram.
  */
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import type { LegendShows } from "../keyMarks.js";
+import { headOf, keyLineItems, type LegendShows } from "../keyMarks.js";
+import { readerBadge } from "../readerWords.js";
 import { BoxIcon } from "./icons.js";
 
 /** What each icon stands for, in plain words. */
@@ -13,22 +14,26 @@ const ICON_WORDS: Record<string, string> = {
   person: "a person",
   system: "a whole system",
   service: "a program",
-  component: "a part of it",
+  component: "a part of a program (a package or folder)",
   database: "a database",
   cache: "a cache",
   queue: "a queue",
   storage: "stored files",
   external: "outside this code",
+  browser: "a browser",
   repo: "the repository",
   dir: "a folder",
   file: "a file",
   group: "a group of files",
   class: "a class",
+  struct: "a struct",
   interface: "an interface",
   function: "a function",
   method: "a method",
   type: "a type",
   variable: "a variable",
+  constant: "a constant",
+  field: "a field",
   enum: "an enum",
   key: "a setting",
 };
@@ -36,8 +41,20 @@ const ICON_WORDS: Record<string, string> = {
 export function Legend({ shows }: { shows: LegendShows }) {
   return (
     <KeyButton foot="Click a box or an arrow to see its code.">
+      {shows.tables && (
+        <Row label="A table: a type. Each row is one of its fields, with the type it holds on the right">
+          <rect className="lg-box" x="1" y="1" width="30" height="20" rx="3" />
+          <path className="lg-rule" d="M1 8 H31 M1 14.5 H31" />
+        </Row>
+      )}
       {shows.code !== false && (
-        <Row label="A part of the code: a file, a function, a group of files">
+        <Row
+          label={
+            shows.tables
+              ? "A type drawn as one box: an interface, or a table folded to its name"
+              : "A part of the code: a file, a function, a group of files"
+          }
+        >
           <rect className="lg-box" x="1" y="3" width="30" height="16" rx="4" />
         </Row>
       )}
@@ -64,10 +81,10 @@ export function Legend({ shows }: { shows: LegendShows }) {
           />
         </Row>
       )}
-      <Row label="The one you picked">
+      <Row label="Selected">
         <rect className="lg-box is-selected" x="1" y="3" width="30" height="16" rx="4" />
       </Row>
-      <Row label="Related to the one you picked">
+      <Row label="Linked to what is selected">
         <rect className="lg-box is-related" x="1" y="3" width="30" height="16" rx="4" />
       </Row>
       {shows.icons && shows.icons.length > 0 && (
@@ -98,7 +115,7 @@ export function Legend({ shows }: { shows: LegendShows }) {
         </Row>
       )}
       {shows.expandHere && (
-        <Row label="Show its parts in this box, on this map">
+        <Row label="Show inside: what is inside it, in this box, on this map">
           <CornerMark>
             <rect x={3.5} y={3.5} width={15} height={15} rx={2.5} />
             <rect x={6.5} y={9} width={4} height={4} rx={1} />
@@ -107,30 +124,49 @@ export function Legend({ shows }: { shows: LegendShows }) {
           </CornerMark>
         </Row>
       )}
-      <Row label="Calls: the arrow points at the code being called">
-        <Arrow className="lg-edge" />
-      </Row>
+      {(shows.kinds ?? ["calls"]).map((kind) => (
+        <Row key={kind} label={KIND_WORDS[kind] ?? kind}>
+          <Arrow className="lg-edge" head={headOf(kind)} />
+        </Row>
+      ))}
       {shows.counts && (
-        <Row label="calls ×3: the code calls it from 3 places" text="×3">
+        <Row
+          label={
+            shows.countKind && shows.countKind !== "calls"
+              ? `${shows.countKind} ×3: found in 3 places in the code`
+              : "calls ×3: the code calls it from 3 places"
+          }
+          text="×3"
+        >
           <Arrow className="lg-edge" />
         </Row>
       )}
       {shows.authored && (
-        <Row label="A link the explainer's author added: an event, a setting, a request">
+        <Row label="An arrow the guide's author added, checked against the code: an event, a setting, a request">
           <Arrow className="lg-edge is-authored" />
         </Row>
       )}
+      {shows.found && (shows.heuristic || shows.mixed) && (
+        <Row label="Solid: found in the code by a language tool (precise)">
+          <Arrow className="lg-edge" />
+        </Row>
+      )}
       {shows.heuristic && (
-        <Row label="Includes likely links found by name; mixed confidence also includes precise references">
+        <Row label="Dashed: matched by name (heuristic), so it can be wrong">
           <Arrow className="lg-edge is-heuristic" />
+        </Row>
+      )}
+      {shows.mixed && (
+        <Row label="Dash-dot: some of its code links are precise, some are matched by name">
+          <Arrow className="lg-edge is-mixed" />
         </Row>
       )}
       {shows.outside && (
         <>
-          <Row label="Code outside this map (+ adds it): how often it is called">
+          <Row label="Dashed box: code outside this map. Click it to add it; its number says how often it is used">
             <rect className="lg-box is-ghost" x="1" y="3" width="30" height="16" rx="4" />
           </Row>
-          <Row label="A call to or from code outside this map">
+          <Row label="Dotted: an arrow to or from code outside this map (shown for the selected box)">
             <Arrow className="lg-edge is-stub" />
           </Row>
         </>
@@ -145,10 +181,97 @@ export function Legend({ shows }: { shows: LegendShows }) {
   );
 }
 
+/** What each kind of arrow means, for the Key's rows (the kinds a map draws, `LegendShows.kinds`). */
+const KIND_WORDS: Record<string, string> = {
+  calls: "Calls: the arrow points at the code being called",
+  imports: "Imports (open head): the file uses code from the file it points at",
+  extends: "Extends (hollow head): points at the parent class or type",
+  embeds:
+    "Embeds (hollow head): the struct or interface takes in the type it points at, with its fields and methods",
+  implements: "Implements (hollow head): points at the interface it fulfills",
+  references: "Uses a type (open head): points at the type it names",
+  holds: "Holds (open head): the field in that row holds a value of the type it points at",
+  reads: "Reads: points at the data it reads",
+  writes: "Writes: points at the data it changes",
+  requests: "Requests: a web call, pointing at the code that answers it",
+};
+
+/** The short words for a kind on the key line (only when a map mixes kinds). */
+/**
+ * The marks of a map's arrows in one line under its caption, for the marks the map draws now: a reader learns
+ * them without opening the Key (`keyLineItems` picks them). Each swatch is drawn with the Key's classes, so its
+ * colour and dash are the map's.
+ */
+export function KeyLine({
+  shows,
+  stubLines = false,
+  sharedBadge,
+}: {
+  shows: LegendShows;
+  stubLines?: boolean;
+  /** The technology or role every box shares, drawn on none of them (graphLayout `sharedBadge`). */
+  sharedBadge?: string | undefined;
+}) {
+  const line = (className: string, head: Head = "filled") => (
+    <svg className="key-swatch" width="26" height="12" viewBox="0 0 32 22" aria-hidden="true">
+      <Arrow className={className} head={head} />
+    </svg>
+  );
+  const swatch = (key: string): ReactNode => {
+    if (key === "shared") return null;
+    if (key.startsWith("kind-")) return line("lg-edge", headOf(key.slice(5)));
+    if (key === "ghost")
+      return (
+        <svg className="key-swatch" width="26" height="14" viewBox="0 0 32 22" aria-hidden="true">
+          <rect className="lg-box is-ghost" x="1" y="3" width="30" height="16" rx="4" />
+        </svg>
+      );
+    return line(`lg-edge is-${key}`);
+  };
+  const items = keyLineItems(
+    shows,
+    stubLines,
+    sharedBadge && (readerBadge(sharedBadge) ?? sharedBadge),
+  ).map((item) => ({ ...item, swatch: swatch(item.key) }));
+  if (items.length === 0) return null;
+  return (
+    // a11y: a list a screen reader names and counts, each item with the look of its mark in words
+    <ul className="key-line" data-testid="key-line" aria-label="Key to this map's lines">
+      {items.map((item) => (
+        <li key={item.key} className="key-line-item" data-key-item={item.key}>
+          {item.swatch}
+          {markWords(item.key) && <span className="sr-only">{markWords(item.key)}: </span>}
+          {item.words}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** What a key line's swatch looks like, in words (its swatch is hidden from screen readers). */
+function markWords(key: string): string | undefined {
+  if (key.startsWith("kind-")) {
+    const head = headOf(key.slice(5));
+    return head === "hollow"
+      ? "solid arrow, hollow head"
+      : head === "open"
+        ? "solid arrow, open head"
+        : "solid arrow";
+  }
+  return {
+    authored: "thick purple arrow",
+    found: "solid arrow",
+    heuristic: "dashed arrow",
+    mixed: "partly dashed arrow",
+    ghost: "dashed box",
+    stub: "dotted arrow",
+  }[key];
+}
+
 export interface FlowKeyShows {
   decision: boolean;
   terminal: boolean;
-  /** A loop or branch label over a box. */
+  /** A loop or branch label over a step. */
   frames: boolean;
   /** Arrows drawn dashed: the order of the calls, read from the code (a projected flow). */
   projected: boolean;
@@ -156,13 +279,45 @@ export interface FlowKeyShows {
   recurse?: boolean;
   /** A return to the caller, up one level. */
   returns?: boolean;
+  /** An end drawn again near another way into it (`repeatEnds`). */
+  copies?: boolean;
+  /** A flow of states, its moves drawn as labelled arrows between them (`stateMachine`). */
+  states?: boolean;
 }
 
 /** The key of a process flow (FlowDiagram). */
 export function FlowKey({ shows }: { shows: FlowKeyShows }) {
+  // a flow of states has no steps and no "then": its boxes are states, its labelled arrows the moves
+  if (shows.states)
+    return (
+      <KeyButton foot="Click a state or a move to see its code.">
+        <Row label="A state the value can be in. States have no fixed order, so no numbers.">
+          <g className="flow-stage is-state">
+            <rect x="1" y="3" width="30" height="16" rx="8" />
+          </g>
+        </Row>
+        <Row label="Moves to: the label names the move, the code that changes the state">
+          <g className="flow-transition is-move">
+            <line className="lg-move-line" x1="1" y1="11" x2="26" y2="11" />
+            <path className="lg-move-head" d="M25 7 L31 11 L25 15 Z" />
+            <rect x="7" y="5" width="13" height="12" rx="3" fill="var(--panel)" />
+          </g>
+        </Row>
+        <Row label="Selected">
+          <g className="flow-stage is-selected">
+            <rect x="2" y="4" width="28" height="14" rx="7" />
+          </g>
+        </Row>
+        <Row label="Linked to the code you selected">
+          <g className="flow-stage is-related">
+            <rect x="2" y="4" width="28" height="14" rx="7" />
+          </g>
+        </Row>
+      </KeyButton>
+    );
   return (
     <KeyButton foot="Click a step to see its code.">
-      <Row label="One step: what runs, and the code that runs it under it">
+      <Row label="One step: what runs, with the name of its code under it">
         <g className="flow-stage">
           <rect x="1" y="3" width="30" height="16" rx="5" />
         </g>
@@ -181,18 +336,25 @@ export function FlowKey({ shows }: { shows: FlowKeyShows }) {
           </g>
         </Row>
       )}
-      <Row label="The one you picked">
+      {shows.copies && (
+        <Row label="Dashed, no number: the same end, drawn again to keep arrows short">
+          <g className="flow-stage is-copy">
+            <rect x="1" y="3" width="30" height="16" rx="8" />
+          </g>
+        </Row>
+      )}
+      <Row label="Selected">
         <g className="flow-stage is-selected">
           <rect x="2" y="4" width="28" height="14" rx="5" />
         </g>
       </Row>
-      <Row label="A step in the code you picked">
+      <Row label="Linked to the code you selected">
         <g className="flow-stage is-related">
           <rect x="2" y="4" width="28" height="14" rx="5" />
         </g>
       </Row>
       <Row label={shows.projected ? "Then: the order the steps run in" : "Then: what runs next"}>
-        <Arrow className={`lg-edge${shows.projected ? " is-stub" : ""}`} />
+        <Arrow className={`lg-edge${shows.projected ? " is-projected" : ""}`} />
       </Row>
       {shows.recurse && (
         <Row label="One level down: the function calls itself, and the steps from the arrow's end run again for the smaller piece">
@@ -200,12 +362,12 @@ export function FlowKey({ shows }: { shows: FlowKeyShows }) {
         </Row>
       )}
       {shows.returns && (
-        <Row label="Up one level: the call returns, to the box at the arrow's end (an arrow that ends on no box: to whoever made the call)">
+        <Row label="Up one level: the call returns, to the step at the arrow's end (an arrow that ends on no step: to whoever made the call)">
           <Arrow className="lg-edge is-return" />
         </Row>
       )}
       {shows.frames && (
-        <Row label="When it runs: the purple words above a box hold for it and the boxes after it">
+        <Row label="A condition: the purple words above a step say when it and the steps after it run">
           <text className="lg-frame" x="16" y="15">
             if…
           </text>
@@ -220,6 +382,8 @@ export interface SequenceKeyShows {
   async: boolean;
   /** Boxes around steps: a loop, a choice, an optional part. */
   frames: boolean;
+  /** An alt box split into its choices by dashed lines. */
+  arms?: boolean;
 }
 
 /** The key of a sequence diagram (SequenceView). */
@@ -255,10 +419,18 @@ export function SequenceKey({ shows }: { shows: SequenceKeyShows }) {
         </Row>
       )}
       {shows.frames && (
-        <Row label="A box around steps: they repeat (loop), or run only sometimes (alt, opt)">
+        <Row label="A box around steps: they repeat (loop), run only when a condition holds (opt), or one of its arms runs (alt). Its condition has no code link of its own: it is in the code above the first step">
           <g className="frame">
             <rect className="frame-box" x="1" y="2" width="30" height="18" rx="2" />
             <path className="frame-tab" d="M1 2 h12 v5 l-3 3 h-9 z" />
+          </g>
+        </Row>
+      )}
+      {shows.arms && (
+        <Row label="A dashed line in an alt box splits its arms. Click an arm's condition to see its steps and their code">
+          <g className="frame">
+            <rect className="frame-box" x="1" y="2" width="30" height="18" rx="2" />
+            <line className="frame-divider" x1="1" y1="11" x2="31" y2="11" />
           </g>
         </Row>
       )}
@@ -297,7 +469,7 @@ function KeyButton({ foot, children }: { foot: string; children: ReactNode }) {
         data-testid="legend-button"
         aria-expanded={open}
         aria-controls={open ? id : undefined}
-        title="What the boxes, lines and colours mean"
+        title="What the boxes, lines and colors mean"
         onClick={() => setOpen((was) => !was)}
       >
         Key
@@ -328,11 +500,16 @@ function Row({ label, text, children }: { label: string; text?: string; children
   );
 }
 
-function Arrow({ className }: { className: string }) {
+type Head = "filled" | "hollow" | "open";
+
+/** A short arrow with the head its kind ends in on the map (keyMarks `headOf`). */
+function Arrow({ className, head = "filled" }: { className: string; head?: Head }) {
   return (
     <g className={className}>
-      <line x1="1" y1="11" x2="25" y2="11" />
-      <path d="M24 7 L31 11 L24 15 Z" />
+      <line x1="1" y1="11" x2={head === "hollow" ? 20 : 25} y2="11" />
+      {head === "filled" && <path d="M24 7 L31 11 L24 15 Z" />}
+      {head === "hollow" && <path className="is-hollow" d="M20 5.5 L31 11 L20 16.5 Z" />}
+      {head === "open" && <path className="is-open" d="M24 6.5 L31 11 L24 15.5" />}
     </g>
   );
 }

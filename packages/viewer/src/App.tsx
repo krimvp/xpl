@@ -1,6 +1,7 @@
 /**
- * The viewer shell. Explore mode: header, then the diagram with the concept list and the details panel
- * below it on the left, the file tree and the editor stack on the right, with resizable splits. Present
+ * The viewer shell. Explore mode: header, then the diagram with the concepts as one line of chips under it
+ * on the left, the details panel above the file tree and the editor stack on the right, with resizable
+ * splits. Present
  * mode (present/PresentMode.tsx) plays a tour: the diagram and a caption on the left, the code on the
  * right, no file tree. The keys of both modes are handled here, in one place.
  */
@@ -24,6 +25,7 @@ import { codeFirstView } from "./workspace.js";
 import { isFormField, ownsKeys, tourKeyAction } from "./present/keys.js";
 import { PresentMode } from "./present/PresentMode.js";
 import type { ViewerStore } from "./store.js";
+import type { ReadinessReport } from "@xpl/core";
 
 export function App({ store }: { store: ViewerStore }) {
   return (
@@ -78,11 +80,14 @@ function Shell() {
     document.title = pageTitle ? `${pageTitle} · xpl` : "xpl viewer";
   }, [pageTitle]);
 
-  // Explore: Escape clears the selection (unless the key is meant for a form field or a panel).
+  // Explore and the Map and Flow tabs: Escape clears the selection (unless the key is meant for a form field
+  // or a panel). (The Tour's selection is its step's: it stays.)
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented) return;
-      if (store.getState().mode !== "explore" || isFormField(event.target)) return;
+      const { mode, perspective } = store.getState();
+      if (mode !== "explore" || isFormField(event.target)) return;
+      if (perspective !== "explore" && perspective !== "map" && perspective !== "flow") return;
       store.clearSelection();
     };
     window.addEventListener("keydown", onKeyDown);
@@ -125,6 +130,10 @@ function Shell() {
 
   return (
     <div className="app" data-mode={state.mode}>
+      {/* the first Tab offers a jump past the header to the guide, the diagram or the slide. */}
+      <a className="skip-link" href="#" onClick={skipToContent}>
+        Skip to the content
+      </a>
       <Header />
       <div className="workspace-warnings">
         {state.readOnlyGuide && (
@@ -143,16 +152,14 @@ function Shell() {
           <AttentionStatus />
           <JobsPanel />
         </div>
-        <AnalysisCoverage />
-        {state.exportInfo?.status === "draft" && (
-          <div className="drift-banner" role="status" data-testid="draft-banner">
-            <p>
-              <strong>Draft preview.</strong> This snapshot is for review and repair. It has{" "}
-              {state.exportInfo.report.errors} readiness errors and{" "}
-              {state.exportInfo.report.warnings} reader warnings.
-            </p>
-          </div>
-        )}
+        {/* Notes for the author, not the audience: not on a slide. A draft with nothing to fix is a pill in
+            the header (Header.tsx), not a bar. */}
+        {state.mode !== "present" && <AnalysisCoverage />}
+        {state.mode !== "present" &&
+          state.exportInfo?.status === "draft" &&
+          state.exportInfo.report.errors + state.exportInfo.report.warnings > 0 && (
+            <DraftBar report={state.exportInfo.report} />
+          )}
         {state.sourceWarning && (
           <div className="drift-banner" role="alert" data-testid="source-warning">
             <p>
@@ -180,6 +187,48 @@ function Shell() {
   );
 }
 
+/** Moves keyboard focus to the page's main area (the Tour, a diagram tab, Explore or the slide). */
+function skipToContent(event: React.MouseEvent) {
+  event.preventDefault();
+  const main = document.querySelector<HTMLElement>(".app > main");
+  if (!main) return;
+  if (!main.hasAttribute("tabindex")) main.tabIndex = -1;
+  main.focus();
+}
+
+/**
+ * A draft's bar: what the author has left, in words, and the list behind it (the readiness check saved with
+ * the page). Closed, it is one line; a reader who wants to know what is unfinished opens it.
+ */
+function DraftBar({ report }: { report: ReadinessReport }) {
+  const state = useViewerState();
+  const notes = count(report.warnings, "note");
+  return (
+    <details className="drift-banner draft-banner" data-testid="draft-banner">
+      <summary>
+        <strong>Draft:</strong>{" "}
+        {report.errors > 0
+          ? `${count(report.errors, "problem")} to fix and ${notes} for the author.`
+          : `${notes} for the author.`}{" "}
+        <span className="draft-banner-open">Show the list</span>
+      </summary>
+      <ul>
+        {report.findings.map((finding, at) => (
+          <li key={at}>
+            {finding.severity === "error" ? "Problem" : "Note"} ·{" "}
+            {state.model.tour(finding.elementId)?.title ??
+              state.model.view(finding.elementId)?.title ??
+              state.model.label(finding.elementId)}
+            : {finding.message}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+const count = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
 const clamp = (value: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, value));
 
 interface ExploreLayoutProps {
@@ -206,6 +255,15 @@ function ExploreLayout({
     (view?.type === "flow" || (view?.type === "sequence" && view.layout === "code-first"));
   const width = codeFirst ? outlineWidth : leftWidth;
   const setWidth = codeFirst ? setOutlineWidth : setLeftWidth;
+  // Concepts are one line of chips under the diagram, which keeps the height. The first
+  // selection brings Details, at the top of the code column, and it stays (clearing the selection does not
+  // move the diagram again).
+  const picked = useViewerState().selection.length > 0;
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  useEffect(() => {
+    if (picked) setDetailsOpen(true);
+  }, [picked]);
+  const details = picked || detailsOpen;
   return (
     <main
       className={`explore${codeFirst ? " is-code-first" : ""}`}
@@ -216,16 +274,15 @@ function ExploreLayout({
         } as React.CSSProperties
       }
     >
-      <section className="left" aria-label="Diagram and details">
+      <section className="left" aria-label="Diagram and concepts">
         <DiagramPane />
-        <Splitter
-          orientation="row"
-          label="Resize the diagram and the panels below it"
-          onResize={(d) => setLowerHeight((h) => clamp(h - d, 120, window.innerHeight - 220))}
-        />
-        <div className="lower">
-          <ConceptList />
-          <Details />
+        <div className="lower is-folded" data-testid="lower-folded">
+          <ConceptList compact />
+          {!details && (
+            <p className="lower-hint">
+              Select a box, an arrow, a step or a concept to see what it is.
+            </p>
+          )}
         </div>
       </section>
       <Splitter
@@ -233,8 +290,18 @@ function ExploreLayout({
         label="Resize the diagram and the code"
         onResize={(d) => setWidth((w) => clamp(w + d, 280, window.innerWidth - 360))}
       />
-      <section className="right" aria-label="Code">
-        <CodeArea tree="collapsible" />
+      <section className={`right${details ? " has-details" : ""}`} aria-label="Details and code">
+        {details && (
+          <>
+            <Details />
+            <Splitter
+              orientation="row"
+              label="Resize the details and the code"
+              onResize={(d) => setLowerHeight((h) => clamp(h + d, 120, window.innerHeight - 220))}
+            />
+          </>
+        )}
+        <CodeArea tree="collapsible" idle={!details} />
       </section>
     </main>
   );

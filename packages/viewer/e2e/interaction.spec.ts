@@ -206,6 +206,20 @@ test.describe("graph view", () => {
     expect(problems).toEqual([]);
   });
 
+  test("on the Map tab, double-click opens a box for this reading only: nothing is marked unsaved", async ({
+    page,
+  }) => {
+    await page.goto(TS_BUNDLE.href + "?perspective=map");
+    const group = byId(page, "grp:scheduling");
+    await group.dblclick();
+    await expect(group).toHaveClass(/is-container/);
+    // A reader looked inside a box; they did not edit the guide.
+    await expect(page.locator(".save-status")).toHaveCount(0);
+    await group.locator(':scope > [data-collapse-id="grp:scheduling"]').click();
+    await expect(group).not.toHaveClass(/is-container/);
+    await expect(page.locator(".save-status")).toHaveCount(0);
+  });
+
   test("the edge kind toggles change which derived edges are drawn (and are recorded on the view)", async ({
     page,
   }) => {
@@ -266,7 +280,7 @@ test.describe("graph view", () => {
     expect(Math.round(before.x - after.x)).toBe(60);
     expect(Math.round(before.y - after.y)).toBe(30);
 
-    await page.getByRole("button", { name: "Fit to view" }).click();
+    await page.getByTestId("pz-fit").click();
     await expect.poll(zoom).toBeCloseTo(fitZoom, 2);
     // Buttons and keys.
     await page.getByRole("button", { name: "Zoom in" }).click();
@@ -344,7 +358,7 @@ test.describe("details panel", () => {
   test("Explain this shows the skill command when there is no server", async ({ page }) => {
     await openBundle(page, "view:dispatch");
     await byId(page, "concept:retry-policy").click();
-    await page.getByRole("button", { name: "Explain this" }).click();
+    await page.getByRole("button", { name: "Ask the author to explain this" }).click();
     await expect(page.getByTestId("explain-command")).toHaveText("/code-explainer feedback");
   });
 

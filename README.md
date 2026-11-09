@@ -1,164 +1,117 @@
 # xpl — code explainer
 
-[Try the live example](https://krimvp.github.io/xpl/) or open the
-[documentation](https://krimvp.github.io/xpl/docs/).
+xpl makes a guide to your code: diagrams linked to the source in both directions. Click a box and its code
+lights up. Put the cursor in the code and the boxes that cover it light up. An agent such as Claude writes the
+guide, and xpl checks that every code link points at code that exists now. xpl does not check that the text is
+true; a person reviews that. Share a guide as a local page or as one HTML file.
 
-xpl adds interactive code explanations to an existing repository. It links diagrams to source code and
-source code back to diagrams, so readers can follow how a system works or what changed between commits.
-As code changes accelerate, including changes written with AI, `xpl change` gives reviewers a way to explore
-the diff alongside an explanation. An authoring agent writes the explanation as data; xpl checks that each
-source anchor exists and is current before export. It does not check whether the explanation is semantically
-correct or complete. Share a guide as a live view or one self-contained HTML file.
+![A sequence of how a job is dispatched. The Runner.dispatch lifeline is selected, and its code in runner.ts is highlighted beside it.](site/images/jobrunner-light.png#gh-light-mode-only)
+![A sequence of how a job is dispatched. The Runner.dispatch lifeline is selected, and its code in runner.ts is highlighted beside it.](site/images/jobrunner-dark.png#gh-dark-mode-only)
+
+A guide opens on its tour: steps in order, each with a small diagram and the code it links to. The Map, Flow
+and Code tabs show the whole diagrams and the files. [Open this example](https://krimvp.github.io/xpl/demo/)
+in your browser, or read the [documentation](https://krimvp.github.io/xpl/docs/).
 
 ## Quick start
 
-Install the public npm package with Node 22.12 or newer, then install the authoring skill:
+Install the CLI and the skill (Node 22.12 or newer; Claude Code is the default agent):
 
 ```sh
 npm install --global @krimvp/xpl
 xpl skill install
 ```
 
-For shell completion, add `source <(xpl completion bash)` to `~/.bashrc`, or
-`source <(xpl completion zsh)` to `~/.zshrc` after `compinit`. For fish, run
-`xpl completion fish > ~/.config/fish/completions/xpl.fish`.
-
-Claude Code is the default target. For Codex, Pi, Factory Droid or Devin, select the harness with
-`xpl skill install --agent <name>`. Codex, Pi and Droid install to `~/.agents/skills/code-explainer`;
-Devin installs to the project `.agents/skills/code-explainer`. Use `--dir <path>` to choose a destination
-for any harness. The npm package bundles the CLI and skill; harness setup and provider access are separate.
-Platform CI checks packed installation, a local service without an agent backend, and offline HTML reading
-on macOS and Windows. It does not check the `xpl view` browser opener or Claude-backed jobs.
-After a CLI update, run `xpl doctor` to check the installed skill, then rerun `xpl skill install`.
-
-In the selected harness, invoke `code-explainer` with a reader and question. For example, in the
-default Claude Code target:
+In Claude Code, in your repository, ask a question and name the reader:
 
 ```text
-/code-explainer explain How does X work? Root: /path/to/repo. Audience: maintainers.
+/code-explainer explain How does X work? Audience: maintainers.
 ```
 
-xpl checks that source locations exist and are current; it cannot verify the explanation's factual
-claims or coverage. Install and configure the selected harness and its provider separately.
-
-See [Getting started](https://krimvp.github.io/xpl/docs/getting-started/) for the first guide and
-the [CLI reference](skill/code-explainer/reference/cli.md) for command options.
-
-To create a checked draft directly from the CLI, run `xpl start <name> --question "..." --audience "..."`
-in your repository, then `xpl view <name>` and complete the TODO text.
-
-### GitHub pull requests
-
-Prepare a PR's base and head as an isolated input with `xpl pr prepare`; author a guide and run `xpl
-pr finish` to check it and export HTML. These commands do not publish. Optional
-[CI preview publishing](docs-site/pages/workflows/pull-requests.md#optional-ci-authoring-and-publishing)
-runs an explicitly configured author and updates the PR preview. A private target repository requires a
-team-visible preview, with access controlled by the host. See the [CLI
-reference](skill/code-explainer/reference/cli.md) for the full command options.
-
-### Search, libraries and saved versions
-
-Use the viewer's Search panel to find symbols, source, concepts and tour steps across its contained
-guides. Source results name the guide and commit, then check the searched file's text when opened or
-reloaded. A changed file is reported even when the index commit is unchanged. `xpl bundle` can
-include several checked guides for offline browsing; `xpl stage` stores immutable versions locally.
-See [Find and share](https://krimvp.github.io/xpl/docs/workflows/find-and-share/).
+`/code-explainer` is a chat command in Claude Code, not a shell command. The agent indexes the repository (xpl
+lists its files, its symbols and the references between them), writes the guide and opens it. Other agents (Codex, Pi, Factory Droid, Devin) are in the
+[install options](https://krimvp.github.io/xpl/docs/skill/create/#install). Shell completion and the
+supported platforms are in [Getting started](https://krimvp.github.io/xpl/docs/getting-started/).
 
 ### View and export a guide
 
-Use `xpl view <guide>` for a local interactive view or `xpl bundle <guide> -o guide.html` for a
-self-contained export. In Read mode, each step shows a short source excerpt beside its explanation;
-"Open full code" opens the complete source range.
-
-### Feedback and revision
-
-Readers can attach feedback to source ranges. Import exported feedback with `xpl feedback <guide>
---import <file>`; review and accept proposed edits explicitly.
+`xpl view <guide>` opens a guide in the browser and saves your edits to it. `xpl bundle <guide> -o guide.html`
+writes one HTML file that holds the guide and its code, for offline reading. Each tour step shows a short
+excerpt of its code; "Show code" opens the full range.
 
 ### Try it without Claude
 
-The source repository includes a sample project:
+Open a finished guide in your browser: the [examples](https://krimvp.github.io/xpl/#more-examples) explain
+Vite, Zod, Cobra and xpl itself. Each one is a single HTML file that you can save and open offline.
+
+To make a draft of your own repository without an agent, run these commands in the repository. `xpl index`
+builds the index. `xpl outline` lists the ids; pick the function where the answer starts (with or without its
+`sym:` prefix):
+
+```sh
+xpl index --precise off
+xpl outline --kind function,method --depth 9
+xpl start first-guide --question "How does a request reach the database?" \
+  --entry src/api.ts#handleOrder --audience maintainers --precise off
+xpl view first-guide
+```
+
+The draft holds the boxes, the steps and their code links, with TODO text for you to write. Without
+`--entry`, `xpl start` drafts a map of the whole repository instead of the path that answers the question.
+Write the text in the draft patch that `xpl start` prints, and run `xpl apply first-guide <draft patch>`.
+`xpl view` can also edit the step notes (Edit > **Edit the tour**) and each box's text (**Edit text** in its
+details), but not the titles or the tour summary. `xpl lint first-guide` and `xpl ready first-guide` list what is
+still missing.
+
+From a source checkout of xpl, you can also open the sample job runner:
 
 ```sh
 cp -r fixtures/ts-jobrunner /tmp/jobrunner && cd /tmp/jobrunner
 xpl index && xpl view jobrunner
 ```
 
-## Optional repository service
+## What you can explain
 
-`xpl service start <guide>` adds source-linked questions and feedback to the local viewer. It is
-opt-in and runs on your machine. See the [CLI reference](skill/code-explainer/reference/cli.md) for
-options.
+- **A question** about part of a project: "How does a failed job get retried?" One map and one flow, then a
+  tour. See [Explain a question or a repository](https://krimvp.github.io/xpl/docs/workflows/explain/).
+- **A whole repository**, from the top down: the system, the services inside it, then the code.
+  `xpl draft repo` drafts the maps from the index.
+- **A change** between two commits or a pull request: the diff, the code before, and the boxes that are new or
+  changed. See [Explain a change](https://krimvp.github.io/xpl/docs/workflows/change/) and
+  [GitHub pull requests](https://krimvp.github.io/xpl/docs/workflows/pull-requests/).
+- **Every file**, in plain words: `xpl draft map` drafts one map per folder, with one sentence per file, for
+  code you did not write line by line. `xpl update` brings it up to date after the code changes.
+- **An idea or a plan** before the code exists: sketch boxes, drawn dotted and linked to no code.
+- **A type**: `xpl draft class` maps what a class extends and implements; `xpl draft states` maps the states
+  of a status type and the functions that change them.
+- **The data**: `xpl draft data` maps what data the code keeps. Each type is a table with a row per field,
+  and an arrow goes from a field to the type it holds. Click a row to see the field's code.
 
-## Using the CLI directly
+`xpl health` lists common problems in a repository: secrets in the code or in variables sent to the browser,
+committed `.env` files, code files over 1,000 lines and files that nothing uses. It is a quick check, not a
+security audit. It exits 0 with or without findings, and 1 when there is no index.
 
-The CLI can index, validate, lint, draft, view, bundle and revise guides without an authoring agent.
-Run `xpl --help` or see the [CLI reference](skill/code-explainer/reference/cli.md).
-
-### Editing in the viewer
-
-The local viewer can save edits to the guide. Saved HTML is a snapshot; export it again after
-changes. See [Edit and review](https://krimvp.github.io/xpl/docs/workflows/edit-and-review/).
-Each Guide section has a link named for that step. Opening it returns to the section and offers Continue from
-this step. Opening a source file keeps focus in the source pane.
-
-### Author review
-
-Review readiness and source anchors before sharing. `xpl ready <guide>` reports whether the guide
-can be exported. See [Edit and
-review](https://krimvp.github.io/xpl/docs/workflows/edit-and-review/).
-
-### Explaining a change
-
-Use `xpl change` to explain a diff between commits, including AI-generated changes. Before-code claims are
-checked against the base commit. The viewer marks changed lines and the changed words within paired rewrites.
-See the [change workflow](https://krimvp.github.io/xpl/docs/workflows/change/).
-
-### Architecture maps
-
-Use `xpl draft repo` to build a starting map from the index, then add reader-focused explanations.
-`xpl draft class <guide> <type>` maps the classes and interfaces around one type, from what extends and
-implements what.
-`xpl draft states <guide> <type>` maps the states of a status type (an enum or a union of string literals)
-and the functions that move it from one state to another.
-See [Architecture maps](https://krimvp.github.io/xpl/docs/workflows/explain/).
-
-### Quick maps
-
-`xpl draft map` drafts a map of every code file, one map per folder, for code you did not write line by line,
-such as code an AI assistant wrote. Each box gets a plain name and one sentence, shown on the box. The draft
-puts what the index knows about each file (its header comment, what it defines, what uses it) next to each
-sentence to write. Run it again after the code changes: it drafts only new files, removes the boxes of
-deleted files, and keeps the text already written, also for a file that moved. With `xpl change` recorded first, it adds a tour of the
-changed files that asks how each change serves what was asked. `xpl update <guide> --since <rev>` does all of it
-in one run after work on the code: index, record the change, draft the map again.
-
-### Health check
-
-`xpl health` lists classic problems of code nobody read line by line, each at a file and line with a
-severity, why it matters and a short fix: keys and passwords written into the code, secrets in variables
-that are sent to the browser (`NEXT_PUBLIC_`, `VITE_`, `REACT_APP_`, `PUBLIC_`), committed `.env` files,
-code files over 1,000 lines, and code files that nothing else references (a guess from the index). It never
-prints a secret, only its first characters. It is a quick check, not a security audit, and it always exits 0. See the [CLI reference](skill/code-explainer/reference/cli.md).
-
-### Sketches
-
-A guide can start with a sketch: a high-level picture of an idea or a plan, before there is code to read, or of
-something read but not found in one place. Sketch boxes are drawn dotted, named "sketch" on the map, and
-linked to no code; xpl never checks them, and never lets them pass for code. Replace a sketch box with a box of
-code once it can point at code.
+Readers can search a guide, leave feedback on a box or on lines of code, and ask questions through the
+optional local service. See
+[Search and saved versions](https://krimvp.github.io/xpl/docs/workflows/find-and-share/),
+[Feedback and revision](https://krimvp.github.io/xpl/docs/workflows/feedback/) and
+[The local service](https://krimvp.github.io/xpl/docs/workflows/service/).
 
 ## Languages and precision
 
-xpl indexes TypeScript, JavaScript, Python, Go and Java, plus YAML, JSON and TOML keys. Ruby has
-source-backed class, module, method and constant declarations without relationship analysis. Java references
-are heuristic unless you import a checked SCIP artifact; heuristic edges are partial and need review.
-PHP has source-backed declaration tags for namespaces, types, functions, methods and constants, with
-`refs: none` until a checked relationship source exists.
-Web requests with a literal or template path (`fetch`, axios, `requests`, `httpx`, Go `net/http`) are linked
-to the handler of the matching route the repository defines (Express, Koa, Hono, Fastify, Next.js, FastAPI,
-Flask, net/http, chi, gin, echo); these links are always heuristic.
-References keep their precise or heuristic label. See [language support](https://krimvp.github.io/xpl/docs/concepts/languages/).
+xpl indexes TypeScript, JavaScript, Python, Go and Java, and the keys of YAML, JSON and TOML files. Rust has
+experimental declarations, some heuristic calls and the `mod` and `use` imports within the package. Ruby and
+PHP have named declarations and no references.
+
+Every reference has one of two labels. **precise** (checked by a language tool): from a SCIP indexer.
+**heuristic** (matched by name): from xpl's own matching by name and scope, a hint to confirm in the code. Web
+requests (`fetch`, axios, `requests`, `httpx`, Go `net/http`) link to the route that answers them, and these
+links are always heuristic. See
+[Languages and precision](https://krimvp.github.io/xpl/docs/concepts/languages/).
+
+## Using the CLI directly
+
+The CLI indexes, drafts, checks, views, exports and revises guides without an agent. Run `xpl --help`, or see
+the [CLI reference](skill/code-explainer/reference/cli.md).
 
 ## Repository layout
 

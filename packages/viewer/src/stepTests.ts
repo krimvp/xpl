@@ -29,6 +29,7 @@ function testRanges(ranges: readonly FocusRange[]): FocusRange[] {
 /**
  * The tests a step focuses (its focus elements, and its code override), in focus order, each test once:
  *
+ * - a group's tests are those of its members that are test code, not those deep inside a bigger member;
  * - a range that holds test functions (a whole test file, a group of tests) lists each of them;
  * - a range inside a test names that test (a line in a test's local helper names the test);
  * - fixtures and helpers are not tests: a file whose ranges are only those is listed by its name.
@@ -47,7 +48,8 @@ export function stepTests(
     out.push({ file, line, name });
   };
   const files = new Map<FilePath, number>();
-  for (const { file, range } of testRanges([...codeFocus(focus, model), ...extra])) {
+  const own = focus.flatMap((id) => ownTestCode(id, model));
+  for (const { file, range } of testRanges([...codeFocus(own, model), ...extra])) {
     if (!files.has(file)) files.set(file, range.startLine);
     const tests = model.index
       .symbolsInFile(file)
@@ -67,6 +69,20 @@ export function stepTests(
       add(file, line, file.slice(file.lastIndexOf("/") + 1));
   }
   return out;
+}
+
+/**
+ * What of a focus element's code its tests come from: the element itself, but for a group without code links of
+ * its own only those of its members that are test code (a test file, a group of tests). A big member (a docs
+ * generator's folder, say) holds tests of its own, which say nothing about this step.
+ */
+function ownTestCode(id: ElementId, model: ExplainerModel): ElementId[] {
+  const node = model.node(id);
+  if (node?.kind !== "group" || (node.anchors?.length ?? 0) > 0) return [id];
+  return model.members(id).filter((member) => {
+    const ranges = codeFocus([member], model);
+    return ranges.length > 0 && testRanges(ranges).length === ranges.length;
+  });
 }
 
 /** A test: a function or method named like one, not nested in another function. */

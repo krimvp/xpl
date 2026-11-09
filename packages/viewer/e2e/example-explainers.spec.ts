@@ -9,7 +9,7 @@
  *   `Runner.dispatch` overlay is llm with the summary listed in `userFields` (only a user patch records
  *   that), everything else is llm.
  * - The ids and shapes the port keeps: group, overlay, `edge:job-completed` with evidence at both ends,
- *   the overview, the dispatch sequence with steps `dispatch:1..3` and `frame:retry`, `tour:intro`.
+ *   the overview, the dispatch sequence with steps `dispatch:1..3`, its loop and the `frame:retry` opt, `tour:intro`.
  */
 import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
@@ -172,10 +172,17 @@ for (const example of EXAMPLES) {
       });
       expect(sequence.frames).toEqual([
         {
-          id: "frame:retry",
+          id: "frame:dispatch-loop",
           kind: "loop",
-          label: "until success or maxRetries",
-          fromStep: "dispatch:2",
+          label: "while the runner is running",
+          fromStep: "dispatch:1",
+          toStep: "dispatch:3",
+        },
+        {
+          id: "frame:retry",
+          kind: "opt",
+          label: "the attempt failed and retries are left",
+          fromStep: "dispatch:3",
           toStep: "dispatch:3",
         },
       ]);

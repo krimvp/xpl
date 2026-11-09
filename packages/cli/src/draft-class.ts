@@ -8,6 +8,8 @@
  */
 import {
   RESERVED_PREFIXES,
+  isTestFile,
+  symbolKindWord,
   type ExplainerPatch,
   type IndexModel,
   type IndexedSymbol,
@@ -33,7 +35,7 @@ export const CLASS_LIMITS = {
   /** Levels below the entry. */
   downDepth: 2,
   /** Boxes on the map in all. */
-  boxes: 14,
+  boxes: 8,
   /** Tour steps. */
   steps: 8,
   /** Names in a hint. */
@@ -59,11 +61,16 @@ const shortName = (sym: IndexedSymbol) => sym.path.split(".").pop() ?? sym.path;
 const byPlace = (a: IndexedSymbol, b: IndexedSymbol) =>
   a.file.localeCompare(b.file) || a.range.startLine - b.range.startLine;
 
-/** The types `sym` extends or implements (`up`), or that extend or implement it (`down`), with how. */
+/**
+ * The types `sym` extends or implements (`up`), or that extend or implement it (`down`), with how. Types in test
+ * files are left out unless `tests` (the entry is in one), and reported to `skipped`.
+ */
 function links(
   model: IndexModel,
   sym: IndexedSymbol,
   direction: "up" | "down",
+  tests = false,
+  skipped?: Set<string>,
 ): { sym: IndexedSymbol; kind: "extends" | "implements" }[] {
   const refs = direction === "up" ? model.refsFrom(sym.id) : model.refsTo(sym.id);
   const out = new Map<string, { sym: IndexedSymbol; kind: "extends" | "implements" }>();
@@ -71,6 +78,10 @@ function links(
     if (!LINKS.has(ref.kind)) continue;
     const other = model.symbol(direction === "up" ? ref.to : ref.from);
     if (!other || other.id === sym.id || !TYPE_KINDS.has(other.kind) || out.has(other.id)) continue;
+    if (!tests && isTestFile(other.file)) {
+      skipped?.add(other.path);
+      continue;
+    }
     out.set(other.id, { sym: other, kind: ref.kind as "extends" | "implements" });
   }
   return [...out.values()].sort((a, b) => byPlace(a.sym, b.sym));
@@ -90,6 +101,13 @@ export function draftClass(input: DraftInput, entry: IndexedSymbol): Draft {
   const ids = new FreeIds(explainer);
   const stored = storedNodeIds(explainer);
   const notes: string[] = [];
+  // test helpers (a fake that embeds the real type) are not part of the design: left off unless the entry is one
+  const tests = isTestFile(entry.file);
+  const skipped = new Set<string>();
+  const linksOf = (sym: IndexedSymbol, direction: "up" | "down") =>
+    links(model, sym, direction, tests, skipped);
+  // Go has no inheritance: what the index calls `extends` there is an embedded type
+  const go = (sym: IndexedSymbol) => model.file(sym.file)?.language === "go";
 
   // ── Up: what the entry extends or implements, breadth first, nearest first.
   const up: IndexedSymbol[] = [];
@@ -98,7 +116,7 @@ export function draftClass(input: DraftInput, entry: IndexedSymbol): Draft {
   while (level.length > 0 && up.length < CLASS_LIMITS.up) {
     const next: IndexedSymbol[] = [];
     for (const sym of level) {
-      for (const { sym: base } of links(model, sym, "up")) {
+      for (const { sym: base } of linksOf(sym, "up")) {
         if (seen.has(base.id) || up.length >= CLASS_LIMITS.up) continue;
         seen.add(base.id);
         up.push(base);
@@ -114,7 +132,7 @@ export function draftClass(input: DraftInput, entry: IndexedSymbol): Draft {
   for (let depth = 0; depth < CLASS_LIMITS.downDepth && level.length > 0; depth++) {
     const next: IndexedSymbol[] = [];
     for (const sym of level) {
-      for (const { sym: sub } of links(model, sym, "down")) {
+      for (const { sym: sub } of linksOf(sym, "down")) {
         if (seen.has(sub.id)) continue;
         seen.add(sub.id);
         if (1 + up.length + down.length >= CLASS_LIMITS.boxes) {
@@ -132,6 +150,9 @@ export function draftClass(input: DraftInput, entry: IndexedSymbol): Draft {
       `${symId(entry)} extends and implements nothing the index knows, and nothing extends or implements it: there is no hierarchy to draw`,
     );
   }
+  if (skipped.size > 0) {
+    notes.push(`left off the map: ${nameList([...skipped].sort())} (a type in a test file)`);
+  }
   if (left > 0) {
     notes.push(
       `${plural(left, "more type")} below are left off the map (at most ${CLASS_LIMITS.boxes} boxes)`,
@@ -143,18 +164,20 @@ export function draftClass(input: DraftInput, entry: IndexedSymbol): Draft {
   const hint = (sym: IndexedSymbol): string => {
     const first = (texts.lines(sym.file)?.[sym.range.startLine - 1] ?? "").trim();
     const parts = [
-      /\babstract\b/.test(first) && sym.kind === "class" ? "abstract class" : sym.kind,
+      /\babstract\b/.test(first) && sym.kind === "class"
+        ? "abstract class"
+        : (symbolKindWord(model.file(sym.file)?.language, sym.kind, undefined) ?? sym.kind),
     ];
-    const ups = links(model, sym, "up");
-    const downs = links(model, sym, "down");
+    const ups = linksOf(sym, "up");
+    const downs = linksOf(sym, "down");
     const named = (list: typeof ups, kind: "extends" | "implements") =>
       list.filter((l) => l.kind === kind).map((l) => shortName(l.sym));
     const add = (label: string, names: string[]) => {
       if (names.length > 0) parts.push(`${label} ${nameList(names, CLASS_LIMITS.hints)}`);
     };
-    add("extends", named(ups, "extends"));
+    add(go(sym) ? "embeds" : "extends", named(ups, "extends"));
     add("implements", named(ups, "implements"));
-    add("extended by", named(downs, "extends"));
+    add(go(sym) ? "embedded by" : "extended by", named(downs, "extends"));
     add("implemented by", named(downs, "implements"));
     // methods by name: overloads once (`name~2` is the index's second `name`), constructors left out
     const methods = model
@@ -191,10 +214,11 @@ export function draftClass(input: DraftInput, entry: IndexedSymbol): Draft {
     ),
   ];
   const direct = [
-    ...links(model, entry, "up").map((l) => ({ ...l, way: "up" as const })),
-    ...links(model, entry, "down").map((l) => ({ ...l, way: "down" as const })),
+    ...linksOf(entry, "up").map((l) => ({ ...l, way: "up" as const })),
+    ...linksOf(entry, "down").map((l) => ({ ...l, way: "down" as const })),
   ].filter((l) => onMap.has(l.sym.id));
-  for (const link of direct.slice(0, CLASS_LIMITS.steps - 1)) {
+  // the last step is "Where to go next"
+  for (const link of direct.slice(0, CLASS_LIMITS.steps - 2)) {
     const name = shortName(link.sym);
     steps.push(
       tourStep(
@@ -205,12 +229,14 @@ export function draftClass(input: DraftInput, entry: IndexedSymbol): Draft {
         link.way === "up"
           ? note(
               todo(`what ${shortName(entry)} gets from ${name}, as a plain statement`),
-              todo(`what ${name} promises or provides (${shortName(entry)} ${link.kind} it).`),
+              todo(
+                `what ${name} promises or provides (${shortName(entry)} ${link.kind === "extends" && go(entry) ? "embeds" : link.kind} it).`,
+              ),
             )
           : note(
               todo(`what ${name} changes or adds, as a plain statement`),
               todo(
-                `how it differs from ${shortName(entry)} (it ${link.kind === "extends" ? "extends" : "implements"} it).`,
+                `how it differs from ${shortName(entry)} (it ${link.kind === "extends" ? (go(link.sym) ? "embeds" : "extends") : "implements"} it).`,
               ),
             ),
         [signature(texts, link.sym)],
@@ -228,6 +254,19 @@ export function draftClass(input: DraftInput, entry: IndexedSymbol): Draft {
       `${direct.length - (steps.length - 1)} direct types have no tour step (at most ${CLASS_LIMITS.steps} steps)`,
     );
   }
+  steps.push(
+    tourStep(
+      model,
+      `t${steps.length + 1}`,
+      viewId,
+      [],
+      note(
+        "Where to go next",
+        todo("which type to use when, and what to read next, one short sentence each."),
+      ),
+      [],
+    ),
+  );
   if (
     boxes.some((sym) =>
       [...model.refsFrom(sym.id), ...model.refsTo(sym.id)].some(

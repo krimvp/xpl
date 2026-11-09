@@ -124,12 +124,41 @@ function tourStatuses(model: ExplainerModel): TourStatus[] {
   });
 }
 
+/** A summary that is still a draft's placeholder (`TODO: ...`): not explained yet. */
+const isTodo = (text: unknown): boolean => typeof text === "string" && /^\s*TODO\b/.test(text);
+
+/**
+ * What each view shows and what of it has no summary yet. A summary that still starts with `TODO` (a draft's
+ * placeholder) counts as none: `to do: 0 with no text` means the text is written.
+ */
 function viewStatuses(model: ExplainerModel): ViewStatus[] {
   return viewContentStatuses(model).map((status) => {
     const view = model.view(status.id)!;
-    return view.type === "graph"
-      ? { ...status, ghosts: ghostStatus(deriveGraph(view, model), view.stubs) }
-      : status;
+    const add = (list: string[], ids: string[]) => [...new Set([...list, ...ids])];
+    if (view.type === "graph") {
+      const graph = deriveGraph(view, model);
+      const nodes = graph.nodes.filter((n) => isTodo(model.node(n.id)?.summary)).map((n) => n.id);
+      const edges = graph.edges
+        .filter((e) => isTodo(e.summary) && !status.edges.unexplained.some((u) => u.id === e.id))
+        .map((e) => ({ id: e.id, stored: e.stored }));
+      return {
+        ...status,
+        nodes: { ...status.nodes, unexplained: add(status.nodes.unexplained, nodes) },
+        edges: { ...status.edges, unexplained: [...status.edges.unexplained, ...edges] },
+        ghosts: ghostStatus(graph, view.stubs),
+      };
+    }
+    const participants = (Array.isArray(view.participants) ? view.participants : []).filter((id) =>
+      isTodo(model.node(id)?.summary),
+    );
+    const steps = (Array.isArray(view.steps) ? view.steps : [])
+      .filter((s) => isTodo(s.summary))
+      .map((s) => s.id);
+    return {
+      ...status,
+      nodes: { ...status.nodes, unexplained: add(status.nodes.unexplained, participants) },
+      steps: { ...status.steps, unexplained: add(status.steps.unexplained, steps) },
+    };
   });
 }
 
@@ -157,13 +186,13 @@ function ghostLines(g: GhostStatus): string[] {
   if (g.total === 0) {
     return [
       g.mode === "none"
-        ? "  ghosts: none drawn (stubs: none)"
-        : "  ghosts: none (nothing leaves the view)",
+        ? "  outside this map: none drawn (stubs: none)"
+        : "  outside this map: none (nothing leaves the view)",
     ];
   }
   const shown = g.list.slice(0, TOP_GHOSTS).map((ghost) => `${ghost.id} ×${ghost.count}`);
   const lines = [
-    `  ghosts: ${g.total} (${plural(g.stubs, "stub")}; stubs: ${policy}), most referenced: ${shown.join(", ")}${
+    `  outside this map: ${plural(g.total, "dashed box", "dashed boxes")} for ${plural(g.stubs, "arrow")} (stubs: ${policy}), most referenced: ${shown.join(", ")}${
       g.list.length > TOP_GHOSTS
         ? `, ... +${g.list.length - TOP_GHOSTS} more (--json lists all, and the stub ids)`
         : ""
@@ -177,7 +206,7 @@ function ghostLines(g: GhostStatus): string[] {
   }
   if (g.crowded) {
     lines.push(
-      `  warning: ${g.total} ghosts: this view stops in too many places to read (more than ${CROWDED_GHOSTS}). ` +
+      `  warning: ${g.total} dashed boxes outside this map: this view stops in too many places to read (more than ${CROWDED_GHOSTS}). ` +
         (g.mode === "all"
           ? 'Set "stubs": {"mode": "top"} (what a view without "stubs" does: the 8 most referenced ghosts, the rest folded), '
           : `Lower "stubs": {"max": ${g.max}} to 8 or fewer, `) +
@@ -240,7 +269,7 @@ function staleOverlays(model: ExplainerModel): string[] {
 
 function unexplainedConcepts(model: ExplainerModel): string[] {
   return model.concepts
-    .filter((c) => !(typeof c.summary === "string" && c.summary.trim() !== ""))
+    .filter((c) => !(typeof c.summary === "string" && c.summary.trim() !== "") || isTodo(c.summary))
     .map((c) => c.id);
 }
 
@@ -366,7 +395,11 @@ function drawnEdgeLine(edge: DrawnEdge): string {
     edge.kind,
     `${edge.from} → ${edge.to}`,
     `×${edge.count}`,
-    edge.origin === "stored" ? "stored" : edge.overlay ? "derived (stored overlay)" : "derived",
+    edge.origin === "stored"
+      ? "stored"
+      : edge.overlay
+        ? "found in the code (stored text on it)"
+        : "found in the code",
     ...(edge.label ? [`"${edge.label}"`] : []),
     ...(edge.summary ? [] : ["no summary"]),
   ].join("  ");
@@ -377,7 +410,7 @@ function viewEdgeLines(edges: ViewEdges): string[] {
   if (edges.drawn) {
     const stored = edges.drawn.filter((e) => e.origin === "stored").length;
     lines.push(
-      `  edges drawn (${edges.drawn.length}: ${stored} stored, ${edges.drawn.length - stored} derived), most references first:`,
+      `  arrows drawn (${edges.drawn.length}: ${stored} stored, ${edges.drawn.length - stored} found in the code), most references first:`,
       ...edges.drawn.map((edge) => `    ${drawnEdgeLine(edge)}`),
     );
   }
@@ -409,48 +442,33 @@ function viewEdgeLines(edges: ViewEdges): string[] {
 export const statusCommand: CommandSpec = {
   name: "status",
   usage: "xpl status [explainer] [--view <id>] [--all]",
-  summary: "To-do list: unexplained elements, drifted, missing, queued requests, ghosts, tours",
+  summary:
+    "List what a guide still needs: boxes with no text, changed or missing code links, reader requests, tour problems",
   details: [
-    "--all resolves every .explainer/*.explainer.json guide against the current index and reports moved,",
-    "drifted and missing anchors, including user-owned anchors and unreadable guides. No prose is written.",
-    "Moved code keeps its prose; drift and missing evidence need explicit repair. Watch status is included in --json.",
-    "Omit the explainer when the repository has exactly one; otherwise supply its name.",
-    "The skill's to-do list for an explainer, without changing anything:",
-    "  - per view, the visible nodes, edges and steps that have no `summary` (static edges are optional),",
-    "  - per graph view, where it stops: the ghost boxes and stubs it draws (counts, and the most referenced ghost",
-    `    ids), with a warning above ${CROWDED_GHOSTS} ghosts (a view without "stubs" keeps the 8 most referenced and`,
-    "    folds the rest). A folded ghost (ghost:rest:file:<path>, ghost:more:in|out) is not an element: it gets a line",
-    "    under the counts that names up to 3 of the elements it stands for, and includeAdd takes any of them. --json",
-    "    lists every ghost id with its count and all its targets, and every stub id, in views[].ghosts,",
-    "  - concepts without a summary,",
-    "  - tours: id, number of steps, and the steps whose focus ids (or view) no longer resolve,",
-    "  - llm elements whose anchors drifted (re-explain them, keeping userFields) and missing anchors; drift the",
-    "    user owns is counted apart (ask the user),",
-    "  - broken references: ids that vanished from the index (overlays of deleted symbols, include, members,",
-    "    related, participants, step ends), and stored derived-edge overlays that no graph view derives now,",
-    "  - explain-this requests the viewer queued in .explainer/requests.json (record selected outcomes with xpl feedback --outcomes).",
-    "",
-    "--view <id>: only that view, and what it draws: a graph view's edges (id, kind, ends, references, stored or",
-    "derived, label, whether it has a summary) and each id in its `hidden` with the edge it takes out; a flow's",
-    "links between steps (a return with no step goes back to the caller); a sequence's messages. --json adds",
-    "`edges: {drawn, hidden}` or `edges: {links}` to the view.",
+    "The to-do list of a guide. It changes nothing.",
+    "It lists the boxes, arrows and steps that a view shows with no text, and the tours with no summary.",
+    "It lists drifted and missing code links, ids that are gone, and reader requests from the viewer.",
+    "Per map, it counts what lies outside it: the dashed boxes and the arrows to them.",
+    "--view <id> shows one view and the arrows (or step links) it draws.",
+    "--all checks every guide in the repository against the current index.",
+    "With one guide in the repository, leave out its name.",
   ],
   options: {
     all: {
       type: "boolean",
-      desc: "Inventory all repository guides against the current index without writing",
+      desc: "Check every guide in the repository against the current index; write nothing",
     },
     view: {
       type: "string",
       arg: "<id>",
-      desc: "Only this view, with the edges (or step links) it draws and what its hidden takes out",
+      desc: "Only this view: the arrows (or step links) it draws and what its `hidden` list leaves out",
     },
   },
   positionals: [{ name: "explainer", required: false }],
   async run(ctx, args) {
     if (args.flag("all")) {
       if (args.positionals.length || args.str("view"))
-        throw new UsageError("--all cannot be combined with an explainer or --view");
+        throw new UsageError("--all cannot be combined with a guide name or --view");
       const ws = await openWorkspace(ctx);
       const guides = guideInventory(ctx, ws.model, ws.texts);
       const watch = readWatchState(ctx.root) ?? null;
@@ -523,16 +541,20 @@ export const statusCommand: CommandSpec = {
         r.outcome.status !== "rejected",
     );
 
-    // What the skill must do: nodes, stored edges, steps and concepts without a summary.
-    const unexplained =
-      views.reduce(
-        (sum, v) =>
-          sum +
-          v.nodes.unexplained.length +
-          v.edges.unexplained.filter((e) => e.stored).length +
-          v.steps.unexplained.length,
-        0,
-      ) + concepts.length;
+    // What the skill must do: nodes, stored edges, steps, concepts and tours without a summary (or with a TODO one),
+    // each id once (a box on two maps is one summary to write).
+    const untoldTours = model.tours
+      .filter((t) => typeof t.summary !== "string" || t.summary.trim() === "" || isTodo(t.summary))
+      .map((t) => t.id);
+    const unexplained = new Set([
+      ...views.flatMap((v) => [
+        ...v.nodes.unexplained,
+        ...v.edges.unexplained.filter((e) => e.stored).map((e) => e.id),
+        ...v.steps.unexplained,
+      ]),
+      ...concepts,
+      ...untoldTours,
+    ]).size;
     const todo = {
       unexplained,
       drifted: drift.total,
@@ -563,9 +585,9 @@ export const statusCommand: CommandSpec = {
 
     const lines = [
       `${loaded.rel}: index ${ws.index.commit}, ${plural(views.length, "view")}, ${plural(model.concepts.length, "concept")}`,
-      `to do: ${todo.unexplained} unexplained, ${todo.drifted} drifted${
+      `to do: ${todo.unexplained} with no text, ${todo.drifted} changed code links${
         todo.driftedUserOwned > 0 ? ` (${todo.driftedUserOwned} user-owned: ask the user)` : ""
-      }, ${todo.missing} missing anchors, ${plural(todo.requests, "request")}${
+      }, ${todo.missing} missing code links, ${plural(todo.requests, "request")}${
         todo.broken > 0 ? `, ${plural(todo.broken, "broken reference")}` : ""
       }`,
     ];
@@ -573,35 +595,38 @@ export const statusCommand: CommandSpec = {
       lines.push("", "no views yet: apply a patch with a graph or sequence view");
     for (const view of views) {
       lines.push("", `${view.id} (${view.type}): ${view.title}`);
-      const shown = view.type === "graph" ? "nodes" : "participants";
+      const shown = view.type === "graph" ? "boxes" : "participants";
       lines.push(
         view.nodes.unexplained.length === 0
-          ? `  ${shown}: all ${view.nodes.total} explained`
+          ? `  ${shown}: all ${view.nodes.total} have text`
           : `  ${shown} without summary (${view.nodes.unexplained.length} of ${view.nodes.total}): ${listText(view.nodes.unexplained, 8)}`,
       );
       if (view.type === "graph") {
         const stored = view.edges.unexplained.filter((e) => e.stored).map((e) => e.id);
         const staticEdges = view.edges.unexplained.filter((e) => !e.stored).map((e) => e.id);
         lines.push(
-          `  edges: ${view.edges.total} shown; ` +
+          `  arrows: ${view.edges.total} shown; ` +
             (stored.length > 0
               ? `stored without summary (${stored.length}): ${listText(stored, 8)}`
-              : "every stored edge is explained") +
+              : "every stored arrow has text") +
             (staticEdges.length > 0
-              ? `; ${staticEdges.length} static without summary (optional): ${edgeIds(staticEdges)}`
+              ? `; ${staticEdges.length} found in the code without summary (optional): ${edgeIds(staticEdges)}`
               : ""),
         );
         if (view.ghosts) lines.push(...ghostLines(view.ghosts));
       } else {
         lines.push(
           view.steps.unexplained.length === 0
-            ? `  steps: all ${view.steps.total} explained`
+            ? `  steps: all ${view.steps.total} have text`
             : `  steps without summary (${view.steps.unexplained.length} of ${view.steps.total}): ${listText(view.steps.unexplained, 12)}`,
         );
       }
     }
     if (concepts.length > 0) {
       lines.push("", `concepts without summary (${concepts.length}): ${listText(concepts, 8)}`);
+    }
+    if (untoldTours.length > 0) {
+      lines.push("", `tours without summary (${untoldTours.length}): ${listText(untoldTours, 8)}`);
     }
     if (tours.length > 0) lines.push("", ...tourLines(tours));
     if (report.drifted.length > 0 || report.missing.length > 0 || report.driftedOther.length > 0) {
@@ -618,9 +643,9 @@ export const statusCommand: CommandSpec = {
     if (stale.length > 0) {
       lines.push(
         "",
-        `warning: stale edge overlays (${stale.length}): stored overlays of derived edges that no graph view derives now ` +
-          "(the ends of a derived id follow the view's include, and the code may have changed), so they are ignored. " +
-          "Re-create them on the current ids (`status --json`: views[].edges.unexplained) or remove them:",
+        `warning: stale arrow overlays (${stale.length}): stored text for arrows found in the code that no map draws now ` +
+          "(their ids follow the view's include, and the code may have changed), so they are ignored. " +
+          "Write the text again on the current ids (`status --json`: views[].edges.unexplained) or remove it:",
         ...stale.map((id) => `  ${id}`),
       );
     }

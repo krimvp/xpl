@@ -9,7 +9,7 @@ import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ExplainerPatch, GraphView, PatchGraphView } from "@xpl/core";
 import { headerComment } from "../src/draft-map.js";
-import { git, makeTempDir, writeFile, xpl, xplJson } from "./helpers.js";
+import { copyFixture, git, makeTempDir, writeFile, xpl, xplJson } from "./helpers.js";
 
 interface DraftJson {
   notes: string[];
@@ -20,6 +20,8 @@ function shop(): string {
   const dir = makeTempDir("xpl-map-");
   writeFile(dir, "README.md", "# shop\n\nSells things.\n");
   writeFile(dir, "package.json", '{ "name": "shop" }\n');
+  // a file off the map (docs) that is not code: the note on files with no box leaves it out
+  writeFile(dir, "docs/notes.txt", "Notes.\n");
   writeFile(
     dir,
     "src/main.ts",
@@ -112,15 +114,70 @@ describe("xpl draft map", () => {
               ["dir:src/orders"],
               [{ file: "src/orders/place.ts", symbol: "placeOrder", role: "definition" }],
             ],
+            // the last step: where a newcomer starts reading, at the entry file's `main`
+            [
+              "view:map",
+              ["file:src/main.ts"],
+              [{ file: "src/main.ts", symbol: "main", role: "definition" }],
+            ],
           ],
         ],
       ],
     );
+    expect(patch.tours?.[0]?.steps?.at(-1)?.note).toBe(
+      "### Where to go next: TODO: where a newcomer starts reading, as a plain statement\n\nTODO: why to start at `src/main.ts`: what runs first and which parts it calls.",
+    );
     expect(notes).toEqual([
-      "4 code files on 2 maps; 1 file left off (tests, examples, fixtures, docs and benchmarks)",
+      "4 code files on 2 maps; 1 file left off (tests, examples, fixtures, docs and benchmarks); 2 files that are not code have no box: `README.md` and `package.json`",
     ]);
     const lint = await xplJson<{ counts: Record<string, number> }>(dir, "lint", "shop");
     expect(Object.keys(lint.json.counts)).toEqual(["todo-left"]);
+  });
+
+  it("starts a newcomer at the shallowest file with a `main` function, else at the shallowest entry name", async () => {
+    const lastCode = async (entry: string) => {
+      const dir = makeTempDir("xpl-map-entry-");
+      writeFile(
+        dir,
+        "src/index.ts",
+        'import { run } from "../tools/run/start";\n\nexport function boot(): void {\n  run();\n}\n',
+      );
+      writeFile(
+        dir,
+        "tools/run/start.ts",
+        `export function run(): void {}\n\nexport function ${entry}(): void {\n  run();\n}\n`,
+      );
+      writeFile(
+        dir,
+        "src/cli/sub/main.ts",
+        `import { boot } from "../../index";\n\nexport function ${entry}(): void {\n  boot();\n}\n`,
+      );
+      expect((await xpl(dir, "index", "--precise", "off")).code).toBe(0);
+      expect((await xpl(dir, "new", "m")).code).toBe(0);
+      const json = await xplJson<DraftJson>(dir, "draft", "map", "m");
+      expect(json.code, json.out).toBe(0);
+      return json.json.patch.tours?.[0]?.steps?.at(-1)?.code;
+    };
+    // a `main` beats an entry name, and the shallower `main` beats the deeper one
+    expect(await lastCode("main")).toEqual([
+      { file: "tools/run/start.ts", symbol: "main", role: "definition" },
+    ]);
+    // no `main` anywhere: the shallowest entry name, at its first definition
+    expect(await lastCode("go")).toEqual([
+      { file: "src/index.ts", symbol: "boot", role: "definition" },
+    ]);
+  });
+
+  it("starts a Java newcomer at the class with `static void main`", async () => {
+    const dir = copyFixture("java-jobrunner");
+    expect((await xpl(dir, "index", "--precise", "off")).code).toBe(0);
+    expect((await xpl(dir, "new", "m")).code).toBe(0);
+    const json = await xplJson<DraftJson>(dir, "draft", "map", "m");
+    expect(json.code, json.out).toBe(0);
+    expect(json.json.patch.tours?.[0]?.steps?.at(-1)?.code).toEqual([
+      { file: "src/main/java/jobrunner/Main.java", symbol: "Main.main", role: "definition" },
+    ]);
+    expect(json.json.notes.join("\n")).not.toContain("no entry file found");
   });
 
   it("shows the requests of the screen code to the server routes as an arrow between their folders", async () => {
@@ -257,11 +314,12 @@ describe("xpl draft map", () => {
         [
           ["t1", [{ file: "README.md", span: { from: 2, to: 2 }, role: "usage" }]],
           ["t2", [{ file: "src/orders/checkout.ts", symbol: "placeOrder", role: "definition" }]],
+          ["t3", [{ file: "src/main.ts", symbol: "main", role: "definition" }]],
         ],
       ],
     ]);
     expect(notes).toEqual([
-      "4 code files on 2 maps; 1 file left off (tests, examples, fixtures, docs and benchmarks)",
+      "4 code files on 2 maps; 1 file left off (tests, examples, fixtures, docs and benchmarks); 2 files that are not code have no box: `README.md` and `package.json`",
       "1 moved file keeps its text: src/orders/place.ts -> src/orders/checkout.ts",
     ]);
   });
@@ -335,6 +393,29 @@ describe("headerComment", () => {
     );
   });
 
+  it("skips a license or banner comment and reads the comment after it", () => {
+    // ky's source/index.ts opens with a preserved banner, then an import
+    expect(header("/*! MIT License © Sindre Sorhus */\n\nimport {Ky} from './core/Ky.js';")).toBe(
+      undefined,
+    );
+    // a `/*!` banner without a license word is a banner too
+    expect(
+      header("/*! Tiny HTTP client based on fetch. */\n\nimport {Ky} from './core/Ky.js';"),
+    ).toBe(undefined);
+    expect(
+      header(
+        "// Copyright 2024 The Authors.\n// SPDX-License-Identifier: Apache-2.0\n\n// Package queue holds the jobs.\npackage queue",
+      ),
+    ).toBe("Package queue holds the jobs.");
+    expect(
+      header('# Licensed under the MIT license.\n\n"""Retries failed jobs."""\nimport x'),
+    ).toBe("Retries failed jobs.");
+    // the word alone is no banner
+    expect(header("// Checks the license field of a package.\nimport x from 'y';")).toBe(
+      "Checks the license field of a package.",
+    );
+  });
+
   it("is not the doc of the first declaration, nor code", () => {
     expect(header("/** Payload of a job. */\nexport interface Job {}")).toBeUndefined();
     expect(header("export function a() {}\n// later")).toBeUndefined();
@@ -377,7 +458,8 @@ describe("xpl draft map on a crowded folder", () => {
     // the folder's map shows the groups, not their files
     expect(view(patch, "view:map")?.include).toEqual(groups.map((g) => g.id));
     expect(notes).toEqual([
-      "32 code files on 5 maps; 0 files left off (tests, examples, fixtures, docs and benchmarks)",
+      "32 code files on 5 maps; 0 files left off (tests, examples, fixtures, docs and benchmarks); 1 file that is not code has no box: `package.json`",
+      "no entry file found (no `main` function and no file with an entry name such as main, index, app or cli): the start tour has no step on where to start reading; add one if the project has a clear first file",
       "crowded maps get groups of files that use each other (the top: 4 groups of 32 files): name each group, or remove the ones that are not one job",
     ]);
   });
@@ -405,5 +487,30 @@ describe("xpl draft map on a crowded folder", () => {
       members: group.members!.filter((m) => m !== "file:src/a16.ts"),
     });
     expect(patch.remove).toEqual(["file:src/a16.ts"]);
+  });
+});
+
+describe("xpl draft map: a folder too dense for boxes and arrows", () => {
+  it("opens a map of more than 12 boxes as a dependency matrix, and says so; 12 stay boxes", async () => {
+    const dir = makeTempDir("xpl-map-matrix-");
+    writeFile(dir, "package.json", '{ "name": "dense" }\n');
+    for (let i = 1; i <= 13; i++) {
+      writeFile(dir, `src/big/f${i}.ts`, `export function f${i}(): number {\n  return ${i};\n}\n`);
+    }
+    for (let i = 1; i <= 12; i++) {
+      writeFile(
+        dir,
+        `src/small/g${i}.ts`,
+        `export function g${i}(): number {\n  return ${i};\n}\n`,
+      );
+    }
+    expect((await xpl(dir, "index", "--precise", "off")).code).toBe(0);
+    expect((await xpl(dir, "new", "dense")).code).toBe(0);
+    const { patch, notes } = await draft(dir, "dense");
+    const render = (folder: string) =>
+      (patch.views!.find((v) => v.scope?.root === `dir:${folder}`) as GraphView).render;
+    expect(render("src/big")).toBe("matrix");
+    expect(render("src/small")).toBeUndefined();
+    expect(notes.join("\n")).toContain('open as a dependency matrix (`render: "matrix"`');
   });
 });

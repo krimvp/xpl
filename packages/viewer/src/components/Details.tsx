@@ -69,7 +69,15 @@ export function Details({
   }
 
   const graphNode = derived.view.graph?.nodes.find((n) => n.id === info.id);
-  const kind = reader ? (info.type === "node" ? readerBadge(info.kind) : undefined) : info.kind;
+  // a row of a data map's table is a field, whatever kind the index gives it (a TS property reads "variable")
+  const kind =
+    graphNode?.row !== undefined
+      ? "field"
+      : reader
+        ? info.type === "node"
+          ? readerBadge(info.kind)
+          : undefined
+        : info.kind;
   const facts = reader ? info.facts.filter((fact) => !AUTHOR_FACTS.has(fact.label)) : info.facts;
   return (
     <section className="details" aria-label="Details" data-details-id={info.id}>
@@ -92,13 +100,17 @@ export function Details({
       {(store.canZoomInto(info.id) || store.canExpandInPlace(info.id)) && (
         <div className="actions">
           {store.canZoomInto(info.id) && (
-            <button type="button" className="btn" onClick={() => store.zoomInto(info.id)}>
+            <button
+              type="button"
+              className="btn is-wrapping"
+              onClick={() => store.zoomInto(info.id)}
+            >
               Open its own map: {opensView(state.model, info.id)?.title}
             </button>
           )}
           {store.canExpandInPlace(info.id) && (
             <button type="button" className="btn" onClick={() => store.toggleExpanded(info.id)}>
-              {store.isExpanded(info.id) ? "Fold back into one box" : "Show its parts in this box"}
+              {store.isExpanded(info.id) ? "Fold back" : "Show inside"}
             </button>
           )}
         </div>
@@ -123,8 +135,8 @@ export function Details({
         <textarea
           className="feedback"
           data-testid="feedback"
-          aria-label="What should Claude change?"
-          placeholder="What should Claude change? Empty: explain this in more depth."
+          aria-label="Your question or request about this"
+          placeholder="What is unclear or wrong here? Leave it empty to ask for more detail."
           rows={2}
           value={feedback.id === info.id ? feedback.text : ""}
           onChange={(event) => setFeedback({ id: info.id, text: event.target.value })}
@@ -249,6 +261,13 @@ export function Details({
   );
 }
 
+/** Who wrote an element, in words (the raw origin stays in the badge's tooltip). */
+const ORIGIN_WORDS: Record<string, string> = {
+  llm: "by an agent",
+  user: "by a person",
+  static: "from the code",
+};
+
 function ProvenanceBadge({ info }: { info: ElementInfo }) {
   const provenance = info.provenance!;
   const parts = [`origin: ${provenance.origin}`];
@@ -257,7 +276,7 @@ function ProvenanceBadge({ info }: { info: ElementInfo }) {
     parts.push(`edited by you: ${provenance.userFields.join(", ")}`);
   return (
     <span className={`badge origin-${provenance.origin}`} title={parts.join("\n")}>
-      {provenance.origin}
+      {ORIGIN_WORDS[provenance.origin] ?? provenance.origin}
     </span>
   );
 }
@@ -342,9 +361,9 @@ function statusHelp(status: AnchorRow["status"]): string {
     case "moved":
       return "Found at a new place, text unchanged";
     case "drifted":
-      return "Found, but the text changed: the explanation may be stale";
+      return "Found, but the code changed: this text may be out of date";
     case "missing":
-      return "The symbol is gone: fix or drop this anchor";
+      return "The code is gone: fix or remove this code link";
     case "unresolved":
       return "Not resolved yet";
   }
@@ -354,8 +373,9 @@ type ExplainPhase =
   { kind: "idle" } | { kind: "queued" } | { kind: "command" } | { kind: "error"; message: string };
 
 /**
- * "Explain this", or with feedback typed above it "Send to Claude": with a server the request (and the
- * feedback as its note) is saved. Offline, browser storage and JSON export preserve the original context.
+ * "Explain this", or with feedback typed above it "Send to your agent": with a server the request (and the
+ * feedback as its note) is saved for the agent. A page with no server can only save it in this browser for
+ * the author, and its label says so ("Ask the author to explain this"); JSON export carries it on.
  */
 function ExplainButton({
   id,
@@ -367,6 +387,7 @@ function ExplainButton({
   onPhase: (phase: ExplainPhase) => void;
 }) {
   const store = useStore();
+  const server = useViewerState().serverMode;
   const text = note.trim();
   return (
     <button
@@ -379,7 +400,13 @@ function ExplainButton({
         );
       }}
     >
-      {text ? "Send to Claude" : "Explain this"}
+      {server
+        ? text
+          ? "Send to your agent"
+          : "Explain this"
+        : text
+          ? "Save for the author"
+          : "Ask the author to explain this"}
     </button>
   );
 }
@@ -399,8 +426,8 @@ function ExplainNote({ phase }: { phase: ExplainPhase }) {
     case "queued":
       return (
         <p className="note explain-note" role="status">
-          Queued for the next explicit pass. Run <code>/code-explainer feedback</code> in your
-          chosen agent. Saving feedback does not start generation.
+          Saved for later. Run <code>/code-explainer feedback</code> in your agent to answer it.
+          Saving starts nothing by itself.
         </p>
       );
     case "error":
@@ -413,9 +440,9 @@ function ExplainNote({ phase }: { phase: ExplainPhase }) {
       return (
         <div className="command explain-note" role="status">
           <p className="note">
-            Saved in this browser for the next explicit pass. Use Feedback &gt; Export feedback
-            JSON, then import it with xpl feedback &lt;guide&gt; --import feedback.json. Saving
-            feedback does not start generation.
+            Saved in this browser as a request to the author. Nothing is sent. To pass it on, use
+            Feedback &gt; Export feedback JSON. The author imports the file with xpl feedback
+            &lt;guide&gt; --import feedback.json, then runs:
           </p>
           <div className="command-line">
             <code data-testid="explain-command">{command}</code>
@@ -488,30 +515,49 @@ function MapConnections({ id, graph }: { id: string; graph: DerivedGraph }) {
   const [all, setAll] = useState(false);
   const names = new Map(graph.nodes.map((node) => [node.id, node.label]));
   if (!names.has(id)) return null;
+  // a table on a data map: its arrows start at its rows ("queue holds Queue"), named with the row
+  // (a row of another table is named by its table, its field in the words after it)
+  const rows = new Map(
+    graph.nodes.flatMap((node) =>
+      node.row !== undefined && node.parent ? [[node.id, node] as const] : [],
+    ),
+  );
+  const tableOf = (end: string) => rows.get(end)?.parent ?? end;
+  // a selected row has its own arrows; a selected table those of its rows
+  const mine = (end: string) => end === id || tableOf(end) === id;
   const arrows = [
     ...graph.edges
-      .filter((edge) => edge.from === id || edge.to === id)
+      .filter((edge) => mine(edge.from) !== mine(edge.to))
       .map((edge) => {
-        const outgoing = edge.from === id;
+        const outgoing = mine(edge.from);
+        // (the selected row is not named again in its own list)
+        const row = [edge.from, edge.to]
+          .map((end) => rows.get(end))
+          .find((r) => r && r.id !== id)?.label;
         return {
           id: edge.id,
           direction: outgoing ? "To" : "From",
-          other: names.get(outgoing ? edge.to : edge.from),
-          relationship: edge.label ?? edge.kind,
+          other: names.get(tableOf(outgoing ? edge.to : edge.from)),
+          relationship: `${edge.label ?? edge.kind}${row ? ` (field ${row})` : ""}`,
           count: edge.count,
           source: mapEdgeSource(edge),
         };
       }),
+    // a dashed box links to several boxes: its "×13 in all" is the sum, this row says its own part of it
     ...graph.stubs
       .filter((stub) => stub.inside === id)
-      .map((stub) => ({
-        id: stub.id,
-        direction: stub.direction === "out" ? "To" : "From",
-        other: stub.ghostLabel,
-        relationship: stub.kinds.join(", "),
-        count: stub.count,
-        source: "outside this map",
-      })),
+      .map((stub) => {
+        const total = graph.ghosts.find((ghost) => ghost.key === stub.ghost)?.count ?? stub.count;
+        return {
+          id: stub.id,
+          direction: stub.direction === "out" ? "To" : "From",
+          other: stub.ghostLabel,
+          relationship: stub.kinds.join(" & "),
+          count: stub.count,
+          ...(total > stub.count ? { total } : {}),
+          source: "outside this map",
+        };
+      }),
   ];
   if (arrows.length === 0) return null;
   const shown = all ? arrows : arrows.slice(0, 6);
@@ -519,9 +565,9 @@ function MapConnections({ id, graph }: { id: string; graph: DerivedGraph }) {
     <section
       className="map-connections"
       data-testid="map-connections"
-      aria-label="Connections on this map"
+      aria-label="Arrows on this map"
     >
-      <h3>Connections on this map</h3>
+      <h3>Arrows on this map</h3>
       <TraceButtons id={id} graph={graph} />
       <ul>
         {shown.map((arrow) => (
@@ -532,7 +578,9 @@ function MapConnections({ id, graph }: { id: string; graph: DerivedGraph }) {
               </span>
               <span className="map-connection-relation">
                 {arrow.relationship}
-                {arrow.count > 1 ? ` ×${arrow.count}` : ""} · {arrow.source}
+                {/* (a count of 1 is said when it is part of a total: "calls ×1 (of 2 in all)") */}
+                {arrow.count > 1 || "total" in arrow ? ` ×${arrow.count}` : ""}
+                {"total" in arrow ? ` (of ${arrow.total} in all)` : ""} · {arrow.source}
               </span>
             </button>
           </li>
@@ -635,11 +683,14 @@ export function CallerRows({ callers }: { callers: readonly Caller[] }) {
             ) : (
               <>
                 <code className="caller-name">{caller.label}</code>
-                <span className="where">{caller.file.slice(caller.file.lastIndexOf("/") + 1)}</span>
+                <span className="where">
+                  in {caller.file.slice(caller.file.lastIndexOf("/") + 1)}
+                </span>
               </>
             )}
             <span className="lines">
-              {(caller.recursion ?? [caller.line]).map((line) => `L${line}`).join(", ")}
+              {(caller.recursion ?? [caller.line]).length > 1 ? "lines " : "line "}
+              {(caller.recursion ?? [caller.line]).join(", ")}
             </span>
           </button>
         </li>

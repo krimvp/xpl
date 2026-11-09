@@ -1,6 +1,12 @@
 import { createPortal } from "react-dom";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
-import { describeAnalysis, guideCatalog, type GuideDescriptor, type Range } from "@xpl/core";
+import {
+  describeAnalysis,
+  guideCatalog,
+  isTestFile,
+  type GuideDescriptor,
+  type Range,
+} from "@xpl/core";
 import SearchWorker from "../search-worker.ts?worker&inline";
 import type {
   SearchMessage,
@@ -11,7 +17,10 @@ import type {
 } from "../search-worker.js";
 import { containedGuides } from "../library.js";
 import { ServerApi, messageOf } from "../data.js";
+import { keepTabInside } from "../focusTrap.js";
 import { useStore, useViewerState } from "../hooks.js";
+import { renderInline } from "../markdown.js";
+import { isTemplateTitle, markParts } from "../searchSnippet.js";
 import "../search.css";
 
 const NAVIGATION = [
@@ -28,6 +37,34 @@ const NAVIGATION = [
   "snapshot",
   "source-hash",
 ];
+/** The kind of a hit, in words (steps get their own label). */
+const HIT_WORDS: Record<string, string> = {
+  source: "Code",
+  concept: "Concept",
+  tour: "Tour",
+  guide: "Guide",
+};
+/** A name's kind, in words (the index's kinds; Go structs and fields as `symbolKindWord` says). */
+const KIND_WORDS: Record<string, string> = {
+  class: "Class",
+  struct: "Struct",
+  interface: "Interface",
+  function: "Function",
+  method: "Method",
+  type: "Type",
+  variable: "Variable",
+  field: "Field",
+  enum: "Enum",
+  key: "Settings key",
+};
+/** A name hit's kicker: its kind in words ("Function", "Struct"), else "Name". */
+const kindLabel = (node: { kindWord?: string; symbolKind?: string } | undefined): string =>
+  KIND_WORDS[node?.kindWord ?? node?.symbolKind ?? ""] ?? "Name";
+/** A function in a test file is a test case: "Test", not "Function". */
+const testCase = (
+  hit: { file: string },
+  node: { kindWord?: string; symbolKind?: string } | undefined,
+): boolean => isTestFile(hit.file) && (node?.kindWord ?? node?.symbolKind) === "function";
 const rangeText = (range: Range) =>
   `${range.startLine}${range.startCol === undefined ? "" : `:${range.startCol}`}-${range.endLine}${range.endCol === undefined ? "" : `:${range.endCol}`}`;
 
@@ -167,27 +204,25 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
 
   // Keep Tab inside the dialog; Escape returns focus to its header entry.
   const keyDown = (event: React.KeyboardEvent<HTMLElement>) => {
+    // Up and Down walk from the search box through the results and back (Tab works too).
+    if ((event.key === "ArrowDown" || event.key === "ArrowUp") && !event.altKey) {
+      const stops = [
+        input.current,
+        ...(panel.current?.querySelectorAll<HTMLElement>("a.search-result") ?? []),
+      ].filter((stop): stop is HTMLElement => !!stop);
+      const at = stops.indexOf(event.target as HTMLElement);
+      if (at >= 0) {
+        const next = stops[at + (event.key === "ArrowDown" ? 1 : -1)];
+        event.preventDefault();
+        next?.focus();
+      }
+    }
     if (event.key === "Escape") {
       event.stopPropagation();
       event.preventDefault();
       onClose();
     }
-    if (event.key === "Tab") {
-      const focusable = [
-        ...panel.current!.querySelectorAll<HTMLElement>(
-          "input:not(:disabled), button:not(:disabled), a[href]",
-        ),
-      ];
-      const first = focusable[0],
-        last = focusable.at(-1);
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last?.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first?.focus();
-      }
-    }
+    keepTabInside(event, panel.current);
   };
   const open = (event: MouseEvent<HTMLAnchorElement>, guide: string, hit?: SearchHit) => {
     const switching = guide !== current;
@@ -252,7 +287,7 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
         <div className="search-layout">
           <div className="search-main">
             <label className="search-label">
-              Search guide snapshots
+              Search this guide
               <input
                 ref={input}
                 type="search"
@@ -265,68 +300,66 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
                 placeholder="A symbol, source text or phrase from a guide"
               />
             </label>
-            <p className="search-scope">
-              Snapshot <code>{index.commit}</code> · {included} of {index.files.length} indexed
-              files supplied in the current guide. Search covers source, symbols and text in{" "}
-              {embedded.length} contained {embedded.length === 1 ? "guide" : "guides"}.
+            <p className="search-scope" title={`Code as of ${index.commit}`}>
+              This page holds {included} of {index.files.length} files. Search looks in their code,
+              their names and the text of{" "}
+              {embedded.length === 1 ? "the guide" : `${embedded.length} guides`}.
             </p>
-            <div className="search-limits">
-              {embedded
-                .filter((g) => g.guideId !== current)
-                .map((g) => (
-                  <p key={g.guideId}>
-                    {g.explainer.title || g.guideId} · snapshot <code>{g.index.commit}</code>:{" "}
-                    {g.index.files.filter((f) => f.path in g.files).length} of{" "}
-                    {g.index.files.length} indexed files supplied.
-                    {g.index.files.some((f) => !(f.path in g.files))
-                      ? " Missing source is not searched or opened from another guide."
-                      : ""}
-                    {g.index.pruned ? " Index pruned; omitted symbols cannot be searched." : ""}
-                    {!g.index.analysis?.length ? " Analysis unavailable." : ""}
-                    {g.sourceWarning ? ` ${g.sourceWarning}` : ""}
-                  </p>
-                ))}
-              {catalog && (
-                <p>
-                  Catalog-only guides have no source snapshot in this page; open a guide to search
-                  its available source.
-                </p>
-              )}
-              {missing > 0 && (
-                <p>
-                  {missing} indexed files{" "}
-                  {state.serverMode
-                    ? "not loaded; open them to include their supplied text"
-                    : "not included in this export"}
-                  .
-                </p>
-              )}
-              {index.pruned && (
-                <p>
-                  Index pruned: {index.symbols.length} of {index.pruned.symbols} symbols and{" "}
-                  {index.refs.length} of {index.pruned.refs} references retained. Omitted analysis
-                  is not evidence of absence.
-                </p>
-              )}
-              {!index.analysis?.length && (
-                <p>Analysis unavailable: this snapshot records no analysis coverage.</p>
-              )}
-              <details>
-                <summary>Analysis coverage and limits</summary>
-                <ul>
-                  {coverage.details.map((detail, i) => (
-                    <li key={i}>{detail}</li>
+            {/* What the page leaves out, in plain words, behind one disclosure: a reader searches first. */}
+            <details className="search-limits" data-testid="search-limits">
+              <summary>What search cannot find here</summary>
+              <ul>
+                {missing > 0 && (
+                  <li>
+                    {state.serverMode
+                      ? `${missing} files are not loaded yet. Open a file to search its code.`
+                      : `${missing} files are not in this page, so their code is not searched.`}
+                  </li>
+                )}
+                {index.pruned && (
+                  <li>
+                    The page keeps {index.symbols.length.toLocaleString("en")} of{" "}
+                    {index.pruned.symbols.toLocaleString("en")} names and{" "}
+                    {index.refs.length.toLocaleString("en")} of{" "}
+                    {index.pruned.refs.toLocaleString("en")} references. A name or an arrow that is
+                    not found may be one it left out.
+                  </li>
+                )}
+                {!index.analysis?.length && (
+                  <li>This page does not say which code xpl could read.</li>
+                )}
+                {embedded
+                  .filter((g) => g.guideId !== current)
+                  .map((g) => (
+                    <li key={g.guideId}>
+                      {g.explainer.title || g.guideId}:{" "}
+                      {g.index.files.filter((f) => f.path in g.files).length} of{" "}
+                      {g.index.files.length} files are in this page.
+                      {g.index.pruned ? " Some of its names are left out." : ""}
+                      {!g.index.analysis?.length
+                        ? " It does not say which code xpl could read."
+                        : ""}
+                      {g.sourceWarning ? ` ${g.sourceWarning}` : ""}
+                    </li>
                   ))}
-                </ul>
-              </details>
-            </div>
+                {catalog && (
+                  <li>
+                    A guide that is only listed has no code in this page: open it to search its
+                    code.
+                  </li>
+                )}
+                {coverage.details.map((detail, i) => (
+                  <li key={i}>{detail}</li>
+                ))}
+              </ul>
+            </details>
             <p role="status" className="search-status">
               {busy
-                ? "Searching supplied snapshots…"
+                ? "Searching…"
                 : result
                   ? result.total
-                    ? `${result.total} matches across result groups`
-                    : "No matches in the supplied snapshots."
+                    ? `${result.total} ${result.total === 1 ? "match" : "matches"}`
+                    : "No matches in this page."
                   : "Type to search source, symbols, concepts and tour steps."}
             </p>
             {error && <p role="alert">{error}</p>}
@@ -337,33 +370,38 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
                   <header className="search-group-head">
                     <h3>{group.title}</h3>
                     <span>
-                      {group.offset + 1}–{group.offset + group.hits.length} of {group.total} matches
+                      {group.total > group.hits.length
+                        ? `${group.offset + 1}–${group.offset + group.hits.length} of ${group.total} matches`
+                        : `${group.total} ${group.total === 1 ? "match" : "matches"}`}
                     </span>
                   </header>
-                  <div className="search-pages">
-                    <button
-                      type="button"
-                      className="btn"
-                      aria-label={`Previous ${group.title} results`}
-                      disabled={busy || group.offset === 0}
-                      onClick={() =>
-                        setPages((p) => ({ ...p, [group.id]: (p[group.id] ?? 0) - 1 }))
-                      }
-                    >
-                      Previous
-                    </button>
-                    <button
-                      type="button"
-                      className="btn"
-                      aria-label={`Next ${group.title} results`}
-                      disabled={busy || group.offset + group.hits.length >= group.total}
-                      onClick={() =>
-                        setPages((p) => ({ ...p, [group.id]: (p[group.id] ?? 0) + 1 }))
-                      }
-                    >
-                      Next
-                    </button>
-                  </div>
+                  {/* one page of results: no Previous and Next */}
+                  {group.total > group.hits.length && (
+                    <div className="search-pages">
+                      <button
+                        type="button"
+                        className="btn"
+                        aria-label={`Previous ${group.title} results`}
+                        disabled={busy || group.offset === 0}
+                        onClick={() =>
+                          setPages((p) => ({ ...p, [group.id]: (p[group.id] ?? 0) - 1 }))
+                        }
+                      >
+                        Previous
+                      </button>
+                      <button
+                        type="button"
+                        className="btn"
+                        aria-label={`Next ${group.title} results`}
+                        disabled={busy || group.offset + group.hits.length >= group.total}
+                        onClick={() =>
+                          setPages((p) => ({ ...p, [group.id]: (p[group.id] ?? 0) + 1 }))
+                        }
+                      >
+                        Next
+                      </button>
+                    </div>
+                  )}
                   <ul className="search-results">
                     {group.hits.map((hit, i) => {
                       const guide = hit.guide;
@@ -377,18 +415,45 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
                           ? "tour" in hit
                             ? "Tour step"
                             : "Flow step"
-                          : hit.kind;
+                          : hit.kind === "symbol"
+                            ? testCase(
+                                hit,
+                                guide === current ? state.model.node(hit.id) : undefined,
+                              )
+                              ? isTemplateTitle(hit.text)
+                                ? "Test, one per case"
+                                : "Test"
+                              : kindLabel(guide === current ? state.model.node(hit.id) : undefined)
+                            : (HIT_WORDS[hit.kind] ?? hit.kind);
+                      // Where the hit is, in a reader's words: the file and its lines (the snapshot's commit
+                      // is in the tooltip), or the guide and its tour.
+                      const lines =
+                        "file" in hit
+                          ? hit.range.startLine === hit.range.endLine
+                            ? `line ${hit.range.startLine}`
+                            : `lines ${hit.range.startLine}–${hit.range.endLine}`
+                          : "";
                       const context =
                         "file" in hit
-                          ? `${snapshot?.explainer.title || guide} · ${hit.commit} · ${hit.file}:${rangeText(hit.range)}`
+                          ? `${snapshot?.explainer.title || guide} · ${hit.file}, ${lines}`
                           : `${embedded.find((g) => g.guideId === guide)?.explainer.title || guide}${"tour" in hit ? ` · ${hit.tour}` : ""}${"step" in hit ? ` · ${hit.step}` : ""}`;
                       const content = (
                         <>
                           <span className="search-kind">{label}</span>
-                          <span className="search-result-text">{hit.text}</span>
-                          <small>
+                          <span className="search-result-text">
+                            {markParts(hit.text, pattern).map((part, at) =>
+                              part.match ? <mark key={at}>{part.text}</mark> : part.text,
+                            )}
+                          </span>
+                          <small
+                            title={
+                              "file" in hit
+                                ? `Code as of ${hit.commit}, ${hit.file}:${rangeText(hit.range)}`
+                                : undefined
+                            }
+                          >
                             {context}
-                            {unavailable ? " · source not supplied" : ""}
+                            {unavailable ? " · code not in this page" : ""}
                           </small>
                         </>
                       );
@@ -416,7 +481,7 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
               ))}
           </div>
           <aside className="search-guides" aria-label="Guide library">
-            <h3>{catalog ? "Repository guides" : "Contained guides"}</h3>
+            <h3>{catalog ? "Repository guides" : "Guides in this page"}</h3>
             {state.readOnlyGuide && /^https?:$/.test(location.protocol) && (
               <a href="./">Back to library</a>
             )}
@@ -437,12 +502,9 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
                       onClick={(e) => open(e, g.id)}
                     >
                       <strong>{g.title || "Untitled guide"}</strong>
-                      <small>
-                        {g.kind} · {g.commit}
-                      </small>
                       {g.audience && <span>For {g.audience}</span>}
                       {g.questions.map((q) => (
-                        <span key={q}>{q}</span>
+                        <span key={q} dangerouslySetInnerHTML={{ __html: renderInline(q) }} />
                       ))}
                     </a>
                   )}

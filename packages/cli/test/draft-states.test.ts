@@ -136,6 +136,7 @@ describe("xpl draft states", () => {
     expect(notes).toEqual([
       "never set: `Paused`",
       "never tested: `Paused`",
+      "Failed: no move out of it found; check `Job.retry` and add the moves the draft missed",
       "1 use is neither a set nor a test (an argument, a list): `xpl refs sym:src/status.ts#Status --in` lists them",
       "a transition is drafted only where one function tests a state and then sets another, matched in its text: check each in the code, and add the moves the draft missed",
       "the uses come from heuristic references: check each in the code",
@@ -188,7 +189,7 @@ export class Post {
       "TODO: what this state means, in one plain sentence (set in `Post.archive`; no test found).",
     );
     expect(notes).toEqual([
-      "never tested: `archived`",
+      "never tested (no comparison in the code reads it, so it looks like an end state): `archived`",
       "a transition is drafted only where one function tests a state and then sets another, matched in its text: check each in the code, and add the moves the draft missed",
       "the uses come from heuristic references: check each in the code",
     ]);
@@ -286,10 +287,70 @@ class Job:
       role: "definition",
     });
     expect(notes).toEqual([
-      "never tested: `DONE` and `FAILED`",
+      "never tested (no comparison in the code reads them, so they look like end states): `DONE` and `FAILED`",
       "a transition is drafted only where one function tests a state and then sets another, matched in its text: check each in the code, and add the moves the draft missed",
       "the uses come from heuristic references: check each in the code",
     ]);
+  });
+
+  // a negated guard fixes the state for the rest of its function, so the moves inside the if/elif/else
+  // after it count; a state the code tests but never leaves gets a note
+  it("finds the moves after a guard that raises, inside an if/elif/else, and names a tested state with no move out", async () => {
+    const dir = makeTempDir("xpl-states-guard-");
+    writeFile(
+      dir,
+      "status.py",
+      `from enum import Enum
+
+
+class JobStatus(Enum):
+    WAITING = "waiting"
+    RUNNING = "running"
+    BACKING_OFF = "backing_off"
+    DONE = "done"
+    DEAD = "dead"
+
+
+class Tracker:
+    def __init__(self) -> None:
+        self.status: JobStatus = JobStatus.WAITING
+
+    def start(self) -> None:
+        if self.status is JobStatus.WAITING:
+            self.status = JobStatus.RUNNING
+
+    def finish(self, ok: bool, retries_left: int) -> None:
+        if self.status != JobStatus.RUNNING:
+            raise ValueError("not running")
+        if ok:
+            self.status = JobStatus.DONE
+        elif retries_left > 0:
+            self.status = JobStatus.BACKING_OFF
+        else:
+            self.status = JobStatus.DEAD
+
+    def pause(self) -> None:
+        if self.status is JobStatus.BACKING_OFF:
+            return
+        self.status = JobStatus.WAITING
+`,
+    );
+    const { patch, notes } = await draftStates(dir, "sym:status.py#JobStatus");
+    const moves = graph(patch)
+      .map((line) => line.split(" ")[1]!)
+      .filter((name) => name.includes(">"));
+    expect(moves).toEqual([
+      "WAITING>RUNNING",
+      "RUNNING>BACKING_OFF",
+      "RUNNING>DONE",
+      "RUNNING>DEAD",
+    ]);
+    expect(notes).toContain(
+      "BACKING_OFF: no move out of it found; check `Tracker.pause` and add the moves the draft missed",
+    );
+    expect(notes).toContain(
+      "never tested (no comparison in the code reads them, so they look like end states): `DONE` and `DEAD`",
+    );
   });
 
   it("maps a Go type with a const block of its values", async () => {
@@ -348,15 +409,37 @@ func (j *Job) Finish() {
     );
     writeFile(dir, "src/job.ts", TS_JOB);
     writeFile(dir, "src/kinds.ts", 'export type Kind = "a" | Other;\nexport type Other = "b";\n');
+    writeFile(dir, "src/shape.ts", "export interface Shape {\n  name: string;\n}\n");
     expect((await xpl(dir, "index", "--precise", "off")).code).toBe(0);
     expect((await xpl(dir, "new", "s")).code).toBe(0);
     const cls = await xpl(dir, "draft", "states", "s", "sym:src/job.ts#Job");
     expect([cls.code, cls.err.trim()]).toEqual([
       1,
-      "error: nothing to draft: sym:src/job.ts#Job (a class) does not enumerate states: the entry must be a TypeScript enum or union of string literals, a Python Enum class, or a Go type with a const block of its values",
+      "error: nothing to draft: sym:src/job.ts#Job (a class) does not enumerate states: the entry must be a TypeScript enum or union of string literals, a Python Enum class, or a Go type with a const block of its values. `xpl outline --kind enum,type` lists candidates. No status type? When the state is where the data sits (which list or table holds it), draft the data map (`xpl draft data`) and write the flow by hand.",
     ]);
     const union = await xpl(dir, "draft", "states", "s", "sym:src/kinds.ts#Kind");
     expect(union.code).toBe(1);
     expect(union.err).toContain("sym:src/kinds.ts#Kind (a type) does not enumerate states");
+    const shape = await xpl(dir, "draft", "states", "s", "sym:src/shape.ts#Shape");
+    expect(shape.err).toContain("sym:src/shape.ts#Shape (an interface) does not enumerate states");
+    expect(shape.err).toContain("`xpl outline --kind enum,type` lists candidates");
+    // a near name is offered only when the command takes its kind (not the interface Shape)
+    const typo = await xpl(dir, "draft", "states", "s", "sym:src/shape.ts#Shapes");
+    expect(typo.code).toBe(1);
+    expect(typo.err).not.toContain("Did you mean");
+    expect(typo.err).toContain("`xpl outline --kind enum,type` lists candidates.");
+  });
+
+  // a Python Enum is a class in the index, so `outline --kind enum` lists none: the hint says what works
+  it("refuses a Python class that is no Enum with a hint that works for Python, and the route for a state with no enum", async () => {
+    const dir = makeTempDir("xpl-states-pyno-");
+    writeFile(dir, "jobs.py", "class Job:\n    def __init__(self):\n        self.ready = []\n");
+    expect((await xpl(dir, "index", "--precise", "off")).code).toBe(0);
+    expect((await xpl(dir, "new", "s")).code).toBe(0);
+    const r = await xpl(dir, "draft", "states", "s", "sym:jobs.py#Job");
+    expect(r.code).toBe(1);
+    expect(r.err).toContain('`xpl search "(Enum)"` finds the Enum classes.');
+    expect(r.err).toContain("draft the data map (`xpl draft data`) and write the flow by hand");
+    expect(r.err).not.toContain("outline --kind enum");
   });
 });

@@ -9,47 +9,43 @@ import {
 } from "@xpl/core";
 import type { CommandSpec } from "../command.js";
 import { CliError } from "../errors.js";
+import { plural } from "../format.js";
 import { atomicWrite, jsonFile, parseJson, readTextFile } from "../fsutil.js";
-import { importRequests, readRequests, recordOutcomes } from "../requests.js";
+import {
+  importRequests,
+  isOpenRequest,
+  readRequests,
+  recordOutcomes,
+  requestLines,
+} from "../requests.js";
 import { loadExplainer, openWorkspace } from "../repo.js";
 
 export const feedbackCommand: CommandSpec = {
   name: "feedback",
   usage: "xpl feedback <explainer> [--import <file> | --export <file> | --outcomes <file>]",
-  summary: "Import, inspect or export durable reader feedback; record selected outcomes",
+  summary: "Import, list or export reader requests, and record what was done with each",
   details: [
-    "Offline pages export code-explainer/feedback@1 JSON. Import deduplicates by stable request ID",
-    "and refuses conflicting original content. Higher outcome revisions update stored results;",
-    "equal or older revisions keep the current result. Timestamps never order outcomes.",
-    "Browser refreshes and exports use that same rule; held revisions never decrease.",
-    "Import newer portable results into the author store before recording replacements.",
-    "Optional answer history retains exact head/base evidence and merges by stable answer ID independently of outcomes.",
-    "Conflicting answer IDs or invalid quotes are refused; older exports never erase answers.",
-    "Answer IDs belong to one request. A merge over 1000 answers per request fails without changing the store.",
-    "Feedback retains its original explanation/source hashes and optional inclusive source range.",
-    "Changed context is reported as outdated and requires explicit reconciliation; it is never rebound.",
-    "--outcomes reads a JSON array of {id, context, status, reason}; context must match the selected",
-    "request's original {explainerHash, sourceHash}. Status: pending, addressed, unresolved, rejected,",
-    "outdated. Only those IDs change and increment their outcome revision. Failed writes leave the",
-    "prior store intact; new feedback survives. Missing revisions in older exports read as zero.",
-    "Saving/importing never starts generation. Invoke code-explainer in your harness for the next",
-    "feedback pass. Never delete the feedback store after processing a batch.",
+    "Reader requests come from the viewer (`Explain this`) or from a page as code-explainer/feedback@1 JSON.",
+    "--import merges a file by request id; --export writes the requests with their context and outcomes.",
+    "--outcomes reads [{id, context, status, reason}]: pending, addressed, unresolved, rejected or outdated.",
+    "A newer outcome revision replaces an older one. A request whose code changed is outdated, never rebound.",
+    "This command starts no agent. Ask your agent for the next feedback pass.",
   ],
   options: {
     import: {
       type: "string",
-      arg: "file",
-      desc: "Import feedback by ID and merge outcomes by revision",
+      arg: "<file>",
+      desc: "Merge the requests of this file into the guide's feedback",
     },
     export: {
       type: "string",
-      arg: "file",
-      desc: "Export requests including original context and outcomes",
+      arg: "<file>",
+      desc: "Write the requests, with their context and outcomes",
     },
     outcomes: {
       type: "string",
-      arg: "file",
-      desc: "Record outcomes only for selected request IDs",
+      arg: "<file>",
+      desc: "Record what was done with these requests",
     },
   },
   positionals: [{ name: "explainer" }],
@@ -69,10 +65,8 @@ export const feedbackCommand: CommandSpec = {
       const path = resolve(ctx.cwd, args.str("import")!);
       const file = parseFeedbackFile(parseJson(readTextFile(path, "feedback"), path));
       if (file.requests.some((r) => r.explainer !== undefined && r.explainer !== loaded.name))
-        throw new CliError(
-          "feedback names a different explainer; import it with its original guide name",
-        );
-      imported = (await importRequests(ctx.root, file.requests)).imported;
+        throw new CliError("feedback names a different guide; import it with that guide's name");
+      imported = (await importRequests(ctx.root, file.requests, { dropDuplicates: true })).imported;
     }
     const queue = readRequests(ctx.root);
     if (queue.error) throw new CliError(queue.error);
@@ -112,8 +106,8 @@ export const feedbackCommand: CommandSpec = {
       );
     }
     const feedback = { schema: FEEDBACK_SCHEMA, requests: mine };
-    if (args.str("export"))
-      await atomicWrite(resolve(ctx.cwd, args.str("export")!), jsonFile(feedback));
+    const exportTo = args.str("export");
+    if (exportTo) await atomicWrite(resolve(ctx.cwd, exportTo), jsonFile(feedback));
     const requests = mine.map((r) => {
       const contextReason =
         feedbackContextReason(r, current) ?? (ws.stale ? ws.stale.message : undefined);
@@ -128,14 +122,20 @@ export const feedbackCommand: CommandSpec = {
     else
       ctx.out(
         [
+          ...(exportTo ? [`wrote ${exportTo} (${plural(mine.length, "request")})`] : []),
           ...(imported !== undefined
-            ? [`Imported ${imported}; ${mine.length} stored request(s).`]
+            ? [
+                `imported ${plural(imported, "request")}; ${mine.length} ${mine.length === 1 ? "is" : "are"} stored for ${loaded.name}`,
+              ]
             : []),
-          ...requests.map(
-            (r) =>
-              `${r.id}  ${r.outcome.status}${r.contextStatus === "outdated" ? " (outdated context)" : ""}  ${r.kind} ${r.elementId}\n  ${r.outcome.reason}${r.contextReason ? `\n  ${r.contextReason}` : ""}`,
-          ),
-          "Invoke code-explainer in your harness for the next explicit feedback pass. Saving feedback does not start generation.",
+          // with --export, "wrote … (0 requests)" says it already
+          ...(requests.length === 0 && !exportTo ? [`no reader requests for ${loaded.name}`] : []),
+          ...requests.flatMap((r) => requestLines(r, r.contextReason)),
+          ...(requests.some(isOpenRequest)
+            ? [
+                "To act on the requests, start the code-explainer skill in your agent. Saving feedback starts nothing.",
+              ]
+            : []),
         ].join("\n"),
       );
     return 0;

@@ -236,7 +236,8 @@ test.describe("the ghost menu", () => {
   test("a long menu scrolls with the wheel; a turn of the wheel over the diagram puts it away", async ({
     page,
   }) => {
-    await page.setViewportSize({ width: 1440, height: 700 });
+    // (short enough for the menu to scroll in a diagram that has the panels' height too)
+    await page.setViewportSize({ width: 1440, height: 520 });
     await openCrowded(page);
     await byId(page, "ghost:rest:file:src/hub.ts").click();
     const box = (await menu(page).boundingBox())!;
@@ -409,9 +410,11 @@ test.describe("the Stubs control", () => {
     await openCrowded(page);
     await (await viewToggle(page, '[data-stub-mode="all"]')).click();
     await page.keyboard.press("Escape");
-    // all ghosts make a big diagram, which starts zoomed in: fit it to reach the last one
+    // all ghosts make a big diagram, which starts zoomed in: fit it to reach the last one (by the keyboard: a
+    // fitted ghost can sit under the zoom toolbar)
     await fitAll(page);
-    await byId(page, "ghost:file:src/f11.ts").click();
+    await byId(page, "ghost:file:src/f11.ts").focus();
+    await page.keyboard.press("Enter");
     await expect(byId(page, "file:src/f11.ts")).toBeVisible();
     expect((await stateOf(page)).stubs).toEqual({ mode: "all", max: 8 });
     await expect(ghostBoxes(page)).toHaveCount(10 + FILES - 1);

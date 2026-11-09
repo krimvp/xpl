@@ -47,7 +47,7 @@ describe("py-jobrunner: files and symbols", () => {
       expect(paths).toContain(expected);
     }
     expect(paths).toEqual([...paths].sort());
-    expect(index.languages.python).toMatchObject({ files: 9, symbols: 128, refs: "heuristic" });
+    expect(index.languages.python).toMatchObject({ files: 9, symbols: 150, refs: "heuristic" });
     expect(index.languages.python!.tool).toContain("tree-sitter-python@");
   });
 
@@ -116,17 +116,17 @@ describe("py-jobrunner: files and symbols", () => {
 
   it("counts of symbols by kind and file (a regression net for the pack)", () => {
     const py = index.symbols.filter((s) => /\.py$/.test(s.file));
-    expect(count(py, (s) => s.kind)).toEqual({ variable: 54, function: 19, class: 23, method: 32 });
+    expect(count(py, (s) => s.kind)).toEqual({ variable: 76, function: 19, class: 23, method: 32 });
     expect(count(py, (s) => s.file)).toEqual({
       "jobrunner/__init__.py": 1,
       "jobrunner/__main__.py": 7,
-      "jobrunner/bus.py": 10,
+      "jobrunner/bus.py": 11,
       "jobrunner/config.py": 36,
       "jobrunner/metrics.py": 8,
-      "jobrunner/queue.py": 20,
-      "jobrunner/runner.py": 13,
-      "jobrunner/worker.py": 16,
-      "tests/test_retry.py": 17,
+      "jobrunner/queue.py": 26,
+      "jobrunner/runner.py": 20,
+      "jobrunner/worker.py": 22,
+      "tests/test_retry.py": 19,
     });
   });
 });
@@ -180,13 +180,13 @@ describe("py-jobrunner: references from Runner.dispatch", () => {
     }
   });
 
-  it("references nothing else: the whole of dispatch is these 25 references (13 calls, 11 reads, 1 write)", () => {
+  it("references nothing else: the whole of dispatch is these 38 references (13 calls, 24 reads, 1 write)", () => {
     const from = index.refs.filter((r) => r.from === dispatch);
-    expect(count(from, (r) => r.kind)).toEqual({ call: 13, read: 11, write: 1 });
-    expect(from).toHaveLength(25);
+    expect(count(from, (r) => r.kind)).toEqual({ call: 13, read: 24, write: 1 });
+    expect(from).toHaveLength(38);
   });
 
-  it("reads: the fields of the job, the result and the configuration; instance attributes are not symbols", () => {
+  it("reads: the fields of the job, the result and the configuration, and the runner's own fields `__init__` sets", () => {
     const reads = index.refs.filter((r) => r.from === dispatch && r.kind === "read");
     expect(reads.map((r) => r.to.slice(r.to.indexOf("#") + 1)).sort()).toEqual([
       "Job.attempts",
@@ -196,6 +196,19 @@ describe("py-jobrunner: references from Runner.dispatch", () => {
       "RetryConfig.max_retries",
       "RunResult.error",
       "RunResult.ok",
+      "Runner._config",
+      "Runner._config",
+      "Runner._config",
+      "Runner._config",
+      "Runner._pool",
+      "Runner._pool",
+      "Runner._queue",
+      "Runner._queue",
+      "Runner._queue",
+      "Runner._queue",
+      "Runner._running",
+      "Runner.stats",
+      "Runner.stats",
       "RunnerConfig.idle_delay_ms",
       "RunnerConfig.retry",
       "RunnerConfig.retry",
@@ -322,10 +335,10 @@ describe("py-jobrunner: imports, heritage, the demo and the tests", () => {
     expect(count(index.refs, (r) => r.kind)).toEqual({
       import: 44,
       "type-ref": 52, // two classes used as values: type references, as in precise mode
-      call: 93, // `queue.size` reads a property: a call of its getter
-      write: 4,
+      call: 94, // `queue.size` reads a property: a call of its getter
+      write: 11, // `self.x = ...` outside `__init__` writes the field `__init__` set
       extends: 1,
-      read: 75, // includes the callback passed to the event bus
+      read: 122, // includes the callback passed to the event bus
     });
   });
 });

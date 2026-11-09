@@ -1,13 +1,30 @@
 # Feedback and revision
 
-Readers can leave corrections, explanation requests and expansions on a selected diagram element and source range. In `xpl view`, feedback is saved to disk. In a disconnected saved page, it stays in browser storage until exported as JSON. Saving feedback never starts generation.
+A reader can leave a question, a correction, or a request for more detail. It goes on a selected box, arrow
+or step and on lines of code. In `xpl view`, feedback is saved to disk. In a saved HTML page, nothing can
+answer: the panel's main button is **Save for the author**, the note stays in browser storage, and the reader
+exports it as JSON and sends the file to whoever gave them the page. The command below is under **For the
+author** in the panel, with the guide's name. Saving feedback never starts your agent. A reader sees the
+answer when you send them a new page: their saved requests do not update.
 
 ```sh
 xpl feedback retry-guide --import /path/to/feedback.json
 ```
 
-Then ask the installed skill to process it with the selected harness token: `/code-explainer feedback` in Claude Code or Factory Droid, `$code-explainer feedback` in Codex, `/skill:code-explainer feedback` in Pi, or `@skills:code-explainer feedback` in Devin. Stable request IDs deduplicate repeated imports. The record retains the original source snapshot, range, outcome and reason. Requests tied to changed snapshots are marked outdated and need explicit reconciliation. Export browser feedback before clearing browser data. If browser storage is unavailable, export JSON or save the page as HTML.
+Then ask the installed skill to work through it: `/code-explainer feedback` in Claude Code or Factory Droid,
+`$code-explainer feedback` in Codex, `/skill:code-explainer feedback` in Pi, or
+`@skills:code-explainer feedback` in Devin. Each request has a fixed ID, so a second import of the same file
+adds nothing. A request keeps the code snapshot, the lines, the outcome and the reason. When the code under a
+request changed, xpl marks the request outdated, and you decide what to do with it: xpl never moves it to new
+lines. Export browser feedback before you clear browser data. If browser storage is not available, export
+JSON or save the page as HTML.
 
-The next pass uses `xpl revise`: select request IDs, inspect proposed text and source changes, choose which outcomes to accept or reject, then explicitly accept the reviewed subset. Acceptance rechecks the live source, snapshot and readiness; it preserves user-owned content and the previous guide. Interrupted acceptance can resume without applying changes or recording outcomes twice. Missing anchors need an explicit re-anchor or removal decision; a moved location keeps its existing prose.
+The next pass uses `xpl revise`. Select request IDs, read the proposed text and code-link changes, accept or
+reject each one, then accept the set you reviewed. Before it saves, xpl checks the code, the snapshot and the
+readiness again. It keeps the text you wrote and the previous version of the guide. An interrupted accept can
+resume, and it does not apply a change or record an outcome twice. A code link whose code is gone needs your
+decision: link it again or remove it. A code link whose code only moved keeps its text.
 
-A live viewer refreshes after guide, source or index changes. Unsaved edits postpone refresh. A saved HTML page stays at its exported snapshot; re-export after changes. See the skill's [revision workflow](https://github.com/krimvp/xpl/blob/main/skill/code-explainer/reference/revise.md).
+A live viewer reloads after the guide, the code or the index changes. Unsaved edits delay the reload. A saved
+HTML page stays as it was when you exported it; export it again after a change. See the skill's
+[revision workflow](../skill/revise.md).

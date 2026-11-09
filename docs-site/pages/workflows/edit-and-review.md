@@ -2,16 +2,40 @@
 
 ## Edit in the viewer
 
-In Explore, select a box, stored arrow or concept and choose **Edit text** in Details. Correct its label, summary or Markdown detail; concepts also let you select related elements. **Save text** marks your edit as user-owned. **Cancel** drops the draft. Live saves survive reload and reject stale inspected versions. Drafts stay available while you switch between elements. Offline edits remain unsaved until you export HTML or JSON.
+In Explore, select a box, an arrow you added or a concept, then choose **Edit text** in Details. Correct its
+label, its summary or its Markdown detail. A concept also lets you pick the boxes it relates to. **Save text**
+marks the text as yours. **Cancel** drops the draft. A live save survives a reload, and it is refused when the
+guide changed after you opened it. A draft stays while you select other boxes. In a saved HTML page, an edit
+stays unsaved until you export HTML or JSON.
 
-Use **Edit evidence** to preview source lines in the read-only source pane. Lines are checked against a symbol or file and, for change guides, against the base. Replace, remove or add anchors, then choose **Save evidence**. Repair or remove every invalid anchor on the element; a rejected save keeps the draft. If source differs from its index, reindex and reload. Later LLM revisions preserve your edited fields.
+**Edit code links** edits the code links. Select lines in the read-only code pane: xpl checks them against a
+symbol or a file and, in a change guide, against the base. Replace, remove or add code links, then choose
+**Save code links**. Fix or remove every broken code link on the box, arrow or step first; a refused save keeps
+the draft. If the code differs from its index, index again and reload. A later revision by your agent keeps
+the fields you edited.
 
-Edit > **Undo** / **Redo** names changed fields and elements. It saves only changed fields, preserves unrelated edits, and refuses conflicts on the same field. Live history keeps up to 50 edits in browser storage, scoped to the repository and guide. Copied or renamed guides do not inherit history; offline pages keep only in-session undo.
+Edit > **Undo** and **Redo** name the fields and boxes they change. Undo saves only the changed fields, keeps
+your other edits, and refuses a conflict on the same field. A live guide keeps up to 50 edits in browser
+storage, per repository and guide. A copied or renamed guide starts with no history. A saved HTML page keeps
+undo only until you close it.
 
-In Explore, **Edit map** groups selected sibling boxes under a named container. Shift-click to select multiple boxes. **Ungroup in this map** shows the members while keeping the stored group for other maps, arrows and tour steps. **Hide selected items** hides boxes or arrows; restore hidden IDs from the same menu. Drag a box's move handle or use its arrow keys to pin it. Reset one or all placements to return to automatic layout. These edits persist in live views and HTML/JSON exports; pan and zoom do not change the map.
+In Explore, **Edit map** puts the selected boxes that share a parent in a named group. Shift-click to select
+several boxes. **Ungroup in this map** shows the members on this map and keeps the group for other maps,
+arrows and tour steps. **Hide selected items** hides boxes or arrows; the same menu shows them again. Drag a
+box by its move handle, or use its arrow keys, to pin it. Reset one or all positions to go back to the
+automatic layout. These edits are kept in live guides and in HTML and JSON exports. Pan and zoom do not change
+the map.
 
-## Record an author review
+## Mark a guide as reviewed
 
-Edit > **Record author review** records a self-reported name, the content and evidence inspected, and named omissions. About this explanation shows **unchecked**, **reviewed** or **out of date** separately from source checks. A narrow review covers named stored items and their anchors; unrelated source edits do not invalidate it. Repository scope covers every indexed file. Broad review evidence is included in HTML, but an offline page cannot detect later repository changes.
+Edit > **Mark as reviewed** records your name, what you checked (the text and the code links) and what you did
+not check. **About this guide** shows the review state: **Not yet reviewed by a person**, **Reviewed by a
+person** or **Changed since a person reviewed it**. It is separate from the code checks. A review of named
+boxes and steps covers them and their code links; a change to other code does not make it out of date. A
+review of the whole repository covers every indexed file. A saved HTML page holds the review, but it cannot
+see later changes to the repository.
 
-Review is optional. Use `xpl ready --require-review` or `xpl bundle --require-review` to require a current review of all stored content. The Save as HTML team-policy option can also require it and remains selected in that exported page. Omission notes remain the author's judgment; the recorded name and time do not verify identity, prose accuracy or complete runtime coverage.
+A review is optional. `xpl ready --require-review` and `xpl bundle --require-review` refuse a guide without a
+current review of all its content. The team-policy option of **Save as HTML** asks for the same, and the
+exported page keeps that setting. The name and time are what the reviewer typed: xpl does not check who they
+are, whether the text is right, or whether the guide covers every path the code can take.

@@ -320,7 +320,7 @@ pinsTest(
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(server.url + "?mode=explore&view=view:system");
     await page.waitForFunction(() => !!window.__xpl);
-    await page.getByRole("button", { name: "Show parts of Job runner here" }).click();
+    await page.getByRole("button", { name: "Show what is inside Job runner, here" }).click();
     await expect(byId(page, "grp:job-runner")).toHaveClass(/is-container/);
     await page
       .locator(".diagram-caption")
@@ -548,7 +548,7 @@ for (const width of [1440, 390])
           Number((el as SVGGraphicsElement).getScreenCTM()!.a.toFixed(3)),
         );
       await expect.poll(scale).toBeGreaterThanOrEqual(0.9);
-      await page.getByRole("button", { name: "Fit to view" }).click();
+      await page.getByTestId("pz-fit").click();
       await expect.poll(scale).toBeGreaterThanOrEqual(0.9);
       await expect(byId(page, id!)).toHaveAttribute("transform", `translate(${pos.x} ${pos.y})`);
       await page.evaluate((id) => window.__xpl!.select([id]), id!);
@@ -556,7 +556,10 @@ for (const width of [1440, 390])
         .poll(async () => (await focusOf(page)).map((f) => f.file))
         .toContain("jobrunner/worker.py");
       await expect(page.locator(".move-handle")).toHaveCount(0);
-      await page.getByRole("button", { name: "Show source", exact: true }).click();
+      await page
+        .locator(".workspace-location")
+        .getByRole("button", { name: "Show code", exact: true })
+        .click();
       await expect(page.locator(".cm-editor").first()).toBeVisible();
       if (view === "view:code") await expect(page.locator(".cm-line.xpl-hl").first()).toBeVisible();
     }

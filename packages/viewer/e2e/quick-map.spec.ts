@@ -120,3 +120,16 @@ test("a reader can trace a box too, from its connections on the map", async ({ p
     .toEqual(["file:src/metrics.ts", "file:src/worker.ts", "grp:scheduling"]);
   expect(problems).toEqual([]);
 });
+
+// a line to a dashed box said "calls (of 2 in all)", dropping its count of 1 (its aria said "×1")
+test("a box's line to code outside the map keeps its count of 1 beside the total", async ({
+  page,
+}) => {
+  const problems = watchProblems(page);
+  await page.goto(`${TS_BUNDLE.href}?perspective=map&view=view:overview`);
+  await page.evaluate(() => window.__xpl!.select(["file:src/worker.ts"]));
+  await expect(page.getByTestId("map-connections")).toContainText(
+    "To bus.ts calls ×1 (of 2 in all) · outside this map",
+  );
+  expect(problems).toEqual([]);
+});

@@ -25,16 +25,19 @@ export async function workspaceReadiness(
   return { ws, explainer, drift, report };
 }
 
+const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
+
 export function describeReadiness(report: ReadinessReport): string {
   return [
-    `${report.ready ? "Ready" : "Not ready"} (${report.scope}): ${report.errors} errors, ${report.warnings} warnings. Source checks do not verify prose claims or complete runtime coverage.`,
+    `${report.ready ? "ready" : "not ready"}: ${report.errors} errors, ${report.warnings} warnings. xpl checks the code links, not whether the text is true.`,
     ...(report.review
       ? [
-          `Author review: ${report.review.status}; team policy ${report.review.required ? "requires all content" : "off"}. Names are self-reported, not verified identities.`,
+          `Author review: ${report.review.status}; team policy ${report.review.required ? "requires all content" : "off"}. xpl does not check reviewer names.`,
         ]
       : []),
     ...report.findings.map(
-      (f) => `${f.severity} ${f.elementId}.${f.field} (${f.code}): ${f.message} ${f.hint}`,
+      (f) =>
+        `${f.severity} ${f.elementId === "(explainer)" ? "the guide" : f.elementId}, field ${f.field} (${f.code}): ${lowerFirst(f.message.replace(/\.$/, ""))}${f.hint ? `; fix: ${f.hint}` : ""}`,
     ),
     ...(report.decisionNote ? [`Author decision: ${report.decisionNote}`] : []),
   ].join("\n");

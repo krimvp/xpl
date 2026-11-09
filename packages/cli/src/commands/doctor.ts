@@ -12,6 +12,7 @@ import {
   verifySkill,
   type SkillAgent,
 } from "../setup.js";
+import { fileErrorText } from "../fsutil.js";
 
 const execute = promisify(execFile);
 const REGISTRY_LATEST = "https://registry.npmjs.org/@krimvp%2Fxpl/latest";
@@ -40,16 +41,13 @@ function compareVersions(left: string, right: string): number | undefined {
 
 export const doctorCommand: CommandSpec = {
   name: "doctor",
-  usage: "xpl doctor [--agent none|claude|codex|pi|droid|devin] [--skill-dir <path>]",
-  summary: "Diagnose local setup without downloading tools or starting authoring",
+  usage: "xpl doctor [--agent none|claude|codex|pi|droid|devin] [--skill-dir <folder>]",
+  summary: "Check the local setup; download nothing and start no agent",
   details: [
-    "Checks Node >=22.12, bundled file hashes and grammar loading. Required failures exit 1.",
-    "A selected skill and local agent command are checked for Claude, Codex, Pi and Droid. Devin checks the project skill files; its cloud session is not locally verifiable. The default none checks reader/index/export setup.",
-    "Optional git, npx and Go checks report local versions. Availability does not prove a precise indexer can run.",
-    "An older skill needs xpl skill install; a newer skill needs a matching CLI. Checks npm for a newer xpl version when reachable. Set XPL_NO_UPDATE_CHECK=1 to skip this network check.",
-    "Go uses the installed toolchain with user configuration and telemetry disabled; Git tracing is disabled.",
-    "Use xpl index --precise off offline. Auto precise mode may download tools/dependencies; require fails if unavailable.",
-    "Agent authentication and provider access are not checked. Devin cloud skill loading is not locally verifiable. Generation is user-invoked.",
+    "Checks Node 22.12 or newer, the bundled files and the grammars. A failed check exits 1.",
+    "With --agent, it also checks that agent's skill and command. It does not check sign-in.",
+    "It reports the versions of git, npx and Go, and checks npm for a newer xpl (XPL_NO_UPDATE_CHECK=1 skips).",
+    "It downloads nothing. Offline, index with `xpl index --precise off`.",
   ],
   options: {
     agent: {
@@ -59,8 +57,8 @@ export const doctorCommand: CommandSpec = {
     },
     "skill-dir": {
       type: "string",
-      arg: "<path>",
-      desc: "Installed skill to check (default: ~/.claude/skills/code-explainer)",
+      arg: "<folder>",
+      desc: "Installed skill to check (default: Claude's skills folder)",
     },
   },
   positionals: [],
@@ -88,7 +86,7 @@ export const doctorCommand: CommandSpec = {
           id,
           required,
           status: error instanceof SkillVersionError ? error.status : "missing",
-          detail: errorMessage(error),
+          detail: fileErrorDetail(error),
           recovery: error instanceof SkillVersionError ? error.recovery : recovery,
         });
       }
@@ -110,7 +108,7 @@ export const doctorCommand: CommandSpec = {
       "Reinstall the local xpl tarball. For source development, run npm run build.",
       () => {
         const data = verifyArtifact();
-        return `${data.version}: ${Object.keys(data.files).length} files verified in ${artifactDir}`;
+        return `${data.version}, ${Object.keys(data.files).length} files verified in ${artifactDir}`;
       },
     );
     await check(
@@ -127,7 +125,8 @@ export const doctorCommand: CommandSpec = {
       ctx.cwd,
       args.str("skill-dir") ?? defaultSkillDir(ctx.env, selectedAgent, ctx.root),
     );
-    const installCommand = `xpl skill install --agent ${selectedAgent} --dir ${JSON.stringify(skill)}`;
+    // (Claude Code is the default agent: with none given, the command does not name it)
+    const installCommand = `xpl skill install${agent === "none" ? "" : ` --agent ${selectedAgent}`} --dir ${JSON.stringify(skill)}`;
     await check(
       "skill",
       agent !== "none",
@@ -253,8 +252,11 @@ export const doctorCommand: CommandSpec = {
       }
     }
     const ok = !checks.some((item) => item.required && item.status !== "ok");
-    const network =
-      "Local reading, --precise off indexing and HTML export use bundled assets. Doctor alone checks the npm registry for updates unless XPL_NO_UPDATE_CHECK=1. Precise bootstrap/dependencies and selected agent provider access can need network separately.";
+    const networkLines = [
+      "Reading, `xpl index --precise off` and HTML export need no network. Only doctor's update check reaches the",
+      "npm registry (XPL_NO_UPDATE_CHECK=1 turns it off). Precise indexing and your agent's sign-in may need the network.",
+    ];
+    const network = networkLines.join(" ");
     if (ctx.json)
       ctx.out(
         JSON.stringify(
@@ -265,16 +267,27 @@ export const doctorCommand: CommandSpec = {
       );
     else {
       ctx.out(
-        `setup: ${ok ? "ready" : "needs repair"} (${process.platform} ${process.arch}; agent ${agent})`,
+        `setup: ${ok ? "ready" : "needs repair"} (${process.platform} ${process.arch}; ${agent === "none" ? "no agent given: the skill check uses Claude Code's folder" : `agent ${agent}`})`,
       );
       for (const item of checks) {
         ctx.out(
           `${item.status} ${item.required ? "required" : "optional"} ${item.id}: ${item.detail}`,
         );
-        if (item.status !== "ok") ctx.out(`  recovery: ${item.recovery}`);
+        // (a hint after a colon starts in lower case, as lint's and ready's do)
+        if (item.status !== "ok")
+          ctx.out(
+            `  recovery: ${item.recovery.replace(/^[A-Z](?=[a-z ])/, (c) => c.toLowerCase())}`,
+          );
       }
-      ctx.out(network);
+      ctx.out(networkLines.join("\n"));
     }
     return ok ? 0 : 1;
   },
 };
+
+/** `no such file: /path` for a file system error, else the error's own message. */
+function fileErrorDetail(error: unknown): string {
+  const path = (error as { path?: unknown } | null)?.path;
+  const text = fileErrorText(error);
+  return typeof path === "string" && text !== errorMessage(error) ? `${text}: ${path}` : text;
+}

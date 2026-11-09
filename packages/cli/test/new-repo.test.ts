@@ -113,6 +113,32 @@ describe("xpl new: the repository name", () => {
     expect(json.repo.source).toBe("pyproject.toml");
   });
 
+  it("then [package] name of Cargo.toml, for a Rust crate", async () => {
+    const dir = await repoWith({
+      "Cargo.toml":
+        '[workspace]\nname = "not-this"\n\n[package]\nname = "rs-jobrunner"\nversion = "0.1.0"\n',
+    });
+    const { json, explainer } = await repoOf(dir);
+    expect(explainer.name).toBe("rs-jobrunner");
+    expect(json.repo.source).toBe("Cargo.toml");
+  });
+
+  it("then the project's artifactId in pom.xml, for a Maven project", async () => {
+    const dir = await repoWith({
+      "pom.xml": [
+        "<project>",
+        "  <parent><artifactId>not-this</artifactId></parent>",
+        "  <groupId>dev.demo</groupId>",
+        "  <artifactId>java-jobrunner</artifactId>",
+        "  <dependencies><dependency><artifactId>nor-this</artifactId></dependency></dependencies>",
+        "</project>",
+      ].join("\n"),
+    });
+    const { json, explainer } = await repoOf(dir);
+    expect(explainer.name).toBe("java-jobrunner");
+    expect(json.repo.source).toBe("pom.xml");
+  });
+
   it("skips what does not give a name: bad JSON, no name, empty name", async () => {
     const dir = await repoWith({
       "package.json": "{ not json",

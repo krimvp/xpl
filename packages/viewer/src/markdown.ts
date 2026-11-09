@@ -38,12 +38,25 @@ const marked = new Marked({
   },
 });
 
+/**
+ * A Python name with double underscores (`__all__`, `__init__`) outside code is a name, not bold text: its
+ * underscores are escaped. Code spans and blocks are left as they are.
+ */
+function keepDunders(source: string): string {
+  return source
+    .split(/(`+[\s\S]*?`+)/)
+    .map((part, i) =>
+      i % 2 === 1 ? part : part.replace(/(^|[^\w\\])__(\w+?)__(?!\w)/g, "$1\\_\\_$2\\_\\_"),
+    )
+    .join("");
+}
+
 /** Sanitised HTML for a markdown string. */
 export function renderMarkdown(source: string): string {
-  return marked.parse(source, { async: false });
+  return marked.parse(keepDunders(source), { async: false });
 }
 
 /** Sanitised HTML for one line of markdown (a title): emphasis, code and links, no paragraph around it. */
 export function renderInline(source: string): string {
-  return marked.parseInline(source, { async: false });
+  return marked.parseInline(keepDunders(source), { async: false });
 }

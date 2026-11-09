@@ -87,8 +87,12 @@ describe("xpl start", () => {
       "off",
     );
     expect(result.code, result.err).toBe(0);
-    expect(result.out).toContain("next: complete the TODOs");
-    expect(result.out).toContain("note: Provisional architecture: confirm project kind");
+    // the draft is applied already: the next line says to apply an edited patch again, and what the viewer
+    // cannot edit (the titles and the tour summary hold TODOs too)
+    expect(result.out).toMatch(
+      /^next: write the TODOs in (\S+) and run `xpl apply job-retries \1`, then `xpl lint job-retries`\. `xpl view job-retries` also edits the step notes \(Edit > Edit the tour\) and box texts \(Edit text\), not the titles or the tour summary$/m,
+    );
+    expect(result.out).toContain("note: the draft guesses the kind of project");
     expect(result.out).toContain("draft notes:");
     expect(result.out).toContain("xpl view job-retries");
     const draftPath = /draft patch: (.+)/.exec(result.out)?.[1];
@@ -104,6 +108,18 @@ describe("xpl start", () => {
     expect(guide.views[0].scope.question).toBe("How does a failed job get retried?");
     expect(patch.scope.audience).toBe("Maintainers");
     expect((await xpl(dir, "validate", "job-retries")).code).toBe(0);
+    // without --entry it drafted an overview, says so, and names where the path could start
+    expect(result.out).toContain("note: drafted an overview of the whole repository");
+    expect(result.out).toContain(
+      "run `xpl draft path job-retries sym:src/runner.ts#Runner.dispatch -o <file>`",
+    );
+    // the command is named once; the draft's note keeps only the room it leaves for the path
+    expect(
+      [...result.out.matchAll(/xpl draft path job-retries ([^\s`]+)/g)].map((m) => m[1]),
+    ).toEqual(["sym:src/runner.ts#Runner.dispatch"]);
+    expect(result.out).toContain(
+      "note: room is left for 2 more steps (9 at most), the main path and its risks\n",
+    );
   });
 
   it("starts a path draft at a named source symbol", async () => {
@@ -154,7 +170,7 @@ describe("xpl start", () => {
     });
     expect(existsSync(json.json.draft)).toBe(true);
     expect(json.json.notes).toContain(
-      "Provisional architecture: confirm project kind, primary users and entry points in the README and code; import lines identify dependencies.",
+      "the draft guesses the kind of project, its users and its entry points from the code and its import lines: check each in the README and the code",
     );
     expect(existsSync(json.json.notesFile)).toBe(true);
   });

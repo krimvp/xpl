@@ -55,7 +55,33 @@ describe("resolveFrames", () => {
 
   it("resolves frames to inclusive step index ranges", () => {
     const v = { ...view, frames: [frame("a", "v:2", "v:4")] };
-    expect(resolveFrames(v)).toEqual([{ frame: v.frames[0], from: 1, to: 3, depth: 0 }]);
+    expect(resolveFrames(v)).toEqual([{ frame: v.frames[0], from: 1, to: 3, depth: 0, arms: [] }]);
+  });
+
+  it("resolves the arms of an alt frame, and drops arms that do not split its steps", () => {
+    const alt = (arms: { label: string; fromStep: string; toStep: string }[]) => ({
+      ...view,
+      frames: [{ ...frame("a", "v:2", "v:4"), kind: "alt" as const, arms }],
+    });
+    expect(
+      resolveFrames(
+        alt([
+          { label: "ok", fromStep: "v:2", toStep: "v:2" },
+          { label: "else", fromStep: "v:3", toStep: "v:4" },
+        ]),
+      )[0]!.arms,
+    ).toEqual([
+      { label: "ok", from: 1, to: 1 },
+      { label: "else", from: 2, to: 3 },
+    ]);
+    // a gap at v:3: the frame stays, drawn without lines
+    const gap = resolveFrames(
+      alt([
+        { label: "ok", fromStep: "v:2", toStep: "v:2" },
+        { label: "else", fromStep: "v:4", toStep: "v:4" },
+      ]),
+    );
+    expect(gap.map((r) => [r.frame.id, r.arms])).toEqual([["frame:a", []]]);
   });
 
   it("computes nesting depth from containment", () => {

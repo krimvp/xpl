@@ -13,16 +13,14 @@ const DISCLAIMER = "a quick check, not a security audit";
 export const healthCommand: CommandSpec = {
   name: "health",
   usage: "xpl health",
-  summary: "Quick check for committed secrets, very large files and possibly unused files",
+  summary:
+    "Check quickly for committed secrets, files over 1,000 lines and files that may be unused",
   details: [
-    "Lists classic problems of code nobody reads line by line, each with its file and line, a severity, why it",
-    "matters and a short fix: keys and passwords written into the code (masked: at most the first 4 characters),",
-    "secrets in variables shipped to the browser (NEXT_PUBLIC_, VITE_, REACT_APP_, PUBLIC_), committed .env files,",
-    `code files over ${HEALTH_LARGE_FILE_LINES} lines, and code files nothing else references (a guess from the index).`,
-    "Reads the indexed files, so the index's ignore rules apply; run xpl index first. In tests, fixtures, docs",
-    "and examples, key shapes are reported one severity lower and the guesses about secrets are skipped.",
-    "It is a quick check, not a security audit: a clean report does not mean the code is safe.",
-    "Exit codes: 0 with or without findings (a report, not a gate), 1 no index, 2 usage error.",
+    "Lists common problems, each with its file and line, a severity, why it matters and a fix.",
+    "It finds keys and passwords in the code (masked), secrets sent to the browser and committed .env files.",
+    `It also finds code files over ${HEALTH_LARGE_FILE_LINES.toLocaleString("en")} lines and code files nothing else uses (a guess from the index).`,
+    "Run `xpl index` first. Tests, fixtures, docs and examples get a lower severity for key shapes.",
+    "It is a quick check, not a security audit. Exit codes: 0 a report, 1 no index, 2 usage error.",
   ],
   options: {},
   positionals: [],

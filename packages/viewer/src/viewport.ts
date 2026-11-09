@@ -34,6 +34,8 @@ export const READABLE_FLOOR = 0.6;
 export const READABLE_ZOOM = 0.75;
 /** A frame may be drawn at down to this share of the readable zoom, to get the whole focus in. */
 export const FRAME_SHRINK = 0.7;
+/** A focus this share of the diagram's width and height, or more, is all of it (`frameView`). */
+const WHOLE_SHARE = 0.9;
 
 export const clamp = (value: number, lo: number, hi: number): number =>
   Math.min(hi, Math.max(lo, value));
@@ -85,6 +87,11 @@ export interface Focus {
    * as it can (half a box at the edge of the pane reads as a mistake).
    */
   others?: readonly Box[];
+  /**
+   * Of two places that cut as few of `others`, take the one that holds more of them whole (a sequence: the
+   * arrows in sight, not an empty lifeline beside them). Without it, the one nearer the start.
+   */
+  fill?: boolean;
 }
 
 export interface FrameOptions extends FitOptions {
@@ -152,7 +159,8 @@ export function boxInView(t: Transform, size: Size, box: Box): boolean {
 /**
  * The first view of a diagram: one rule for the live canvases, Present and the Guide's still pictures.
  *
- * 1. All of it, when it fits at `whole` or more (its text stays readable).
+ * 1. All of it, when it fits at `whole` or more (its text stays readable), or when the focus spans all of it
+ *    and it fits at `READABLE_FLOOR` or more.
  * 2. Else the focus with as many of its neighbours as fit with it (nearest first), when the focus fits at
  *    `shrink` × the readable zoom or more (or `focusMin`: then the neighbours only come in at the zoom the
  *    focus needs); else as many of the focus boxes as fit, from the first. A frame is drawn at the readable
@@ -175,6 +183,16 @@ export function frameView(
   const { padding } = options;
   const raw = rawFitScale(size, content, padding);
   if (raw >= (options.whole ?? READABLE_FLOOR))
+    return { transform: fit, partial: false, hidden: 0, context: 0 };
+  // A focus that spans all of the diagram (a step about every box of a map): a frame of part of it shows a
+  // corner with boxes cut at the edges, and names no part. All of it, while that reads at READABLE_FLOOR.
+  const spread = unionBox(focus?.boxes ?? []);
+  if (
+    spread &&
+    spread.width >= WHOLE_SHARE * content.width &&
+    spread.height >= WHOLE_SHARE * content.height &&
+    raw >= Math.min(options.whole ?? READABLE_FLOOR, READABLE_FLOOR)
+  )
     return { transform: fit, partial: false, hidden: 0, context: 0 };
 
   const readable = options.readable ?? READABLE_ZOOM;
@@ -232,6 +250,7 @@ export function frameView(
       start: (box: Box) => number,
       length: (box: Box) => number,
       across: (box: Box) => boolean,
+      sideCut?: (box: Box) => boolean,
     ): number => {
       const visible = (pane - 2 * padding) / t.k;
       if (total <= visible) return at;
@@ -242,14 +261,21 @@ export function frameView(
       // (`s` is where the padded window starts; the pane shows `edge` more on each side of it)
       const edge = padding / t.k;
       const boxes = others.filter(across);
+      // (a box the other axis already cuts at the side is cut wherever this window shows any of it: an
+      // arrow that runs off the side, its words cut, reads as a mistake as much as one cut at the top)
       const cuts = (s: number) =>
         boxes.filter((box) => {
           const a = start(box);
           const b = a + length(box);
           const left = s - edge;
           const right = s + visible + edge;
+          if (sideCut?.(box)) return a < right && left < b;
           return (a < left && left < b) || (a < right && right < b);
         }).length;
+      // (of two windows that cut as many and hold as many whole, one that cuts none at its start: a box cut
+      // at the left or top edge hides its name, one that runs off the far edge shows it)
+      const startCuts = (s: number) =>
+        boxes.filter((box) => start(box) < s - edge && s - edge < start(box) + length(box)).length;
       const candidates = [from, lo, hi];
       for (const box of boxes) {
         const a = start(box);
@@ -258,14 +284,34 @@ export function frameView(
         candidates.push(a - margin + edge, b + margin + edge);
         candidates.push(a - margin - visible - edge, b + margin - visible - edge);
       }
+      // (with `fill`, of two windows that cut as many, the one that holds more of them whole)
+      const held = (s: number) =>
+        focus?.fill
+          ? boxes.filter(
+              (box) => start(box) >= s - edge && start(box) + length(box) <= s + visible + edge,
+            ).length
+          : 0;
       let best = from;
       let fewest = cuts(from);
+      let atStart = startCuts(from);
+      let most = held(from);
       for (const raw of candidates) {
         const s = clamp(raw, lo, hi);
         const n = cuts(s);
-        if (n < fewest || (n === fewest && Math.abs(s - from) < Math.abs(best - from))) {
+        const first = startCuts(s);
+        const h = held(s);
+        if (
+          n < fewest ||
+          (n === fewest &&
+            (h > most ||
+              (h === most &&
+                (first < atStart ||
+                  (first === atStart && Math.abs(s - from) < Math.abs(best - from))))))
+        ) {
           best = s;
           fewest = n;
+          atStart = first;
+          most = h;
         }
       }
       return padding - best * t.k;
@@ -282,6 +328,8 @@ export function frameView(
       inRows(t.y),
     );
     const inColumns = (box: Box) => box.x + box.width > -x / t.k && box.x < (size.w - x) / t.k;
+    const cutAtSide = (box: Box) =>
+      inColumns(box) && (box.x * t.k + x < -1 || (box.x + box.width) * t.k + x > size.w + 1);
     const y = axis(
       t.y,
       size.h,
@@ -289,6 +337,7 @@ export function frameView(
       (b) => b.y,
       (b) => b.height,
       inColumns,
+      cutAtSide,
     );
     return { k: t.k, x, y };
   };

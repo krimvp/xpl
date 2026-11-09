@@ -167,9 +167,10 @@ const GRAPH_SPEC: Spec = {
     excludeFiles: "string[]",
     stubs: "object",
     boxText: "string",
+    render: "string",
     layout: "object",
   },
-  nullable: ["edgeKinds", "hidden", "excludeFiles", "stubs", "boxText", "layout"],
+  nullable: ["edgeKinds", "hidden", "excludeFiles", "stubs", "boxText", "render", "layout"],
 };
 const SEQUENCE_SPEC: Spec = {
   fields: {
@@ -220,7 +221,12 @@ const FRAME_SPEC: Spec = {
     label: "string",
     fromStep: "string",
     toStep: "string",
+    arms: "array",
   },
+  nullable: [],
+};
+const ARM_SPEC: Spec = {
+  fields: { label: "string", fromStep: "string", toStep: "string" },
   nullable: [],
 };
 const TOUR_STEP_SPEC: Spec = {
@@ -513,7 +519,12 @@ class Applier {
           "the change record is not part of a patch: `xpl change <name> <base>..<head>` writes it from git",
         );
       } else if (!PATCH_KEYS.includes(key)) {
-        this.error(key, `unknown patch field "${key}" (allowed: ${PATCH_KEYS.join(", ")})`);
+        // a plural or singular slip (`node`, `tour`) names the field it meant
+        const near = PATCH_KEYS.find((known) => known === `${key}s` || `${known}s` === key);
+        this.error(
+          key,
+          `unknown patch field "${key}"${near ? `. Did you mean: ${near}?` : ""} (allowed: ${PATCH_KEYS.join(", ")})`,
+        );
       }
     }
     let corrupt = false;
@@ -938,11 +949,27 @@ class Applier {
       }
       if (!this.checkFields(raw, FRAME_SPEC, at, viewId, false)) ok = false;
       for (const key of Object.keys(FRAME_SPEC.fields)) {
-        if (raw[key] === undefined) {
+        if (key !== "arms" && raw[key] === undefined) {
           this.error(`${at}.${key}`, `frame needs "${key}"`, viewId);
           ok = false;
         }
       }
+      // (where they sit, and on which kind of frame, is validation's: `frameArms`)
+      (Array.isArray(raw.arms) ? raw.arms : []).forEach((arm: unknown, k) => {
+        const armAt = `${at}.arms[${k}]`;
+        if (!isRecord(arm)) {
+          this.error(armAt, "arm must be an object {label, fromStep, toStep}", viewId);
+          ok = false;
+          return;
+        }
+        if (!this.checkFields(arm, ARM_SPEC, armAt, viewId, false)) ok = false;
+        for (const key of Object.keys(ARM_SPEC.fields)) {
+          if (arm[key] === undefined) {
+            this.error(`${armAt}.${key}`, `arm needs "${key}"`, viewId);
+            ok = false;
+          }
+        }
+      });
     });
     return ok ? cloneJson(value) : undefined;
   }
@@ -1665,6 +1692,7 @@ class Applier {
         ...(f.excludeFiles !== undefined ? { excludeFiles: f.excludeFiles } : {}),
         ...(f.stubs !== undefined ? { stubs: f.stubs } : {}),
         ...(f.boxText !== undefined ? { boxText: f.boxText } : {}),
+        ...(f.render !== undefined ? { render: f.render } : {}),
         ...(f.layout !== undefined ? { layout: f.layout } : {}),
         provenance,
       };

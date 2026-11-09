@@ -315,15 +315,16 @@ export async function stalenessOf(
   const head =
     `index ${index.commit} (${displayPath(env.root, indexFile)}) does not match the working tree ` +
     `(${current}): ${parts.join(", ")}`;
-  let message = `${head}. Line numbers and offsets may be off; run \`xpl index\``;
   const newer = listIndexFiles(env.root).find((c) => c.commit === current && c.abs !== indexFile);
-  if (newer) {
-    message += ` (an index for the current tree exists: ${displayPath(env.root, newer.abs)}${
-      explainer ? `; run \`xpl resolve ${explainer.name} --write\` to move the explainer to it` : ""
-    })`;
-  } else if (explainer) {
-    message += `, then \`xpl resolve ${explainer.name} --write\``;
-  }
+  // with an index of the current tree at hand, `xpl index` is not the step to take
+  let message = newer
+    ? `${head}. Line numbers and offsets may be off. An index of the current tree exists (${displayPath(env.root, newer.abs)})${
+        explainer
+          ? `: run \`xpl resolve ${explainer.name} --write\` to move the guide to it`
+          : `: pass it with --index`
+      }`
+    : `${head}. Line numbers and offsets may be off; run \`xpl index\``;
+  if (!newer && explainer) message += `, then \`xpl resolve ${explainer.name} --write\``;
   return { head, message: `${message}.` };
 }
 
@@ -408,9 +409,9 @@ export function resolveExplainerPath(env: RepoEnv, arg: string): string {
   }
   const existing = listExplainerNames(env.root);
   throw new CliError(
-    `no explainer "${arg}" (looked for ${candidates.map((c) => displayPath(env.root, c)).join(", ")}). ` +
+    `no guide "${arg}" (looked for ${candidates.map((c) => displayPath(env.root, c)).join(", ")}). ` +
       (existing.length > 0
-        ? `Existing explainers: ${existing.join(", ")}.`
+        ? `Guides here: ${existing.join(", ")}.`
         : `There are none yet; create one with \`xpl new ${arg}\`.`),
   );
 }
@@ -418,7 +419,7 @@ export function resolveExplainerPath(env: RepoEnv, arg: string): string {
 export function readExplainerFile(abs: string): Explainer {
   const data = parseJson(readTextFile(abs, "explainer"), abs);
   if (typeof data !== "object" || data === null || Array.isArray(data)) {
-    throw new CliError(`${abs} does not contain a JSON object (expected an explainer)`);
+    throw new CliError(`${abs} does not contain a JSON object (expected a guide)`);
   }
   return data as Explainer;
 }
@@ -439,16 +440,19 @@ export function loadReadExplainer(
   arg: string | undefined,
   command: string,
 ): LoadedExplainer {
-  if (arg !== undefined) return loadExplainer(ctx, arg);
+  return loadExplainer(ctx, arg ?? onlyExplainerName(ctx, command));
+}
+
+/** The name of the repository's only explainer, reported on stderr; a usage error when there are none or several. */
+export function onlyExplainerName(ctx: Ctx, command: string): string {
   const names = listExplainerNames(ctx.root);
-  if (names.length === 0)
-    throw new UsageError("no explainers found; create one with `xpl new <name>`");
+  if (names.length === 0) throw new UsageError("no guides found; create one with `xpl new <name>`");
   if (names.length > 1)
     throw new UsageError(
-      `supply an explainer for xpl ${command}; available explainers: ${names.join(", ")}`,
+      `supply a guide name for xpl ${command}; guides here: ${names.join(", ")}`,
     );
   ctx.io.err(`using ${names[0]}`);
-  return loadExplainer(ctx, names[0]!);
+  return names[0]!;
 }
 
 /** Load the discovered files for catalog and evidence readers; neither metadata nor an index gates loading. */

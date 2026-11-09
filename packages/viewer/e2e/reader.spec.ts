@@ -93,7 +93,7 @@ test.describe("bugs of the review", () => {
     await openVariant(page, withTwoFlows, "?perspective=flow&view=view:dispatch");
     await expect(page.getByTestId("process-flow")).toBeVisible();
     await expect(page.locator(".flow-stage")).toHaveCount(3);
-    const select = page.getByRole("combobox", { name: "Choose a topic" });
+    const select = page.getByRole("combobox", { name: "Choose a diagram" });
     for (const [view, first] of [
       ["view:retry", "retry:dispatch:1"],
       ["view:dispatch", "dispatch:1"],
@@ -123,6 +123,103 @@ test.describe("bugs of the review", () => {
     expect(body.height).toBeGreaterThan(250);
     expect(canvas.height).toBeGreaterThan(body.height - 80);
     await expect.poll(() => selectedInPane(page)).toBe(true);
+    expect(problems).toEqual([]);
+  });
+
+  test("a flow whose steps are all in one function names it once in the caption, on the card and the slide", async ({
+    page,
+  }) => {
+    const problems = watchProblems(page);
+    await openVariant(page, (bundle) => {
+      withTwoFlows(bundle);
+      bundle.explainer.tours[0].steps[1].view = "view:dispatch";
+    });
+    const card = page.locator('.guide-snapshot[data-view-id="view:dispatch"]');
+    await card.scrollIntoViewIfNeeded();
+    await expect(card.locator("figcaption .caption-owner")).toHaveText("all in Runner.dispatch");
+    expect(await page.evaluate(() => window.__xpl!.present("tour:intro", 2))).toBe(true);
+    await expect(page.locator(".present .diagram-caption .caption-owner")).toHaveText(
+      "all in Runner.dispatch",
+    );
+    expect(problems).toEqual([]);
+  });
+
+  test("Present at 1440: a flow too big to read whole gets the wider column and frames its focus with the steps beside it", async ({
+    page,
+  }) => {
+    const problems = watchProblems(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openVariant(
+      page,
+      (bundle) => {
+        const view = bundle.explainer.views.find((v: Loose) => v.id === "view:dispatch");
+        const template = view.steps[0];
+        view.type = "flow";
+        view.frames = [];
+        view.steps = Array.from({ length: 14 }, (_, i) => ({
+          ...structuredClone(template),
+          id: `dispatch:${i + 1}`,
+          label: `Step ${i + 1} of a long run of checks`,
+          shape: i % 2 ? "decision" : "stage",
+          next:
+            i === 13
+              ? []
+              : i % 2
+                ? [
+                    { step: `dispatch:${i + 2}`, label: "yes" },
+                    { step: "dispatch:14", label: "no" },
+                  ]
+                : [{ step: `dispatch:${i + 2}` }],
+        }));
+        bundle.explainer.tours[0].steps[1].view = "view:dispatch";
+        bundle.explainer.tours[0].steps[1].focus = ["dispatch:7"];
+      },
+      "?mode=present&tour=tour:intro&step=2",
+      { width: 1440, height: 900 },
+    );
+    await expect(byId(page, "dispatch:7")).toHaveClass(/is-selected/);
+    // (a flow step asked for no room: the column stayed at 40-52% and showed one diamond)
+    await expect(page.getByTestId("present")).toHaveAttribute("data-room", "wide");
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const pane = document.querySelector(".diagram .panzoom")!.getBoundingClientRect();
+          return ["dispatch:6", "dispatch:7", "dispatch:8"].map((id) => {
+            const box = document
+              .querySelector(`.diagram .flow-stage[data-stage-id="${id}"]`)!
+              .getBoundingClientRect();
+            return (
+              box.left >= pane.left - 1 &&
+              box.right <= pane.right + 1 &&
+              box.top >= pane.top - 1 &&
+              box.bottom <= pane.bottom + 1
+            );
+          });
+        }),
+      )
+      .toEqual([true, true, true]);
+    expect(problems).toEqual([]);
+  });
+
+  test("Present on a phone: a tour with a flow step stacks the code under the diagram, full width", async ({
+    page,
+  }) => {
+    const problems = watchProblems(page);
+    await openVariant(
+      page,
+      (bundle) => {
+        withTwoFlows(bundle);
+        bundle.explainer.tours[0].steps[1].view = "view:dispatch";
+      },
+      "?mode=present&tour=tour:intro&step=2",
+      { width: 390, height: 844 },
+    );
+    await expect(page.locator(".diagram .flow-diagram")).toBeVisible();
+    // (the wide split of a flow tour won on a phone: the code was a 24px strip beside the diagram)
+    const code = page.locator(".present-right .editor-stack");
+    await expect
+      .poll(() => code.evaluate((el) => [el.clientWidth, el.clientHeight]))
+      .toEqual([372, 758]);
     expect(problems).toEqual([]);
   });
 
@@ -177,8 +274,8 @@ test.describe("bugs of the review", () => {
     await expect(panes).toHaveCount(2);
     await expect(panes.nth(0).locator('.cm-line[data-line="76"]')).toBeInViewport();
     await expect(panes.nth(1).locator('.cm-line[data-line="46"]')).toBeInViewport();
-    await expect(panes.nth(0).getByTestId("pane-ranges")).toHaveText("range 1 / 2");
-    await expect(panes.nth(1).getByTestId("pane-ranges")).toHaveText("range 2 / 2");
+    await expect(panes.nth(0).getByTestId("pane-ranges")).toHaveText("1 / 2 in this file");
+    await expect(panes.nth(1).getByTestId("pane-ranges")).toHaveText("2 / 2 in this file");
     expect(problems).toEqual([]);
   });
 
@@ -209,15 +306,15 @@ test.describe("bugs of the review", () => {
     const pane = page.locator('.pane[data-file="src/runner.ts"]');
     await expect(pane).toHaveCount(1);
     const stepper = pane.getByTestId("pane-ranges");
-    await expect(stepper).toContainText("range 2 / 2");
+    await expect(stepper).toContainText("2 / 2 in this file");
     await expect(pane.locator('.cm-line[data-line="76"]')).toBeInViewport();
     await stepper.getByRole("button", { name: "Previous range" }).click();
-    await expect(stepper).toContainText("range 1 / 2");
+    await expect(stepper).toContainText("1 / 2 in this file");
     await expect(pane.locator('.cm-line[data-line="46"]')).toBeInViewport();
     // n / p in the code do the same
     await pane.locator('.cm-line[data-line="46"]').click();
     await page.keyboard.press("n");
-    await expect(stepper).toContainText("range 2 / 2");
+    await expect(stepper).toContainText("2 / 2 in this file");
     await expect(pane.locator('.cm-line[data-line="76"]')).toBeInViewport();
     expect(problems).toEqual([]);
   });
@@ -234,7 +331,7 @@ test.describe("bugs of the review", () => {
     });
     const guide = page.getByTestId("guide");
     await expect(guide).toBeVisible();
-    const contents = page.getByRole("navigation", { name: "Guide contents" }).getByRole("button");
+    const contents = page.getByRole("navigation", { name: "Tour steps" }).getByRole("button");
     await expect(contents).toHaveText([
       "1Fix 1: the scheduler picks the job",
       "2Where failures go: requeue with backoff",
@@ -344,24 +441,22 @@ test.describe("round 2 of the review", () => {
     });
   }
 
-  test("Read > Flow: a tall flow starts readable, and Fit all really shows all of it", async ({
+  test("Read > Flow: a tall flow is set in parts and opens whole and readable, with no cue to fit", async ({
     page,
   }) => {
     const problems = watchProblems(page);
     await openVariant(page, withTallFlow, "?perspective=flow&view=view:dispatch");
     await expect(page.locator(".flow-stage")).toHaveCount(10);
-    expect(await smallestDiagramText(page)).toBeGreaterThanOrEqual(10.9);
-    const badge = page.getByTestId("pz-badge");
-    await expect(badge).toHaveText("Fit all");
-    await badge.click();
-    // every stage in the pane (the text gets as small as that takes)
+    // (one column top to bottom: the first stages only, and "Fit all" marked as a cue)
+    await expect(page.getByTestId("process-flow")).not.toHaveAttribute("data-parts", "1");
     await expect.poll(() => stagesInPane(page)).toBe(10);
-    await expect(badge).toHaveText("Readable size");
-    // and back to a readable first view
-    await badge.click();
     expect(await smallestDiagramText(page)).toBeGreaterThanOrEqual(10.9);
-    // the Fit button of the toolbar shows all of it too
-    await page.getByRole("button", { name: "Fit to view" }).click();
+    const fit = page.getByTestId("pz-fit");
+    await expect(fit).toHaveText(/^Fit all/);
+    await expect(fit).not.toHaveClass(/is-cue/);
+    // the 0 key shows all of it too
+    await page.locator(".panzoom").focus();
+    await page.keyboard.press("0");
     await expect.poll(() => stagesInPane(page)).toBe(10);
     expect(problems).toEqual([]);
   });
@@ -463,7 +558,13 @@ test.describe("the reader's screen", () => {
         .filter((c) => getComputedStyle(c).display !== "none")
         .map((c) => c.getAttribute("data-testid") ?? c.tagName.toLowerCase()),
     );
-    expect(order.slice(0, 4)).toEqual(["h2", "tour-summary", "explanation-info", "section"]);
+    expect(order.slice(0, 5)).toEqual([
+      "h2",
+      "tour-summary",
+      "tabs-line",
+      "explanation-info",
+      "section",
+    ]);
 
     // without a summary there is no placeholder
     await page.unroute("http://xpl.test/**");
@@ -488,9 +589,11 @@ test.describe("the reader's screen", () => {
     await expect(first).not.toContainText("Decides which job runs next");
     await expect(first.getByTestId("focus-summary")).toHaveCount(0);
     await expect(first.locator(".guide-mini-node")).toHaveText(["runner.ts", "queue.ts"]);
-    // the right-hand column does not say the open section again; "Related files" only when there are some
+    // the right-hand column does not say the open section again; no cards for a step that has none (the
+    // tour has some elsewhere, so the column stays and lists the step's own code)
     await expect(page.getByTestId("topic-summary")).toHaveCount(0);
     await expect(page.getByRole("region", { name: "Related files" })).toHaveCount(0);
+    await expect(page.getByRole("region", { name: "This step's code" })).toBeVisible();
     await expect(page.locator(".workspace-context")).not.toContainText("Select a stage");
     // a box picked from the section is another topic: that one gets its summary (markdown rendered)
     await first.locator(".guide-mini-node", { hasText: "queue.ts" }).click();
@@ -526,10 +629,8 @@ test.describe("the reader's screen", () => {
         size,
       );
       const header = page.locator(".header");
-      const tabs = page
-        .getByRole("navigation", { name: "Read the explanation" })
-        .getByRole("button");
-      await expect(tabs).toHaveText(["Guide", "Map", "Flow", "Code"]);
+      const tabs = page.getByRole("navigation", { name: "Read the guide" }).getByRole("button");
+      await expect(tabs).toHaveText(["Tour", "Map", "Flow", "Code"]);
       const controls = [
         ...(await tabs.all()),
         page.getByTestId("mode-present"),
@@ -546,7 +647,7 @@ test.describe("the reader's screen", () => {
         expect(await control.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
       }
       // the author tools are not on the reader's screen
-      for (const hidden of ["Download explainer JSON", "Tours", "Explore", "Read"]) {
+      for (const hidden of ["Download the guide as JSON", "Tours", "Explore", "Read"]) {
         await expect(header.getByRole("button", { name: hidden, exact: true })).toHaveCount(0);
       }
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
@@ -564,10 +665,10 @@ test.describe("the reader's screen", () => {
     const menu = page.getByTestId("edit-menu");
     await expect(menu.getByRole("menuitem")).toHaveText([
       /Explore the diagrams/,
-      /Edit the guide's steps/,
-      /Record author review/,
+      /Edit the tour/,
+      /Mark as reviewed/,
       /Save as HTML/,
-      /Download explainer JSON/,
+      /Download the guide as JSON/,
     ]);
     await expect(menu.getByRole("menuitem").first()).toBeFocused();
     await page.keyboard.press("Escape");
@@ -676,9 +777,9 @@ test.describe("the reader's screen", () => {
   test("Explain this, in a static bundle, says plainly what to do", async ({ page }) => {
     await openVariant(page, () => undefined, "?mode=explore&view=view:dispatch");
     await byId(page, "concept:retry-policy").click();
-    await page.getByRole("button", { name: "Explain this" }).click();
+    await page.getByRole("button", { name: "Ask the author to explain this" }).click();
     await expect(page.locator(".explain-note")).toContainText(
-      "Saved in this browser for the next explicit pass.",
+      "Saved in this browser as a request to the author. Nothing is sent.",
     );
     await expect(page.getByTestId("explain-command")).toHaveText("/code-explainer feedback");
   });
@@ -699,3 +800,60 @@ async function stagesInPane(page: Page): Promise<number> {
     }).length;
   });
 }
+
+test("a Tour step's calls between the same two parts share one card", async ({ page }) => {
+  await openVariant(page, (bundle) => {
+    bundle.explainer.tours[0].steps[1].focus = ["dispatch:1", "dispatch:3"];
+  });
+  const section = page.locator('.guide-section[data-section-id="t2"]');
+  await expect(section.locator(".guide-mini")).toHaveCount(1);
+  await expect(section.locator(".guide-mini figcaption")).toHaveText("These calls");
+  await expect(section.locator(".guide-mini-link")).toContainText("pop() · requeue(job, backoff)");
+});
+
+test("the reader's code panes do not offer Ask about selected lines: Explore's do", async ({
+  page,
+}) => {
+  await openVariant(page, () => undefined, "?perspective=code");
+  await page.locator('.tree-row[data-path="src/runner.ts"]').click();
+  const pane = page.locator('.pane[data-file="src/runner.ts"]');
+  await expect(pane.locator(".cm-editor")).toBeVisible();
+  await pane.locator('.cm-line[data-line="10"]').click();
+  await page.keyboard.press("Shift+ArrowDown");
+  await expect(pane.locator(".pane-header")).toBeVisible();
+  await expect(pane.getByRole("button", { name: "Ask about selected lines" })).toHaveCount(0);
+  await openVariant(page, () => undefined, "?mode=explore");
+  await page.locator('.tree-row[data-path="src/runner.ts"]').click();
+  await page.locator('.pane[data-file="src/runner.ts"] .cm-line[data-line="10"]').click();
+  await page.keyboard.press("Shift+ArrowDown");
+  await expect(
+    page.locator('.pane[data-file="src/runner.ts"]').getByRole("button", {
+      name: "Ask about selected lines",
+    }),
+  ).toBeAttached();
+});
+
+// a step's "In the code" card listed two chips with the same name that lead to the same code
+test("a Tour step's In the code card shows one chip for two elements with the same name and code", async ({
+  page,
+}) => {
+  await openVariant(page, (bundle) => {
+    const view = bundle.explainer.views.find((v: Loose) => v.id === "view:dispatch");
+    const copy = structuredClone(view);
+    copy.id = "view:dispatch-copy";
+    copy.title = "The same calls, again";
+    copy.steps = copy.steps.map((s: Loose) => ({
+      ...s,
+      id: s.id.replace("dispatch:", "dispatch-copy:"),
+    }));
+    copy.frames = [];
+    bundle.explainer.views.push(copy);
+    const concept = bundle.explainer.concepts[0];
+    concept.related = ["dispatch:1", "dispatch-copy:1"];
+    bundle.explainer.tours[0].steps[1].focus = [concept.id];
+  });
+  const card = page.locator('.guide-section[data-section-id="t2"] .guide-mini', {
+    hasText: "In the code",
+  });
+  await expect(card.locator(".guide-mini-node")).toHaveText(["pop()"]);
+});

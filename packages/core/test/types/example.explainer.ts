@@ -138,7 +138,8 @@ export const example = {
         },
       ],
       frames: [
-        { id: "frame:retry", kind: "loop", label: "until success or maxRetries", fromStep: "dispatch:2", toStep: "dispatch:3" },
+        { id: "frame:dispatch-loop", kind: "loop", label: "while the runner is running", fromStep: "dispatch:1", toStep: "dispatch:3" },
+        { id: "frame:retry", kind: "opt", label: "the attempt failed and retries are left", fromStep: "dispatch:3", toStep: "dispatch:3" },
       ],
       provenance: { origin: "llm", commit: "a1b2c3d" },
     },

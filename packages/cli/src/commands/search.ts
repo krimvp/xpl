@@ -67,21 +67,14 @@ function parseScope(ws: Workspace, values: readonly string[]): Scope | undefined
 
 export const searchCommand: CommandSpec = {
   name: "search",
-  usage: "xpl search <pattern> [--regex] [-i] [--limit n] [--under <dir|glob>] [--code]",
-  summary: "Text hits with enclosing symbol id and offset",
+  usage: "xpl search <pattern> [--regex] [-i] [--limit <n>] [--under <dir|glob>] [--code]",
+  summary: "Search the text; print each hit with its symbol id and offset",
   details: [
-    "Searches the working-tree text of every indexed file, line by line (case-sensitive substring;",
-    "--regex takes a JavaScript regular expression, -i (--ignore-case) ignores case). Each hit is",
-    "  <file>:<line>  <enclosing symbol id> +<offset>  <line text>",
-    "where +<offset> is the line's 0-based offset inside that symbol: the number a span or a",
-    "call-site anchor uses. Hits outside every symbol name the file (offset = line - 1).",
-    "Code files are searched first, then config (yaml, json, toml), then docs and other text, so the first",
-    "hits (--limit) are the code. --code drops everything that is not code (docs, config, text).",
-    "--under <dir|file|glob> keeps the search inside a directory, file or symbol id (dir:src/flask, src/flask/,",
-    "file:src/app.py, sym:src/app.py#Flask) or a glob on repo paths (tests/**, src/*.py); repeat it or use",
-    "commas for several. The total is counted inside the scope.",
-    "Unavailable file text produces a warning. --json also records the index snapshot, searchable paths,",
-    "retained/original symbol counts and original analysis coverage in scope; absent coverage is unknown.",
+    "Searches the text of every indexed file, line by line. The pattern is a substring, or a regex with --regex.",
+    "Each hit is <file>:<line>  <symbol id> +<offset>  <line text>.",
+    "+<offset> is the line's offset in that symbol, from 0: the number a span uses.",
+    "Code comes first, then config (yaml, json, toml), then docs and other text. --code keeps only code.",
+    "--under keeps the search in a folder, a file, a symbol or a glob (dir:src/flask, tests/**).",
   ],
   options: {
     regex: { type: "boolean", desc: "Treat the pattern as a JavaScript regular expression" },
@@ -95,7 +88,7 @@ export const searchCommand: CommandSpec = {
       type: "string",
       multiple: true,
       arg: "<dir|glob>",
-      desc: "Only search here: a dir, file or symbol id (dir:src/flask, src/flask/) or a glob (tests/**)",
+      desc: "Only search here: a folder, file or symbol id, or a glob (tests/**)",
     },
     code: {
       type: "boolean",

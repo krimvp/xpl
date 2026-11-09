@@ -142,7 +142,7 @@ function JobReview({ job, onClose }: { job: Job; onClose: () => void }) {
                       <option value="unresolved">Leave unresolved</option>
                       <option value="addressed">Accept change</option>
                       <option value="rejected">Reject change</option>
-                      <option value="outdated">Context outdated</option>
+                      <option value="outdated">The code changed</option>
                     </select>
                   </label>
                   <label>
@@ -170,8 +170,8 @@ function JobReview({ job, onClose }: { job: Job; onClose: () => void }) {
                         }
                       >
                         <option value="">No repair permission</option>
-                        <option value="reanchor">Allow replacing missing evidence</option>
-                        <option value="remove">Allow removing missing evidence</option>
+                        <option value="reanchor">Let your agent relink lost code</option>
+                        <option value="remove">Let your agent remove lost code links</option>
                       </select>
                     </label>
                   ))}
@@ -194,7 +194,7 @@ function JobReview({ job, onClose }: { job: Job; onClose: () => void }) {
               <ProposalChanges changes={review.changes} />
               <p>
                 {review.readiness?.ready
-                  ? "Ready for explicit acceptance."
+                  ? "Ready for you to accept."
                   : "Readiness blocks acceptance. Inspect the reported issues."}
               </p>
               {review.readiness && !review.readiness.ready && (
@@ -235,6 +235,9 @@ function JobReview({ job, onClose }: { job: Job; onClose: () => void }) {
     </dialog>
   );
 }
+/** A job's state in words (D10: American spelling; the state id stays "cancelled"). */
+const JOB_STATE_WORDS: Record<string, string> = { cancelled: "Canceled" };
+
 export function JobsPanel() {
   const store = useStore();
   const { jobs, jobError, feedback, connection } = useViewerState();
@@ -274,7 +277,7 @@ export function JobsPanel() {
       </summary>
       <section className="service-disclosure jobs-panel" data-testid="jobs-panel" aria-label="Jobs">
         <h3>Jobs</h3>
-        <p>Generated changes await your review and explicit acceptance.</p>
+        <p>Your agent's changes wait for you to review and accept them.</p>
         {(!jobs?.available || !available) && (
           <p>
             {!available
@@ -318,7 +321,8 @@ export function JobsPanel() {
               <strong>
                 {job.result?.accepted
                   ? "Accepted"
-                  : job.state[0]!.toUpperCase() + job.state.slice(1)}
+                  : (JOB_STATE_WORDS[job.state] ??
+                    job.state[0]!.toUpperCase() + job.state.slice(1))}
               </strong>{" "}
               · attempt {job.attempt}
               <div>

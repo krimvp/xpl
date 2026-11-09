@@ -380,7 +380,7 @@ describe("xpl search", () => {
   it("lists -i and the new options in its usage and help", async () => {
     const { out } = await xpl(dir, "search", "--help");
     expect(out).toContain(
-      "Usage: xpl search <pattern> [--regex] [-i] [--limit n] [--under <dir|glob>] [--code]",
+      "Usage: xpl search <pattern> [--regex] [-i] [--limit <n>] [--under <dir|glob>] [--code]",
     );
     expect(out).toContain("-i, --ignore-case");
     expect(out).toContain("--under <dir|glob>");

@@ -10,9 +10,11 @@ import {
   type IndexModel,
   type IndexedFile,
   type IndexedSymbol,
+  type TextCache,
   type SymbolId,
 } from "@xpl/core";
 import { CliError } from "./errors.js";
+import { editorLineCount } from "./format.js";
 
 export type Target =
   | { type: "repo"; id: string }
@@ -22,10 +24,45 @@ export type Target =
 
 export const REPO_TARGET: Target = { type: "repo", id: REPO_ID };
 
-export function resolveTarget(model: IndexModel, input: string): Target {
+/**
+ * `kinds`: the symbol kinds the command takes. A suggestion of another kind (an interface for a command that needs an
+ * enum) is dropped, so the next run is not refused for it; with none left, `kindHint` says how to find one.
+ */
+export function resolveTarget(
+  model: IndexModel,
+  input: string,
+  kinds?: { kinds: ReadonlySet<IndexedSymbol["kind"]>; kindHint: string },
+): Target {
   const normalized = normalizeElementId(input, model);
+  if (!normalized.ok && kinds && normalized.candidates && normalized.candidates.length > 0) {
+    const kept = normalized.candidates.filter((id) => {
+      const parsed = parseId(id);
+      const sym = parsed.type === "symbol" ? model.symbol(parsed.symbolId) : undefined;
+      return sym !== undefined && kinds.kinds.has(sym.kind);
+    });
+    const base = normalized.error.replace(/\.? Did you mean: .*\?$/, "");
+    throw new CliError(
+      kept.length > 0 ? `${base}. Did you mean: ${kept.join(", ")}?` : `${base}. ${kinds.kindHint}`,
+      1,
+      kept.length > 0 ? { candidates: kept } : {},
+    );
+  }
   if (!normalized.ok) {
-    throw new CliError(normalized.error, 1, {
+    // nothing close to suggest: say how to find an id
+    const word =
+      input
+        .replace(/^(?:sym|file|dir):/, "")
+        // a file's name without its extension (`src/nope.ts`: nope)
+        .replace(/^([^#]*\/)?([^#/]+)\.[A-Za-z]+$/, "$1$2")
+        .split(/[#/.]/)
+        .filter(Boolean)
+        .at(-1) ?? input;
+    const hint =
+      (normalized.candidates?.length ?? 0) === 0 &&
+      !/`xpl (?:outline|search)/.test(normalized.error)
+        ? ` Find ids with \`xpl search ${word}\` or \`xpl outline\`.`
+        : "";
+    throw new CliError(normalized.error + hint, 1, {
       ...(normalized.candidates ? { candidates: normalized.candidates } : {}),
     });
   }
@@ -49,7 +86,7 @@ export function resolveTarget(model: IndexModel, input: string): Target {
     default:
       throw new CliError(
         `"${input}" is not something the index knows: use repo, dir:<path>, file:<path> or sym:<file>#<symbol> ` +
-          `(ids of groups, concepts, edges and steps only exist inside an explainer)`,
+          `(the ids of groups, concepts, arrows and steps exist only in a guide)`,
       );
   }
 }
@@ -83,15 +120,18 @@ export function subtreeIds(model: IndexModel, target: Target): SymbolId[] {
   }
 }
 
-/** One line naming a target: `sym:src/a.ts#A.b (method) src/a.ts:12-30`. */
-export function describeTarget(target: Target): string {
+/**
+ * One line naming a target: `sym:src/a.ts#A.b (method) src/a.ts:12-30`. A file ends at its last line as `wc -l`
+ * counts it when its text is given.
+ */
+export function describeTarget(target: Target, texts?: TextCache): string {
   switch (target.type) {
     case "repo":
       return "repo";
     case "dir":
       return `${target.id} (dir)`;
     case "file":
-      return `${target.id} (${target.file.language}) ${target.path}:1-${target.file.lines}`;
+      return `${target.id} (${target.file.language}) ${target.path}:1-${editorLineCount(texts?.lines(target.path), target.file.lines)}`;
     case "symbol": {
       const { file, kind, range } = target.symbol;
       return `${target.id} (${kind}) ${file}:${range.startLine}-${range.endLine}`;

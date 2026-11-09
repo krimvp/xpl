@@ -1,6 +1,8 @@
 import { checkReview, reviewShapeIssues, type PublishedVersion } from "@xpl/core";
 import { snapshotTexts } from "../snapshot.js";
+import { AnalysisDetails } from "./AnalysisCoverage.js";
 import { useStore, useViewerState } from "../hooks.js";
+import { asSentence } from "../readerWords.js";
 import { searchFor, versionUrl } from "../url.js";
 
 function VersionDetails({ version }: { version: PublishedVersion }) {
@@ -25,6 +27,21 @@ function VersionDetails({ version }: { version: PublishedVersion }) {
   );
 }
 
+/**
+ * What each reading tab holds, in one line, above "About this guide": a first-time reader needs it first.
+ * It names only the tabs the page shows (`hasMapTab`, `hasFlowTab`).
+ */
+export function tabsLine(tabs: { map: boolean; flow: boolean }): string {
+  return [
+    "Tour: the steps, in order.",
+    tabs.map && "Map: the parts and what each calls.",
+    tabs.flow && "Flow: what runs, in order.",
+    "Code: the files.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
 /** Reader guidance belongs beside the story, rather than behind the author tools. */
 export function ExplanationInfo() {
   const state = useViewerState();
@@ -42,11 +59,17 @@ export function ExplanationInfo() {
   const record = state.explainer.review;
   const review = record && reviewShapeIssues(record).length === 0 ? record : undefined;
   const status = checkReview(state.explainer, state.model.index.index, snapshotTexts(state)).status;
-  const label = status === "out-of-date" ? "out of date" : status;
+  // A review status, in words a reader does not take for a failed check.
+  const label =
+    status === "reviewed"
+      ? "Reviewed by a person"
+      : status === "out-of-date"
+        ? "Changed since a person reviewed it"
+        : "Not yet reviewed by a person";
   return (
     <details className="guide-about" data-testid="explanation-info">
       <summary>
-        About this explanation <span data-testid="review-status">Author review: {label}</span>
+        About this guide <span data-testid="review-status">{label}</span>
       </summary>
       {publication && (
         <section aria-label="Staged versions">
@@ -98,28 +121,30 @@ export function ExplanationInfo() {
             </ul>
           </details>
           <p>
-            Version links require the staged directory tree. This page captures history at staging;
-            it does not contact a repository service.
+            The version links work only next to the staged folder. This page holds the history from
+            when it was staged; it does not ask a server for more.
           </p>
         </section>
       )}
       {review && (
         <>
           <p>
-            {review.reviewer} (self-reported), reviewed {review.reviewedAt}. Content:{" "}
-            {review.scope.content === "all"
-              ? "all stored explanation content"
-              : review.scope.content.join(", ")}
-            . Evidence:{" "}
+            {review.reviewer} (self-reported), reviewed{" "}
+            {Number.isNaN(Date.parse(review.reviewedAt))
+              ? review.reviewedAt
+              : new Date(review.reviewedAt).toLocaleDateString(undefined, { dateStyle: "medium" })}
+            . Text checked:{" "}
+            {review.scope.content === "all" ? "all of the guide" : review.scope.content.join(", ")}.
+            Code checked against:{" "}
             {review.scope.source === "repository"
-              ? "all indexed repository files and attached anchors"
-              : "attached anchors"}
-            {review.scope.files?.length ? ` plus ${review.scope.files.join(", ")}` : ""}.{" "}
+              ? "the whole repository and the code links"
+              : "the code links"}
+            {review.scope.files?.length ? ` and ${review.scope.files.join(", ")}` : ""}.{" "}
             {review.omissions.length
-              ? `Named omissions: ${review.omissions.join("; ")}`
-              : "No omissions named."}{" "}
+              ? `Not checked: ${asSentence(review.omissions.join("; "))}`
+              : "Nothing left out."}{" "}
             {status === "out-of-date" &&
-              "Reviewed content or evidence changed, or evidence is unavailable in this snapshot."}
+              "The reviewed text or its code changed, or the code is not in this page."}
           </p>
           <details>
             <summary>Review source snapshot</summary>
@@ -130,41 +155,40 @@ export function ExplanationInfo() {
         </>
       )}
       <p>
-        A review is an author inspection record. Names are not authenticated; a record does not
-        automatically verify prose or runtime coverage. Narrow scopes cover only named stored items
-        and their own anchors, not dependencies.
+        A review records that a person read this guide and its code. xpl does not check the name. A
+        review of some parts covers only those parts and their code links.
       </p>
       <p>
-        This explanation was written by an author. Source anchors check code locations and changes;
-        they do not verify the claims or prove that every execution path is covered. Use the linked
-        code and tests to check important conclusions.
+        xpl checks that each code link points at code that exists. It does not check that the text
+        is true, or that the guide covers every path through the code. Use the linked code and tests
+        to check what matters to you.
       </p>
       {state.exportInfo && (
         <p>
-          Saved as {state.exportInfo.status === "draft" ? "a draft preview" : "ready HTML"}; checked
+          Saved as {state.exportInfo.status === "draft" ? "a draft" : "a finished page"}, checked
           against{" "}
           {state.exportInfo.report.scope === "workspace"
-            ? "the workspace at export time"
-            : "the embedded source snapshot"}
-          . Team review policy:{" "}
+            ? "the code on disk when it was saved"
+            : "the code saved inside this page"}
+          . Team review rule:{" "}
           {state.exportInfo.report.review?.required
-            ? "requires a current all-content review"
+            ? "someone must review all of the current content"
             : "off"}
-          . An offline page cannot detect later repository changes.
+          . A saved page cannot see later changes to the code.
           {state.exportInfo.report.decisionNote && (
             <> Author decision: {state.exportInfo.report.decisionNote}</>
           )}
         </p>
       )}
       <p>
-        Guide tells the story. Map shows relationships. Flow follows steps. Code opens the source.
-        Present walks through a tour. Reference hints can include unresolved or indirect behavior.
+        Present shows the tour as slides. A dashed arrow is matched by name, so it can be wrong.
       </p>
       <p>
         {state.serverMode
-          ? "Explain this queues a request. The author runs /code-explainer feedback in Claude Code; applied changes appear here automatically."
-          : "Explain this gives you a command to run in Claude Code. A saved HTML page stays at the version it was exported from."}
+          ? "\u201cExplain this\u201d saves a request. The author runs /code-explainer feedback in their agent, and the changes show here."
+          : "\u201cAsk the author to explain this\u201d saves your question in this browser. Nothing is sent: export it from Feedback and give the file to the author. A saved HTML page stays at the version it was saved from."}
       </p>
+      <AnalysisDetails />
     </details>
   );
 }

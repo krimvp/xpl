@@ -226,7 +226,7 @@ test("managed attention distinguishes moved, drifted and missing evidence and of
   await expect(panel).toContainText("Moved: locations followed unchanged code");
   await expect(panel).toContainText("Drifted: inspect the changed code and revise its explanation");
   await expect(panel).toContainText(
-    "Missing: restore the code or explicitly replace/remove its evidence",
+    "Missing: restore the code, or replace or remove its code link",
   );
   await expect(panel).toContainText(
     "xpl resolve --root '/repos/jobrunner' '/repos/jobrunner/.explainer/retry.json.explainer.json' --write",
@@ -235,16 +235,16 @@ test("managed attention distinguishes moved, drifted and missing evidence and of
   await expect(panel).toContainText(
     "xpl revise '.explainer/jobrunner.explainer.json' --select '<request-id>'",
   );
-  await expect(panel).toContainText("Accept a proposal separately");
+  await expect(panel).toContainText("accept it as a separate step");
   expect(recorded.posts).toEqual([]);
   expect(recorded.puts).toEqual([]);
   expect(recorded.watchActions).toEqual([]);
   // The inventory ID reaches the same Details target that owns evidence repair.
-  await panel.getByRole("button", { name: "Inspect element" }).nth(1).click();
+  await panel.getByRole("button", { name: "Show it", exact: true }).nth(1).click();
   await expect(page.locator('.details[data-details-id="concept:retry-policy"]')).toBeVisible();
   await panel.locator(".attention-list > summary").click();
   await page.getByTestId("evidence-edit").click();
-  await expect(page.getByRole("form", { name: "Edit source evidence" })).toBeVisible();
+  await expect(page.getByRole("form", { name: "Edit code links" })).toBeVisible();
   await expect(page.locator(".evidence-list")).toContainText("src/runner.ts");
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   expect(recorded.posts).toEqual([]);
@@ -469,7 +469,7 @@ test("Explain this queues a request with POST /api/requests", async ({ page }) =
   await page.evaluate(() => window.__xpl!.setView("view:dispatch"));
   await byId(page, "concept:retry-policy").click();
   await page.getByRole("button", { name: "Explain this" }).click();
-  await expect(page.locator(".explain-note")).toContainText("Queued");
+  await expect(page.locator(".explain-note")).toContainText("Saved for later");
   expect(recorded.posts).toHaveLength(1);
   expect(recorded.posts[0]).toMatchObject({
     kind: "expand",
@@ -492,11 +492,12 @@ test("feedback typed under Explain this is queued as the note, and the change co
   await page.evaluate(() => window.__xpl!.setView("view:dispatch"));
   await byId(page, "concept:retry-policy").click();
   await page.getByTestId("feedback").fill("Too long: one sentence is enough.");
-  await page.getByRole("button", { name: "Send to Claude" }).click();
-  await expect(page.locator(".explain-note")).toContainText("Queued");
+  await page.getByRole("button", { name: "Send to your agent" }).click();
+  await expect(page.locator(".explain-note")).toContainText("Saved for later");
   expect(recorded.posts).toHaveLength(1);
+  // a typed note is saved as a question
   expect(recorded.posts[0]).toMatchObject({
-    kind: "expand",
+    kind: "explain",
     elementId: "concept:retry-policy",
     note: "Too long: one sentence is enough.",
     view: "view:dispatch",
@@ -641,10 +642,17 @@ test("a source edit refreshes Code and the freshness warning without changing th
     sourceWarning: "Source changed: run xpl index before relying on indexed relationships.",
   };
   recorded.explainer = bundle.explainer;
-  await expect(page.locator('[data-file="src/runner.ts"] .cm-editor')).toContainText(
-    "Updated source while the page is open",
-    { timeout: 10_000 },
-  );
+  // (the line is the file's last: the editor, under Details in the code column, draws it once scrolled to)
+  await expect
+    .poll(
+      () =>
+        page.locator('[data-file="src/runner.ts"] .cm-scroller').evaluate((el) => {
+          el.scrollTop = el.scrollHeight;
+          return el.textContent!.includes("Updated source while the page is open");
+        }),
+      { timeout: 10_000 },
+    )
+    .toBe(true);
   await expect(page.getByTestId("source-warning")).toContainText("run xpl index");
   expect(await selectionOf(page)).toEqual(["dispatch:3"]);
   expect(problems).toEqual([]);
@@ -655,9 +663,9 @@ test("readers can find the limits of source verification beside the guide", asyn
   await (await openEditMenu(page)).getByTestId("edit-read").click();
   await page.getByTestId("perspective-guide").click();
   const info = page.getByTestId("explanation-info");
-  await info.locator("summary").click();
-  await expect(info).toContainText("they do not verify the claims");
-  await expect(info).toContainText("applied changes appear here automatically");
+  await info.locator(":scope > summary").click();
+  await expect(info).toContainText("It does not check that the text is true");
+  await expect(info).toContainText("and the changes show here");
 });
 
 test("a managed page reports configured Claude without claiming sign-in", async ({ page }) => {
@@ -696,7 +704,7 @@ test("a managed page shows backend unavailability, refuses another service, and 
   await page.getByRole("button", { name: /^Feedback/ }).click();
   const panel = page.getByRole("dialog", { name: "Reader feedback" });
   await panel.getByLabel("Feedback note").fill("Manual revision after stop.");
-  await panel.getByRole("button", { name: "Save for the next revision pass", exact: true }).click();
+  await panel.getByRole("button", { name: "Save for the author", exact: true }).click();
   await expect(panel.getByRole("status")).toContainText("Saved in this browser");
   await panel.getByRole("button", { name: "Close feedback" }).click();
   await openEditMenu(page);

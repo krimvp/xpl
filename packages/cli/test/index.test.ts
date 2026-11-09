@@ -2,6 +2,7 @@ import { chmodSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { run } from "../src/cli.js";
+import { coverageDetails } from "../src/commands/build-index.js";
 import { INDEX_SCHEMA } from "@xpl/core";
 import {
   copyFixture,
@@ -14,11 +15,32 @@ import {
   xplJson,
 } from "./helpers.js";
 
+describe("xpl index: coverage lines", () => {
+  // the lines `describeAnalysis` gives for go-jobrunner indexed with scip-go (10 files, all described)
+  const details = [
+    "go (go): calls, imports, inheritance, implementations, type references, reads, writes partial (10/10 files analyzed). References matched by name are hints; some can be missing.",
+    "go (scip-go): calls, imports, inheritance, implementations, type references, reads, writes partial (10/10 files analyzed). A tool can miss a reference, so an empty result does not prove there is none.",
+  ];
+  const go = (info: object) => ({ go: { files: 10, symbols: 158, ...info } }) as never;
+
+  it("a language a precise tool analyzed in full reads as precise, without the heuristic line it replaced", () => {
+    expect(coverageDetails(details, 13, go({ refs: "precise", tool: "scip-go@0.2.7" }))).toEqual([
+      "go (scip-go): calls, imports, inheritance, implementations, type references, reads, writes precise (10/10 files analyzed). The tool does not report what it may have missed.",
+    ]);
+  });
+
+  it("keeps both lines, and partial, when the tool left files to the heuristic", () => {
+    const some = details.map((line) => line.replace("partial (10/10", "partial (7/10"));
+    const info = go({ refs: "precise", tool: "scip-go@0.2.7", heuristicFiles: 3 });
+    expect(coverageDetails(some, 13, info)).toEqual(some.map((l) => l.replace("go (go)", "go")));
+  });
+});
+
 describe("xpl index", () => {
   it("qualifies text's absent references in help because an artifact can provide them", async () => {
     const help = await invoke(["index", "--help"]);
     expect(help.code).toBe(0);
-    expect(help.out).toContain(
+    expect(help.out.replace(/\s+/g, " ")).toContain(
       "`refs: none` (Ruby, PHP, yaml, json, toml, text without an artifact provider)",
     );
   });
@@ -39,10 +61,29 @@ describe("xpl index", () => {
     expect(out).toMatch(/typescript\s+8 files\s+\d+ symbols\s+refs: heuristic/);
     expect(out).toMatch(/yaml\s+1 file\s+16 symbols\s+refs: none/);
     expect(index.languages.typescript.refs).toBe("heuristic");
-    expect(out).toContain("Analysis coverage: 12 files; some analysis is limited or unavailable.");
+    // one plain line per limited language under the table; the coverage report waits for --verbose
     expect(out).toContain(
-      "text (text): named symbols, full declaration ranges, nesting, calls, imports, inheritance, implementations, type references, reads, writes unsupported (0/1 files analyzed).",
+      "\ntext: file only; no symbols or references.\ntypescript: references matched by name; some can be missing.\n",
     );
+    expect(out).not.toContain("Analysis coverage");
+    expect(out).not.toContain("Fresh work");
+    const verbose = (await xpl(dir, "index", "--precise", "off", "--verbose")).out;
+    expect(verbose).toContain(
+      "Analysis coverage: 12 files; some analysis is limited or unavailable.",
+    );
+    // one line per language, in name order, the provider only when it is not the language
+    const coverage = verbose
+      .slice(verbose.indexOf("Analysis coverage:"))
+      .split("\n\n")[0]!
+      .split("\n")
+      .slice(1);
+    expect(coverage[0]).toBe("all 12 files: file anchors supported (12/12 files analyzed).");
+    expect(coverage).toContain(
+      "text: named symbols, full declaration ranges, nesting, calls, imports, inheritance, implementations, type references, reads, writes unsupported (0/1 files analyzed). Only file anchors are available; named symbols and references are unavailable.",
+    );
+    const order = coverage.slice(1).map((line) => line.split(":")[0]);
+    expect(order).toEqual([...order].sort());
+    expect(verbose).not.toContain("typescript (typescript)");
     expect(index.symbols.some((s: any) => s.id === "src/runner.ts#Runner.dispatch")).toBe(true);
   });
 
@@ -110,9 +151,9 @@ describe("xpl index", () => {
     const clean = await xplJson(dir, "index", "--precise", "off", "--no-cache");
     expect(clean.code).toBe(0);
     expect(clean.json.extraction).toMatchObject({ enabled: false, hits: 0, misses: 11 });
-    const human = await xpl(dir, "index", "--precise", "off");
+    const human = await xpl(dir, "index", "--precise", "off", "--verbose");
     expect(human.out).toMatch(
-      /Extraction \(cache enabled\): 11 hits, 0 misses, [\d.]+ ms wall; file-local tree-sitter and tags only\./,
+      /Extraction \(cache enabled\): 11 hits, 0 misses of the 11 files with a grammar, [\d.]+ ms wall; file-local tree-sitter and tags only\./,
     );
     expect(human.out).toContain("semantic providers 0 runs");
   });
@@ -167,10 +208,20 @@ describe("xpl index", () => {
     expect((await xpl(dir, "new", "demo")).code).toBe(0);
     writeFile(dir, "src/extra.ts", "export const extra = 1;\n");
     const { out } = await xpl(dir, "index", "--precise", "off");
-    expect(out).toContain("hint: 1 explainer (demo) is bound to another index");
-    expect(out).toContain("xpl resolve <name> --write");
-    const json = (await xplJson(dir, "index", "--precise", "off")).json;
+    expect(out).toContain("hint: 1 guide (demo) is bound to another index");
+    expect(out).toContain("run `xpl resolve demo --write` to move it");
+    const json = (
+      await xplJson<{ explainersToResolve: string[]; path: string }>(
+        dir,
+        "index",
+        "--precise",
+        "off",
+      )
+    ).json;
     expect(json.explainersToResolve).toEqual(["demo"]);
+    // and validate names the same command, with the guide's name, so it runs as printed
+    const validated = await xpl(dir, "validate", "demo", "--lenient", "--index", json.path);
+    expect(validated.out).toContain("run `xpl resolve demo --write` to check its code links again");
   });
 });
 
@@ -233,8 +284,11 @@ setInterval(() => {}, 1000);
       }
       expect(await running).toBe(130);
       expect(Date.now() - cancelledAt).toBeLessThan(1500);
-      expect(err.join("\n")).toContain("Indexing cancelled");
-      expect(err.some((text) => text.startsWith("index: "))).toBe(false);
+      expect(err.join("\n")).toContain("Indexing canceled");
+      // stderr is not a terminal: no progress, but one line says a SCIP tool runs (it can take a minute)
+      expect(err.filter((text) => text.startsWith("index: "))).toEqual([
+        "index: running scip-typescript for precise references (it can take a minute; `--precise off` skips it)",
+      ]);
       expect(existsSync(join(dir, ".explainer/index-cancelled.json"))).toBe(false);
     },
   );
@@ -265,7 +319,7 @@ setInterval(() => {}, 1000);
         },
       });
       expect(code).toBe(130);
-      expect(err.join("\n")).toContain("Indexing cancelled");
+      expect(err.join("\n")).toContain("Indexing canceled");
       if (previous) expect(readFile(dir, path)).toBe(before);
       else expect(existsSync(join(dir, path))).toBe(false);
       expect(

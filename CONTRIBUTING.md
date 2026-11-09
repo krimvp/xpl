@@ -6,7 +6,7 @@ Thanks for helping improve xpl. Before opening a pull request, read the relevant
 ## Set up
 
 Use Node 22.12 or newer. Install dependencies with `npm install`. The repository sets
-`ignore-scripts=true` so package install hooks do not run; xpl builds its required assets explicitly.
+`ignore-scripts=true` so package install hooks do not run; `npm run build` builds the assets xpl needs.
 
 Run these checks before pushing:
 
@@ -21,13 +21,13 @@ are the gate for pull requests.
 
 ## Keep in mind
 
-- Fixture line numbers are used by tests and explainers. Do not reformat files in `fixtures/`.
+- Fixture line numbers are used by tests and by the committed guides. Do not reformat files in `fixtures/`.
 - Files in `docs/` are hand-formatted; keep their existing style.
 - Do not hand-edit `*.explainer.json`. Use `xpl apply` or `xpl change`.
-- Changes to code described by xpl's own explainer may require updating its anchors. The
-  `packages/cli/test/self-explainer.test.ts` test identifies stale references.
-- Tree-sitter grammar versions must match the pinned `web-tree-sitter` ABI. Playwright is pinned to the
-  preinstalled browser version; do not run `playwright install` locally.
+- A change to code that xpl's own guide (`.explainer/xpl.explainer.json`) links to may need new code links.
+  `packages/cli/test/self-explainer.test.ts` names the links that went stale.
+- Tree-sitter grammar versions must match the pinned `web-tree-sitter` ABI. Playwright is pinned to 1.56.1.
+  Use the browsers of that version. In a sandbox that already has them, do not run `playwright install`.
 
 ## Pull requests
 
@@ -36,7 +36,7 @@ the checks you ran. Add before-and-after screenshots for viewer changes and chan
 shows at system, service or code level. `scripts/needs-screenshots.sh` says whether a change needs them.
 
 Use a conventional commit subject scoped to the package, such as `fix(indexer): keep heuristic references
-labeled`. Open a branch from `main`, and follow the required checks and reviews shown by GitHub. Release tags
+labelled`. Open a branch from `main`, and follow the required checks and reviews shown by GitHub. Release tags
 use the `v*` format and are created by maintainers as part of a release.
 
 For a pull request from a fork, a maintainer must approve the workflow run before CI uses the self-hosted

@@ -84,7 +84,32 @@ describe("boxText", () => {
       { actor: "llm" },
     );
     expect(wrong.issues.map((i) => i.message)).toContain(
-      'boxText must be "summary" (each box shows its summary under its label)',
+      'boxText must be "summary" (each box shows its summary under its label) or "members" (a type box shows its fields as rows)',
+    );
+  });
+});
+
+/** `GraphView.render`: a view that opens as a dependency matrix (the viewer draws it; e2e matrix.spec.ts). */
+describe("render", () => {
+  it("is stored as sent, cleared by null, and rejects any other value", () => {
+    const view = {
+      id: "view:m",
+      type: "graph" as const,
+      title: "M",
+      include: ["file:src/queue.ts"],
+    };
+    const apply = (base: Parameters<typeof applyPatch>[0], patch: ExplainerPatch) =>
+      applyPatch(base, patch, w.index, w.getText, { actor: "llm" });
+    const set = apply(emptyExplainer(), { views: [{ ...view, render: "matrix" }] });
+    expect(set.issues.filter((i) => i.severity === "error")).toEqual([]);
+    expect((set.explainer.views[0] as GraphView).render).toBe("matrix");
+    const cleared = apply(set.explainer, {
+      views: [{ id: "view:m", type: "graph", render: null }],
+    });
+    expect((cleared.explainer.views[0] as GraphView).render).toBeUndefined();
+    const wrong = apply(emptyExplainer(), { views: [{ ...view, render: "grid" as never }] });
+    expect(wrong.issues.map((i) => i.message)).toContain(
+      'render must be "matrix" (the view opens as a dependency matrix)',
     );
   });
 });

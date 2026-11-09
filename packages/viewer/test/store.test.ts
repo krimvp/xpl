@@ -7,18 +7,23 @@ import {
   type ReviewScope,
   type WatchAttention,
 } from "@xpl/core";
-import { ServerApi } from "../src/data.js";
+import { ServerApi, type LaunchParams } from "../src/data.js";
 import { ViewerStore } from "../src/store.js";
 import { getDerived } from "../src/derive.js";
 import { makeBundle, TEXTS } from "./world.js";
 
 const GHOST_TARGET = "file:src/b.ts";
 
-function graphStore(server = false, files = makeBundle().files) {
+/** A store in Explore, where a change to a graph view is an edit of the guide. */
+function graphStore(
+  server = false,
+  files = makeBundle().files,
+  params: LaunchParams = { mode: "explore" },
+) {
   const bundle = makeBundle({ files, ...(server ? { server: { api: "/api" } } : {}) });
   const view = bundle.explainer.views.find((v) => v.id === "view:overview")!;
   if (view.type === "graph") view.include = ["sym:src/a.ts#A.run"];
-  return new ViewerStore(bundle);
+  return new ViewerStore(bundle, params);
 }
 
 it("checks the stored attachment identity and keeps history across a managed restart", () => {
@@ -161,6 +166,20 @@ describe("the caret", () => {
 });
 
 describe("view edits without a server", () => {
+  it("on a reading tab, opening and folding a box changes what is drawn, not the guide", () => {
+    const store = graphStore(false, makeBundle().files, { perspective: "map" });
+    const include = () => {
+      const view = store.view();
+      return view?.type === "graph" ? view.include : [];
+    };
+    store.expandStub({ ghost: GHOST_TARGET });
+    store.drillIn(GHOST_TARGET);
+    expect(include()).toEqual(["sym:src/a.ts#A.run", GHOST_TARGET, "sym:src/b.ts#B"]);
+    store.collapse(GHOST_TARGET);
+    expect(include()).toEqual(["sym:src/a.ts#A.run", GHOST_TARGET]);
+    expect(store.getState().dirty).toBe(false);
+  });
+
   it("expand, drill in, collapse and edge kinds edit the view in memory and mark it dirty", () => {
     const store = graphStore();
     const include = () => {
@@ -852,11 +871,16 @@ describe("under xpl view (server mode)", () => {
     ).toEqual(["concept:retry", "concept:retry"]);
   });
 
-  it("sends what the user wants changed as the request's note", async () => {
+  it("sends a typed note as a question, and no note as a request for more detail", async () => {
     const store = graphStore(true);
-    await store.requestExplain("concept:retry", "  too long  ");
-    expect(body(0)).toMatchObject({ kind: "expand", elementId: "concept:retry", note: "too long" });
+    await store.requestExplain("concept:retry", "  why so long?  ");
+    expect(body(0)).toMatchObject({
+      kind: "explain",
+      elementId: "concept:retry",
+      note: "why so long?",
+    });
     await store.requestExplain("concept:retry", "   ");
+    expect(body(1)).toMatchObject({ kind: "expand" });
     expect(body(1)).not.toHaveProperty("note");
   });
 

@@ -21,9 +21,9 @@ test("mixed arrows name their uncertainty and explain the hints in details", asy
   );
   const arrow = byId(page, "edge:calls:file:src/runner.ts->file:src/queue.ts");
   await expect(arrow).toHaveClass(/res-mixed/);
-  await expect(arrow.locator("title")).toContainText("mixed confidence");
+  await expect(arrow.locator("title")).toContainText("partly matched by name");
   await arrow.click();
   await expect(page.getByRole("region", { name: "Details", exact: true })).toContainText(
-    "some references are hints",
+    "partly matched by name",
   );
 });

@@ -112,9 +112,12 @@ test("an offline element question remains pending, reloads and imports without d
   await page.getByRole("button", { name: "Ask a question", exact: true }).click();
   const panel = page.getByRole("dialog", { name: "Reader feedback" });
   await panel.getByLabel("Feedback note").fill("Why does dispatch wait for a free worker?");
-  await panel.getByRole("button", { name: "Ask a question", exact: true }).click();
-  await expect(panel.getByRole("status")).toContainText("pending feedback");
-  await expect(panel.getByRole("status")).toContainText("/code-explainer feedback");
+  // a page with no local service cannot reach an agent: it saves the question for the author
+  await expect(panel.getByRole("button", { name: "Ask a question", exact: true })).toHaveCount(0);
+  await panel.getByRole("button", { name: "Save for the author", exact: true }).click();
+  await expect(panel.getByRole("status")).toHaveText(
+    "Saved in this browser. Export it and send the file to the author.",
+  );
   await expect(panel.locator(".feedback-list > li")).toHaveCount(1);
   const downloading = page.waitForEvent("download");
   await panel.getByRole("button", { name: "Export feedback JSON" }).click();
@@ -178,7 +181,7 @@ for (const width of [1440, 390])
       await expect(panel.getByRole("region", { name: "Answer", exact: true })).toContainText(
         "Queue holds pending jobs.",
       );
-      await panel.getByRole("button", { name: "src/queue.ts:1–2 (head)", exact: true }).click();
+      await panel.getByRole("button", { name: "src/queue.ts, lines 1–2", exact: true }).click();
       const code = page.locator('.pane[data-file="src/queue.ts"][data-side="head"]');
       await expect(code).toBeVisible();
       await expect(code.locator(".cm-selectionBackground").first()).toBeVisible();
@@ -308,7 +311,7 @@ for (const changed of ["source", "guide"] as const)
         await expect(page.locator('.pane[data-file="src/queue.ts"] .cm-content')).toContainText(
           "source moved during answer",
         );
-        await panel.getByRole("button", { name: "src/queue.ts:1–2 (head)", exact: true }).click();
+        await panel.getByRole("button", { name: "src/queue.ts, lines 1–2", exact: true }).click();
         await expect(panel.getByLabel("Highlighted recorded source")).toHaveText(
           "export interface Job {\n  id: string;",
         );
@@ -336,7 +339,7 @@ test("an unavailable managed backend saves the question on disk for the explicit
     await expect(page.getByTestId("connection-status")).toContainText("Connected");
     await panel.getByLabel("Feedback note").fill("How does this queue hold jobs?");
     await panel.getByRole("button", { name: "Ask a question", exact: true }).click();
-    await expect(panel.getByRole("status")).toContainText("pending feedback");
+    await expect(panel.getByRole("status")).toContainText("Saved for later");
     await expect(panel.getByRole("status")).toContainText("/code-explainer feedback");
     expect(readRequests(app.root).requests).toHaveLength(1);
     expect(readRequests(app.root).requests[0]?.outcome.status).toBe("pending");
@@ -393,7 +396,7 @@ test("a disconnected service keeps the question in browser feedback through relo
       .getByLabel("Feedback note")
       .fill("What happens while this service is disconnected?");
     await panel.getByRole("button", { name: "Ask a question", exact: true }).click();
-    await expect(panel.getByRole("status")).toContainText("pending feedback");
+    await expect(panel.getByRole("status")).toContainText("Saved for later");
     await expect(panel.getByRole("status")).toContainText("--import feedback.json");
     const exported = JSON.parse(await exportFeedback(page));
     expect(exported.requests[0]).toMatchObject({
@@ -458,8 +461,8 @@ for (const side of ["head", "base"] as const)
     await pane.getByRole("button", { name: "Ask about selected lines" }).click();
     const panel = page.getByRole("dialog", { name: "Reader feedback" });
     await panel.getByLabel("Feedback note").fill("Why did this retry wait?");
-    await panel.getByRole("button", { name: "Ask a question", exact: true }).click();
-    await expect(panel.getByRole("status")).toContainText("pending feedback");
+    await panel.getByRole("button", { name: "Save for the author", exact: true }).click();
+    await expect(panel.getByRole("status")).toContainText("Saved in this browser");
     const feedback = JSON.parse(await exportFeedback(page));
     expect(feedback.requests[0].range).toEqual({
       file: "src/runner.ts",
@@ -494,11 +497,16 @@ for (const side of ["head", "base"] as const)
       "Retry waits before dispatching again.",
     );
     await expect(panel.getByText("Answered", { exact: true })).toBeVisible();
-    await expect(panel).toContainText("Revision: not yet reviewed");
+    await expect(panel).toContainText("Waiting for the author");
     expect(JSON.parse(await exportFeedback(page)).requests[0].outcome).toEqual(
       feedback.requests[0].outcome,
     );
-    await panel.getByRole("button", { name: `src/runner.ts:76–77 (${side})`, exact: true }).click();
+    await panel
+      .getByRole("button", {
+        name: `src/runner.ts, lines 76–77${side === "base" ? " (before the change)" : ""}`,
+        exact: true,
+      })
+      .click();
     await expect
       .poll(() => page.evaluate(() => window.__xpl!.state().cursor))
       .toMatchObject({

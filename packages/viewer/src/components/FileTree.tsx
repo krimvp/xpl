@@ -263,8 +263,8 @@ export function FileTree() {
         >
           {state.perspective === "explore" ? (
             <>
-              {listed.length} of {indexed.length} files included · rebuild with{" "}
-              <code>--files all</code>
+              {listed.length} of {indexed.length} files are in this page. To add the rest, run{" "}
+              <code>xpl bundle --files all</code>
             </>
           ) : (
             // A reader cannot rebuild the page: say what is there, not how to change it.

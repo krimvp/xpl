@@ -25,7 +25,7 @@ import {
 import type { CommandSpec } from "../command.js";
 import { CliError } from "../errors.js";
 import { plural, rangeText } from "../format.js";
-import { loadExplainer, openWorkspace, type Workspace } from "../repo.js";
+import { loadReadExplainer, openWorkspace, type Workspace } from "../repo.js";
 
 /** Code lines printed per anchor before `xpl anchors` cuts it (`--full` / `--max-lines 0` print all). */
 export const DEFAULT_ANCHOR_LINES = 12;
@@ -448,7 +448,7 @@ function renderAnchor(a: AnchorReport, n: number, name: string): string[] {
   }
   if (a.stored) {
     out.push(
-      `     (the explainer file still says ${a.stored.status}, lines ${rangeText(a.stored.range)}: run \`xpl resolve ${name} --write\`)`,
+      `     (the guide file still says ${a.stored.status}, lines ${rangeText(a.stored.range)}: run \`xpl resolve ${name} --write\`)`,
     );
   }
   if (a.reason) out.push(`     ${a.reason}`);
@@ -473,23 +473,16 @@ function headerOf(e: ElementReport): string {
 
 export const anchorsCommand: CommandSpec = {
   name: "anchors",
-  usage: "xpl anchors <explainer> [id...] [--full] [--max-lines n]",
-  summary: "Each anchor of an element with its resolved lines and code",
+  usage: "xpl anchors [explainer] [<id> ...] [--full] [--max-lines <n>]",
+  summary: "Print each code link of an element with its lines and code",
   details: [
-    "Verifies what an explainer points at. For every element with stored anchors (node overlays, edges, concepts,",
-    "sequence steps, tour steps' code overrides) it prints each anchor",
+    "Prints each anchor of each element with anchors (or of the ids you give) and its code:",
     "  <n>. <role>  <file>#<symbol> +<from>..<to>  <status>  lines <a>-<b>",
-    "resolved now against the index and the working tree (status ok, moved, drifted or missing), then the code at",
-    "those lines as `<line> <offset>│ code` (the offsets are the ones `xpl show` prints and a span uses). Use it",
-    "after `xpl apply` to confirm every span landed on the code you meant, and to re-read what drifted.",
-    'A base anchor (`at: "base"`) is printed as `<file>@base +<from>..<to>`, marked [before the change], with the',
-    "code of the base commit of the change (`xpl change`) and its offsets from line 1 of the base file.",
-    "Ids: element ids as they are (concept:x, dispatch:3, edge:x, sym:src/a.ts#A.b, tour:intro/t2), a view (its",
-    "steps), a tour (its steps), or the loose forms of the other commands. Without ids: every element with anchors.",
-    "A tour step without a `code` override shows what the viewer will show for its focus: the code of the focused",
-    "elements, marked `derived` (`xpl anchors <explainer> tour:intro` lists every step, with `code` or derived).",
-    `A long anchor is cut to ${DEFAULT_ANCHOR_LINES} lines: its first lines, an elision line and its last ones (the`,
-    "end of a span is the part that goes wrong); --full (or --max-lines 0) prints all of it.",
+    "The status is ok, moved, drifted or missing, against the index and the working tree.",
+    "Use it after `xpl apply` to check that each span covers the code you meant.",
+    "A base anchor prints as `<file>@base`, with the code before the change. A long anchor is cut to 12 lines.",
+    "A tour step without `code` shows the code of what it focuses, marked `derived`.",
+    "With one guide in the repository, leave out its name; the first id then holds `:` or `#`.",
   ],
   options: {
     full: { type: "boolean", desc: "Print every line of every anchor (no cap)" },
@@ -499,14 +492,19 @@ export const anchorsCommand: CommandSpec = {
       desc: `Cut each anchor's code to n lines, head and tail (default ${DEFAULT_ANCHOR_LINES}, 0 = no limit)`,
     },
   },
-  positionals: [{ name: "explainer" }, { name: "id", required: false, rest: true }],
+  positionals: [
+    { name: "explainer", required: false },
+    { name: "id", required: false, rest: true },
+  ],
   async run(ctx, args) {
     const cap = args.flag("full") ? 0 : (args.int("max-lines") ?? DEFAULT_ANCHOR_LINES);
-    const loaded = loadExplainer(ctx, args.positionals[0]!);
+    // a guide name never holds `:` or `#`: a first argument that does is an id of the only guide
+    const named = args.positionals[0] !== undefined && !/[:#]/.test(args.positionals[0]);
+    const loaded = loadReadExplainer(ctx, named ? args.positionals[0] : undefined, "anchors");
     const ws = await openWorkspace(ctx, { explainer: loaded });
     const model = new ExplainerModel(loaded.explainer, ws.model);
     const groups = groupSites(loaded.explainer);
-    const requested = args.positionals.slice(1);
+    const requested = args.positionals.slice(named ? 1 : 0);
     const selection: Selection =
       requested.length > 0
         ? select(requested, groups, model, ws, loaded.name)

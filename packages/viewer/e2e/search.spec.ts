@@ -11,6 +11,7 @@ import {
   watchProblems,
   openEditMenu,
   toExplore,
+  openVariant,
 } from "./helpers.js";
 
 // A real file:// page: no service can fill in omitted source or guide snapshots.
@@ -48,7 +49,7 @@ test("offline library searches supplied source and prose, opens exact links and 
     await page.goto(url);
     await page.getByRole("button", { name: "Search and guides" }).click();
     const panel = page.getByRole("dialog", { name: "Search and guides" });
-    const input = panel.getByRole("searchbox", { name: "Search guide snapshots" });
+    const input = panel.getByRole("searchbox", { name: "Search this guide" });
     await input.fill("needle-search-literal");
     const longLine = panel.locator('[data-kind="source"]').first();
     await expect(longLine).toContainText("needle-search-literal");
@@ -56,6 +57,13 @@ test("offline library searches supplied source and prose, opens exact links and 
     await input.fill("requeue");
     const source = panel.locator('[data-kind="source"]').filter({ hasText: "requeue" }).first();
     await expect(source).toBeVisible();
+    // a name says what kind of name it is, in sentence case
+    await expect(
+      panel
+        .locator('[data-kind="symbol"]')
+        .filter({ hasText: /^Method ?Queue\.requeue/ })
+        .locator(".search-kind"),
+    ).toHaveText("Method");
     const link = await source.getAttribute("href");
     expect(link).toMatch(/file=src%2Fqueue.ts.*range=/);
     await source.click();
@@ -82,12 +90,20 @@ test("offline library searches supplied source and prose, opens exact links and 
     await panel.getByRole("link", { name: /Retry subsystem/ }).click();
     await expect(page.locator(".header .title")).toHaveText("Retry subsystem");
     await page.getByRole("button", { name: "Search and guides" }).click();
-    await expect(panel).toContainText("Analysis unavailable");
-    await expect(panel).toContainText("pruned");
-    await expect(panel).toContainText("not included in this export");
+    // what the page leaves out is said in plain words, behind one disclosure
+    const limits = panel.getByTestId("search-limits");
+    // (folded: the limits are a click away, not in the way of the results)
+    await expect(limits).not.toHaveAttribute("open");
+    await expect(limits.locator("li").first()).toBeHidden();
+    await limits.locator("summary").click();
+    await expect(limits.locator("li").first()).toBeVisible();
+    await expect(limits).toContainText("This page does not say which code xpl could read.");
+    await expect(limits).toContainText("may be one it left out");
+    await expect(limits).toContainText("files are not in this page, so their code is not searched");
+    await expect(panel).not.toContainText(/pruned|evidence of absence|snapshot|not supplied/);
     await input.fill("no-such-phrase-12345");
-    await expect(panel.getByRole("status")).toContainText("No matches in the supplied snapshots");
-    await expect(panel).toContainText("Analysis unavailable");
+    await expect(panel.getByRole("status")).toContainText("No matches in this page");
+    await expect(limits).toContainText("This page does not say which code xpl could read.");
     await panel.getByRole("button", { name: "Close search" }).click();
     await (await openEditMenu(page)).getByTestId("edit-save-html").click();
     const [download] = await Promise.all([
@@ -238,7 +254,7 @@ test("live catalog stays scoped to its attachment and switching refuses unsaved 
   await expect(page.getByTestId("evidence-edit")).toBeDisabled();
   const prior = requests.length;
   await page.getByRole("button", { name: "Search and guides" }).click();
-  await expect(panel).toContainText("Contained guides");
+  await expect(panel).toContainText("Guides in this page");
   expect(requests.slice(prior)).toEqual([]);
   await expect(panel.getByRole("link", { name: "Back to library" })).toHaveAttribute("href", "./");
   await panel.getByRole("link", { name: "Back to library" }).click();
@@ -346,7 +362,8 @@ test("source and symbol search keeps each contained guide's commit and missing-s
     await panel.getByRole("searchbox").fill("archivedOnly");
     const symbol = panel.locator('a[data-kind="symbol"]').filter({ hasText: "archivedOnly" });
     await expect(symbol).toContainText("Archived guide");
-    await expect(symbol).toContainText("archived-commit");
+    // the commit is in the tooltip, not in the reader's text
+    await expect(symbol.locator("small")).toHaveAttribute("title", /archived-commit/);
     await symbol.focus();
     await page.keyboard.press("Enter");
     await expect(page.locator(".header .title")).toHaveText("Archived guide");
@@ -377,9 +394,9 @@ test("source and symbol search keeps each contained guide's commit and missing-s
     await expect(page.locator(".header .title")).toHaveText("Archived guide");
     await page.getByRole("button", { name: "Search and guides" }).click();
     await panel.getByRole("searchbox").fill("omittedOnly");
-    await expect(panel.locator('[data-kind="symbol"]')).toContainText("source not supplied");
+    await expect(panel.locator('[data-kind="symbol"]')).toContainText("code not in this page");
     await expect(panel.locator('a[data-kind="symbol"]')).toHaveCount(0);
-    await expect(panel).toContainText("pruned");
+    await expect(panel.getByTestId("search-limits")).toContainText("may be one it left out");
     await page.goto(url + "?guide=archive&snapshot=current-commit&file=src/metrics.ts&range=2-2");
     await expect(page.getByTestId("no-data")).toContainText("snapshot");
     await expect(page.locator(".cm-content")).toHaveCount(0);
@@ -433,7 +450,7 @@ for (const lazy of [false, true]) {
       );
     }
     await page.getByRole("button", { name: "Search and guides" }).click();
-    await page.getByRole("searchbox", { name: "Search guide snapshots" }).fill("needle A");
+    await page.getByRole("searchbox", { name: "Search this guide" }).fill("needle A");
     await page.locator('a[data-kind="source"]').click();
     const editor = page.locator('[data-file="src/metrics.ts"] .cm-content').first();
     await expect(editor).toContainText("needle A");
@@ -480,7 +497,7 @@ test("a source link rejects changed text when the index commit stays the same", 
   );
   await page.goto("http://xpl.test/");
   await page.getByRole("button", { name: "Search and guides" }).click();
-  await page.getByRole("searchbox", { name: "Search guide snapshots" }).fill("needle A");
+  await page.getByRole("searchbox", { name: "Search this guide" }).fill("needle A");
   await page.locator('a[data-kind="source"]').click();
   await expect(page.locator('[data-file="src/metrics.ts"] .cm-content').first()).toContainText(
     "needle A",
@@ -523,7 +540,7 @@ test("a source link can move to a change's Before file and survive reload", asyn
   );
   await page.goto("http://xpl.test/");
   await page.getByRole("button", { name: "Search and guides" }).click();
-  await page.getByRole("searchbox", { name: "Search guide snapshots" }).fill("needle A");
+  await page.getByRole("searchbox", { name: "Search this guide" }).fill("needle A");
   await page.locator('a[data-kind="source"]').click();
   await expect(page.locator('[data-file="src/metrics.ts"] .cm-content').first()).toContainText(
     "needle A",
@@ -557,4 +574,64 @@ test("a source link can move to a change's Before file and survive reload", asyn
   await expect(page.getByTestId("no-data")).toContainText(
     `Source file "src/legacy.ts" changed within snapshot "${bundle.index.commit}"`,
   );
+});
+
+test("the guide's steps come before the code's names, and test cases come last, named Test", async ({
+  page,
+}) => {
+  await openVariant(page, (bundle) => {
+    bundle.explainer.tours[0].steps[1].note = "A failed job is requeued with a growing delay.";
+  });
+  await page.getByRole("button", { name: "Search and guides" }).click();
+  const panel = page.getByRole("dialog", { name: "Search and guides" });
+  await panel.getByRole("searchbox").fill("requeue");
+  await expect(panel.locator(".search-group h3").first()).toHaveText("Tour and flow steps");
+  const symbols = panel.getByRole("region", { name: "Symbols" });
+  await expect
+    .poll(() =>
+      symbols
+        .locator(".search-result")
+        .evaluateAll((els) =>
+          els.map(
+            (el) =>
+              `${el.querySelector(".search-kind")!.textContent} ${el.querySelector(".search-result-text")!.textContent}`,
+          ),
+        ),
+    )
+    .toEqual([
+      "Method Queue.requeue",
+      "Method RecordingQueue.requeue",
+      "Test fails twice, then succeeds: acked after two requeues",
+      "Test always fails: dead-lettered after maxRetries requeues",
+    ]);
+});
+
+test("a result reads as plain words with the match marked, and the arrow keys walk the results", async ({
+  page,
+}) => {
+  await openVariant(page, (bundle) => {
+    bundle.explainer.tours[0].steps[1].note =
+      "### Requeue `once`\n\nA failed job is **requeued** with a growing delay.";
+  });
+  await page.getByRole("button", { name: "Search and guides" }).click();
+  const panel = page.getByRole("dialog", { name: "Search and guides" });
+  const input = panel.getByRole("searchbox");
+  await input.fill("requeue");
+  const steps = panel.getByRole("region", { name: "Tour and flow steps" });
+  // one page of results: the count, not "1–2 of 2 matches"
+  await expect(steps.locator(".search-group-head span")).toHaveText("2 matches");
+  const results = steps.locator(".search-result");
+  await expect(results).toHaveCount(2);
+  const text = steps.locator(".search-result-text").filter({ hasText: "with a growing delay" });
+  await expect(text).toHaveText("Requeue once A failed job is requeued with a growing delay.");
+  await expect(text.locator("mark")).toHaveText(["Requeue", "requeue"]);
+  await input.press("ArrowDown");
+  await expect(results.nth(0)).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(results.nth(1)).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  // (on into the next group)
+  await expect(panel.locator("a.search-result").nth(2)).toBeFocused();
+  for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowUp");
+  await expect(input).toBeFocused();
 });

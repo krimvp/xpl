@@ -7,15 +7,15 @@ import { useViewerState } from "../hooks.js";
 
 const internal = new Set(["id", "hash", "resolved", "provenance", "userFields"]);
 const labels: Record<string, string> = {
-  anchors: "Evidence",
-  edgeKinds: "Relationships shown",
-  include: "Included elements",
-  hidden: "Hidden elements",
-  opens: "Opens view",
+  anchors: "Code links",
+  edgeKinds: "Arrows shown",
+  include: "Boxes shown",
+  hidden: "Boxes hidden",
+  opens: "Opens map",
   parent: "Inside",
   root: "Starting at",
   depth: "Levels shown",
-  stubs: "Related boxes",
+  stubs: "Boxes outside this map",
   max: "Maximum",
   index: "Source snapshot",
 };
@@ -120,7 +120,7 @@ export function ProposalChanges({ changes }: { changes: RevisionChange[] }) {
           return (
             <article className="job-change" key={change.id}>
               <h4>Checked source snapshot</h4>
-              <p>The candidate is bound to the checked repository source.</p>
+              <p>This proposal was checked against the current code.</p>
               <details className="job-raw-change">
                 <summary>Show raw change</summary>
                 <pre>{JSON.stringify(change, null, 2)}</pre>

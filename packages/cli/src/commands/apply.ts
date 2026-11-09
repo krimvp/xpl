@@ -55,49 +55,13 @@ export const applyCommand: CommandSpec = {
   usage: "xpl apply <explainer> <patch.json|-> [--actor llm|user] [--dry-run]",
   summary: "Validate and apply a patch; print issues; exit 1 on error",
   details: [
-    "Validates a patch (JSON) and merges it into .explainer/<explainer>.explainer.json, atomically: on any error",
-    "nothing is written. `-` reads the patch from stdin; --dry-run only checks. Every error names the path into",
-    "the patch and says how to fix it.",
-    "",
-    'Patch: { "title"?, "scope"?: {"audience"}, "nodes"?, "edges"?, "concepts"?, "views"?, "tours"?,',
-    '  "remove"?: [ids], "review"?: <record|null> }. Every key is optional; other top-level keys are rejected.',
-    '  "scope.audience" is one line under the title. Elements, views and tours are upserted by id: a new id needs its',
-    "  required fields (group: label + members or role; edge: from, to, kind, label; concept: label; graph view: type,",
-    "  title, include; sequence view: type, title, participants, steps; tour: title, steps), an existing id is",
-    "  shallow-merged.",
-    "Review: --actor user only; send reviewer, reviewedAt, scope, omissions and a matching xpl-review@1 fingerprint.",
-    "  review: null removes it. LLM patches carrying review are rejected; omitted review stays. See patch-format.md.",
-    'Anchor (AnchorInput): { "file": "src/runner.ts", "symbol"?: "Runner.dispatch", "span"?: {"from": 34, "to": 36},',
-    '  "find"?: "<text that occurs once>", "role": "definition|call-site|usage|config|test" }. symbol is the path',
-    "  inside the file (not the sym: id); span = 0-based line offsets from `xpl show`, relative to the symbol's",
-    "  first line (file line 1 without symbol); give span or find; never write a hash.",
-    '  "at": "base" = the code before the change `xpl change` recorded: find, or a span from line 1 of the old file',
-    "  (`xpl show --at base <path>`), no symbol. A patch never carries the change record itself.",
-    "Merge rules: fields you send replace, fields you omit stay; arrays and objects replace wholesale (members,",
-    "  include, hidden, participants, steps, frames, anchors, related, scope, layout): resend the whole list; null",
-    "  clears an optional field (summary, detail, members, role, tech, opens, via, related, edgeKinds, hidden,",
-    "  excludeFiles, stubs, layout, frames). A node's kind and a view's type never change; step ids are never renumbered.",
-    "Graph views also take includeAdd / includeRemove (edit `include` without resending it) and excludeFiles (globs,",
-    '  e.g. ["**/*_test.go", "**/test/**"]: derived edges and stubs ignore references that start or end in them).',
-    'Sequence views also take stepsUpdate: [{ "id": "dispatch:4", "summary": "..." }], which merges the fields you',
-    "  send into the existing steps with those ids (anchors as AnchorInput, replacing the step's; null clears summary,",
-    "  edge, shape or next; an unknown step id is an error naming the view's steps): fix one step without resending all.",
-    'Tours take stepsUpdate too: [{ "id": "t3", "note": "..." }] (view, focus, note, code, editor; null clears note,',
-    "  code or editor). Send steps whole to add or remove a step.",
-    "Ownership: --actor llm (default) never changes or removes user-authored elements, views or tours, the fields",
-    "  listed in provenance.userFields (a tour's title and steps, and steps for stepsUpdate too), or elements",
-    "  that carry userFields: they are skipped with a `protected` warning. includeAdd is the one edit still allowed on",
-    "  a view whose include the user curated. A patch that changes nothing because of that exits 1 and names the",
-    "  protected ids: use a new view or includeAdd, or ask the user.",
-    "One pass: a patch is judged whole. An anchor that does not resolve and a reference to an id that does not exist",
-    "  are reported by the same apply (what depends on a failed anchor, such as an llm edge's evidence, waits until it",
-    "  is fixed). A span that starts or ends on a blank line is a warning: it is probably off by one.",
-    "Reference: reference/patch-format.md in the code-explainer skill, next to SKILL.md (templates and examples).",
-    "Output streams: what a patch did goes to stdout: `applied ...`, `no changes`, `dry run`, and a rejection, which",
-    "  lists every error (`rejected: N errors ...`), or the refusal when everything was protected, both with exit 1.",
-    "  Fatal errors (unreadable patch or explainer file, invalid JSON, no index, usage errors) go to stderr as",
-    "  `error: ...`, and so do `warning:` lines (an index that does not match the working tree). With --json every",
-    "  result, rejections and fatal errors included, is one JSON object on stdout (`ok`, `error`, `issues`).",
+    "Checks a patch (JSON) and merges it into .explainer/<explainer>.explainer.json.",
+    "On any error, nothing is written. `-` reads the patch from stdin; --dry-run only checks.",
+    "Every error names the path into the patch and says how to fix it. A rejection exits 1.",
+    "Elements, views and tours merge by id: fields you send replace, fields you omit stay.",
+    "Arrays and objects replace wholesale: send the whole list. null clears an optional field.",
+    "--actor llm (the default) never changes what the user wrote; such fields get a `protected` warning.",
+    "The patch format, with templates and examples: reference/patch-format.md in the code-explainer skill.",
     "Exit codes: 0 applied or dry run passed; 1 rejected, everything protected, or fatal error; 2 usage error.",
   ],
   options: {
@@ -157,7 +121,7 @@ export const applyCommand: CommandSpec = {
       if (!result.ok) {
         lines.push(
           `rejected: ${plural(errors, "error")}, nothing was applied to ${loaded.rel} (patch from ${label})`,
-          ...renderIssues(result.issues),
+          ...renderIssues(result.issues, loaded.name),
         );
         ctx.out(lines.join("\n"));
         return 1;
@@ -165,7 +129,7 @@ export const applyCommand: CommandSpec = {
       if (allProtected) {
         lines.push(
           `nothing was applied to ${loaded.rel} (patch from ${label}): ${protectedSummary(protectedIds)}`,
-          ...renderIssues(result.issues),
+          ...renderIssues(result.issues, loaded.name),
           PROTECTED_ADVICE,
         );
         ctx.out(lines.join("\n"));
@@ -185,7 +149,10 @@ export const applyCommand: CommandSpec = {
       if (result.changed.length > 0)
         lines.push("changed:", ...result.changed.map((id) => `  ${id}`));
       if (result.issues.length > 0) {
-        lines.push(`issues (${issueSummary(result.issues)}):`, ...renderIssues(result.issues));
+        lines.push(
+          `issues (${issueSummary(result.issues)}):`,
+          ...renderIssues(result.issues, loaded.name),
+        );
       }
       // The warnings that matter most go last, where they are read.
       if (protectedIds.length > 0) {

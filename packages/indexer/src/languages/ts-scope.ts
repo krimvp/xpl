@@ -59,10 +59,35 @@ export function patternNames(pattern: Node, out: string[] = [], depth = 0): stri
   return out;
 }
 
-/** The names a declaration statement (`const a = 1, { b } = c;`, `var x;`) binds. */
+const WRAPPERS = new Set([
+  "await_expression",
+  "parenthesized_expression",
+  "non_null_expression",
+  "as_expression",
+  "satisfies_expression",
+]);
+
+/**
+ * The call of `require("./x")` or `await import("./x")` that a declarator's value is (one string literal
+ * argument), or undefined. Such a declarator binds imports, not local names.
+ */
+export function moduleCallOf(value: Node | null | undefined): Node | undefined {
+  let n = value ?? null;
+  for (let i = 0; n && WRAPPERS.has(n.type) && i < 8; i++) n = n.namedChild(0);
+  if (n?.type !== "call_expression") return undefined;
+  const fn = n.childForFieldName("function");
+  const args = n.childForFieldName("arguments");
+  const isModule = fn?.type === "import" || (fn?.type === "identifier" && fn.text === "require");
+  return isModule && args?.namedChildCount === 1 && args.namedChild(0)?.type === "string"
+    ? n
+    : undefined;
+}
+
+/** The names a declaration statement (`const a = 1, { b } = c;`, `var x;`) binds; import declarators bind none. */
 function declaredNames(declaration: Node, out: Set<string>): void {
   for (const declarator of declaration.namedChildren) {
     if (declarator.type !== "variable_declarator") continue;
+    if (moduleCallOf(declarator.childForFieldName("value"))) continue;
     const name = declarator.childForFieldName("name");
     if (name) for (const n of patternNames(name)) out.add(n);
   }

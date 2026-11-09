@@ -522,6 +522,20 @@ describe("buildReverseIndex", () => {
     expect(idx.lookup("src/queue.ts", 20)).toEqual([`edge:calls:${F.runner}->${F.queue}`]); // requeue definition, 14 lines
     expect(idx.lookup("src/queue.ts", 58)).toEqual([F.queue]);
   });
+
+  it("gives the caret in a drawn box's body to the box, not to the arrow into it", () => {
+    const view = graphView("view:v", [S.dispatch, S.requeue]);
+    const m = model({ views: [view] });
+    const graph = deriveGraph(view, m);
+    const into = `edge:calls:${S.dispatch}->${S.requeue}`;
+    expect(graph.edges.map((e) => e.id)).toEqual([into]);
+    const idx = buildReverseIndex(viewCandidates(view, m, graph), m, {
+      derivedEdges: derivedEdgeMap(graph),
+    });
+    expect(idx.lookup("src/queue.ts", 20)).toEqual([S.requeue]);
+    // the call site is still the arrow's own code
+    expect(idx.lookup("src/runner.ts", 77)).toEqual([into]);
+  });
 });
 
 describe("viewCandidates", () => {

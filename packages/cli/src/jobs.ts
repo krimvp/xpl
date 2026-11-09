@@ -339,8 +339,7 @@ class RepositoryJobs {
           if (job.owner?.instanceId === this.instanceId)
             throw new CliError("this service instance already owns a running job");
           job.state = "interrupted";
-          job.error =
-            "Service interrupted this attempt. Inspect its progress and explicitly retry.";
+          job.error = "Service interrupted this attempt. Check its progress, then retry.";
           job.updatedAt = new Date().toISOString();
         }
       }
@@ -832,7 +831,7 @@ class RepositoryJobs {
         if (job.state === "running" && job.owner?.instanceId === this.instanceId) {
           if (!(await this.drain(job))) continue;
           job.state = "interrupted";
-          job.error = "Service stopped during this attempt. Explicitly retry after restart.";
+          job.error = "Service stopped during this attempt. Retry after the restart.";
           job.updatedAt = new Date().toISOString();
         }
     });

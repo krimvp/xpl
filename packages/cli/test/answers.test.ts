@@ -238,7 +238,7 @@ it.each(["source", "guide"] as const)(
       await expect.poll(async () => (await jobs.getAnswer("demo", id)).state).toBe("completed");
       const completed = await jobs.getAnswer("demo", id);
       expect(completed.contextReason).toContain(
-        changed === "source" ? "does not match" : "snapshot changed",
+        changed === "source" ? "does not match" : "changed after the reader asked",
       );
       expect(completed.result?.context).toEqual(request.context);
       expect(completed.result?.references[0]?.quote).toBe("export interface Job {\n  id: string;");

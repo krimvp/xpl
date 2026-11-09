@@ -22,6 +22,7 @@ import { atomicWrite, jsonFile, withFileLock } from "../fsutil.js";
 import { computeChange, isGitWorkTree, mergeBase, resolveCommit } from "../git.js";
 import {
   loadExplainer,
+  onlyExplainerName,
   openWorkspace,
   resolveExplainerPath,
   type LoadedExplainer,
@@ -75,7 +76,9 @@ function callerLine(entry: CallerEntry): string {
 function testLine(entry: TestEntry): string {
   const notes = [
     ...(entry.changed ? [entry.changed === "new" ? "new" : "changed"] : []),
-    ...(entry.via !== undefined ? ["uses its class"] : []),
+    ...(entry.via === "class" ? ["calls its class"] : []),
+    ...(entry.via === "instance" ? ["builds its class; a guess"] : []),
+    ...(entry.via === "call" && entry.through ? [`through ${entry.through}`] : []),
   ];
   return `${entry.id}${notes.length > 0 ? `  (${notes.join(", ")})` : ""}`;
 }
@@ -207,7 +210,7 @@ export function renderAnalysis(analysis: ChangeAnalysis, omissions: string[] = [
       : `No indexed test reference found for ${plural(analysis.untested.length, "changed symbol")}: ${analysis.untested.join(", ")}`,
   );
   out.push(
-    "Direct callers and two-edge call paths come from the index; unindexed dynamic wiring is not inferred. Tests count when they reference the symbol (or build its class); check what they assert.",
+    "Direct callers and two-edge call paths come from the index; unindexed dynamic wiring is not inferred. Tests count when they reference the symbol, call one of its callers or build its class; check what they assert.",
   );
   if (omissions.length > 0) out.push("", "Not checked:", ...omissions.map((item) => `  ${item}`));
   return out;
@@ -260,37 +263,40 @@ function header(
   );
 }
 
+/** Does `arg` name an existing guide (by name or path)? */
+function namesExplainer(ctx: Ctx, arg: string): boolean {
+  try {
+    resolveExplainerPath(ctx, arg);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export const changeCommand: CommandSpec = {
   name: "change",
-  usage: "xpl change <explainer> [<base>..<head>]",
-  summary: "Record the change an explainer is about (from git) and print its analysis",
+  usage: "xpl change [explainer] [<base>..<head>]",
+  summary: "Record the change a guide is about (from git) and print its analysis",
   details: [
-    "Records the change between two commits in the explainer (`change`: base and head as full SHAs, and every",
-    "changed file with its status and hunks, from `git diff -M`), then prints what it touches:",
-    "  - the changed files with their added and removed lines,",
-    "  - the changed symbols: index symbols that hold an added or edited line (`new` when all of their lines are),",
-    "  - one extra call hop through a function/method, with both sites and confidence (max 100 paths/1000 refs).",
-    "    Dynamic callback or middleware wiring is not inferred; paths are possible reachability, not execution.",
-    "  - for each one its direct callers outside test files, and indexed tests that reference it (a test function,",
-    "    or a test file for an import); for constructors and instance-call methods, a test that references the",
-    "    class counts too. A missing reference does not mean the behavior has no test,",
-    "  - changed test files are listed separately from per-symbol matches,",
-    "  - for a method that runs when an instance is called (`__call__`, `handle`), the code that builds the class,",
-    "    marked as a guess (`callers via instance`); for a constructor, the calls of its class.",
-    "A bounded Not checked section lists the loaded index's report-level limits and changed paths absent from",
-    "it. A stale index is named; no section does not establish complete semantic coverage. --json includes omissions.",
-    "<base>..<head> takes any git revisions (main..HEAD, 2284ff0^..2284ff0); <base>...<head> starts from their",
-    "merge base; <base> alone (or <base>..) ends at the commit of the index. The head must be the commit the index",
-    "was built from: check it out and run `xpl index` first. Without a range, prints the analysis of the change",
-    'already recorded. Base anchors (`at: "base"` in a patch) point at the code before the change; `xpl show',
-    "--at base <path>` prints it with the offsets they use. Needs git; never changes the repository.",
-    "Exit codes: 0 ok, 1 no git, an unknown revision, a head that is not the index commit, or no change recorded.",
+    "Records the change between two commits in the guide (from `git diff -M`), then prints what it touches.",
+    "It lists the changed files and symbols, their direct callers outside tests, and the tests that reference them.",
+    "A missing test reference does not mean the behavior has no test.",
+    "<base>..<head> takes git revisions (main..HEAD); <base>...<head> starts at their merge base.",
+    "The head must be the commit of the index: check it out and run `xpl index` first.",
+    "Without a range, it prints the change already recorded. One argument is a range when no guide has its name.",
+    "Exit codes: 0 ok; 1 no git, an unknown revision, a head that is not the index commit, or no change; 2 usage.",
   ],
   options: {},
-  positionals: [{ name: "explainer" }, { name: "base..head", required: false }],
+  positionals: [
+    { name: "explainer", required: false },
+    { name: "base..head", required: false },
+  ],
   async run(ctx, args) {
-    const name = args.positionals[0]!;
-    const rangeText = args.positionals[1];
+    // One argument names a guide when one has that name; else it is the range for the only guide.
+    const [first, second] = args.positionals;
+    const lone = second === undefined && (first === undefined || !namesExplainer(ctx, first));
+    const name = lone ? onlyExplainerName(ctx, "change") : first!;
+    const rangeText = lone ? first : second;
     const range = rangeText !== undefined ? parseRange(rangeText) : undefined;
     const path = resolveExplainerPath(ctx, name);
 

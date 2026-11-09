@@ -356,6 +356,100 @@ describe("healthCheck: large and possibly unused files", () => {
     ]);
   });
 
+  it("never calls a file that declares a program's entry point unused, whatever its name", () => {
+    const entries: FileDecl[] = [
+      {
+        path: "src/main/java/app/Launch.java",
+        language: "java",
+        text: "package app;\nclass Launch {\n  public static void main(String[] args) {}\n}",
+      },
+      {
+        path: "src/main/java/app/Tool.java",
+        language: "java",
+        text: "package app;\nclass Tool {\n  static void main() {}\n}",
+      },
+      {
+        path: "jobs/run_jobs.py",
+        language: "python",
+        text: 'def run():\n    pass\nif __name__ == "__main__":\n    run()',
+      },
+      { path: "tools/tool.go", language: "go", text: "package main\n\nfunc main() {}" },
+      { path: "src/tool.rs", language: "rust", text: "fn helper() {}\n\nfn main() {}" },
+    ];
+    const lookalikes: FileDecl[] = [
+      // a method called main is not a program entry; neither is a Go `main` outside package main
+      { path: "src/plan.ts", text: "export function main() {}\n// 2\n// 3" },
+      { path: "lib/plan.go", language: "go", text: "package plan\n\nfunc main() {}" },
+    ];
+    const report = check(
+      [...entries, ...lookalikes],
+      [{ from: "src/plan.ts#run", to: "src/plan.ts#run", kind: "call", line: 1 }],
+      [...entries, ...lookalikes].map(({ path }) => ({ id: `${path}#run`, start: 2, end: 3 })),
+    );
+    expect(report.findings.map((f) => `${f.check} ${f.file}`)).toEqual([
+      "unused-file lib/plan.go",
+      "unused-file src/plan.ts",
+    ]);
+  });
+
+  it("cannot tell, and says so, for a file whose language's analysis does not follow imports", () => {
+    const world = makeWorld({
+      files: [
+        { path: "src/runner.rs", language: "rust" },
+        { path: "src/queue.rs", language: "rust" },
+        { path: "src/orphan.ts" },
+      ],
+      refs: [{ from: "src/runner.rs#run", to: "src/queue.rs#push", kind: "call", line: 2 }],
+      symbols: [
+        { id: "src/runner.rs#run", start: 2, end: 3 },
+        { id: "src/queue.rs#push", start: 2, end: 3 },
+        { id: "src/orphan.ts#run", start: 2, end: 3 },
+      ],
+    });
+    world.index.analysis = [
+      {
+        provider: "rust-tags",
+        capabilities: { call: "partial" },
+        files: ["src/runner.rs", "src/queue.rs"],
+        results: [
+          {
+            capabilities: ["call"],
+            status: "partial",
+            analyzedFiles: ["src/runner.rs", "src/queue.rs"],
+            limitations: [],
+          },
+          { capabilities: ["import"], status: "unsupported", analyzedFiles: [], limitations: [] },
+        ],
+      },
+      {
+        provider: "typescript",
+        capabilities: { import: "partial" },
+        files: ["src/orphan.ts"],
+        results: [
+          {
+            capabilities: ["call", "import"],
+            status: "partial",
+            analyzedFiles: ["src/orphan.ts"],
+            limitations: [],
+          },
+        ],
+      },
+    ];
+    const report = healthCheck(world.model, world.getText);
+    expect(brief(report.findings)).toEqual([
+      {
+        check: "unused-file",
+        severity: "low",
+        at: "src/orphan.ts:1",
+        title: "Possibly unused file",
+        heuristic: true,
+      },
+    ]);
+    expect(report.notes).toEqual([
+      "rust: the index does not follow imports, so xpl cannot tell whether 1 file is unused.",
+    ]);
+  });
+
   it("skips the unused check, with a note, when the index has no references", () => {
     const report = check(
       [{ path: "src/orphan.ts" }],
@@ -364,7 +458,7 @@ describe("healthCheck: large and possibly unused files", () => {
     );
     expect(report.findings).toEqual([]);
     expect(report.notes).toEqual([
-      "The index has no references, so the check for possibly unused files was skipped.",
+      "the index has no references, so xpl did not check for unused files",
     ]);
   });
 });

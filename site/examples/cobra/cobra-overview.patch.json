@@ -255,7 +255,7 @@
   "tours": [
     {
       "id": "tour:overview",
-      "title": "How Cobra builds and runs Go commands",
+      "title": "How Cobra builds command-line programs",
       "summary": "Cobra is a Go library for command-line programs. Applications define commands and handlers; Cobra selects a command, parses flags, checks arguments, and runs the handler. Separate parts supply completion and reference documentation. This tour shows the library structure and the main execution path.",
       "steps": [
         {
@@ -313,7 +313,7 @@
               "role": "usage"
             }
           ],
-          "note": "### The root selects the command that runs\n\nThe root searches its child command tree, then passes the remaining input to the selected command. That command checks its own flags and handler.",
+          "note": "### The root selects the command that runs\n\nThe root searches its child command tree, then passes the remaining input to the selected command. That command parses its own flags, checks its arguments and runs its handler.",
           "editor": {
             "primary": "command.go"
           }
@@ -420,6 +420,24 @@
           "note": "### Shared setup and pflag support the command path\n\nCobra stores initializer and finalizer functions in shared setup. Its command code imports pflag to hold and parse flag sets.",
           "editor": {
             "primary": "cobra.go"
+          }
+        },
+        {
+          "id": "t7",
+          "view": "view:overview",
+          "focus": [
+            "file:command.go"
+          ],
+          "code": [
+            {
+              "file": "command.go",
+              "symbol": "Command.execute",
+              "role": "definition"
+            }
+          ],
+          "note": "### Where to go next\n\nThe guide \"How Cobra selects and runs a command\" follows `Command.execute` from the help checks to the post-run hooks. This tour did not open how completion finds candidates, or the doc generators for formats other than Markdown.",
+          "editor": {
+            "primary": "command.go"
           }
         }
       ]
