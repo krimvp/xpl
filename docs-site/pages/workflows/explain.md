@@ -26,13 +26,17 @@ opens the map of the level below it: the parts of one service, then its code.
 
 ![A system map: customers place orders with the shop backend, which stores orders in a database and calls an email API and a payments API.](../../../docs/images/architecture-system-map-light.png)
 
-`xpl draft repo` drafts these maps from the index, and the agent or you write the text. Two more drafts start
-from one type:
+`xpl draft repo` drafts these maps from the index, and the agent or you write the text. Three more drafts
+show the types:
 
 - `xpl draft class <guide> <type>` maps the classes and interfaces around one type: what it extends and
   implements, and what extends or implements it.
 - `xpl draft states <guide> <type>` maps the states of a status type (an enum or a union of string literals)
   and the functions that move it from one state to another.
+- `xpl draft data <guide> [<scope>]` maps what data the code keeps: each type is a table with a row per field
+  and the type that field holds, and an arrow goes from a field to the type it holds. The scope is the
+  repository, a folder, a file or one type. Click a row to see the field's code; put the cursor in a field and
+  its row lights up.
 
 ## Quick maps
 

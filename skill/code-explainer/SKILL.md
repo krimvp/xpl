@@ -47,6 +47,7 @@ Each scope starts its tour on a map and ends on the step in the last column.
 | "how does X work"              | `explain <question>`: `draft path <name> <entry>`      | what this part is for, where it sits     | the failure path, then what the tour skipped |
 | "what kinds of X are there"    | `explain <question>`: `draft class <name> <type>`      | what the type is for                     | which one to use when                        |
 | "what states can X be in"      | `explain <question>`: `draft states <name> <type>`     | what the thing is, and why it has states | the moves the code never makes               |
+| "what data does X keep"        | `explain <question>`: `draft data <name> [<scope>]`    | the main type and what it holds          | the types left off the map                   |
 | "explain this repo"            | `explain repo`: `draft repo <name>`                    | the system map: purpose, users, needs    | the parts skipped, and 2-3 expansions        |
 | "map every file"               | `explain map`: `draft map <name>`                      | what the project is                      | where a newcomer starts reading              |
 | a PR, a branch, a commit range | `explain change <base>..<head>`: `draft change <name>` | what changes for users                   | risks and open questions                     |

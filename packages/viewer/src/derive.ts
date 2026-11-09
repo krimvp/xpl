@@ -121,6 +121,7 @@ function deriveView(
   model: ExplainerModel,
   viewId: string | undefined,
   expanded: ReadonlySet<ElementId> = new Set(),
+  files?: Readonly<Record<string, string>>,
 ): ViewDerived {
   const view = viewId === undefined ? undefined : model.view(viewId);
   let graph: DerivedGraph | undefined;
@@ -128,7 +129,8 @@ function deriveView(
   if (view?.type === "graph") {
     // boxes the reader opened in place show the boxes of the view they open, inside them
     const drawn = expandInPlace(view, model, expanded);
-    graph = deriveGraph(drawn, model);
+    // (the text names the type of each row of a data-model view)
+    graph = deriveGraph(drawn, model, files ? { text: (file) => files[file] } : {});
     include = new Set(
       (Array.isArray(drawn.include) ? drawn.include : []).filter((id) => model.hasNode(id)),
     );
@@ -624,7 +626,7 @@ export function getDerived(state: ViewerState): Derived {
       model: state.model,
       viewId: state.viewId,
       expanded: state.expanded,
-      value: deriveView(state.model, state.viewId, state.expanded),
+      value: deriveView(state.model, state.viewId, state.expanded, state.files),
     };
   }
   const view = lastView.value;

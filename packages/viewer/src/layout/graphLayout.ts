@@ -88,6 +88,12 @@ export interface LayoutNode {
   lines?: string[];
   /** An idea linked to no code (`Node.sketch`): drawn dashed, with a "sketch" badge. */
   sketch?: boolean;
+  /** A table (`GraphView.boxText: "members"`): its children are rows, stacked under its header. */
+  rows?: boolean;
+  /** A row of a table: a field, drawn as one line of text with the type its code names. */
+  row?: boolean;
+  /** A row: the type its declaration line names (`number`). */
+  memberType?: string;
   /** Position relative to the container (or to the canvas for top-level nodes). */
   x: number;
   y: number;
@@ -160,6 +166,13 @@ const HEADER_HEIGHT = 34;
 const CONTAINER_PAD = 14;
 const LABEL_HEIGHT = 18;
 const ROUTE_BOX_GAP = 8;
+/** A row of a table (`GraphView.boxText: "members"`): its height, its fonts, and the room under the last row. */
+export const ROW_HEIGHT = 24;
+const ROW_NAME_FONT = 13;
+const ROW_TYPE_FONT = 12.5;
+const TABLE_FOOT = 6;
+/** The gap between a row's name and its type. */
+const ROW_GAP = 18;
 
 // Font sizes of the diagram's text in its own units (styles.css draws with the same numbers). A diagram is
 // fitted into its pane, so this is what decides how small the text ends up: kept generous, and the boxes
@@ -303,6 +316,12 @@ function containerMinWidth(label: string, badge: string, change?: ChangeStatus):
   );
 }
 
+/** How wide a table must be for this row: its name, a gap and its type, inside the padding. */
+function rowWidth(node: ModelNode): number {
+  const type = node.memberType ? ROW_GAP + textWidth(node.memberType, ROW_TYPE_FONT) : 0;
+  return Math.ceil(textWidth(node.label, ROW_NAME_FONT, 500) + type) + 2 * PAD_X;
+}
+
 function ghostWidth(label: string, detail: string): number {
   return Math.max(
     92,
@@ -370,6 +389,10 @@ interface ModelNode {
   sketch?: boolean;
   opens?: string;
   expandable?: boolean;
+  rows?: boolean;
+  /** A row's place in its table (`GraphNode.row`). */
+  row?: number;
+  memberType?: string;
 }
 
 interface Model {
@@ -409,6 +432,9 @@ function buildModel(graph: DerivedGraph, changes: ChangeMarks | undefined): Mode
       ...(node.expandable ? { expandable: true } : {}),
       ...(node.summary && !node.container ? { summary: node.summary } : {}),
       ...(node.sketch ? { sketch: true } : {}),
+      ...(node.rows ? { rows: true } : {}),
+      ...(node.row !== undefined ? { row: node.row } : {}),
+      ...(node.memberType !== undefined ? { memberType: node.memberType } : {}),
     });
   }
   for (const node of graph.nodes) {
@@ -553,6 +579,9 @@ function makeNode(
   if (node.expandable) out.expandable = true;
   if (node.lines !== undefined && children.length === 0) out.lines = node.lines;
   if (node.sketch) out.sketch = true;
+  if (node.rows && children.length > 0) out.rows = true;
+  if (node.row !== undefined) out.row = true;
+  if (node.memberType !== undefined) out.memberType = node.memberType;
   return out;
 }
 
@@ -1150,8 +1179,9 @@ function layeredLayout(
   function build(id: string): LayoutNode {
     const kids = model.children.get(id) ?? [];
     if (kids.length === 0) return makeNode(model, id, { x: 0, y: 0, ...leafSize(model, id) }, []);
-    const inner = level(kids, id, CONTAINER_PADDING);
     const info = model.nodes.get(id)!;
+    if (info.rows) return table(id, kids, info);
+    const inner = level(kids, id, CONTAINER_PADDING);
     const node = makeNode(
       model,
       id,
@@ -1165,6 +1195,41 @@ function layeredLayout(
     );
     enclose(node);
     levels.push({ id, node, routes: inner.result.routes });
+    return node;
+  }
+  /**
+   * A table (`GraphView.boxText: "members"`): its rows stacked under the header, as wide as the table, in the
+   * order the code declares them. An arrow of a row starts (or ends) on the table's side at the height of that
+   * row, so no route runs inside the table.
+   */
+  function table(id: string, kids: readonly string[], info: ModelNode): LayoutNode {
+    const order = [...kids].sort(
+      (a, b) => (model.nodes.get(a)!.row ?? 0) - (model.nodes.get(b)!.row ?? 0),
+    );
+    const width = Math.max(
+      containerMinWidth(info.label, info.badge, info.change),
+      ...order.map((kid) => rowWidth(model.nodes.get(kid)!)),
+    );
+    const rows = order.map((kid, i) =>
+      makeNode(
+        model,
+        kid,
+        { x: 0, y: HEADER_HEIGHT + i * ROW_HEIGHT, width, height: ROW_HEIGHT },
+        [],
+      ),
+    );
+    const height = HEADER_HEIGHT + rows.length * ROW_HEIGHT + TABLE_FOOT;
+    const node = makeNode(model, id, { x: 0, y: 0, width, height }, rows);
+    // RIGHT: an arrow into the table enters on the left, one out of it leaves on the right (a turned one the
+    // other way round), at the height of its row
+    const own = new Map<string, { side: Side; cross: number }>();
+    for (const { edge, end } of crossing.get(id) ?? []) {
+      const row = rows.find((r) => r.id === liftTo(model, edge[end], id));
+      if (!row) continue;
+      const atStart = (end === "to") !== turned.has(`${id}\0${edge.id}`);
+      own.set(edge.id, { side: atStart ? "start" : "end", cross: row.y + ROW_HEIGHT / 2 });
+    }
+    entries.set(id, own);
     return node;
   }
   const pad = { top: CANVAS_PAD, right: CANVAS_PAD, bottom: CANVAS_PAD, left: CANVAS_PAD };
@@ -1260,9 +1325,12 @@ function layeredLayout(
     const boxes = new Map<string, Box>();
     const ports = new Map<string, Port>();
     const centre = (b: Box): Point => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
+    // an arrow to or from a table itself (not one of its rows) meets it at its header: it means the type
+    const band = (key: string, box: Box): Box =>
+      nodeOf.get(key)?.rows ? { ...box, height: HEADER_HEIGHT } : box;
     for (const item of items) {
-      boxes.set(item.from.key, item.from.box);
-      boxes.set(item.to.key, item.to.box);
+      boxes.set(item.from.key, band(item.from.key, item.from.box));
+      boxes.set(item.to.key, band(item.to.key, item.to.box));
       const next = item.via[0] ?? centre(item.to.box);
       const previous = item.via[item.via.length - 1] ?? centre(item.from.box);
       if (!item.from.fixed)
@@ -1894,7 +1962,8 @@ export async function layoutGraph(
 ): Promise<GraphLayout> {
   const model = buildModel(graph, changes);
   try {
-    const direction = options.direction ?? "RIGHT";
+    // a table's arrows leave from the side of their row: tables read left to right
+    const direction = hasTables(graph) ? "RIGHT" : (options.direction ?? "RIGHT");
     // A second pass when an edge leaves (or enters) a group on the side away from its other end.
     const away = new Set<string>();
     const first = layeredLayout(model, direction, options.pins, undefined, away);
@@ -1904,6 +1973,9 @@ export async function layoutGraph(
     return fallbackLayout(model, options.pins);
   }
 }
+
+/** Some box is a table (`GraphView.boxText: "members"`): the layout is always laid out to the right. */
+const hasTables = (graph: DerivedGraph): boolean => graph.nodes.some((node) => node.rows);
 
 /** The grid that stands in when the layered layout fails: every box, every edge straight between centres. */
 export function gridLayoutOf(graph: DerivedGraph, changes?: ChangeMarks): GraphLayout {
@@ -2080,7 +2152,7 @@ export async function layoutGraphFitting(
   changes?: ChangeMarks,
   pins?: GraphView["layout"],
 ): Promise<GraphLayout> {
-  if (!viewport || viewport.width <= 0 || viewport.height <= 0)
+  if (!viewport || viewport.width <= 0 || viewport.height <= 0 || hasTables(graph))
     return layoutGraph(graph, { pins }, changes);
   const suggested: Direction = viewport.width / viewport.height < 1 ? "DOWN" : "RIGHT";
   const other: Direction = suggested === "RIGHT" ? "DOWN" : "RIGHT";

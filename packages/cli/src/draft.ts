@@ -133,7 +133,7 @@ export const NOT_DESIGN: readonly string[] = [
 /** File and directory names that usually hold the entry point of a project. */
 const ENTRY_NAMES = /^(?:main|__main__|cli|cmd|app|apps|application|applications|index|server)$/;
 
-export type DraftKind = "change" | "repo" | "path" | "map" | "class" | "states";
+export type DraftKind = "change" | "repo" | "path" | "map" | "class" | "states" | "data";
 
 export interface DraftInput {
   explainer: Explainer;

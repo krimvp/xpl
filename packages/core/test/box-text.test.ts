@@ -84,7 +84,7 @@ describe("boxText", () => {
       { actor: "llm" },
     );
     expect(wrong.issues.map((i) => i.message)).toContain(
-      'boxText must be "summary" (each box shows its summary under its label)',
+      'boxText must be "summary" (each box shows its summary under its label) or "members" (a type box shows its fields as rows)',
     );
   });
 });

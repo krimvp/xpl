@@ -69,7 +69,15 @@ export function Details({
   }
 
   const graphNode = derived.view.graph?.nodes.find((n) => n.id === info.id);
-  const kind = reader ? (info.type === "node" ? readerBadge(info.kind) : undefined) : info.kind;
+  // a row of a data map's table is a field, whatever kind the index gives it (a TS property reads "variable")
+  const kind =
+    graphNode?.row !== undefined
+      ? "field"
+      : reader
+        ? info.type === "node"
+          ? readerBadge(info.kind)
+          : undefined
+        : info.kind;
   const facts = reader ? info.facts.filter((fact) => !AUTHOR_FACTS.has(fact.label)) : info.facts;
   return (
     <section className="details" aria-label="Details" data-details-id={info.id}>

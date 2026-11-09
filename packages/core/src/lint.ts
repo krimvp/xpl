@@ -2345,7 +2345,8 @@ function changeChecks(lint: Linter, explainer: Explainer, at: Lookup): void {
  * The map checks: `big-map` (a graph view a tour shows with more than `tourMapBoxes` boxes), `crowded-map` (more
  * arrows than `edgesPerBox` per box, with the ids of the least used drawn edges to hide), and `system-map-no-edges`
  * (an architecture map with a non-component role, at least two boxes and no visible edges or stubs). The box and
- * arrow counts come from the index when there is one (`model`), else from the view's `include` (and no edge checks).
+ * arrow counts come from the index when there is one (`model`; the rows of a table are not boxes), else from the
+ * view's `include` (and no edge checks).
  */
 function mapChecks(
   lint: Linter,
@@ -2368,7 +2369,10 @@ function mapChecks(
     } catch {
       graph = undefined;
     }
-    const boxes = graph ? graph.nodes.length : list(view.include).length;
+    // a table of a data-model view is one box, whatever rows it has
+    const boxes = graph
+      ? graph.nodes.filter((node) => node.row === undefined).length
+      : list(view.include).length;
     if (toured.has(viewId) && boxes > LINT_LIMITS.tourMapBoxes) {
       lint.add(
         where,

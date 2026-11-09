@@ -149,7 +149,11 @@ function GraphSnapshot({
   width: number;
 }) {
   const state = useViewerState();
-  const graph = useMemo(() => deriveGraph(view, state.model), [view, state.model]);
+  const files = state.files;
+  const graph = useMemo(
+    () => deriveGraph(view, state.model, { text: (file) => files[file] }),
+    [view, state.model, files],
+  );
   const changes = useGraphChanges(graph);
   const [layout, setLayout] = useState<GraphLayout>();
   const [failed, setFailed] = useState(false);

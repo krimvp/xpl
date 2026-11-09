@@ -1291,3 +1291,80 @@ describe("what a still picture's frame cuts", () => {
     expect(cut.has("inner")).toBe(false);
   });
 });
+
+/** A data-model view (`GraphView.boxText: "members"`): types as tables, fields as rows, arrows from the rows. */
+describe("tables", () => {
+  const type = (id: string): DerivedGraph["nodes"][number] => ({
+    id,
+    label: id,
+    kind: "symbol",
+    symbolKind: "interface",
+    container: true,
+    rows: true,
+  });
+  const field = (parent: string, name: string, row: number, memberType: string) => ({
+    id: `${parent}.${name}`,
+    label: name,
+    kind: "symbol" as const,
+    symbolKind: "variable" as const,
+    container: false,
+    parent,
+    row,
+    memberType,
+  });
+  const graph: DerivedGraph = {
+    // in id order, as core gives them: the rows follow `row`, not this order
+    nodes: [
+      type("DeadJob"),
+      field("DeadJob", "error", 1, "string"),
+      field("DeadJob", "job", 0, "Job"),
+      type("Job"),
+      field("Job", "attempts", 1, "number"),
+      field("Job", "id", 0, "string"),
+    ],
+    edges: [
+      {
+        id: "edge:references:DeadJob.job->Job",
+        from: "DeadJob.job",
+        to: "Job",
+        kind: "references",
+        count: 1,
+        resolution: "precise",
+        stored: false,
+        anchors: [],
+      },
+    ],
+    stubs: [],
+    ghosts: [],
+  };
+
+  it("stacks the rows under the header in code order, as wide as the table, and reads to the right", async () => {
+    const layout = await layoutGraph(graph, { direction: "DOWN" });
+    expect(layout.direction).toBe("RIGHT");
+    const dead = layout.nodes.find((n) => n.id === "DeadJob")!;
+    expect(dead.rows).toBe(true);
+    expect(dead.children.map((c) => [c.id, c.row, c.memberType, c.width === dead.width])).toEqual([
+      ["DeadJob.job", true, "Job", true],
+      ["DeadJob.error", true, "string", true],
+    ]);
+    const [first, second] = dead.children;
+    expect(second!.y).toBe(first!.y + first!.height);
+    expect(dead.height).toBeGreaterThanOrEqual(second!.y + second!.height);
+  });
+
+  it("starts a row's arrow on the table's side at the row's height, and ends it at the other table's header", async () => {
+    const layout = await layoutGraph(graph);
+    const boxes = absoluteBoxes(layout.nodes);
+    const row = boxes.get("DeadJob.job")!;
+    const job = boxes.get("Job")!;
+    const edge = layout.edges.find((e) => e.id === "edge:references:DeadJob.job->Job")!;
+    const start = edge.points[0]!;
+    const end = edge.points.at(-1)!;
+    expect(start.x).toBe(row.x + row.width);
+    expect(start.y).toBe(row.y + row.height / 2);
+    expect(end.x).toBe(job.x);
+    // the header band: above the first row of Job
+    expect(end.y).toBeGreaterThan(job.y);
+    expect(end.y).toBeLessThan(boxes.get("Job.id")!.y);
+  });
+});

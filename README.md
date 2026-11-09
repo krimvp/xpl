@@ -82,6 +82,8 @@ xpl index && xpl view jobrunner
 - **An idea or a plan** before the code exists: sketch boxes, drawn dotted and linked to no code.
 - **A type**: `xpl draft class` maps what a class extends and implements; `xpl draft states` maps the states
   of a status type and the functions that change them.
+- **The data**: `xpl draft data` maps what data the code keeps. Each type is a table with a row per field,
+  and an arrow goes from a field to the type it holds. Click a row to see the field's code.
 
 `xpl health` lists common problems in a repository: secrets in the code or in variables sent to the browser,
 committed `.env` files, code files over 1,000 lines and files that nothing uses. It is a quick check, not a

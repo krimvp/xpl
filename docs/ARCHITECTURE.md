@@ -302,6 +302,17 @@ Conventions (all packages):
     Clicking an arm's condition selects its steps; a cursor in a step's code lights the step and its arm.
     Without `arms` an `alt` is drawn as before (one label, no lines). Arms are part of `frames`, which a
     patch sends whole. Before this, alternatives (ack, requeue, dead-letter) read as one straight run.
+26. `GraphView.boxText` adds `"members"`: a data map (`xpl draft data`). A box of a type symbol (class,
+    interface, type, enum) whose visible children are all boxes without children is a table:
+    `deriveGraph` marks it `GraphNode.rows`, gives each child its place `GraphNode.row` (by the line the
+    code declares it on) and `GraphNode.memberType`, the type its declaration line names after the name
+    (`attempts: number`, `attempts: int = 0`, `Attempts int`; read with `DeriveOptions.text`, cut at 28
+    characters; none for `x = 0`). A row is its own element: its anchor is the field symbol, so a click shows
+    its line and the caret on that line matches it. On such a view a reference whose `from` is inside a type
+    box but is not that box or an included row (a method body) draws no arrow and no stub: the view shows
+    what the types hold, not how their methods use them. A field of its own table's type draws no arrow (both
+    ends are one table); its row names the type, and the draft's summary TODO names the field. `lint`'s
+    `big-map` counts a table as one box. Details calls a row a field, whatever kind the index gives it.
 
 Patch-side types (never stored) live in `packages/core/src/patch.ts`; its header holds the authoritative
 merge rules and `skill/code-explainer/reference/patch-format.md` is the practical guide. The authoring
@@ -1803,11 +1814,11 @@ Ready means the API matched at `checkedAt`; GitHub cannot lock an external PR du
 `xpl pr link` rechecks them again before pointing the PR at it. `finish` starts no publishing workflow,
 writes no GitHub state and creates no current pointer. The offline HTML remains readable independently of GitHub or the retained checkout.
 
-**`xpl draft change|repo|path|map|class`** prints a patch that `xpl apply` accepts as it is: views, groups, overlays,
+**`xpl draft change|repo|path|map|class|states|data`** prints a patch that `xpl apply` accepts as it is: views, groups, overlays,
 participants, steps, anchors and a tour, with `TODO: <what to write>` in every text (tour notes as `### TODO:
 …` plus a body). It checks the draft with `applyPatch` before printing it, never reuses an id the explainer
 has (`view:change-map-2`; a map keeps and updates its own view ids), never adds a summary to a node the
-explainer already explains, gives the graph views of `change`, `repo` and `class` `stubs: { mode: "none" }` and each
+explainer already explains, gives the graph views of `change`, `repo`, `class` and `data` `stubs: { mode: "none" }` and each
 tour step at most 2 code ranges and an `editor.primary`. `-o` writes it to a
 file; `--json` adds the counts and what was left out.
 
@@ -1882,6 +1893,19 @@ file; `--json` adds the counts and what was left out.
   states never set and never tested, the uses that are neither, and that transitions come from text matching.
   Not handled: discriminated unions (`{ status: "idle" } | ...`), Java enums, Go constants in other files,
   a transition split across functions (a test in a caller, the set in a callee), and multi-line conditions.
+- `data [<scope>]` (`draft-data.ts`): the data map (§2 amendment 25). Candidates are the type symbols of the
+  scope: the repo, a folder or a file (outside tests, examples, docs, fixtures and dot folders, unless the
+  scope itself is in one), or a type entry (then the repo's types at most 2 links from it). A link is an
+  `extends` or `implements` reference from the type itself, or a `type-ref` from one of its fields (its
+  `variable` children) to another candidate; a type with no link is never a box (a function type names
+  types but holds none). The first box is the entry, else the most used candidate (references to it from
+  outside tests); each next one has the most links to the boxes so far, then the most uses; at most 8.
+  Each box shows at most 8 fields as rows (the linking ones first, then in code order). One graph view
+  (`view:data`, `view:<name>-data` for a scope; `boxText: "members"`, `edgeKinds: ["references", "extends",
+  "implements"]`). A summary TODO per box (kind, field count, holds, held by, extends, implements). A tour
+  of at most 5 steps: the first box, the next 3 in the order they joined (their lines down to the last row,
+  and the field that links them), and one step on the rest. Notes count what is left off, name types with
+  no fields (a Python attribute set in `__init__` is not a field) and say when an arrow is heuristic.
 - `map` (`draft-map.ts`): the quick map, every code file outside tests, examples, fixtures, docs, benchmarks
   and dot folders, except a file with no symbols that no reference leaves (a docstring-only `__init__.py`;
   the note counts them as empty files). One graph view per folder, `view:map` for the top (below folders that hold all the code)
@@ -2971,7 +2995,15 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
   its badge is its `tech` or its role. A sketch box (`Node.sketch`) keeps its role's shape, is drawn dotted
   (`.is-sketch`) and badged "sketch". On a view with `boxText: "summary"` a box that is not a container shows
   its summary under the badge row (`LayoutNode.lines`, wrapped by `graphLayout.wrapText` on at most 3 lines,
-  the last cut with "…"); such a box is at least 300 units wide and grows 16 per line. A box with `opens` has a zoom button ("See what is inside"; a
+  the last cut with "…"); such a box is at least 300 units wide and grows 16 per line. On a view with
+  `boxText: "members"` a table (`GraphNode.rows`) is laid out by `graphLayout`'s `table` instead of a
+  layered level: the header, then one row per child in `row` order, each `ROW_HEIGHT` (24) high and as
+  wide as the widest name plus type. A row's arrow is pinned to the table's side at the row's height (an
+  entry like a container's border port, so no route runs inside the table), and an arrow to the table
+  itself meets its header band: it means the type, not a field. A map with a table is always laid out to
+  the right. `RowShape` draws a row as its name and its type (muted, right-aligned) with a rule above;
+  it is a button like a box (`is-row`; selected, matched and hovered as any box).
+  A box with `opens` has a zoom button ("See what is inside"; a
   double-click does the same, and Details offers it too): `store.zoomInto` shows that view, in the map or flow
   perspective that draws it, as a navigation step (Back returns). Above the diagram, `ZoomTrail` lists the
   levels above the current view (`zoomTrail`), each a link (`store.goToLevel`). A box that opens a graph

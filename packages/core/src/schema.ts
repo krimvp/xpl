@@ -25,6 +25,8 @@
  *  17. Reference.kind adds "request" (a web request to the server route that answers it, always heuristic) and
  *      Edge.kind adds "requests" (lifted request references).
  *  18. GraphView adds `render` ("matrix"): the view opens as a dependency matrix instead of boxes and arrows.
+ *  19. `GraphView.boxText` adds "members": a type box (class, interface, type, enum) draws its included fields as
+ *      rows, and its arrows start at the rows (a data-model view).
  *
  * Two files per repo:
  *   index-<commit>.json    SymbolIndex. Static analysis of one commit. Built once, shared by every view.
@@ -511,9 +513,14 @@ export interface GraphView extends ViewBase {
   /**
    * (amended) What a box shows under its label. `"summary"`: its summary (one or two sentences), wrapped on a few
    * lines, so a reader can scan what every box does without opening it (a map of a whole project). Containers keep
-   * their header. Absent: the label and its badge only.
+   * their header. `"members"`: a data-model view. A box of a type (a class, interface, type or enum symbol) whose
+   * included children are boxes without children of their own draws them as rows of one table, each with the type
+   * its declaration line names (`attempts: number`). Each row is its own element: a click shows its code, and the
+   * caret in it lights the row. Arrows come from the rows and from the type's own declaration (`extends`,
+   * `implements`); a reference from code inside the type that the view does not show (a method's body, say) draws
+   * no arrow, since the view is about the data the types hold. Absent: the label and its badge only.
    */
-  boxText?: "summary";
+  boxText?: "summary" | "members";
   /**
    * (amended) How the view opens. `"matrix"`: as a dependency matrix, one row and one column per box and the
    * arrows in the cells, for a map too dense to read as boxes and arrows. Absent: boxes and arrows. The

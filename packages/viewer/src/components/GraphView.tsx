@@ -39,6 +39,7 @@ import {
   nodeBox,
   graphBounds,
   PILL_GAP,
+  ROW_HEIGHT,
   startAnchor,
   startFocus,
   type ChangeMarks,
@@ -738,10 +739,55 @@ export function GraphPicture({
 const NodeShape = memo(function NodeShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
   return node.ghost ? (
     <GhostShape node={node} marks={marks} />
+  ) : node.row ? (
+    <RowShape node={node} marks={marks} />
   ) : (
     <BoxShape node={node} marks={marks} />
   );
 });
+
+/**
+ * A row of a table (`GraphView.boxText: "members"`): a field, with the type its code names. It is a box of its
+ * own: a click shows its code, the caret in its code lights it, and its arrows start at its side.
+ */
+function RowShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
+  const store = useStore();
+  const still = useContext(Still);
+  const selected = marks.selected.has(node.id);
+  const select = (event: MouseEvent | KeyboardEvent) => store.click(node.id, additive(event));
+  const name = boxName(node.label, node.memberType && `type ${node.memberType}`);
+  const middle = ROW_HEIGHT / 2 + 4.5;
+  return (
+    <g
+      className={`node is-row${stateClasses(node.id, marks)}`}
+      data-element-id={still ? undefined : node.id}
+      transform={`translate(${node.x} ${node.y})`}
+      role={still ? undefined : "button"}
+      tabIndex={still ? undefined : 0}
+      aria-label={still ? undefined : name}
+      aria-pressed={still ? undefined : selected}
+      onClick={(event) => {
+        event.stopPropagation();
+        select(event);
+      }}
+      onDoubleClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => activate(event, () => select(event))}
+    >
+      <title>{node.memberType ? `${node.label}: ${node.memberType}` : node.label}</title>
+      <rect className="box" x={2} y={1} width={node.width - 4} height={node.height - 2} rx={4} />
+      {!still && <FocusRing width={node.width} height={node.height} rx={4} />}
+      <path className="row-rule" d={`M0 0.5H${node.width}`} />
+      <text className="row-name" x={14} y={middle}>
+        {node.label}
+      </text>
+      {node.memberType && (
+        <text className="row-type" x={node.width - 14} y={middle}>
+          {node.memberType}
+        </text>
+      )}
+    </g>
+  );
+}
 
 function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
   const store = useStore();
@@ -807,7 +853,7 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
   );
   const shape = (
     <g
-      className={`node kind-${node.kindClass}${role}${node.sketch ? " is-sketch" : ""}${container ? " is-container" : ""}${zoomable ? " is-zoomable" : ""}${stateClasses(node.id, marks)}`}
+      className={`node kind-${node.kindClass}${role}${node.sketch ? " is-sketch" : ""}${container ? " is-container" : ""}${node.rows ? " is-table" : ""}${zoomable ? " is-zoomable" : ""}${stateClasses(node.id, marks)}`}
       data-element-id={still ? undefined : node.id}
       transform={`translate(${node.x} ${node.y})`}
       // a container holds boxes (buttons): it is a group, and says when it is the one picked
@@ -915,7 +961,8 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
                 <path d="M5 9h10" />
               </g>
             )}
-            {centerIsCovered(node) && (
+            {/* (a table's middle is one of its rows: a click there picks the row) */}
+            {!node.rows && centerIsCovered(node) && (
               <circle className="hit" cx={node.width / 2} cy={node.height / 2} r={10} />
             )}
             {/* inside a container (a group), its buttons stay with it */}

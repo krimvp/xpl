@@ -24,14 +24,15 @@ import {
 import { MAP_LIMITS, draftMap } from "../draft-map.js";
 import { CLASS_ENTRY_KINDS, CLASS_LIMITS, draftClass } from "../draft-class.js";
 import { STATES_LIMITS, draftStates } from "../draft-states.js";
+import { DATA_LIMITS, draftData } from "../draft-data.js";
 import { CliError, UsageError, errorMessage } from "../errors.js";
 import { resolveCommit } from "../git.js";
 import { plural, renderIssues, withArticle } from "../format.js";
 import { atomicWrite, displayPath, jsonFile } from "../fsutil.js";
 import { loadReadExplainer, openWorkspace } from "../repo.js";
-import { resolveTarget } from "../target.js";
+import { REPO_TARGET, resolveTarget, type Target } from "../target.js";
 
-const KINDS: readonly DraftKind[] = ["change", "repo", "path", "map", "class", "states"];
+const KINDS: readonly DraftKind[] = ["change", "repo", "path", "map", "class", "states", "data"];
 
 /** What a draft holds, for the summary line and `--json`. */
 export interface DraftCounts {
@@ -39,6 +40,8 @@ export interface DraftCounts {
   /** Graph views (maps). */
   maps: number;
   boxes: number;
+  /** Of `boxes`, the rows of a data map's tables (included ids whose parent is included). */
+  rows: number;
   participants: number;
   sequenceSteps: number;
   overlays: number;
@@ -74,13 +77,17 @@ export function draftCounts(patch: ExplainerPatch): DraftCounts {
   const views = patch.views ?? [];
   const nodes = patch.nodes ?? [];
   let boxes = 0;
+  let rows = 0;
   let maps = 0;
   let participants = 0;
   let sequenceSteps = 0;
   for (const view of views) {
     if (view.type === "graph") {
       maps++;
-      boxes += view.include?.length ?? 0;
+      const include = view.include ?? [];
+      boxes += include.length;
+      if (view.boxText === "members")
+        rows += include.filter((id) => include.includes(id.slice(0, id.lastIndexOf(".")))).length;
     } else {
       participants += view.participants?.length ?? 0;
       sequenceSteps += view.steps?.length ?? 0;
@@ -90,6 +97,7 @@ export function draftCounts(patch: ExplainerPatch): DraftCounts {
     views: views.length,
     maps,
     boxes,
+    rows,
     participants,
     sequenceSteps,
     overlays: nodes.filter((n) => !n.id.startsWith("grp:")).length,
@@ -109,9 +117,11 @@ function summaryLine(kind: DraftKind, name: string, counts: DraftCounts): string
             ? `${counts.views - counts.maps} sequences of ${plural(counts.sequenceSteps, "call")} in all`
             : `a sequence of ${plural(counts.sequenceSteps, "call")} between ${plural(counts.participants, "participant")}`) +
           (counts.maps > 0 ? ` after a map of the ${plural(counts.boxes, "file")} it crosses` : "")
-        : counts.maps > 1
-          ? `${counts.maps} maps of ${plural(counts.boxes, "box", "boxes")} in all`
-          : `a map of ${plural(counts.boxes, "box", "boxes")}`;
+        : kind === "data"
+          ? `a data map of ${plural(counts.boxes - counts.rows, "type")} with ${plural(counts.rows, "field row")}`
+          : counts.maps > 1
+            ? `${counts.maps} maps of ${plural(counts.boxes, "box", "boxes")} in all`
+            : `a map of ${plural(counts.boxes, "box", "boxes")}`;
   return (
     `draft ${kind} for ${name}: ${picture}, ${plural(counts.overlays, "summary", "summaries")}` +
     (counts.groups > 0 ? `, ${plural(counts.groups, "group")}` : "") +
@@ -151,9 +161,9 @@ function pathEntry(model: IndexModel, arg: string): PathEntry {
 export const draftCommand: CommandSpec = {
   name: "draft",
   usage:
-    "xpl draft change|repo|path|map|class|states [explainer] [<entry id> ...] [--audience <reader>] [--question <question>] [-o <file>]",
+    "xpl draft change|repo|path|map|class|states|data [explainer] [<entry id> ...] [--audience <reader>] [--question <question>] [-o <file>]",
   summary:
-    "Print a patch skeleton for a change, a repo, a path, a map, a class or the states of a type; you write the TODO text",
+    "Print a patch skeleton for a change, a repo, a path, a map, a class, the states of a type or a data model; you write the TODO text",
   details: [
     "Builds a provisional patch from indexed references and the change record, with",
     "`TODO: <what to write>` in every text a person must write. `xpl apply` accepts it as it is; `xpl lint` reports",
@@ -215,6 +225,16 @@ export const draftCommand: CommandSpec = {
     "                            (both sites anchored). Comments and other strings do not count. The notes name the",
     `                            states never set or tested and the other uses. At most ${STATES_LIMITS.states} states and`,
     `                            ${STATES_LIMITS.transitions} transitions; a tour: the type, then each state.`,
+    "  data <explainer> [<scope>]",
+    "                            what data the code keeps and how its types relate, on one data map (`boxText:",
+    '                            "members"`): a table per type (class, interface, type, enum) with a row per field and',
+    "                            the type its line names, arrows from a field to the type it holds and from a type to",
+    "                            what it extends or implements. The scope is the repo (the default), a folder or a file",
+    "                            (tests, examples and fixtures left out), or one type to start at. It starts at the",
+    "                            most used type that holds or is held by another, then adds the type with the most links",
+    `                            to the boxes so far (at most ${DATA_LIMITS.boxes} boxes, ${DATA_LIMITS.rows} rows a box; the fields that link come`,
+    "                            first). Each box gets a summary TODO with its fields and links; a tour of at most",
+    `                            ${DATA_LIMITS.steps} steps: the first type, the next ones in the order they joined, the rest of the map.`,
     'Change, repo and path maps get `stubs: {mode: "none"}` (a folder map keeps its stubs: what uses it and what it uses);',
     "tour steps hold at most 2 code ranges. Ids already in the explainer are not reused (`view:change-map-2`; a map",
     "keeps its own view ids and updates them), and nodes it already explains get no new summary.",
@@ -233,7 +253,7 @@ export const draftCommand: CommandSpec = {
     },
   },
   positionals: [
-    { name: "change|repo|path|map|class|states" },
+    { name: "change|repo|path|map|class|states|data" },
     { name: "explainer", required: false },
     { name: "entry", required: false, rest: true },
   ],
@@ -241,12 +261,12 @@ export const draftCommand: CommandSpec = {
     const kind = args.positionals[0] as DraftKind;
     if (!KINDS.includes(kind)) {
       throw new UsageError(
-        `unknown draft "${args.positionals[0]}": use change, repo, path, map, class or states`,
+        `unknown draft "${args.positionals[0]}": use change, repo, path, map, class, states or data`,
       );
     }
-    // a guide name never holds `:` or `#`: a second argument that does is the entry, for the only guide
+    // a guide name never holds `:`, `#` or `/`: a second argument that does is the entry, for the only guide
     const second = args.positionals[1];
-    const named = second !== undefined && !/[:#]/.test(second);
+    const named = second !== undefined && !/[:#/]/.test(second);
     const entryArgs = args.positionals.slice(named ? 2 : 1);
     const entryArg = entryArgs[0];
     if (kind === "path" && entryArg === undefined) {
@@ -264,9 +284,20 @@ export const draftCommand: CommandSpec = {
         "draft states takes one <entry>: a type that enumerates states, e.g. sym:src/status.ts#Status",
       );
     }
-    if (kind !== "path" && kind !== "class" && kind !== "states" && entryArg !== undefined) {
+    if (kind === "data" && entryArgs.length > 1) {
       throw new UsageError(
-        `unexpected argument "${entryArg}": only draft path, class and states take an entry`,
+        "draft data takes one <scope> at most: a folder, a file or a type, e.g. dir:src or sym:src/queue.ts#Job",
+      );
+    }
+    if (
+      kind !== "path" &&
+      kind !== "class" &&
+      kind !== "states" &&
+      kind !== "data" &&
+      entryArg !== undefined
+    ) {
+      throw new UsageError(
+        `unexpected argument "${entryArg}": only draft path, class, states and data take an entry`,
       );
     }
     const loaded = loadReadExplainer(ctx, named ? second : undefined, "draft");
@@ -334,6 +365,9 @@ export const draftCommand: CommandSpec = {
       statesEntry = target.symbol;
     }
 
+    const dataScope: Target =
+      kind === "data" && entryArg !== undefined ? resolveTarget(ws.model, entryArg) : REPO_TARGET;
+
     // A map finds moved files by their text at the commit their box was written at: git reads it by full SHA.
     const commits = new Map<string, string>();
     if (kind === "map") {
@@ -359,7 +393,9 @@ export const draftCommand: CommandSpec = {
                 ? draftClass(input, classEntry!)
                 : kind === "states"
                   ? draftStates(input, statesEntry!)
-                  : draftPath(input, entries);
+                  : kind === "data"
+                    ? draftData(input, dataScope)
+                    : draftPath(input, entries);
     } catch (error) {
       throw new CliError(`nothing to draft: ${errorMessage(error)}`);
     }

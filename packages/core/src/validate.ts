@@ -1279,10 +1279,10 @@ class Validator {
       }
     }
     if (view.stubs !== undefined) this.checkStubPolicy(view.stubs, `${path}.stubs`, id);
-    if (view.boxText !== undefined && view.boxText !== "summary") {
+    if (view.boxText !== undefined && view.boxText !== "summary" && view.boxText !== "members") {
       this.error(
         `${path}.boxText`,
-        'boxText must be "summary" (each box shows its summary under its label)',
+        'boxText must be "summary" (each box shows its summary under its label) or "members" (a type box shows its fields as rows)',
         id,
       );
     }

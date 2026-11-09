@@ -5,9 +5,17 @@
  * policy that keeps them readable is in stubs.ts). Also the pure view edits the viewer applies:
  * expanding a stub, drilling into a node, collapsing one, the default `include`.
  */
+import type { GetText } from "./anchors.js";
 import { DEFAULT_EDGE_KINDS } from "./constants.js";
 import { globMatcher } from "./glob.js";
-import { derivedEdgeId, elementIdForSymbolId, parseId, REF_TO_EDGE_KIND, REPO_ID } from "./ids.js";
+import {
+  derivedEdgeId,
+  elementIdForSymbolId,
+  parseId,
+  REF_TO_EDGE_KIND,
+  REPO_ID,
+  symbolIdForElementId,
+} from "./ids.js";
 import { isTestFile, type IndexModel } from "./index-model.js";
 import { implementationsOf, type Implementation } from "./implementations.js";
 import type { ExplainerModel } from "./model.js";
@@ -57,6 +65,12 @@ export interface GraphNode {
   summary?: string;
   /** An idea linked to no code (`Node.sketch`). */
   sketch?: boolean;
+  /** A type box that draws its children as the rows of one table (`GraphView.boxText: "members"`). */
+  rows?: boolean;
+  /** A row of such a box: its place in the table, from 0, in the order the code declares the rows. */
+  row?: number;
+  /** A row: the type its declaration line names (`number` for `attempts: number`), if any. */
+  memberType?: string;
 }
 
 /**
@@ -99,6 +113,50 @@ export interface DerivedGraph {
 export interface DeriveOptions {
   /** Overrides `view.edgeKinds` (and the default `calls`, `extends`, `implements`). */
   edgeKinds?: readonly Edge["kind"][];
+  /** Source text, for the type of each row on a `boxText: "members"` view (rows show no type without it). */
+  text?: GetText;
+}
+
+/** Symbol kinds that a `boxText: "members"` view draws as a table of rows. */
+const TYPE_KINDS: ReadonlySet<IndexedSymbol["kind"]> = new Set([
+  "class",
+  "interface",
+  "type",
+  "enum",
+]);
+/** The longest type text a row shows; a longer one is cut and ends in "…". */
+const MEMBER_TYPE_MAX = 28;
+
+/**
+ * The type a field's declaration line names, read off the text after its name: `attempts: number;` (TypeScript),
+ * `attempts: int = 0` (Python) and `Attempts int // note` (Go) all give the type. Undefined when the line names
+ * none (`x = 0`) or does not hold the name.
+ */
+function memberType(line: string, name: string): string | undefined {
+  const start = wordAt(line, name);
+  if (start < 0) return undefined;
+  const rest = line
+    .slice(start + name.length)
+    .replace(/^[?!]/, "")
+    .replace(/\s(?:\/\/|#).*$/, "") // a comment at the end
+    .replace(/\s`[^`]*`\s*$/, ""); // a Go struct tag
+  const colon = /^\s*:\s*/.exec(rest);
+  let type: string;
+  if (colon) type = rest.slice(colon[0].length).split(/\s=(?!>)|;/)[0]!;
+  else if (/^\s+[\w*[\]().]/.test(rest)) type = rest;
+  else return undefined;
+  type = type.trim().replace(/[,;]$/, "").trim();
+  if (type === "" || /^[={]/.test(type)) return undefined;
+  return type.length > MEMBER_TYPE_MAX ? `${type.slice(0, MEMBER_TYPE_MAX - 1).trimEnd()}…` : type;
+}
+
+/** Where `name` stands in `line` as a whole word (not part of a longer name), or -1. */
+function wordAt(line: string, name: string): number {
+  const word = (c: string | undefined) => c !== undefined && /[\w$]/.test(c);
+  for (let at = line.indexOf(name); at >= 0; at = line.indexOf(name, at + 1)) {
+    if (!word(line[at - 1]) && !word(line[at + name.length])) return at;
+  }
+  return -1;
 }
 
 /** Sites and definitions kept per derived edge. */
@@ -389,6 +447,13 @@ export function deriveGraph(
   const rep = new Representation(model, include);
   const dropRef = excludedRefs(view, model, includeIds);
   const policy = resolveStubPolicy(view.stubs);
+  const members = view.boxText === "members";
+  const isType = (id: ElementId): boolean => {
+    const node = model.node(id);
+    return (
+      node?.kind === "symbol" && node.symbolKind !== undefined && TYPE_KINDS.has(node.symbolKind)
+    );
+  };
 
   // Nodes with render parents.
   const parents = new Map<ElementId, ElementId>();
@@ -532,6 +597,8 @@ export function deriveGraph(
     if (dropRef?.(ref)) continue;
     const a = rep.repr(fromEl);
     const b = rep.repr(toEl);
+    // a data-model view draws what the types hold, not the uses inside a type's methods
+    if (members && a !== undefined && a !== fromEl && isType(a)) continue;
     if (a !== undefined && kind === "calls") {
       const hop = dispatched(ref);
       const implEl = hop && !dropRef?.(hop) ? endpoint(hop.to) : undefined;
@@ -645,6 +712,28 @@ export function deriveGraph(
     if (parent !== undefined) finalParent.set(id, parent);
   }
   const containers = new Set(finalParent.values());
+  // a type box whose children are all plain boxes is a table: one row per child
+  const tables = new Set<ElementId>();
+  if (members) {
+    for (const id of containers) if (isType(id)) tables.add(id);
+    for (const [child, parent] of finalParent) if (containers.has(child)) tables.delete(parent);
+  }
+  const symbolOf = (id: ElementId) => model.index.symbol(symbolIdForElementId(id) ?? "");
+  const typeOf = (id: ElementId): string | undefined => {
+    const sym = symbolOf(id);
+    const line = sym && opts.text?.(sym.file)?.split("\n")[sym.range.startLine - 1];
+    return line ? memberType(line, sym.path.split(".").pop()!) : undefined;
+  };
+  // rows in the order the code declares them
+  const rowOf = new Map<ElementId, number>();
+  for (const table of tables) {
+    const line = (id: ElementId) => symbolOf(id)?.range.startLine ?? Infinity;
+    [...finalParent]
+      .filter(([, parent]) => parent === table)
+      .map(([child]) => child)
+      .sort((a, b) => line(a) - line(b) || cmp(a, b))
+      .forEach((child, i) => rowOf.set(child, i));
+  }
   const nodes: GraphNode[] = visibleIds.map((id) => {
     const node = model.node(id)!;
     const out: GraphNode = {
@@ -664,6 +753,13 @@ export function deriveGraph(
     if (node.sketch === true) out.sketch = true;
     const parent = finalParent.get(id);
     if (parent !== undefined) out.parent = parent;
+    if (tables.has(id)) out.rows = true;
+    const row = rowOf.get(id);
+    if (row !== undefined) {
+      out.row = row;
+      const type = typeOf(id);
+      if (type !== undefined) out.memberType = type;
+    }
     return out;
   });
 

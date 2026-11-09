@@ -16,6 +16,9 @@ New commands and drafts:
   implements it. (#233)
 - `xpl draft states <guide> <type>` drafts a flow of the states of a status type (a TypeScript enum or union
   of string literals, a Python Enum, a Go const block) and the functions that move it between them. (#237)
+- `xpl draft data <guide> [<scope>]` drafts a data map: a table per type with a row per field and its type,
+  and arrows from a field to the type it holds (`boxText: "members"` on any map). Rows link to their code
+  both ways.
 - `xpl health` lists committed secrets, secrets in variables sent to the browser, committed `.env` files,
   code files over 1,000 lines and files nothing uses. It shows at most the first 4 characters of a secret
   and exits 0 with or without findings. (#236)
