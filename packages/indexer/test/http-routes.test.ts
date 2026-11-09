@@ -55,6 +55,31 @@ describe("web requests to server routes", () => {
     ]);
   });
 
+  it('a route a test serves answers the requests of that test only (ky\'s tests each serve "/")', async () => {
+    expect(
+      await requests({
+        "test/main.ts": [
+          'test("timeout option", async () => {',
+          '  server.get("/", (request, response) => response.end("ok"));',
+          '  await ky.get("https://example.com/");',
+          "});",
+          'test("retry option", async () => {',
+          '  server.get("/", (request, response) => response.end("ok"));',
+          '  await ky.get("https://example.com/");',
+          "});",
+          "",
+        ].join("\n"),
+        "test-d/names.ts": 'void ky("https://example.com/");\n',
+        "src/server.ts": 'app.get("/health", (req, res) => res.send("ok"));\n',
+        "test/health.ts":
+          'test("health", async () => { await ky.get("https://example.com/health"); });\n',
+      }),
+    ).toEqual([
+      // (a request to its own test's server is a reference of the test to itself: none)
+      "test/health.ts#health -> src/server.ts# (request)",
+    ]);
+  });
+
   it("a path built on a string constant of its file is read through it; a single-page catch-all answers nothing", async () => {
     // As in a FastAPI backend serving a Next.js export: the fallback route returns index.html for any path.
     expect(

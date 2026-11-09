@@ -110,6 +110,8 @@ export interface MapStats {
   classifyErrors: number;
 }
 
+const TS_FILE_LANGUAGES: ReadonlySet<FileLanguage> = new Set(["typescript", "tsx", "javascript"]);
+
 /** `SymbolInformation.Kind` values that are types (used when the indexer sets kinds, e.g. scip-go). */
 const TYPE_KINDS: ReadonlySet<number> = new Set([
   SymbolKind.Class,
@@ -656,9 +658,11 @@ class Mapper {
         else if (isLocalSymbol(occ.symbol) || this.lostDefinitions.has(key)) {
           const range = parseScipRange(occ.range);
           const span = range && view.span(range);
-          // a member (`ns.f`): a local with no definition that is a plain name is a keyword argument or the like
+          // a member (`ns.f`). A plain name: in Python a keyword argument or the like; in TypeScript the
+          // binding of an import the tool could not find (a package importing itself by its own name)
           const member = span && view.lines[span.startLine - 1]?.[span.startCol - 2] === ".";
-          if (span && (member || this.lostDefinitions.has(key)))
+          const unresolvedImport = TS_FILE_LANGUAGES.has(this.languageOf.get(view.path)!);
+          if (span && (member || unresolvedImport || this.lostDefinitions.has(key)))
             this.blind.push({ file: view.path, line: span.startLine, col: span.startCol });
         }
         continue;

@@ -33,7 +33,7 @@
  * configured origin). A catch-all route that matches no literal segment (a single-page fallback) links nothing.
  */
 import type { Node } from "web-tree-sitter";
-import type { FilePath, Reference, SymbolId } from "@xpl/core";
+import { isTestFile, type FilePath, type Reference, type SymbolId } from "@xpl/core";
 import { nodeSpan, spanContains, spanLineCount } from "./ast.js";
 import { SymbolLookup, type SymbolEntry } from "./symbols.js";
 import type { FileContext, Span } from "./languages/types.js";
@@ -612,6 +612,11 @@ function collectGo(ctx: FileContext, emit: Emit): void {
 
 // ─── Resolution ───────────────────────────────────────────────────────────────────────────────────
 
+/** Are two symbols one, or is one inside the other (`a.ts#test 1` and `a.ts#test 1.handler`)? */
+function related(a: SymbolId, b: SymbolId): boolean {
+  return a === b || a.startsWith(`${b}.`) || b.startsWith(`${a}.`);
+}
+
 /** Most prefixes one router gets through its mounts (a router mounted in many places). */
 const MAX_PREFIXES = 16;
 
@@ -694,6 +699,7 @@ export function resolveRequests(
         method: r.method,
         segments: segmentsOf(joinPath(p, r.path)),
         to,
+        test: isTestFile(s.file),
       }));
     }),
   );
@@ -704,8 +710,12 @@ export function resolveRequests(
       const segments = segmentsOf(q.path);
       let best = -1;
       let targets: SymbolId[] = [];
+      const from = lookup.fromId(s.file, q.site.startLine, q.site.startCol);
       for (const r of routes) {
         if (q.method !== "*" && r.method !== "*" && q.method !== r.method) continue;
+        // a server a test starts answers that test only (ky's tests each start one on "/"): its routes match the
+        // requests of the same test, not those of every other test and type test
+        if (r.test && !related(from, r.to)) continue;
         const literal = matchScore(segments, r.segments);
         // A catch-all that matches no literal segment (`/{full_path:path}`, `app.get("*")`) is a single-page
         // fallback or a proxy: it answers every path, so it tells nothing about this one.
@@ -714,7 +724,6 @@ export function resolveRequests(
         if (score > best) [best, targets] = [score, [r.to]];
         else if (score === best) targets.push(r.to);
       }
-      const from = lookup.fromId(s.file, q.site.startLine, q.site.startCol);
       for (const to of new Set(targets))
         if (to !== from)
           out.push({ from, to, kind: "request", site: q.site, resolution: "heuristic" });

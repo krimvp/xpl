@@ -468,6 +468,34 @@ export function ⟦lex⟧(): number {
     ]);
   });
 
+  it("TypeScript: a name imported from a module the tool could not find (a package's own name) is blind", async () => {
+    // scip-typescript gives the binding of an unresolved import a `local` with no definition
+    const use = marked(`import type { ⟦RetryOptions⟧ } from "ky";
+export const ⟦check⟧ = (⟦o⟧: ⟦RetryOptions⟧) => ⟦o⟧;
+`);
+    const { result } = await run({ "test-d/a.ts": use.text }, [
+      source([
+        {
+          path: "test-d/a.ts",
+          occurrences: [
+            moduleDef("test-d/a.ts"),
+            ...occs(use, [
+              [0, "local 0"],
+              [1, ts("test-d/a.ts", "check."), DEF],
+              [2, "local 1", DEF],
+              [3, "local 0"],
+              [4, "local 1"],
+            ]),
+          ],
+        },
+      ]),
+    ]);
+    expect(result.blind).toEqual([
+      { file: "test-d/a.ts", line: 1, col: 15 },
+      { file: "test-d/a.ts", line: 2, col: 26 },
+    ]);
+  });
+
   it("a local declared in a function with the function's own name is not the function: no invented recursion", async () => {
     const src = marked(`export function ⟦walk⟧(⟦node⟧: unknown): number {
   const ⟦walk⟧ = (n: unknown) => 1;

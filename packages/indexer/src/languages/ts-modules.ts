@@ -7,7 +7,8 @@
  * - Bare specifiers are external, *except* when the repository itself defines them: `tsconfig.json` /
  *   `jsconfig.json` `paths` and `baseUrl` (with relative `extends`), and workspace packages whose
  *   `package.json` `name` matches (entry via `exports`, `types`, `module`, `main`; build output such as
- *   `dist/index.js` is mapped back to its source). Packages that live only in `node_modules` stay external.
+ *   `dist/index.js` is mapped back to its source, also through a `tsconfig*.json` `outDir`/`rootDir`, so a
+ *   package can import itself by its own name). Packages that live only in `node_modules` stay external.
  */
 import { posix } from "node:path";
 import type { RepoView } from "./types.js";
@@ -353,6 +354,32 @@ function subpathTargets(map: unknown, key: string): string[] {
 /** Build-output directories mapped back to source directories. */
 const OUTPUT_DIRS = ["dist", "lib", "build", "out", "esm", "cjs"];
 
+const outDirCache = new WeakMap<RepoView, Map<string, Map<string, string>>>();
+
+/**
+ * `outDir` -> `rootDir` of the `tsconfig*.json` files in a package's own folder (`distribution` ->
+ * `source`), so an `exports` target in build output that is not in the repository maps to its source.
+ */
+function tsconfigOutDirs(pkgDir: string, repo: RepoView): Map<string, string> {
+  let byDir = outDirCache.get(repo);
+  if (!byDir) outDirCache.set(repo, (byDir = new Map()));
+  let dirs = byDir.get(pkgDir);
+  if (dirs) return dirs;
+  dirs = new Map();
+  for (const path of repo.files) {
+    const dir = posix.dirname(path) === "." ? "" : posix.dirname(path);
+    if (dir !== pkgDir || !/^tsconfig.*\.json$/.test(posix.basename(path))) continue;
+    const json = parseJsonc(repo.readText(path) ?? "");
+    const options = isRecord(json) && isRecord(json.compilerOptions) ? json.compilerOptions : {};
+    const out = typeof options.outDir === "string" ? repoPath(posix.join(".", options.outDir)) : "";
+    const root =
+      typeof options.rootDir === "string" ? repoPath(posix.join(".", options.rootDir)) : "";
+    if (out && root !== undefined && !out.includes("/")) dirs.set(out, root);
+  }
+  byDir.set(pkgDir, dirs);
+  return dirs;
+}
+
 /** The source file(s) a package-relative target (`./dist/index.js`, `./src/index.ts`) stands for. */
 function targetToSources(pkgDir: string, target: string, repo: RepoView): string[] {
   const path = repoPath(posix.join(pkgDir, target));
@@ -362,6 +389,12 @@ function targetToSources(pkgDir: string, target: string, repo: RepoView): string
   const rel = repoPath(posix.join(".", target));
   if (rel === undefined) return [];
   const [first, ...rest] = rel.split("/");
+  const outDir = first === undefined ? undefined : tsconfigOutDirs(pkgDir, repo).get(first);
+  if (outDir !== undefined) {
+    const mapped = repoPath(posix.join(pkgDir, outDir, ...rest));
+    const files = mapped === undefined ? [] : probeModule(mapped.replace(/\.d\.ts$/, ""), repo);
+    if (files.length > 0) return files;
+  }
   if (first !== undefined && OUTPUT_DIRS.includes(first)) {
     for (const source of ["src", "source", ""]) {
       const mapped = repoPath(posix.join(pkgDir, source, ...rest));
