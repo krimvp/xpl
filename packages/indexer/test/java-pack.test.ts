@@ -107,6 +107,52 @@ describe("Java language pack", () => {
     ]);
   });
 
+  it("resolves a bare name to the innermost scope that declares it", async () => {
+    const { index } = await indexFiles({
+      "src/p/Pool.java": src("package p;", "class Pool { void lease() {} }"),
+      "src/p/Other.java": src("package p;", "class Other { void lease() {} }"),
+      "src/p/Outer.java": src(
+        "package p;",
+        "import java.util.List;",
+        "class Outer {",
+        "  private Pool worker;",
+        "  private Pool FAST;",
+        "  void helper() {}",
+        "  class Inner {",
+        "    void helper() {}",
+        "    void up() { helper(); }",
+        "  }",
+        "  void each(List<Other> list) {",
+        "    list.forEach(worker -> worker.lease());",
+        "    for (Other worker : list) worker.lease();",
+        "    worker.lease();",
+        "  }",
+        "  enum Mode { FAST; void go() { FAST.lease(); helper(); } void helper() {} }",
+        "}",
+        "record Lease(Pool held) { void go() { held.lease(); } }",
+        "interface Shared { Pool SHARED = new Pool(); default void go() { SHARED.lease(); } }",
+      ),
+    });
+    const outer = "src/p/Outer.java";
+    const at = (line: number) => callsAt(index, outer, line);
+    // the innermost class that declares `helper` wins
+    expect(at(9)).toEqual([`${outer}#Outer.Inner.up -> ${outer}#Outer.Inner.helper`]);
+    // a lambda parameter hides the field: its type is unknown, so no arrow
+    expect(at(12)).toEqual([]);
+    // a for-each variable hides the field and has its own type
+    expect(at(13)).toEqual([`${outer}#Outer.each -> src/p/Other.java#Other.lease`]);
+    // outside the lambda and the loop, the field is back
+    expect(at(14)).toEqual([`${outer}#Outer.each -> src/p/Pool.java#Pool.lease`]);
+    // an enum constant hides the outer field `FAST`, and the enum's own `helper` wins
+    expect(at(16)).toEqual([`${outer}#Outer.Mode.go -> ${outer}#Outer.Mode.helper`]);
+    // a record component and an interface constant are fields with a type
+    expect(at(18)).toEqual([`${outer}#Lease.go -> src/p/Pool.java#Pool.lease`]);
+    expect(at(19)).toEqual([
+      `${outer}#Shared -> src/p/Pool.java#Pool`,
+      `${outer}#Shared.go -> src/p/Pool.java#Pool.lease`,
+    ]);
+  });
+
   it("links the java-jobrunner calls through fields and inside the same class", async () => {
     const { index } = await indexFiles(fixtureFiles("java-jobrunner"));
     const runner = "src/main/java/jobrunner/Runner.java";

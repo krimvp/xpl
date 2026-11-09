@@ -13,7 +13,7 @@ import { GRAMMAR_WASM, RUNTIME_WASM, resolveWasmFile, type GrammarId } from "./w
 import type { ProviderSource } from "./providers.js";
 import { loadedWasmMatches } from "./wasm.js";
 
-const EXTRACTION_REVISION = 8;
+const EXTRACTION_REVISION = 9;
 const CACHE_FORMAT = "xpl-extraction@1";
 
 export interface ExtractionProfile {

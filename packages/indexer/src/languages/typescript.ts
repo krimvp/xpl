@@ -162,6 +162,15 @@ function stringContent(node: Node): string {
   return text.length >= 2 ? text.slice(1, -1) : text;
 }
 
+/** The object type literals a type alias's value is made of: `{...}`, or each `{...}` of an `A & {...}`. */
+function objectTypesOf(value: Node | null): Node[] {
+  if (!value) return [];
+  if (value.type === "object_type") return [value];
+  if (value.type === "parenthesized_type") return objectTypesOf(value.namedChild(0));
+  if (value.type === "intersection_type") return value.namedChildren.flatMap(objectTypesOf);
+  return [];
+}
+
 /** The name of a class member / object property, or undefined for computed names we cannot spell. */
 function memberName(nameNode: Node | null): string | undefined {
   if (!nameNode) return undefined;
@@ -1098,7 +1107,12 @@ class Extractor {
       }
       case "type_alias_declaration": {
         const name = node.childForFieldName("name");
-        if (name) this.emit(prefix + name.text, "type", stmt, stmt, parent);
+        if (!name) break;
+        const path = prefix + name.text;
+        this.emit(path, "type", stmt, stmt, parent);
+        // `type X = { a: T }` and `type X = A & { a: T }` hold fields like an interface.
+        for (const literal of objectTypesOf(node.childForFieldName("value")))
+          this.interfaceBody(literal, path);
         break;
       }
       case "enum_declaration": {

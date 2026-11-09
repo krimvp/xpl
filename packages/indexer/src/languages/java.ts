@@ -118,7 +118,10 @@ function classScope(path: string, declaration: Node): ClassScope {
   return scope;
 }
 
-/** Every name a method binds itself: parameters, locals, lambda, catch, for-each and resource names. */
+/**
+ * Every name a method binds for its whole body: parameters, locals, catch and resource names. A lambda's
+ * parameters and a for-each variable are bound only inside the lambda or the loop (`loopOrLambdaNames`).
+ */
 function boundNames(method: Node): Set<string> {
   const names = new Set<string>();
   const walk = (node: Node) => {
@@ -126,19 +129,10 @@ function boundNames(method: Node): Set<string> {
       case "formal_parameter":
       case "spread_parameter":
       case "catch_formal_parameter":
-      case "enhanced_for_statement":
       case "resource":
       case "variable_declarator": {
         const name = field(node, "name");
         if (name) names.add(name.text);
-        break;
-      }
-      case "lambda_expression": {
-        const params = field(node, "parameters");
-        if (params?.type === "identifier") names.add(params.text);
-        else
-          for (const param of params?.namedChildren ?? [])
-            if (param.type === "identifier") names.add(param.text);
         break;
       }
     }
@@ -146,6 +140,18 @@ function boundNames(method: Node): Set<string> {
   };
   walk(method);
   return names;
+}
+
+/** The names a lambda's untyped parameters or a for-each variable bind inside it. */
+function loopOrLambdaNames(node: Node): string[] {
+  if (node.type === "enhanced_for_statement") {
+    const name = field(node, "name");
+    return name ? [name.text] : [];
+  }
+  if (node.type !== "lambda_expression") return [];
+  const params = field(node, "parameters");
+  if (params?.type === "identifier") return [params.text];
+  return (params?.namedChildren ?? []).filter((p) => p.type === "identifier").map((p) => p.text);
 }
 
 function extractJava(ctx: FileContext): { facts: FileFacts; located: LocatedSite[] } {
@@ -265,6 +271,12 @@ function extractJava(ctx: FileContext): { facts: FileFacts; located: LocatedSite
         ...(owner && { parentPath: owner }),
       });
       classes.push(classScope(path, node));
+      // a record's components are its fields
+      if (node.type === "record_declaration")
+        for (const param of field(node, "parameters")?.namedChildren ?? []) {
+          const component = field(param, "name");
+          if (component) typeFact(path, component.text, "field", field(param, "type"));
+        }
       const outerBound = bound;
       bound = new Set();
       for (const child of node.namedChildren) {
@@ -301,6 +313,12 @@ function extractJava(ctx: FileContext): { facts: FileFacts; located: LocatedSite
       bound = outerBound;
       return;
     }
+    // an interface constant (`Pool SHARED = …;`) is a field of the interface
+    if (node.type === "constant_declaration" && typeOwner)
+      for (const child of node.namedChildren) {
+        const name = child.type === "variable_declarator" ? field(child, "name") : undefined;
+        if (name) typeFact(typeOwner, name.text, "field", field(node, "type"));
+      }
     if (node.type === "field_declaration" && typeOwner) {
       const declaredType = field(node, "type");
       for (const child of node.namedChildren) {
@@ -336,6 +354,20 @@ function extractJava(ctx: FileContext): { facts: FileFacts; located: LocatedSite
           if (name) typeFact(owner, name.text, "local", declaredType);
         }
       }
+    }
+    // A for-each variable has the type it declares, inside its loop only.
+    if (node.type === "enhanced_for_statement" && owner) {
+      const name = field(node, "name");
+      const type = field(node, "type");
+      const typeName = qualified(type)?.typeName ?? nameOf(type);
+      if (name && typeName && !PRIMITIVES.has(typeName))
+        facts.typeFacts.push({
+          scopePath: owner,
+          name: name.text,
+          kind: "local",
+          typeName,
+          visibleIn: nodeSpan(node, lines),
+        });
     }
     if (node.type === "method_invocation") {
       const name = field(node, "name");
@@ -388,7 +420,12 @@ function extractJava(ctx: FileContext): { facts: FileFacts; located: LocatedSite
       }
       if (node.type === "scoped_type_identifier") return;
     }
+    const inner = loopOrLambdaNames(node);
+    const outerBound = bound;
+    // a lambda parameter or a for-each variable hides a field of the same name inside it only
+    if (inner.length > 0) bound = new Set([...bound, ...inner]);
     for (const child of node.namedChildren) visit(child, owner, typeOwner);
+    bound = outerBound;
   };
   visit(ctx.tree.rootNode);
   return { facts, located };
