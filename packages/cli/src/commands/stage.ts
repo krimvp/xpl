@@ -10,22 +10,11 @@ export const stageCommand: CommandSpec = {
   summary:
     "Save a finished guide as a fixed version on this machine (--preview lists the code it holds)",
   details: [
-    "--dir is required and must be outside the source checkout, including through symlink ancestors.",
-    "--preview checks readiness and lists included head/base files without creating storage or HTML.",
-    "Otherwise the included files are printed before writing. Versions contain index.html and manifest.json",
-    "with commits, artifactIdentity, input/HTML hashes, readiness, source scope and author review state.",
-    "Rechecks readiness and source freshness before atomically replacing the relative current symlink under",
-    "a lock. Prior immutable version folders remain available. Failures retain the previous current version.",
-    "Open <dir>/current/index.html or <dir>/<version>/index.html. Nothing is uploaded; xpl pr link points a PR at a served folder.",
-    "PR guides require --pr-result from xpl pr finish and --root pointing to the prepared checkout. Stages the",
-    "validated ready HTML with version metadata and its original result manifest; rechecks GitHub base/head before promotion.",
-    "--files and --note cannot change a PR result: select files and record decisions when creating that result.",
-    "Current opens its immutable version URL. About this guide links prior versions and the reading state.",
-    "Saved HTML restores navigation; explicit URL targets override it. Keep the staged tree for prior-version links.",
-    "Names in author review records are self-reported. --require-review explicitly requires all-content review.",
-    "No draft or drift override: a guide with readiness errors cannot be staged, even with XPL_SKIP_STALE_CHECK.",
-    "A crashed writer's current.lock requires explicit removal after verifying the writer stopped; locks are never stolen.",
-    "If lock release fails after promotion, the command succeeds with a cleanup warning; current already changed.",
+    "Saves a ready guide as a version folder with index.html and manifest.json, under --dir.",
+    "--dir must be outside the source checkout. --preview lists the files it would hold and writes nothing.",
+    "It checks readiness and the code again, then points `current` at the new version. Old versions stay.",
+    "Open <dir>/current/index.html. Nothing is uploaded; `xpl pr link` points a PR at a served folder.",
+    "A PR guide needs --pr-result from `xpl pr finish`. A guide with readiness errors is never staged.",
   ],
   options: {
     dir: {

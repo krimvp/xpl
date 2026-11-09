@@ -10,7 +10,14 @@ import { ViewerStore } from "../src/store.js";
 import { makeBundle } from "./world.js";
 import { readLaunchParams } from "../src/data.js";
 import { searchFor } from "../src/url.js";
-import { aroundFlow, flowRelated, layoutView, topicElements } from "../src/workspace.js";
+import {
+  aroundFlow,
+  flowRelated,
+  hasMapTab,
+  layoutView,
+  topicElements,
+  workspaceMap,
+} from "../src/workspace.js";
 
 describe("explanation workspace", () => {
   it("starts with the guide but preserves explicit explore and present launches", () => {
@@ -230,5 +237,34 @@ describe("one direction per view (R5-5)", () => {
     expect((await lay("view:once", 300, 1200)).direction).toBe("RIGHT");
     // another view picks its own
     expect((await lay("view:other", 300, 1200)).direction).toBe("DOWN");
+  });
+});
+
+// V6-02: a guide with no map got a made-up "System map" of its flow's one or two boxes, drawn at twice the size
+describe("the map a guide without one gets", () => {
+  const withoutMap = (participants?: string[]) => {
+    const bundle = makeBundle();
+    const explainer = bundle.explainer;
+    explainer.views = explainer.views.filter((view) => view.type !== "graph");
+    for (const tour of explainer.tours)
+      for (const step of tour.steps) if (step.view === "view:overview") step.view = "view:flow";
+    if (participants)
+      (explainer.views.find((v) => v.id === "view:flow") as SequenceView).participants =
+        participants;
+    return new ViewerStore(bundle, { perspective: "map" }).getState();
+  };
+
+  it("is named after the flow whose parts it draws, not a system map", () => {
+    const map = workspaceMap(withoutMap());
+    expect(map.generated).toBe(true);
+    expect(map.view.title).toBe("Parts of “Flow”");
+  });
+
+  it("gets no Map tab when it would draw fewer than 3 boxes; a guide with a map always has one", () => {
+    expect(hasMapTab(withoutMap())).toBe(false);
+    expect(
+      hasMapTab(withoutMap(["sym:src/a.ts#A.run", "sym:src/a.ts#A.stop", "file:src/b.ts"])),
+    ).toBe(true);
+    expect(hasMapTab(new ViewerStore(makeBundle()).getState())).toBe(true);
   });
 });

@@ -137,7 +137,7 @@ In a graph view, include the group **and** its members to draw it as a container
 }
 ```
 
-The participants of a sequence or flow view and the boxes of a graph view count as "unexplained" (`xpl status`) until they have a `summary`, so write overlays for them in the same patch. What a summary says, how long it is and which markdown it takes: `writing.md`, section 1.
+`xpl status` lists the participants of a sequence or flow view and the boxes of a graph view as "without summary" until they have a `summary`, so write overlays for them in the same patch. What a summary says, how long it is and which markdown it takes: `writing.md`, section 1.
 
 ### 3.3 `llm` edge (only for links static analysis cannot see)
 
@@ -333,7 +333,7 @@ Use `type: "flow"` when the point is what the code decides: stages, conditions, 
 
 The box shows the `label` in large type, so a flow label names a stage (`writing.md`, section 3), and the call goes in the anchors. A `decision` label is a short question ("Did the attempt succeed?"), and each `next` label says when that branch is taken ("yes", "attempts left").
 
-**Participants need a summary.** Each participant counts as unexplained (`xpl status`) until its node has a `summary`: put an overlay (3.2) for every participant in the same patch as the view.
+**Participants need a summary.** `xpl status` lists each participant "without summary" until its node has a `summary`: put an overlay (3.2) for every participant in the same patch as the view.
 
 **Who does the step.** The box names the step's `from` under its label. Draw a step from the participant whose code it is: when the step's first anchor (in the current code) is not inside `from`, validation warns and names the participant that holds it. (A `return` step whose code is in `to`, the caller getting the answer, is fine.)
 
@@ -601,7 +601,7 @@ A sequence view appears in the reader's **Flow** tab as a sequence diagram, with
 
 ### 3.8 Sequence view (steps, frames)
 
-Required: `type: "sequence"`, `title`, `participants` (lifelines, left to right), `steps`. Every step needs `id` (`<view-slug>:<n>`), `from`, `to` (both must be participants), `label` (the call text, as written in the code), `kind` (`call` solid arrow, `return` dashed back to the caller, `async` open head), and should have `summary` and anchors: the exact call in the caller (`call-site`) plus the callee's definition. `edge` links a step to the edge it instantiates. A step's `from` may equal `to` (self-call). Frames (`loop`, `alt`, `opt`, `par`) wrap the run `fromStep`..`toStep` (inclusive); nest them or keep them apart (a partial overlap draws a warning). An `alt` frame may have `arms`, one per alternative ("When to draw a frame", below). Keep a sequence view to 6 participants at most: a flow with more is two or three views (one per phase or per collaborator group), each readable on its own. **Participants need a summary:** each counts as unexplained (`xpl status`) until its node has one, so put an overlay (3.2) for every participant in the same patch as the view.
+Required: `type: "sequence"`, `title`, `participants` (lifelines, left to right), `steps`. Every step needs `id` (`<view-slug>:<n>`), `from`, `to` (both must be participants), `label` (the call text, as written in the code), `kind` (`call` solid arrow, `return` dashed back to the caller, `async` open head), and should have `summary` and anchors: the exact call in the caller (`call-site`) plus the callee's definition. `edge` links a step to the edge it instantiates. A step's `from` may equal `to` (self-call). Frames (`loop`, `alt`, `opt`, `par`) wrap the run `fromStep`..`toStep` (inclusive); nest them or keep them apart (a partial overlap draws a warning). An `alt` frame may have `arms`, one per alternative ("When to draw a frame", below). Keep a sequence view to 6 participants at most: a flow with more is two or three views (one per phase or per collaborator group), each readable on its own. **Participants need a summary:** `xpl status` lists each one "without summary" until its node has one, so put an overlay (3.2) for every participant in the same patch as the view.
 
 ```json patch
 {
@@ -957,6 +957,7 @@ A box for something outside the repo is a group with a `role` and **no `members`
       "to": "file:src/main.ts",
       "kind": "custom",
       "label": "starts it",
+      "summary": "The operator runs the program and may pass the path of a config file as its first argument.",
       "anchors": [
         { "file": "src/main.ts", "symbol": "main", "find": "process.argv[2]", "role": "usage" }
       ]
@@ -967,6 +968,7 @@ A box for something outside the repo is a group with a `role` and **no `members`
       "to": "grp:config-file",
       "kind": "custom",
       "label": "reads settings",
+      "summary": "At start, the runner reads the YAML file into typed settings. Without a path, it reads the default file.",
       "anchors": [
         { "file": "src/config.ts", "symbol": "loadConfig", "role": "definition" },
         { "file": "config/default.yaml", "role": "config" }

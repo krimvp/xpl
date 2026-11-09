@@ -15,6 +15,7 @@ const LETTERS: Record<string, string> = {
   method: "m",
   type: "T",
   variable: "x",
+  constant: "x",
   field: "x",
   enum: "E",
   key: "k",

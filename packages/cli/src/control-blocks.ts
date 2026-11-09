@@ -33,6 +33,8 @@ export interface Arm extends LineRange {
   condition: string;
   /** The code after an `if` that exits early: the `else` the code does not write (`if (ok) { …; continue }`). */
   implicit?: true;
+  /** With `implicit`: the keyword the `if` leaves with (`continue`, `return`, `break`, `raise`, `throw`). */
+  leavesWith?: string;
 }
 
 const LOOP =
@@ -102,11 +104,9 @@ function implicitElse(node: SyntaxNode, arms: readonly Arm[]): Arm | undefined {
   if (arms.length !== 1) return undefined;
   const consequence = node.childForFieldName("consequence");
   const last = consequence ? statementsOf(consequence).at(-1) : undefined;
-  const exits =
-    last !== undefined &&
-    (EXIT.test(last.type) ||
-      (last.type === "expression_statement" && EXIT.test(last.namedChildren[0]?.type ?? "")));
-  if (!exits || !node.parent) return undefined;
+  const exit =
+    last && last.type === "expression_statement" ? (last.namedChildren[0] ?? undefined) : last;
+  if (!exit || !EXIT.test(exit.type) || !node.parent) return undefined;
   const siblings = statementsOf(node.parent);
   const after = siblings.slice(siblings.findIndex((s) => s.equals(node)) + 1);
   if (after.length === 0) return undefined;
@@ -116,6 +116,7 @@ function implicitElse(node: SyntaxNode, arms: readonly Arm[]): Arm | undefined {
     end: after.at(-1)!.endPosition.row + 1,
     condition: "else",
     implicit: true,
+    leavesWith: exit.type.replace(/_(?:statement|expression)$/, ""),
   };
 }
 

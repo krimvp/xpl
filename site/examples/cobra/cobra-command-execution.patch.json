@@ -304,7 +304,7 @@
     {
       "id": "tour:execution",
       "title": "How Cobra selects and runs a command",
-      "summary": "Cobra finds the selected command and normally parses its flags; apps can disable parsing to pass raw arguments to handlers. Help requests and commands without a runnable handler print help and return. Runnable commands check arguments, run pre-run hooks, check flag rules, and call the handler; successful handlers continue through post-run hooks. Version printing and completion requests are outside this tour.",
+      "summary": "Cobra finds the selected command and normally parses its flags; apps can disable parsing to pass raw arguments to handlers. Help requests and commands without a runnable handler print help and return. Runnable commands check arguments, run pre-run hooks, check flag rules, and call the handler; successful handlers continue through post-run hooks. Completion requests are outside this tour.",
       "steps": [
         {
           "id": "t1",
@@ -430,7 +430,7 @@
               "role": "usage"
             }
           ],
-          "note": "### Help requests and non-runnable commands exit\n\nThe version flag also exits here: the command prints its version and returns before any argument check. Arguments are checked only after these exits.",
+          "note": "### Help requests and non-runnable commands exit\n\nA help flag, or a command with no handler, returns `ErrHelp`, and `ExecuteC` prints help. When the command has a version, the version flag prints it and returns too. Arguments are checked only after these exits.",
           "editor": {
             "primary": "command.go"
           }

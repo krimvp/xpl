@@ -708,3 +708,35 @@ async function stagesInPane(page: Page): Promise<number> {
     }).length;
   });
 }
+
+test("a Tour step's calls between the same two parts share one card (R5-8)", async ({ page }) => {
+  await openVariant(page, (bundle) => {
+    bundle.explainer.tours[0].steps[1].focus = ["dispatch:1", "dispatch:3"];
+  });
+  const section = page.locator('.guide-section[data-section-id="t2"]');
+  await expect(section.locator(".guide-mini")).toHaveCount(1);
+  await expect(section.locator(".guide-mini figcaption")).toHaveText("These calls");
+  await expect(section.locator(".guide-mini-link")).toContainText("pop() · requeue(job, backoff)");
+});
+
+test("the reader's code panes do not offer Ask about selected lines: Explore's do (R3-15)", async ({
+  page,
+}) => {
+  await openVariant(page, () => undefined, "?perspective=code");
+  await page.locator('.tree-row[data-path="src/runner.ts"]').click();
+  const pane = page.locator('.pane[data-file="src/runner.ts"]');
+  await expect(pane.locator(".cm-editor")).toBeVisible();
+  await pane.locator('.cm-line[data-line="10"]').click();
+  await page.keyboard.press("Shift+ArrowDown");
+  await expect(pane.locator(".pane-header")).toBeVisible();
+  await expect(pane.getByRole("button", { name: "Ask about selected lines" })).toHaveCount(0);
+  await openVariant(page, () => undefined, "?mode=explore");
+  await page.locator('.tree-row[data-path="src/runner.ts"]').click();
+  await page.locator('.pane[data-file="src/runner.ts"] .cm-line[data-line="10"]').click();
+  await page.keyboard.press("Shift+ArrowDown");
+  await expect(
+    page.locator('.pane[data-file="src/runner.ts"]').getByRole("button", {
+      name: "Ask about selected lines",
+    }),
+  ).toBeAttached();
+});

@@ -160,6 +160,27 @@ export function startOrder(
   return include;
 }
 
+/** The id of the map a guide without one gets: the boxes of its flow (`workspaceMap`). */
+export const GENERATED_MAP_ID = "view:workspace-map";
+
+/** The boxes of the map a guide without one gets: its flow's parts, or the top level of the code. */
+function generatedInclude(state: ViewerState): ElementId[] {
+  const process = workspaceView(state, "flow") as SequenceView | undefined;
+  return (process?.participants ?? state.model.children("repo")).filter(
+    (id) => typeof id === "string" && state.model.hasNode(id),
+  );
+}
+
+/**
+ * True when the Map tab has a map to show: one the guide has, or one made of 3 boxes or more. A map of a flow's
+ * one or two boxes says less than the flow itself (V6-02).
+ */
+export function hasMapTab(state: ViewerState): boolean {
+  return (
+    state.model.views.some((view) => view.type === "graph") || generatedInclude(state).length >= 3
+  );
+}
+
 export function workspaceMap(state: ViewerState) {
   const authored = workspaceView(state, "map") as GraphView | undefined;
   const process = workspaceView(state, "flow") as SequenceView | undefined;
@@ -175,11 +196,12 @@ export function workspaceMap(state: ViewerState) {
         state.expanded,
       )
     : {
-        id: "view:workspace-map",
+        id: GENERATED_MAP_ID,
         type: "graph",
-        title: "System map",
+        // what it draws, in plain words: not a "System map", which in a guide is the top level of all
+        title: process?.title ? `Parts of “${process.title}”` : "The top level of the code",
         scope: { root: "repo", depth: 1 },
-        include: process?.participants ?? state.model.children("repo"),
+        include: generatedInclude(state),
         provenance: { origin: "static" },
         stubs: { mode: "none" },
       };

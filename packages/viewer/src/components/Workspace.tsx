@@ -178,6 +178,17 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
   useEffect(() => {
     if (state.openSeq > 0 && state.openedFile) setSourceOpen(true);
   }, [state.openSeq, state.openedFile]);
+  // A phone shows one column: the Map or Flow tab opens on its diagram, not on the code the Tour step had opened below it
+  // (R6-4). The code comes back with "Show code" or a tap on a box.
+  const lastPerspective = useRef(state.perspective);
+  useEffect(() => {
+    if (lastPerspective.current === state.perspective) return;
+    lastPerspective.current = state.perspective;
+    if (state.perspective !== "map" && state.perspective !== "flow") return;
+    if (!matchMedia(`(max-width: ${PHONE_WIDTH}px)`).matches) return;
+    setSourceOpen(false);
+    columns.current?.scrollTo({ top: 0, behavior: "instant" });
+  }, [state.perspective]);
 
   // "Who calls it" in the code: the callers are listed in the topic column. Beside the code on a screen too
   // narrow for three columns that column is folded away: it then opens over the code, until closed.
@@ -292,7 +303,14 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                     }
                   >
                     <div>
-                      <p className="eyebrow">{state.perspective === "map" ? "Map" : "Flow"}</p>
+                      <p className="eyebrow">
+                        {/* (the kind of diagram: a sequence is not called a flow, N9) */}
+                        {state.perspective === "map"
+                          ? "Map"
+                          : flow?.type === "sequence"
+                            ? "Sequence"
+                            : "Flow"}
+                      </p>
                       <ZoomTrail
                         viewId={state.perspective === "map" ? map.view.id : (flow?.id ?? "")}
                       />
@@ -312,6 +330,22 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                         <span className="caption-about-chevron" aria-hidden="true" />
                         About this {diagramWord}
                       </button>
+                      {/* (a phone: the list of steps is below the canvas, which shows one or two
+                          lifelines at a readable size: one tap away from the top, R6-3) */}
+                      {state.perspective === "flow" && flow && !active && (
+                        <button
+                          type="button"
+                          className="link caption-steps"
+                          data-testid="caption-steps"
+                          onClick={() =>
+                            columns.current
+                              ?.querySelector<HTMLElement>('[data-testid="parts-panel"]')
+                              ?.scrollIntoView({ block: "start" })
+                          }
+                        >
+                          Steps, in order ↓
+                        </button>
+                      )}
                       {viewQuestion && <p className="view-question">{viewQuestion}</p>}
                       {state.perspective === "flow" && flowOwner && (
                         <p className="caption-owner" data-testid="caption-owner">
@@ -341,11 +375,15 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                         </>
                       )}
                       {diagramChoices > 1 && (
+                        // (closed, it names what it offers, not the diagram the title above names, U19)
                         <select
                           aria-label="Choose a diagram"
-                          value={state.perspective === "map" ? map.view.id : (flow?.id ?? "")}
+                          value={PICK}
                           onChange={(event) => store.setView(event.target.value)}
                         >
+                          <option value={PICK} disabled hidden>
+                            Other {diagramWord}s ({diagramChoices - 1})
+                          </option>
                           {state.model.views
                             .filter((view) =>
                               state.perspective === "map"
@@ -354,7 +392,9 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                             )
                             .map((view) => (
                               <option key={view.id} value={view.id}>
-                                {view.title}
+                                {view.id === (state.perspective === "map" ? map.view.id : flow?.id)
+                                  ? `${view.title} (shown)`
+                                  : view.title}
                               </option>
                             ))}
                           {state.perspective === "map" && map.generated && (
@@ -587,6 +627,12 @@ function SummaryText({ text }: { text: string }) {
     </>
   );
 }
+
+/** The value of the diagram picker while closed: it offers the others, it does not name the one shown. */
+const PICK = "\u0000pick";
+
+/** At this width or less the workspace is one column (workspace.css). */
+const PHONE_WIDTH = 760;
 
 /** The narrowest a code-first outline gets, px; the code keeps at least `CODE_MIN`. */
 const OUTLINE_MIN = 260;

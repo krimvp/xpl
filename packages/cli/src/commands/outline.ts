@@ -20,16 +20,11 @@ export const outlineCommand: CommandSpec = {
   summary: "Dir/file/symbol tree with kind, lines, fan-in/fan-out",
   details: [
     "One line per element: <id>  <kind>  <first>-<last line>  in=<fan-in> out=<fan-out>.",
-    "Ids are exact: paste them into patches (sym:src/a.ts#A.b) or into other commands.",
-    "in/out count the references into / out of the element's subtree (calls, imports, type uses, ...),",
-    "not counting references that stay inside it, so a symbol's calls of itself are not counted: `recursive`",
-    "after the counts marks a symbol that calls itself. [+n] marks n children below the depth limit.",
-    "Config keys (yaml/json/toml) are hidden unless --keys is given. Go code says `struct` and `field` where the",
-    "index stores `class` and `variable` (`--json` keeps the stored kind; `--kind struct,field` works too).",
-    `--kind method,function,class lists only symbols of those kinds (${SYMBOL_KINDS.join(", ")}); the dirs, files`,
-    "and parent symbols that contain a match are listed too, so each keeps its place; it searches every level unless",
-    "--depth is given. The repo line carries the",
-    "name `xpl new` gives the repository (package.json, go.mod, pyproject.toml, git remote), not the directory's.",
+    "Paste the ids into patches (sym:src/a.ts#A.b) or into other commands.",
+    "in and out count the references into and out of the subtree, not the ones that stay inside it.",
+    "`recursive` marks a symbol that calls itself. [+n] marks n children below the depth limit.",
+    "Go code says `struct` and `field`; --json keeps the stored kinds `class` and `variable`.",
+    "With --kind, the folders, files and symbols that hold a match are listed too.",
   ],
   options: {
     under: {
@@ -47,7 +42,7 @@ export const outlineCommand: CommandSpec = {
       type: "string",
       multiple: true,
       arg: "<k,...>",
-      desc: `Only symbols of these kinds (repeat or comma-separate): ${SYMBOL_KINDS.join(", ")}`,
+      desc: `Only these kinds: ${SYMBOL_KINDS.join(", ")}`,
     },
     limit: {
       type: "string",

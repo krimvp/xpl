@@ -36,7 +36,9 @@ describe("xpl cli", () => {
     expect(viaFlag.out).toContain("Usage: xpl show <id> [--refs] [--context <n>]");
     expect(viaFlag.out).toContain("--context <n>");
     expect(viaFlag.out).toContain("--root <dir>");
-    expect(viaFlag.out).toContain("Docs: https://krimvp.github.io/xpl/docs/reference/");
+    expect(viaFlag.out).toMatch(
+      /\nMore: reference\/cli\.md, "xpl show", or https:\/\/krimvp\.github\.io\/xpl\/docs\/reference\/$/,
+    );
     expect(viaFlag.out).not.toContain("docs/ARCHITECTURE.md");
     const viaHelp = await invoke(["help", "apply"]);
     expect(viaHelp.out).toContain("--dry-run");
@@ -96,6 +98,41 @@ describe("xpl cli", () => {
           expect.soft(`${line}\n${next}`, "ragged help paragraph").toBe("");
       }
       expect.soft(page).not.toMatch(/off\|auto\|require/);
+    }
+  });
+
+  it("every command's help is short: usage, at most 8 lines of prose, one line per option, then where to read more", async () => {
+    for (const command of COMMANDS) {
+      const help = (await invoke([command.name, "--help"])).out;
+      const lines = help.split("\n");
+      const name = `xpl ${command.name}`;
+      expect.soft(lines.at(-1), name).toMatch(/^More: reference\/cli\.md, "xpl \S+", or https:/);
+      const options = lines.indexOf("Options:");
+      const global = lines.indexOf("Global options:");
+      const optionLines = options === -1 ? [] : lines.slice(options + 1, global - 1);
+      expect
+        .soft(optionLines.length, `${name}: one line per option`)
+        .toBe(Object.keys(command.options).length);
+      // the prose: after the usage and the summary, before the options; a row of a choice table (`  path  ...`)
+      // is one line of its own and does not count
+      const choices = command.positionals[0]?.name.split("|") ?? [];
+      const start = lines.findIndex((line, i) => i > 0 && lines[i - 1] === "" && line !== "") + 2;
+      const prose = lines
+        .slice(start, options === -1 ? global : options)
+        .filter((line) => line !== "")
+        .filter((line) => !choices.some((c) => choices.length > 1 && line.startsWith(`  ${c} `)));
+      expect
+        .soft(prose.length, `${name}: lines of prose\n${prose.join("\n")}`)
+        .toBeLessThanOrEqual(8);
+      const descs = Object.values(command.options).map((def) => def.desc);
+      // a sentence ends at . ! ? or :, and each row of a table (an indented line) is one
+      const text = [command.summary, (command.details ?? []).join("\n"), ...descs]
+        .join(". ")
+        .replace(/`[^`]*`/g, "x");
+      for (const sentence of text.split(/(?<=[.!?:])\s+|\n(?= {2})|(?<=(?:^|\n) {2}[^\n]*)\n/)) {
+        const words = sentence.split(/\s+/).filter((w) => /\w/.test(w)).length;
+        expect.soft(words, `${name}: ${sentence}`).toBeLessThanOrEqual(25);
+      }
     }
   });
 

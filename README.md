@@ -100,8 +100,8 @@ optional local service. See
 xpl indexes TypeScript, JavaScript, Python, Go and Java, and the keys of YAML, JSON and TOML files. Rust has
 experimental declarations and some heuristic calls. Ruby and PHP have named declarations and no references.
 
-Every reference has one of two labels. **precise** references come from a language tool (SCIP). **heuristic**
-references come from xpl's own matching by name and scope; they are hints to confirm in the code. Web
+Every reference has one of two labels. **precise** (checked by a language tool): from a SCIP indexer.
+**heuristic** (matched by name): from xpl's own matching by name and scope, a hint to confirm in the code. Web
 requests (`fetch`, axios, `requests`, `httpx`, Go `net/http`) link to the route that answers them, and these
 links are always heuristic. See
 [Languages and precision](https://krimvp.github.io/xpl/docs/concepts/languages/).

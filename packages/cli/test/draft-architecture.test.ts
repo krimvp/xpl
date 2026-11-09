@@ -114,7 +114,7 @@ describe("xpl draft repo: one service and what it relies on", () => {
     expect(patch.nodes!.find((n) => n.label === "flask")?.role).toBe("component");
     expect(patch.nodes!.map((n) => n.id)).not.toContain("grp:user");
     expect(patch.nodes!.map((n) => n.id)).toContain("grp:your-app");
-    expect(notes.some((n) => n.startsWith("Provisional architecture"))).toBe(true);
+    expect(notes.some((n) => n.startsWith("The draft guesses the kind of project"))).toBe(true);
     expect(patch.tours![0]!.steps!.map((step) => step.note).join("\n")).not.toContain(
       "default runtime path",
     );
@@ -360,6 +360,46 @@ describe("xpl draft repo: who starts the program", () => {
     const ids = patch.nodes!.map((n) => n.id);
     expect(ids).toContain("grp:operator");
     expect(ids).not.toContain("grp:clients");
+  });
+
+  it("Go: a settings file named by a literal path, part steps at the functions other parts call, room for the path", async () => {
+    const dir = copyFixture("go-jobrunner");
+    const { patch, notes } = await drafted(dir);
+    // `path := "config/default.yaml"` in main: no read call takes the literal, but the file is the settings
+    expect(graph(patch, "view:system")?.include).toEqual([
+      "grp:operator",
+      "grp:jobrunner",
+      "grp:settings",
+    ]);
+    expect(patch.nodes!.find((n) => n.id === "grp:settings")?.anchors).toEqual([
+      { file: "config/default.yaml", role: "config" },
+      { file: "cmd/jobrunner/main.go", span: { from: 21, to: 21 }, role: "usage" },
+    ]);
+    expect(patch.edges!.map((e) => `${e.from} -> ${e.to}`)).toContain(
+      "dir:cmd/jobrunner -> grp:settings",
+    );
+    expect(notes.join("\n")).toContain("named in the code: `config/default.yaml`");
+    // a part's step shows what the other parts call (Runner.Dispatch, config.Load), not its first types
+    const steps = patch.tours![0]!.steps!;
+    const codeOf = (box: string) =>
+      steps.find((s) => s.focus.includes(box))?.code?.map((a) => a.symbol);
+    expect(codeOf("dir:internal/runner")).toContain("Runner.Dispatch");
+    expect(codeOf("dir:internal/config")).toContain("Load");
+    // 2 of the 9 steps are left for the main path and its risks; the notes say how to fill them
+    expect(steps.length).toBeLessThanOrEqual(7);
+    expect(notes.join("\n")).toContain("`xpl draft path shop sym:cmd/jobrunner/main.go#run`");
+    // a path drafted next numbers its steps after the tour already there, so they can be copied over
+    const path = await xplJson<DraftJson>(
+      dir,
+      "draft",
+      "path",
+      "shop",
+      "sym:cmd/jobrunner/main.go#run",
+    );
+    const taken = new Set(steps.map((s) => s.id));
+    const ids = path.json.patch.tours![0]!.steps!.map((s) => s.id);
+    expect(ids.filter((id) => taken.has(id))).toEqual([]);
+    expect(ids[0]).toBe(`t${steps.length + 1}`);
   });
 
   it("finds Java's main method on its class", async () => {

@@ -1,6 +1,13 @@
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, lstatSync, readFileSync, symlinkSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import {
+  closeSync,
+  existsSync,
+  lstatSync,
+  openSync,
+  readFileSync,
+  readSync,
+  symlinkSync,
+} from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { atomicWrite, withFileLock } from "../src/fsutil.js";
@@ -59,10 +66,17 @@ describe("atomic writes to a target that is not a regular file", () => {
   it("writes through a FIFO (as for /dev/null) and keeps it a FIFO", async () => {
     const fifo = join(makeTempDir(), "out");
     execFileSync("mkfifo", [fifo]);
-    const read = readFile(fifo, "utf8");
-    await atomicWrite(fifo, "data\n");
-    expect(await read).toBe("data\n");
-    expect(lstatSync(fifo).isFIFO()).toBe(true);
+    // Read-write open of a FIFO does not block (Linux, macOS), so the old code fails at the assertion.
+    const fd = openSync(fifo, "r+");
+    try {
+      await atomicWrite(fifo, "data\n");
+      expect(lstatSync(fifo).isFIFO()).toBe(true);
+      const buf = Buffer.alloc(5);
+      expect(readSync(fd, buf, 0, 5, null)).toBe(5);
+      expect(buf.toString()).toBe("data\n");
+    } finally {
+      closeSync(fd);
+    }
   }, 5_000);
 
   it("writes through a symlink and keeps the link", async () => {

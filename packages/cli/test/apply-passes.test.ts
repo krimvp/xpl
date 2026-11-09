@@ -242,19 +242,6 @@ describe("xpl apply: spans on blank lines", () => {
 });
 
 describe("xpl apply: which stream says what", () => {
-  it("`xpl help apply` documents it", async () => {
-    const { code, out } = await invoke(["help", "apply"]);
-    expect(code).toBe(0);
-    expect(out).toContain("Output streams:");
-    expect(out).toContain("stdout");
-    expect(out).toContain("stderr");
-    expect(out).toContain("rejected: N errors");
-    expect(out).toContain("stepsUpdate");
-    expect(out).toContain("One pass:");
-    const viaFlag = await invoke(["apply", "--help"]);
-    expect(viaFlag.out).toBe(out);
-  });
-
   it("a rejection is on stdout (exit 1, nothing on stderr); the result of a valid patch too", async () => {
     const dir = cloneDir(demo);
     const rejected = await applyStdin(dir, { concepts: [{ id: "concept:x" }] });

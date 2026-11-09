@@ -9,7 +9,12 @@ import { DiagramText } from "./DiagramText.js";
  * A ghost that stands for several elements ("rest of <file>", "N more") opens a menu of them instead
  * (GhostMenu), and adding one of them expands the view.
  */
-import { codeFocus, type DerivedGraph, type GraphView as StoredGraphView } from "@xpl/core";
+import {
+  codeFocus,
+  type Anchor as CodeLink,
+  type DerivedGraph,
+  type GraphView as StoredGraphView,
+} from "@xpl/core";
 import {
   createContext,
   memo,
@@ -35,7 +40,9 @@ import {
   ZOOM_SIZE,
   EDGE_BOUNDS_PAD,
   labelWidth,
+  foldPins,
   layoutGraphFitting,
+  shownType,
   nodeBox,
   graphBounds,
   PILL_GAP,
@@ -48,7 +55,7 @@ import {
   type LayoutNode,
   SUMMARY_LINE,
 } from "../layout/graphLayout.js";
-import { layoutView } from "../workspace.js";
+import { GENERATED_MAP_ID, layoutView } from "../workspace.js";
 import {
   arrowHeadPath,
   distanceToSegment,
@@ -64,7 +71,7 @@ import { useStore, useViewerState } from "../hooks.js";
 import { headOf, mapKeyShows } from "../keyMarks.js";
 import { boxName, readingOrder, tabOrder } from "../mapOrder.js";
 import { readerBadge } from "../readerWords.js";
-import { READABLE_ZOOM } from "../viewport.js";
+import { READABLE_ZOOM, unionBox } from "../viewport.js";
 import { GhostTargetList } from "./GhostTargets.js";
 import { KeyLine, Legend } from "./Legend.js";
 import { MatrixView } from "./MatrixView.js";
@@ -233,6 +240,20 @@ function stateClasses(id: string, marks: Marks): string {
   );
 }
 
+/** The rows of a data map that a code link names by its symbol (`{ file, symbol: "Queue.ready" }`). */
+function anchoredRows(layout: Pick<GraphLayout, "nodes">, anchors: readonly CodeLink[]): string[] {
+  const named = new Set(anchors.flatMap((a) => (a.symbol ? [`sym:${a.file}#${a.symbol}`] : [])));
+  const out: string[] = [];
+  const visit = (list: readonly LayoutNode[]) => {
+    for (const node of list) {
+      if (node.row && named.has(node.id)) out.push(node.id);
+      visit(node.children);
+    }
+  };
+  visit(layout.nodes);
+  return out;
+}
+
 /**
  * The boxes whose arrows stay lit while something is selected: each selected box with every box inside it, and
  * both ends of a selected arrow. Undefined when nothing on this map is selected (then no arrow is dimmed).
@@ -345,10 +366,19 @@ export function GraphView({
   const storedView = state.model.view(viewId);
   const dataMap = storedView?.type === "graph" && storedView.boxText === "members";
   const [layout, setLayout] = useState<GraphLayout | undefined>();
+  // the layout last drawn, and of which view: a fold keeps its positions (`foldPins`)
+  const drawn = useRef<{ viewId: string; layout: GraphLayout } | undefined>(undefined);
+  // the canvas of the layout before a fold, kept for the folded layout (`layout`)
+  const foldCanvas = useRef<{ layout: GraphLayout; canvas: Box } | undefined>(undefined);
   const [error, setError] = useState<string | undefined>();
   const [moveError, setMoveError] = useState<string>();
   const [menu, setMenu] = useState<GhostMenuState | undefined>();
   const [hovered, setHovered] = useState<string | undefined>();
+  // the code links of what is selected, and of the step on screen (its `code`)
+  const stepAnchors = (ids: readonly string[]): CodeLink[] => [
+    ...(state.applied?.code ?? []),
+    ...ids.flatMap((id) => state.model.node(id)?.anchors ?? []),
+  ];
   // Stable while nothing selected, matched or related changes, so unchanged shapes are not re-rendered.
   const marks = useMemo<Marks>(() => {
     const selected = new Set(selection);
@@ -356,16 +386,26 @@ export function GraphView({
     const arrowPicked =
       layout !== undefined &&
       allEdgesOf(layout).some((edge) => !edge.stub && selected.has(edge.id));
+    // a row whose field the step's code points at (Queue.ready, "used here" for the Job table) is marked on its
+    // own table, as a caret on that line would mark it (V5-07)
+    const rows = dataMap && layout ? anchoredRows(layout, [...stepAnchors(selection)]) : [];
     return {
       selected,
       matches: new Set(matches),
-      related,
+      related: rows.length > 0 ? new Set([...related, ...rows]) : related,
       ...(lit ? { lit } : {}),
       ...(arrowPicked ? { arrowPicked } : {}),
     };
-  }, [selection, matches, related, layout]);
+  }, [selection, matches, related, layout, dataMap, state.applied, state.model]);
 
-  const drawnCanvas = useMemo(() => (layout ? graphBounds(layout) : undefined), [layout]);
+  // (a fold keeps the canvas it was drawn on too, so the pane does not move the boxes that stayed: R6-1)
+  const drawnCanvas = useMemo(() => {
+    const bounds = layout ? graphBounds(layout) : undefined;
+    const kept = foldCanvas.current;
+    return bounds && kept && kept.layout === layout
+      ? (unionBox([bounds, kept.canvas]) ?? bounds)
+      : bounds;
+  }, [layout]);
   const canvas = preview ? (frozenCanvas.current ?? drawnCanvas) : drawnCanvas;
   const move: MoveApi | undefined = canMove
     ? {
@@ -446,6 +486,9 @@ export function GraphView({
     let cancelled = false;
     const el = host.current;
     const viewport = el ? { width: el.clientWidth, height: el.clientHeight } : undefined;
+    // a table folded on this map: every box stays where it was (R6-1)
+    const last = drawn.current;
+    const kept = last?.viewId === viewId ? foldPins(last.layout, graph) : undefined;
     // (a slide picks its own: D7 turns a map in the wider column it asks for)
     (present ? layoutGraphFitting : layoutView.bind(null, viewId))(
       graph,
@@ -453,10 +496,18 @@ export function GraphView({
       present ? PRESENT_MAX_FIT_ZOOM : undefined,
       present ? PRESENT_FIT_PADDING : undefined,
       changes,
-      activePins,
+      kept ? { ...kept, ...activePins } : activePins,
     ).then(
       (result) => {
         if (cancelled) return;
+        // a fold of a fold keeps the first canvas
+        const before =
+          last &&
+          (foldCanvas.current?.layout === last.layout
+            ? foldCanvas.current.canvas
+            : graphBounds(last.layout));
+        foldCanvas.current = kept && before ? { layout: result, canvas: before } : undefined;
+        drawn.current = { viewId, layout: result };
         setLayout(result);
         setError(undefined);
       },
@@ -590,10 +641,11 @@ export function GraphView({
         imageName={state.model.view(viewId)?.title ?? viewId}
         keyboardMore={
           dataMap
-            ? "On a table: Down goes into its rows, minus folds it to one box, plus shows its rows again."
+            ? "On a table: Down: go into its rows. -: fold it to one box. +: show its rows again."
             : undefined
         }
-        maxFitZoom={present ? PRESENT_MAX_FIT_ZOOM : undefined}
+        // (the map a guide without one gets is small: one box drawn twice its size says nothing more, V6-02)
+        maxFitZoom={viewId === GENERATED_MAP_ID ? 1 : present ? PRESENT_MAX_FIT_ZOOM : undefined}
         fitPadding={present ? PRESENT_FIT_PADDING : undefined}
         minFitZoom={pinned ? GRAPH_READABLE_ZOOM : undefined}
         // A reader's map starts whole only when its labels read at 10px or more (13-14 unit text at 0.75):
@@ -820,7 +872,7 @@ function RowShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
       </text>
       {node.memberType && (
         <text className="row-type" x={node.width - 14} y={middle}>
-          {node.memberType}
+          {shownType(node.memberType)}
         </text>
       )}
     </g>
@@ -905,6 +957,8 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
       tabIndex={still ? undefined : 0}
       aria-label={still ? undefined : container && selected ? `${name}, picked` : name}
       aria-pressed={still || container ? undefined : selected}
+      // a table of a data map shows its rows or is folded to its header ("-" and "+")
+      aria-expanded={still ? undefined : node.rows ? true : unfoldable ? false : undefined}
       onClick={(event) => {
         event.stopPropagation();
         select(event);
@@ -915,7 +969,7 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
         else if (!readOnly) store.drillIn(node.id);
       }}
       aria-keyshortcuts={
-        still ? undefined : node.rows ? "ArrowDown -" : unfoldable ? "+" : undefined
+        still ? undefined : node.rows ? "ArrowDown -" : unfoldable ? "+ =" : undefined
       }
       onKeyDown={(event) => {
         // a table folds with "-" (its fold button is not a Tab stop) and opens again with "+"
@@ -1017,7 +1071,13 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
                 role="button"
                 // (a table is one Tab stop, D9: its fold button is a click, as on a phone)
                 tabIndex={node.rows ? -1 : 0}
-                aria-label={expandedHere ? `Fold ${node.label} back` : `Collapse ${node.label}`}
+                aria-label={
+                  expandedHere
+                    ? `Fold ${node.label} back`
+                    : node.rows
+                      ? `Fold ${node.label}`
+                      : `Collapse ${node.label}`
+                }
                 data-collapse-id={node.id}
                 transform={`translate(${node.width - 30} 8)`}
                 onClick={(event) => {
@@ -1035,7 +1095,9 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
                 <title>
                   {expandedHere
                     ? "Fold back: show it as one box again"
-                    : "Collapse: remove what is inside"}
+                    : node.rows
+                      ? "Fold: hide its fields"
+                      : "Collapse: remove what is inside"}
                 </title>
                 <rect width={20} height={18} rx={4} />
                 <path d="M5 9h10" />

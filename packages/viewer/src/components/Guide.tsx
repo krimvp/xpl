@@ -420,6 +420,14 @@ function GuideSection({
       ? [{ id, from: element.step.from, label: element.step.label }]
       : [];
   });
+  // Calls between the same two parts share one card (two "This call" cards in a row read as a repeat, R5-8).
+  const callGroups = new Map<string, { id: string; label: string }[]>();
+  for (const id of step.focus) {
+    const element = state.model.element(id);
+    if (element?.type !== "step" || element.step.from === element.step.to) continue;
+    const key = `${element.step.from}\u0000${element.step.to}`;
+    callGroups.set(key, [...(callGroups.get(key) ?? []), { id, label: element.step.label }]);
+  }
   // The two ends of each call the section shows: the "In the code" card does not list them a second time.
   const callEnds = new Set(
     step.focus.flatMap((id) => {
@@ -519,9 +527,16 @@ function GuideSection({
               </figure>
             );
           }
+          const group = callGroups.get(`${from}\u0000${to}`) ?? [{ id, label }];
+          if (group[0]!.id !== id) return null;
+          const labels = group.map((call) => call.label);
           return (
-            <figure className="guide-mini" key={id} aria-label={`Interaction: ${label}`}>
-              <figcaption>This call</figcaption>
+            <figure
+              className="guide-mini"
+              key={id}
+              aria-label={`Interaction: ${labels.join("; ")}`}
+            >
+              <figcaption>{labels.length > 1 ? "These calls" : "This call"}</figcaption>
               <div className="guide-mini-row">
                 <button className="guide-mini-node" onClick={() => store.select([from])}>
                   {state.model.label(from)}
@@ -530,7 +545,7 @@ function GuideSection({
                   className="guide-mini-link"
                   onClick={() => store.previewStep(tourId, index)}
                 >
-                  {label}
+                  {labels.join(" · ")}
                   <span aria-hidden="true">→</span>
                 </button>
                 <button className="guide-mini-node" onClick={() => store.select([to])}>

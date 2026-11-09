@@ -225,9 +225,17 @@ function ExploreLayout({
     (view?.type === "flow" || (view?.type === "sequence" && view.layout === "code-first"));
   const width = codeFirst ? outlineWidth : leftWidth;
   const setWidth = codeFirst ? setOutlineWidth : setLeftWidth;
+  // V6-01: while nothing has been selected, Concepts and Details fold to one line under the diagram, which
+  // gets the height (a tall sequence or flow opens whole). The first selection opens them, and they stay.
+  const picked = useViewerState().selection.length > 0;
+  const [panelsOpen, setPanelsOpen] = useState(false);
+  useEffect(() => {
+    if (picked) setPanelsOpen(true);
+  }, [picked]);
+  const folded = !picked && !panelsOpen;
   return (
     <main
-      className={`explore${codeFirst ? " is-code-first" : ""}`}
+      className={`explore${codeFirst ? " is-code-first" : ""}${folded ? " is-folded" : ""}`}
       style={
         {
           "--left-width": `${width}px`,
@@ -237,15 +245,26 @@ function ExploreLayout({
     >
       <section className="left" aria-label="Diagram and details">
         <DiagramPane />
-        <Splitter
-          orientation="row"
-          label="Resize the diagram and the panels below it"
-          onResize={(d) => setLowerHeight((h) => clamp(h - d, 120, window.innerHeight - 220))}
-        />
-        <div className="lower">
-          <ConceptList />
-          <Details />
-        </div>
+        {folded ? (
+          <div className="lower is-folded" data-testid="lower-folded">
+            <ConceptList compact />
+            <p className="lower-hint">
+              Select a box, an arrow, a step or a concept to see what it is.
+            </p>
+          </div>
+        ) : (
+          <>
+            <Splitter
+              orientation="row"
+              label="Resize the diagram and the panels below it"
+              onResize={(d) => setLowerHeight((h) => clamp(h - d, 120, window.innerHeight - 220))}
+            />
+            <div className="lower">
+              <ConceptList />
+              <Details />
+            </div>
+          </>
+        )}
       </section>
       <Splitter
         orientation="col"

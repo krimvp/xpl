@@ -255,7 +255,7 @@
   "tours": [
     {
       "id": "tour:overview",
-      "title": "How Cobra builds and runs Go commands",
+      "title": "How Cobra builds command-line programs",
       "summary": "Cobra is a Go library for command-line programs. Applications define commands and handlers; Cobra selects a command, parses flags, checks arguments, and runs the handler. Separate parts supply completion and reference documentation. This tour shows the library structure and the main execution path.",
       "steps": [
         {

@@ -55,16 +55,15 @@ Guides and the viewer:
   brackets. Click a condition to select its steps and their code. `xpl draft path` drafts the arms, and a
   patch sets them with `arms`. An `if` that ends in `continue`, `return`, `break`, `raise` or `throw` is drafted
   as an `alt` whose other arm is the rest of the loop body or function.
-- A data map names an arrow from a field "holds", on the map, the key, the text view and the matrix. Its
-  matrix has one row and column per type, and a cell names the fields. A field row needs no text: it shows
-  the field's declaration. Go structs and fields are called "struct" and "field".
+- A data map names a field's arrow "holds" everywhere: the map, the Key, the text view, the matrix, the
+  Details and its accessible name (with the type that owns the field). Its matrix has one row and column per
+  type, and a cell names the fields. A field row needs no text: it shows the field's declaration. Go structs
+  and fields are "struct" and "field" on the box, its icon, the Key and the Details.
 - A data map is laid out top to bottom when that draws it larger. A map too big to read whole opens on the
   box its tour starts on, all of it in sight.
 - Present widens the diagram column, up to about two thirds of the slide, so that a map keeps 12 px text.
 - A precise language tool now clears the "Some arrows may be missing" bar for what it covers, also when the
   tree-sitter pack of that language does not.
-- A Go struct is a "struct" and its fields are "field" on the box, its icon, the Key and the Details. A
-  field's arrow is "holds" everywhere, its accessible name included, with the type that owns the field.
 - A data map is one Tab stop per table, starting at the tour's first table. Down goes into its rows; "-"
   folds a table to one box and "+" shows its rows again.
 - On Map and Flow, the diagram takes the full width until you select something; then the code column opens.
@@ -103,7 +102,7 @@ Drafts and lint:
 Command-line messages:
 
 - Help text wraps at 110 columns. An unknown command or option suggests the nearest name, for example
-  `Did you mean "--depth"?`. `xpl ready` prints each finding as the problem, then "fix:" and the fix.
+  `Did you mean: --depth?`. `xpl ready` prints each finding as the problem, then "fix:" and the fix.
   Errors use the right article ("an interface", "an enum"). The `xpl draft states` error names the command
   that lists candidates.
 
@@ -118,6 +117,10 @@ Docs:
 - The README and the docs site use one word for each thing: guide, tour, diagram (map, flow, sequence), box,
   arrow and code link. The workflow pages own their text, and the explain and change pages have a picture.
   The docs site adds the writing guide and orders the workflows as a newcomer meets them.
+- The landing page links each example by its guide's own title. The Vite and Zod overviews start with
+  what the library is for, and the Cobra execution tour says where the version flag exits.
+- The skill says that every arrow you store needs a summary and that a small subject may take fewer steps
+  than its budget. The languages page describes the `refs:` column of `xpl index` and `--verbose`.
 - SECURITY.md names the supported line (0.3.x) and says that only `xpl view` takes `--host`. The README and
   the docs list every supported language, including Rust, and give the exit codes of `xpl health`.
 

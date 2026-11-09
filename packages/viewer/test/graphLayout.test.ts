@@ -11,6 +11,7 @@ import {
   absoluteBoxes,
   cutAt,
   fitScale,
+  foldPins,
   gridLayoutOf,
   layoutGraph,
   layoutGraphFitting,
@@ -1264,6 +1265,37 @@ describe("labels and routes a reader can follow (round 2)", () => {
       expect(way(there)).not.toBe(way(back));
     }
   });
+
+  // V6-03: on a short line the two labels sat end to end and read as one ("← calls ×3 calls ×1 →")
+  it("keeps the labels of a two-way pair clearly apart, one on each side of their line", async () => {
+    const node = (id: string) => ({ id, label: id, kind: "group" as const, container: false });
+    const graph: DerivedGraph = {
+      nodes: [node("builder"), node("config")],
+      edges: [
+        derived({ id: "edge:calls:builder->config", from: "builder", to: "config", count: 3 }),
+        derived({ id: "edge:calls:config->builder", from: "config", to: "builder", count: 1 }),
+      ],
+      stubs: [],
+      ghosts: [],
+    };
+    for (const direction of ["DOWN", "RIGHT"] as const) {
+      const layout = await layoutGraph(graph, { direction });
+      const [a, b] = layout.edges.map((edge) => edge.label!);
+      // the gap between the two boxes, along whichever axis parts them
+      const gap = Math.max(
+        Math.max(a!.x, b!.x) - Math.min(a!.x + a!.width, b!.x + b!.width),
+        Math.max(a!.y, b!.y) - Math.min(a!.y + a!.height, b!.y + b!.height),
+      );
+      expect([direction, gap >= 4]).toEqual([direction, true]);
+      // and the line runs between them, not under one of them (each label beside its own half)
+      const line = layout.edges[0]!.points;
+      expect([direction, routeHitsLabel(line, a!), routeHitsLabel(line, b!)]).toEqual([
+        direction,
+        false,
+        false,
+      ]);
+    }
+  });
 });
 
 describe("what a still picture's frame cuts", () => {
@@ -1377,6 +1409,28 @@ describe("tables", () => {
     stubs: [],
     ghosts: [],
   };
+
+  // R6-1: folding a table laid the whole map out again, and every table jumped
+  it("keeps every box where it was when a table folds, and lays out afresh for anything else", async () => {
+    const before = await layoutGraph(graph);
+    const folded: DerivedGraph = {
+      ...graph,
+      nodes: graph.nodes
+        .filter((n) => !n.id.startsWith("DeadJob."))
+        .map((n) => (n.id === "DeadJob" ? { ...n, container: false, rows: false } : n)),
+      edges: [{ ...graph.edges[0]!, id: "edge:references:DeadJob->Job", from: "DeadJob" }],
+    };
+    const pins = foldPins(before, folded);
+    const where = (layout: { nodes: LayoutNode[] }) =>
+      layout.nodes.map((n) => [n.id, Math.round(n.x), Math.round(n.y)]);
+    expect(where(await layoutGraph(folded, { pins }))).toEqual(where(before));
+    // the table opens again, or a box joins: no pins, the map is laid out as it first was
+    const after = await layoutGraph(folded, { pins });
+    expect(foldPins(after, graph)).toBeUndefined();
+    expect(
+      foldPins(before, { ...graph, nodes: [...graph.nodes, { ...type("Queue"), rows: false }] }),
+    ).toBeUndefined();
+  });
 
   it("stacks the rows under the header in code order, as wide as the table", async () => {
     const layout = await layoutGraph(graph);

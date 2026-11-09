@@ -85,6 +85,11 @@ export interface Focus {
    * as it can (half a box at the edge of the pane reads as a mistake).
    */
   others?: readonly Box[];
+  /**
+   * Of two places that cut as few of `others`, take the one that holds more of them whole (a sequence: the
+   * arrows in sight, not an empty lifeline beside them). Without it, the one nearer the start.
+   */
+  fill?: boolean;
 }
 
 export interface FrameOptions extends FitOptions {
@@ -258,14 +263,27 @@ export function frameView(
         candidates.push(a - margin + edge, b + margin + edge);
         candidates.push(a - margin - visible - edge, b + margin - visible - edge);
       }
+      // (with `fill`, of two windows that cut as many, the one that holds more of them whole)
+      const held = (s: number) =>
+        focus?.fill
+          ? boxes.filter(
+              (box) => start(box) >= s - edge && start(box) + length(box) <= s + visible + edge,
+            ).length
+          : 0;
       let best = from;
       let fewest = cuts(from);
+      let most = held(from);
       for (const raw of candidates) {
         const s = clamp(raw, lo, hi);
         const n = cuts(s);
-        if (n < fewest || (n === fewest && Math.abs(s - from) < Math.abs(best - from))) {
+        const h = held(s);
+        if (
+          n < fewest ||
+          (n === fewest && (h > most || (h === most && Math.abs(s - from) < Math.abs(best - from))))
+        ) {
           best = s;
           fewest = n;
+          most = h;
         }
       }
       return padding - best * t.k;

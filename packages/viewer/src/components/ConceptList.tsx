@@ -1,22 +1,29 @@
 import { useViewerState, useDerived, useStore } from "../hooks.js";
 
-/** Every concept of the explainer. Click selects (shift adds); matches for the editor caret get `is-match`. */
-export function ConceptList() {
+/**
+ * Every concept of the explainer. Click selects (shift adds); matches for the editor caret get `is-match`.
+ * `compact` (Explore with nothing selected, V6-01): one line of chips, each the concept's name (its summary
+ * on hover), so the diagram above keeps the height.
+ */
+export function ConceptList({ compact = false }: { compact?: boolean } = {}) {
   const store = useStore();
   const state = useViewerState();
   const derived = useDerived();
   const concepts = state.model.concepts;
   const selected = new Set(state.selection);
   const matched = new Set(derived.matches);
+  if (compact && concepts.length === 0) return null;
   return (
-    <section className="concepts" aria-label="Concepts">
+    <section className={`concepts${compact ? " is-compact" : ""}`} aria-label="Concepts">
       <h2 className="panel-title">
         Concepts <span className="count">{concepts.length}</span>
       </h2>
       {concepts.length === 0 ? (
-        <p className="empty">
-          No concepts yet. A concept is an idea that spans several files, such as a retry policy.
-        </p>
+        !compact && (
+          <p className="empty">
+            No concepts yet. A concept is an idea that spans several files, such as a retry policy.
+          </p>
+        )
       ) : (
         <ul className="concept-list">
           {concepts.map((concept) => {
@@ -35,6 +42,7 @@ export function ConceptList() {
               <li key={concept.id} className={classes} data-element-id={concept.id}>
                 <button
                   type="button"
+                  title={compact ? concept.summary : undefined}
                   aria-pressed={selected.has(concept.id)}
                   onClick={(event) =>
                     store.click(concept.id, event.shiftKey || event.metaKey || event.ctrlKey)
@@ -50,7 +58,9 @@ export function ConceptList() {
                       ))}
                     </span>
                   )}
-                  {concept.summary && <span className="concept-summary">{concept.summary}</span>}
+                  {concept.summary && !compact && (
+                    <span className="concept-summary">{concept.summary}</span>
+                  )}
                 </button>
               </li>
             );

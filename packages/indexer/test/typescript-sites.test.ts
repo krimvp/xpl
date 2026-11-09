@@ -261,7 +261,7 @@ describe("heritage and type-ref sites", () => {
 });
 
 describe("imports", () => {
-  it("bindings for default, named, aliased, namespace, type-only and require forms", async () => {
+  it("bindings for default, named, aliased, namespace, type-only, require and await import forms", async () => {
     const source = src(
       "import def, { a, b as c, type D, type E as F } from './mod';",
       "import * as ns from '../ns.js';",
@@ -270,6 +270,8 @@ describe("imports", () => {
       "import fs = require('fs');",
       "const req = require('./req');",
       "const { r1, r2: r3 } = require('./destructured');",
+      "const dyn = await import('./dyn');",
+      "const { d1, d2: d3 } = await import('./dyn-destructured');",
     );
     const { facts } = await extract("a.ts", source);
     expect(
@@ -290,6 +292,9 @@ describe("imports", () => {
       "req <- ./req (module) «req = require('./req')»",
       "r1 <- ./destructured r1 «r1»",
       "r3 <- ./destructured r2 «r2: r3»",
+      "dyn <- ./dyn (module) «dyn = await import('./dyn')»",
+      "d1 <- ./dyn-destructured d1 «d1»",
+      "d3 <- ./dyn-destructured d2 «d2: d3»",
     ]);
   });
 
@@ -297,7 +302,7 @@ describe("imports", () => {
     const source = src(
       "import './side-effect';",
       "async function f() {",
-      "  const m = await import('./dyn');",
+      "  await import('./dyn');",
       "  require('./bare');",
       "  const n = require(dynamicName);",
       "}",

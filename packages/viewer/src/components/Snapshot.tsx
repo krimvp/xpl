@@ -24,16 +24,14 @@ import {
   type ChangeMarks,
   type GraphLayout,
 } from "../layout/graphLayout.js";
-import { frameLabelWidth, layoutSequence } from "../layout/sequenceLayout.js";
-import { SNAPSHOT_WHOLE, unionBox, type Box } from "../viewport.js";
+import { layoutSequence } from "../layout/sequenceLayout.js";
+import { sequenceFocus } from "../sequenceFocus.js";
+import { SNAPSHOT_WHOLE, type Box } from "../viewport.js";
 import { FlowDiagram } from "./FlowDiagram.js";
 import { GraphPicture, useGraphChanges } from "./GraphView.js";
 import { SequencePicture, StickyHeads } from "./SequenceView.js";
 import { layoutView } from "../workspace.js";
 import { SNAPSHOT_HEIGHT, SNAPSHOT_TALL_HEIGHT, SnapshotFrame } from "./SnapshotFrame.js";
-
-/** How far above a step (layout units) the condition of the choice it is in is still drawn with it. */
-const CONDITION_REACH = 360;
 
 /** Graph layouts by view, for the page's life: a guide shows the same view in many sections. */
 const graphLayouts = new WeakMap<View, Promise<GraphLayout>>();
@@ -236,62 +234,13 @@ function GraphSnapshot({
 function SequenceSnapshot({ view, focus }: { view: SequenceView; focus: readonly ElementId[] }) {
   const state = useViewerState();
   const layout = useMemo(() => layoutSequence(view, state.model), [view, state.model]);
-  const selected = new Set(focus);
-  const boxes: Box[] = [];
-  const near: Box[] = [];
-  const lanes = new Map(layout.lifelines.map((lifeline) => [lifeline.id, lifeline]));
-  for (const row of layout.rows) {
-    if (!selected.has(row.step.id)) continue;
-    const band = {
-      x: row.bandLeft,
-      y: row.bandTop,
-      width: row.bandRight - row.bandLeft,
-      height: row.bandBottom - row.bandTop,
-    };
-    // An arrow means little without its ends (R4-3): both lifelines are in the picture with it, and their
-    // names stay at its top (`StickyHeads`) when the picture starts lower down.
-    const ends = [row.step.from, row.step.to].flatMap((id) => {
-      const lifeline = id === undefined ? undefined : lanes.get(id);
-      return lifeline
-        ? [
-            {
-              x: lifeline.x - lifeline.headWidth / 2,
-              y: band.y,
-              width: lifeline.headWidth,
-              height: band.height,
-            },
-          ]
-        : [];
-    });
-    const own: Box[] = [band, ...ends];
-    // ... and the frames around it start in the picture when there is room: a frame's name is not cut mid-word.
-    for (const box of layout.frames) {
-      if (!box.steps.includes(row.step.id)) continue;
-      const width = Math.min(box.width, frameLabelWidth(box.frame.kind, box.frame.label));
-      // The condition this step runs under (R5-4): the frame's name, or the line of its arm. A choice
-      // (alt, opt) near the step is part of the picture; a long loop's name only when there is room.
-      const arm = box.arms.find((one) => one.steps.includes(row.step.id));
-      const top = arm && arm !== box.arms[0] ? arm.top : box.y;
-      const condition = { x: box.x, y: top, width, height: band.y - top };
-      if (box.frame.kind !== "loop" && band.y - top <= CONDITION_REACH) own.push(condition);
-      else near.push({ x: box.x, y: band.y, width, height: band.height });
-    }
-    boxes.push(unionBox(own)!);
-  }
-  for (const lifeline of layout.lifelines) {
-    if (!selected.has(lifeline.id)) continue;
-    boxes.push({
-      x: lifeline.x - lifeline.headWidth / 2,
-      y: lifeline.headTop,
-      width: lifeline.headWidth,
-      height: lifeline.headHeight,
-    });
-  }
+  // (the same frame as the live diagram: sequenceFocus.ts)
+  const framed = useMemo(() => sequenceFocus(layout, new Set(focus)), [layout, focus]);
   return (
     <SnapshotFrame
       width={layout.width}
       height={layout.height}
-      focus={boxes.length > 0 ? { boxes, neighbours: near } : undefined}
+      focus={framed.boxes.length > 0 ? framed : undefined}
       where="Flow"
       overlay={(t, width) => <StickyHeads lifelines={layout.lifelines} t={t} paneWidth={width} />}
     >

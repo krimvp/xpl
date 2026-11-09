@@ -53,6 +53,30 @@ describe("the parts of a diagram in words", () => {
     expect(asFlow[0]!.from).toBeUndefined();
   });
 
+  // R6-R3: "Job queue implements Runner" on a folder map read as if the queue were a kind of runner
+  it("says where the interface is when an implements arrow joins two files", () => {
+    const { model, overview } = world();
+    const graph = deriveGraph(overview, model);
+    graph.edges = [
+      {
+        id: "edge:implements:file:src/b.ts->file:config/c.yaml",
+        from: "grp:core",
+        to: "file:config/c.yaml",
+        kind: "implements",
+        label: "implements an interface in",
+        count: 1,
+        resolution: "heuristic",
+        stored: false,
+        anchors: [],
+      },
+    ];
+    const parts = mapParts(graph, overview, model);
+    expect(parts.boxes.map((box) => box.links)).toEqual([
+      ["implements an interface in c.yaml"],
+      ["has an interface implemented by Core"],
+    ]);
+  });
+
   it("says a box's links by name, and counts them past two", () => {
     expect(linkWords("uses", ["worker.ts"])).toBe("uses worker.ts");
     expect(linkWords("used by", ["main.ts", "test"])).toBe("used by main.ts and test");

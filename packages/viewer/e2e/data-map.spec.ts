@@ -34,13 +34,22 @@ async function openDataMap(
   query = "mode=explore",
   over: Loose = {},
   tourFocus?: string[],
+  tourCode?: Loose[],
 ): Promise<void> {
   const { html, bundle } = readEmbeddedBundle();
   if (tourFocus)
     (bundle as Loose).explainer.tours.unshift({
       id: "tour:data",
       title: "What the queue keeps",
-      steps: [{ id: "t1", view: "view:data", focus: tourFocus, note: "### Kept\n\nWhat is kept." }],
+      steps: [
+        {
+          id: "t1",
+          view: "view:data",
+          focus: tourFocus,
+          note: "### Kept\n\nWhat is kept.",
+          ...(tourCode ? { code: tourCode } : {}),
+        },
+      ],
     });
   (bundle as Loose).explainer.views.push({
     id: "view:data",
@@ -163,22 +172,79 @@ test("Tab stops once per table, starting at the tour's first table; arrow keys w
   await expect.poll(() => selectionOf(page)).toEqual([`${DEAD}.error`]);
 });
 
-test("a focused table folds with minus and shows its rows again with plus, as the keyboard hint says", async ({
+// R6-1: a fold took the table's arrows away and laid the whole map out again; T6-02: the test refocused the
+// table before "+", so a fold that lost focus passed; T6-03: "=" (no Shift) opens it too
+test("a focused table folds with minus and opens with plus or =, keeping its arrows, its place and focus", async ({
   page,
 }) => {
   await openDataMap(page, "mode=explore&tour=tour:data", {}, [DEAD]);
   await expect(page.locator(".pz-keyboard-hint")).toContainText(
-    "On a table: Down goes into its rows, minus folds it to one box, plus shows its rows again.",
+    "On a table: Down: go into its rows. -: fold it to one box. +: show its rows again.",
   );
+  const holds = page.locator(".edge-label text", { hasText: /^holds$/ });
+  await expect(holds).toHaveCount(3);
+  const at = async (id: string) => {
+    const box = (await byId(page, id).boundingBox())!;
+    return [Math.round(box.x), Math.round(box.y)];
+  };
+  await expect(byId(page, DEAD)).toHaveAttribute("aria-expanded", "true");
   await byId(page, DEAD).focus();
-  await page.keyboard.press("-");
-  await expect(byId(page, `${DEAD}.job`)).toHaveCount(0);
-  await expect(byId(page, DEAD)).not.toHaveClass(/is-table/);
-  await byId(page, DEAD).focus();
-  await page.keyboard.press("+");
-  await expect(byId(page, DEAD)).toHaveClass(/is-table/);
-  await expect(byId(page, `${DEAD}.job`)).toBeVisible();
-  await expect(byId(page, `${DEAD}.error`)).toBeVisible();
+  for (const open of ["+", "="]) {
+    const others = [await at(JOB), await at(QUEUE)];
+    await page.keyboard.press("-");
+    await expect(byId(page, `${DEAD}.job`)).toHaveCount(0);
+    await expect(byId(page, DEAD)).not.toHaveClass(/is-table/);
+    await expect(byId(page, DEAD)).toHaveAttribute("aria-expanded", "false");
+    // the folded table's field still holds a Job: its arrow now starts at the table
+    await expect(holds).toHaveCount(3);
+    await expect(
+      page.locator(`.edge-key[data-key-for="edge:references:${DEAD}->${JOB}"]`),
+    ).toHaveCount(1);
+    // the other tables stay where they were (within 2 px)
+    for (const [i, id] of [JOB, QUEUE].entries())
+      await expect
+        .poll(async () => {
+          const [x, y] = await at(id);
+          return Math.abs(x! - others[i]![0]!) + Math.abs(y! - others[i]![1]!) <= 2;
+        })
+        .toBe(true);
+    await expect(byId(page, DEAD)).toBeFocused();
+    await page.keyboard.press(open);
+    await expect(byId(page, DEAD)).toHaveClass(/is-table/);
+    await expect(byId(page, DEAD)).toHaveAttribute("aria-expanded", "true");
+    await expect(byId(page, `${DEAD}.job`)).toBeVisible();
+    await expect(byId(page, `${DEAD}.error`)).toBeVisible();
+    await expect(byId(page, DEAD)).toBeFocused();
+  }
+});
+
+// V5-07: the step's code showed Queue.ready as "used here", and its row on the map was not marked
+test("a row the step's code names is marked on its own table", async ({ page }) => {
+  await openDataMap(
+    page,
+    "mode=explore",
+    {},
+    [JOB],
+    [
+      { file: "src/queue.ts", symbol: "Job", role: "definition" },
+      { file: "src/queue.ts", symbol: "Queue.ready", role: "usage" },
+    ],
+  );
+  // (presenting the step applies its code)
+  expect(await page.evaluate(() => window.__xpl!.present("tour:data", 0))).toBe(true);
+  await expect(byId(page, `${QUEUE}.ready`)).toHaveClass(/is-related/);
+  await expect(byId(page, `${QUEUE}.dead`)).not.toHaveClass(/is-related/);
+});
+
+// R4-4: a clicked row showed only its name ("job"), not its table or its type
+test("a selected row's details name its table and its type", async ({ page }) => {
+  await openDataMap(page);
+  await byId(page, DEAD).getByRole("button", { name: /^job/ }).click();
+  const details = page.getByRole("region", { name: "Details" });
+  await expect(details.locator(".details-title")).toHaveText("DeadJob.job");
+  await expect(details.locator(".facts dt").first()).toHaveText("In");
+  await expect(details.locator(".facts dd").first()).toHaveText("DeadJob");
+  await expect(details.locator(".facts dd").nth(1)).toHaveText("Job");
 });
 
 // D8/V5-03: Go structs were "class" on the chip, the icon and the Key

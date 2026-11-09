@@ -733,7 +733,8 @@ code {
 }
 
 .tab.is-active {
-  max-width: 34ch;
+  /* (the open view's whole title, U27; the strip scrolls) */
+  max-width: 64ch;
   background: var(--panel);
   color: var(--fg);
   font-weight: 600;
@@ -1199,6 +1200,57 @@ code {
   grid-template-columns: minmax(190px, 36%) minmax(0, 1fr);
   gap: 8px;
   min-height: 0;
+}
+
+/* V6-01: nothing selected yet: Concepts and Details are one line under the diagram (concept names as chips,
+   then a hint), so the diagram gets the height. The first selection opens the panels. */
+.explore.is-folded .left {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+.lower.is-folded {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 8px 4px 0;
+}
+.lower.is-folded > .concepts.is-compact {
+  padding: 0;
+  background: none;
+  border: 0;
+  overflow: hidden;
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.concepts.is-compact .panel-title {
+  margin: 0;
+  flex: none;
+}
+.concepts.is-compact .concept-list {
+  flex-direction: row;
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.concepts.is-compact .concept > button {
+  flex-direction: row;
+  align-items: center;
+  width: auto;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+.lower-hint {
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* l3: a code-first view: the diagram column is a narrow outline, so its two panels sit one above the other. */
@@ -3732,10 +3784,6 @@ code {
 .pane-ask.is-idle {
   visibility: hidden;
 }
-.present .pane-ask {
-  display: none;
-}
-
 .pane-toggle-box {
   display: inline-grid;
   place-items: center;
@@ -3852,6 +3900,15 @@ code {
   .present[data-room][data-split="wide"][style] {
     grid-template-columns: minmax(340px, min(65%, max(52%, var(--diagram-need)))) minmax(0, 1fr);
   }
+}
+
+/* present (U5): the Edit menu (a presenter's tools, not the audience's) shows once the mouse moves over the
+   page, or when it has the keyboard focus, like the zoom buttons. */
+.app:has(> .present:not([data-pointer])) .header .edit-menu:not(:focus-within) {
+  opacity: 0;
+}
+.app:has(> .present) .header .edit-menu {
+  transition: opacity 0.15s;
 }
 
 /* present: the slide takes the keyboard focus when a talk starts; no ring around the whole screen. */
@@ -4474,6 +4531,12 @@ code {
   .lower {
     grid-template-columns: minmax(0, 1fr);
     overflow: auto;
+  }
+  .lower.is-folded {
+    flex-wrap: wrap;
+  }
+  .lower-hint {
+    white-space: normal;
   }
 
   .tour-panel {

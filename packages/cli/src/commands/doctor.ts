@@ -44,13 +44,10 @@ export const doctorCommand: CommandSpec = {
   usage: "xpl doctor [--agent none|claude|codex|pi|droid|devin] [--skill-dir <folder>]",
   summary: "Diagnose local setup without downloading tools or starting authoring",
   details: [
-    "Checks Node >=22.12, bundled file hashes and grammar loading. Required failures exit 1.",
-    "A selected skill and local agent command are checked for Claude, Codex, Pi and Droid. Devin checks the project skill files; its cloud session is not locally verifiable. The default none checks reader/index/export setup.",
-    "Optional git, npx and Go checks report local versions. Availability does not prove a precise indexer can run.",
-    "An older skill needs xpl skill install; a newer skill needs a matching CLI. Checks npm for a newer xpl version when reachable. Set XPL_NO_UPDATE_CHECK=1 to skip this network check.",
-    "Go uses the installed toolchain with user configuration and telemetry disabled; Git tracing is disabled.",
-    "Use xpl index --precise off offline. Auto precise mode may download tools/dependencies; require fails if unavailable.",
-    "Agent authentication and provider access are not checked. Generation is user-invoked.",
+    "Checks Node 22.12 or newer, the bundled files and the grammars. A failed check exits 1.",
+    "With --agent, it also checks that agent's skill and command. It does not check sign-in.",
+    "It reports the versions of git, npx and Go, and checks npm for a newer xpl (XPL_NO_UPDATE_CHECK=1 skips).",
+    "It downloads nothing. Offline, index with `xpl index --precise off`.",
   ],
   options: {
     agent: {
@@ -61,7 +58,7 @@ export const doctorCommand: CommandSpec = {
     "skill-dir": {
       type: "string",
       arg: "<folder>",
-      desc: "Installed skill to check (default: ~/.claude/skills/code-explainer)",
+      desc: "Installed skill to check (default: Claude's skills folder)",
     },
   },
   positionals: [],

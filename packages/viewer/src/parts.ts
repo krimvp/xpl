@@ -82,8 +82,15 @@ export function linkWords(
 /** The verbs of an arrow, at its start and at its end: what it says on the map, not "uses" for every kind. */
 function verbsOf(edge: DerivedGraph["edges"][number]): [string, string] {
   if (isHolds(edge)) return ["holds", "held by"];
-  if (edge.kind === "implements") return ["implements", "implemented by"];
-  if (edge.kind === "extends") return ["extends", "extended by"];
+  // (lifted to a file or a folder, core says where the interface is: "implements an interface in", R6-R3)
+  if (edge.kind === "implements")
+    return edge.label && !edge.stored
+      ? [edge.label, "has an interface implemented by"]
+      : ["implements", "implemented by"];
+  if (edge.kind === "extends")
+    return edge.label && !edge.stored
+      ? [edge.label, "has a type extended by"]
+      : ["extends", "extended by"];
   return ["uses", "used by"];
 }
 

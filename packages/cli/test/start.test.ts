@@ -91,7 +91,7 @@ describe("xpl start", () => {
     expect(result.out).toMatch(
       /^next: write the TODOs in `xpl view \S+` \(Edit > Edit the tour\), or edit (\S+) and run `xpl apply \S+ \1`; then `xpl lint \S+`$/m,
     );
-    expect(result.out).toContain("note: Provisional architecture: confirm project kind");
+    expect(result.out).toContain("note: The draft guesses the kind of project");
     expect(result.out).toContain("draft notes:");
     expect(result.out).toContain("xpl view job-retries");
     const draftPath = /draft patch: (.+)/.exec(result.out)?.[1];
@@ -162,7 +162,7 @@ describe("xpl start", () => {
     });
     expect(existsSync(json.json.draft)).toBe(true);
     expect(json.json.notes).toContain(
-      "Provisional architecture: confirm project kind, primary users and entry points in the README and code; import lines identify dependencies.",
+      "The draft guesses the kind of project, its users and its entry points from the code and its import lines: check each in the README and the code.",
     );
     expect(existsSync(json.json.notesFile)).toBe(true);
   });

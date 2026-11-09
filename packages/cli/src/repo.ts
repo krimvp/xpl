@@ -439,7 +439,11 @@ export function loadReadExplainer(
   arg: string | undefined,
   command: string,
 ): LoadedExplainer {
-  if (arg !== undefined) return loadExplainer(ctx, arg);
+  return loadExplainer(ctx, arg ?? onlyExplainerName(ctx, command));
+}
+
+/** The name of the repository's only explainer, reported on stderr; a usage error when there are none or several. */
+export function onlyExplainerName(ctx: Ctx, command: string): string {
   const names = listExplainerNames(ctx.root);
   if (names.length === 0)
     throw new UsageError("no explainers found; create one with `xpl new <name>`");
@@ -448,7 +452,7 @@ export function loadReadExplainer(
       `supply an explainer for xpl ${command}; available explainers: ${names.join(", ")}`,
     );
   ctx.io.err(`using ${names[0]}`);
-  return loadExplainer(ctx, names[0]!);
+  return names[0]!;
 }
 
 /** Load the discovered files for catalog and evidence readers; neither metadata nor an index gates loading. */

@@ -1,5 +1,5 @@
 /**
- * The stub mode of a graph view (`GraphView.stubs.mode`), in the diagram's caption next to the edge-kind
+ * The stub mode of a graph view (`GraphView.stubs.mode`), in the Edit menu next to the arrow-kind
  * toggles: how many of the places where the view stops are drawn as ghost boxes. `top` keeps the few most
  * referenced (the default), `all` every one, `none` no stubs at all. Like the toggles, a change is a view
  * edit: stored on the view, and persisted under `xpl view`.
@@ -9,9 +9,9 @@ import { useStore } from "../hooks.js";
 
 const HELP: Record<StubMode, (max: number) => string> = {
   top: (max) =>
-    `The ${max} most referenced places where this view stops; the rest are folded into "N more" and "rest of <file>" ghosts`,
-  all: () => "Every place where this view stops, one ghost box each (crowded in a big view)",
-  none: () => "No dashed stubs and no ghost boxes: only the arrows between the boxes shown",
+    `The ${max} most used places outside this map; the rest fold into "N more" and "rest of <file>" boxes`,
+  all: () => "Every place outside this map, one dashed box each (crowded in a big map)",
+  none: () => "No arrows to places outside this map: only the arrows between the boxes shown",
 };
 
 export function StubsControl({ mode, max = DEFAULT_STUB_MAX }: { mode: StubMode; max?: number }) {

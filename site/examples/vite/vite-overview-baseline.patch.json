@@ -216,8 +216,8 @@
   "tours": [
     {
       "id": "tour:overview",
-      "title": "How Vite serves development and builds production output",
-      "summary": "Vite is a web build tool with a development server and a production build command. The server serves modules to a browser and watches files as developers work. The builder prepares deployable output through configured environments. This tour follows those two paths from the command line.",
+      "title": "How Vite serves and builds a web app",
+      "summary": "Vite turns a web app's source files into what a browser loads, both while a developer edits and as files ready to deploy. The server serves modules to a browser and watches files as developers work. The builder prepares deployable output through configured environments. This tour follows those two paths from the command line.",
       "steps": [
         {
           "id": "t1",
@@ -352,7 +352,7 @@
               "role": "definition"
             }
           ],
-          "note": "### Where to go next\n\nThe guide \"How Vite chooses a hot update, reload, or no update\" follows one file change to its outcome. This tour did not open the transform middleware, which answers each module request from the browser.",
+          "note": "### Where to go next\n\nThe guide \"How Vite chooses a hot update, reload, or no update\" follows one file change to its outcome. The box on screen is the transform middleware: it answers each module request from the browser.",
           "editor": {
             "primary": "packages/vite/src/node/server/middlewares/transform.ts"
           }

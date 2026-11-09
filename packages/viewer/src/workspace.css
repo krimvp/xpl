@@ -1539,7 +1539,8 @@
    keeps its levels and title; its question, "Inside …" links, picker and "Explore all diagrams" sit behind
    "About this map". The key line goes (the toolbar's Key says it all), and the topic column under the diagram
    starts below it, its first line peeking in at the bottom. */
-.caption-about {
+.caption-about,
+.caption-steps {
   display: none;
 }
 /* (a short screen, a phone on its side or 200% zoom, has its own one-line caption: below) */
@@ -1555,6 +1556,11 @@
     align-items: center;
     gap: 6px;
     margin-top: 6px;
+    font-size: 13px;
+  }
+  .caption-steps {
+    display: inline-flex;
+    margin: 6px 0 0 12px;
     font-size: 13px;
   }
   .caption-about-chevron::before {

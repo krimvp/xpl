@@ -18,12 +18,14 @@ import {
   inheritedEntry,
   type PathEntry,
   draftRepo,
+  continueStepIds,
+  PATH_ROOM,
   type Draft,
   type DraftKind,
 } from "../draft.js";
-import { MAP_LIMITS, draftMap } from "../draft-map.js";
+import { draftMap } from "../draft-map.js";
 import { CLASS_ENTRY_KINDS, CLASS_LIMITS, draftClass } from "../draft-class.js";
-import { STATES_LIMITS, draftStates, statesHint } from "../draft-states.js";
+import { draftStates, statesHint } from "../draft-states.js";
 import { DATA_LIMITS, draftData } from "../draft-data.js";
 import { CliError, UsageError, errorMessage } from "../errors.js";
 import { resolveCommit } from "../git.js";
@@ -158,95 +160,28 @@ function pathEntry(model: IndexModel, arg: string): PathEntry {
   return { symbol: target.symbol };
 }
 
+/** A row of the table of kinds in the help: the kind and its arguments, then the text in one column. */
+const row = (kind: string) => `  ${kind}`.padEnd(30);
+
 export const draftCommand: CommandSpec = {
   name: "draft",
   usage:
     "xpl draft change|repo|path|map|class|states|data [explainer] [<entry id> ...] [--audience <reader>] [--question <question>] [-o <file>]",
   summary:
-    "Print a patch skeleton for a change, a repo, a path, a map, a class, the states of a type or a data map; you write the TODO text",
+    "Print a patch skeleton with TODOs to write: a change, repo, path, map, class, states or data",
   details: [
-    "Builds a provisional patch from indexed references and the change record, with",
-    "`TODO: <what to write>` in every text a person must write. `xpl apply` accepts it as it is; `xpl lint` reports",
-    "each TODO left (`todo-left`). Write the text, check it against the code, then apply.",
-    "Use --audience and --question to focus the draft. Imports suggest architecture; they do not prove",
-    "who uses the project. Path sequences list selected call sites, not every call the code can make.",
-    "  change <explainer>        needs the change record (`xpl change <explainer> <base>..<head>` first). A map of",
-    `                            the change (changed symbols, or their files when many; direct callers outside`,
-    `                            tests; one group box for the tests), and a tour in review order: what changes for`,
-    `                            users, where it enters, one step per changed piece, who else is affected, tests,`,
-    `                            risks (at most ${DRAFT_LIMITS.changeSteps} steps). Every changed file is anchored, tests too; a`,
-    "                            changed piece's step shows its old lines (a base anchor) before the new ones.",
-    `  repo <explainer>          two levels. A system map: the project as a service box (one per program under`,
-    `                            services/, apps/ or cmd/), who reaches it and what it relies on (databases, caches,`,
-    `                            queues, other APIs, found from the import lines). A web server found from its start`,
-    `                            call (Go ListenAndServe, Node createServer, Python serve_forever) gets a Clients box`,
-    `                            there. A program with a main function (Java: a main method) and no web server or`,
-    `                            command-line framework gets an Operator box, with an arrow to each part that holds a`,
-    `                            main. The settings files the code loads get one Settings box, anchored at the file`,
-    `                            and the line that loads it. Each service box opens a map of its parts: the top-level`,
-    `                            folders or files (below src in a src layout; at most ${DRAFT_LIMITS.mapBoxes} boxes) and the outside`,
-    `                            systems they use; code that several services share is on the map of each. A tour`,
-    `                            from the top down that ends on where to go next (at most ${DRAFT_LIMITS.repoSteps} steps). It needs a`,
-    "                            supported source language; unsupported files stay text and cannot form repository",
-    "                            levels. Inspect text with `xpl show file:<path>`.",
-    "  path <explainer> <entry> [<entry> ...]",
-    "                            a sequence of the calls the entry symbol makes (depth 1, in source order, at most",
-    `                            ${DRAFT_LIMITS.participants} participants and ${DRAFT_LIMITS.pathCalls} calls), with a loop, alt or opt frame where the code loops`,
-    "                            or branches around them. A tour of at most " +
-      DRAFT_LIMITS.pathSteps +
-      " steps: a map of the files the path",
-    "                            crosses (when it crosses two or more; its calls only, those through an interface",
-    "                            too), the big picture, one step per main call (a branch with two outcomes is one",
-    "                            step), and where to go next. Calls to helpers of the entry's own class get a",
-    "                            lifeline of their own; recursion is a call to itself; one-line helpers, type",
-    "                            conversions, data built from a type and one-line checks a branch's condition makes",
-    "                            are left out (the notes list them), and so are the calls that reach the least code",
-    "                            when there are too many. Log calls get a tour step last.",
-    "                            Several entries: one sequence each, in one tour (a question with two halves). A",
-    "                            method a class inherits (`sym:a.py#Child.run`) starts at the base that defines it,",
-    "                            and self calls go where the class's method order finds them.",
-    "  map <explainer>           a quick map of every code file outside tests: one map per folder, a folder box opens",
-    "                            the map of its files. Each box gets a name and one sentence to write; a file's TODO",
-    "                            holds its header comment, what it defines, who uses it and what it uses. A start tour,",
-    "                            and with a change recorded a tour of the changed files (how each serves the request).",
-    `                            Run again after the code changed: only new files are drafted, boxes of files that`,
-    `                            are gone are removed, written text stays (a moved file keeps its own), and the map's`,
-    `                            tours drop what is gone. Maps over ${MAP_LIMITS.boxes} boxes get a note; a new map over`,
-    `                            ${MAP_LIMITS.matrixBoxes} boxes opens as a dependency matrix (render: "matrix").`,
-    "  class <explainer> <entry>",
-    "                            the type hierarchy around a class or interface: what it extends and implements (all",
-    "                            the way up) and what extends or implements it (two levels down), on one map of",
-    `                            extends and implements arrows (at most ${CLASS_LIMITS.boxes} boxes), each with a summary TODO that`,
-    "                            names its kind, links and methods; a tour: the entry, then each type next to it.",
-    "  states <explainer> <entry>",
-    "                            the states of a status type on one flow: a TypeScript enum or union of string",
-    "                            literals, a Python Enum class, or a Go type with a const block of its values (in its",
-    "                            file). A stage per state, anchored where the code sets it (an assignment, a return,",
-    "                            an object key, a React setter) and tests it (a comparison, is, case); a stage per",
-    "                            transition where one function tests a state and then sets another under that test",
-    "                            (both sites anchored). Comments and other strings do not count. The notes name the",
-    `                            states never set or tested and the other uses. At most ${STATES_LIMITS.states} states and`,
-    `                            ${STATES_LIMITS.transitions} transitions; a tour: the type, then each state.`,
-    "  data <explainer> [<scope>]",
-    "                            what data the code keeps and how its types relate, on one data map (`boxText:",
-    '                            "members"`): a table per type (class, interface, type, enum) with a row per field and',
-    "                            the type its line names, arrows from a field to the type it holds and from a type to",
-    "                            what it extends or implements. The scope is the repo (the default), a folder or a file",
-    "                            (tests, examples, docs and fixtures left out), or one type to start at. A type with",
-    "                            no fields (a function type) is a box only in a hierarchy. Each group of linked types",
-    "                            starts at the type that reaches the most others through its fields, then adds what",
-    `                            the boxes hold, the most used first (at most ${DATA_LIMITS.boxes} boxes in all, ${DATA_LIMITS.rows} rows a box; a later`,
-    "                            group keeps 2). Each box gets a summary TODO with its fields and links; rows get none.",
-    "                            Two types of one name are qualified (`runner.Config`). The notes say what is left",
-    `                            off and why. A tour of at most ${DATA_LIMITS.steps} steps: the types in the order they joined, the`,
-    "                            rest of the map, and where to go next (the types left off).",
-    'Change, repo and path maps get `stubs: {mode: "none"}` (a folder map keeps its stubs: what uses it and what it uses);',
-    "tour steps hold at most 2 code ranges. Ids already in the explainer are not reused (`view:change-map-2`; a map",
-    "keeps its own view ids and updates them), and nodes it already explains get no new summary.",
-    "Prints the patch on stdout (the summary on stderr), or writes it with -o and prints the summary.",
-    "Then: write the text, `xpl lint <explainer> --patch <file>`, `xpl apply <explainer> <file>`.",
-    "Omit the explainer when the repository has exactly one; otherwise supply its name.",
-    "Exit codes: 0 ok, 1 no change recorded, an unknown entry, or nothing to draft, 2 usage error.",
+    "Prints a patch with `TODO: <what to write>` in each text a person writes. `xpl apply` accepts it as it is.",
+    "Boxes, steps and code links come from the index. Imports suggest the architecture; they do not prove it.",
+    `${row("change <explainer>")}the change map and a review tour (at most ${DRAFT_LIMITS.changeSteps} steps); run \`xpl change\` first`,
+    `${row("repo <explainer>")}a system map, a map of each service's parts, a tour of at most ${DRAFT_LIMITS.repoSteps - PATH_ROOM} steps`,
+    `${row("path <explainer> <entry>")}the calls an entry makes, framed by its loops and branches; a tour of ${DRAFT_LIMITS.pathSteps} steps`,
+    `${row("map <explainer>")}a map per folder of every code file outside tests; run it again after changes`,
+    `${row("class <explainer> <entry>")}the type hierarchy around a class or an interface (at most ${CLASS_LIMITS.boxes} boxes)`,
+    `${row("states <explainer> <entry>")}the states of a status type on one flow, with where the code sets and tests each`,
+    `${row("data <explainer> [<scope>]")}the types the code keeps and how they link, on one data map (at most ${DATA_LIMITS.boxes} boxes)`,
+    "Several path entries make one tour. Ids in the guide are not reused. New tour steps follow the guide's own.",
+    "Prints the patch, or writes it with -o. Then: `xpl lint <explainer> --patch <file>`, `xpl apply`.",
+    "Exit codes: 0 ok, 1 no change recorded, an unknown entry or nothing to draft, 2 usage error.",
   ],
   options: {
     out: { type: "string", short: "o", arg: "<file>", desc: "Write the patch to a file" },
@@ -423,6 +358,7 @@ export const draftCommand: CommandSpec = {
       }
     }
 
+    continueStepIds(draft.patch, loaded.explainer);
     // The draft must apply as it is: check it the way `xpl apply` does, in memory.
     const check = applyPatch(loaded.explainer, draft.patch, ws.model, ws.texts, { actor: "llm" });
     if (!check.ok) {

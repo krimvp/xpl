@@ -379,6 +379,10 @@ test.describe("the change in the reading screens", () => {
     await expect(byId(page, "grp:scheduling").locator(":scope > .change-pill text")).toHaveText(
       "Changed",
     );
+    // R6-3: the arrow from Scheduling to worker.ts draws no words of its own; the key line names its kind
+    await expect(page.getByTestId("key-line").locator('[data-key-item="kind-calls"]')).toHaveText(
+      "calls",
+    );
     // inside the group: runner.ts changed
     await byId(page, "grp:scheduling").dblclick();
     await expect(byId(page, "file:src/runner.ts").locator(".change-pill text")).toHaveText(
@@ -409,6 +413,33 @@ test.describe("the change in the reading screens", () => {
     const box = (await byId(page, "dispatch:3").locator("rect").first().boundingBox())!;
     const pill = (await byId(page, "dispatch:3").locator(".change-pill").boundingBox())!;
     expect(pill.x + pill.width).toBeLessThanOrEqual(box.x + box.width);
+    expect(problems).toEqual([]);
+  });
+
+  // T6-05: the pill's "New" and its place on a decision's diamond had no test
+  test('a decision step whose code the change adds says "New" on its diamond', async ({ page }) => {
+    const problems = watchProblems(page);
+    const { html, bundle } = readEmbeddedBundle(CHANGE_BUNDLE);
+    const data = bundle as any;
+    const view = data.explainer.views.find((v: any) => v.id === "view:dispatch");
+    view.type = "flow";
+    const step = view.steps.find((s: any) => s.id === "dispatch:2");
+    step.shape = "decision";
+    // src/metrics.ts is a new file: every line of it is added
+    step.anchors = [{ file: "src/metrics.ts", role: "definition", hash: "x" }];
+    await page.route("http://xpl.test/**", (route) =>
+      route.fulfill({ contentType: "text/html", body: withBundle(html, data) }),
+    );
+    await page.goto("http://xpl.test/?perspective=flow");
+    await page.waitForFunction(() => window.__xpl !== undefined);
+    const pill = byId(page, "dispatch:2").locator(".change-pill");
+    await expect(pill.locator("text")).toHaveText("New");
+    // on the diamond's upper right edge: right of its middle, above its middle
+    const box = (await byId(page, "dispatch:2").locator(":scope > polygon").boundingBox())!;
+    const at = (await pill.boundingBox())!;
+    expect(at.x + at.width / 2).toBeGreaterThan(box.x + box.width / 2);
+    expect(at.y + at.height / 2).toBeLessThan(box.y + box.height / 2);
+    expect(at.x + at.width).toBeLessThanOrEqual(box.x + box.width + 1);
     expect(problems).toEqual([]);
   });
 

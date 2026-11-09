@@ -16,9 +16,10 @@ const READS = [
   ["bundle", "-o", "guide.html", "--draft"],
   ["anchors"],
   ["draft", "repo"],
+  ["resolve"],
 ];
 
-describe("read-only commands with no explainer argument", () => {
+describe("commands with no explainer argument", () => {
   it("uses the only explainer and reports which one was selected", async () => {
     const dir = await indexedFixture();
     expect((await xpl(dir, "new", "demo")).code).toBe(0);
@@ -56,10 +57,10 @@ describe("read-only commands with no explainer argument", () => {
     }
   });
 
-  it("keeps write commands explicit", async () => {
+  it("keeps the commands that create or patch a guide explicit", async () => {
     const dir = await indexedFixture();
     expect((await xpl(dir, "new", "demo")).code).toBe(0);
-    for (const argv of [["apply"], ["change"], ["new"]]) {
+    for (const argv of [["apply"], ["new"]]) {
       const result = await xpl(dir, ...argv);
       expect(result.code, argv[0]).toBe(2);
       expect(result.err, argv[0]).toContain("missing <");

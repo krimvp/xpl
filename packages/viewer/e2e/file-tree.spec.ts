@@ -70,7 +70,9 @@ test("a static bundle lists only the files it embeds and says how many that is",
   await expect(page.locator('.tree-row.is-dir[data-path="src"]')).toBeVisible();
   await expect(page.locator('.tree-row.is-dir[data-path="config"]')).toBeVisible();
   const foot = page.getByTestId("tree-foot");
-  await expect(foot).toHaveText("5 of 12 files included · rebuild with --files all");
+  await expect(foot).toHaveText(
+    "5 of 12 files are in this page. To add the rest, run xpl bundle --files all",
+  );
   await expect(foot).toBeVisible();
 
   // An embedded file opens; a click on one that is not listed cannot happen, but what the explainer
@@ -95,7 +97,7 @@ test("a bundle with no source at all still says so", async ({ page }) => {
   });
   expect(await listed(page)).toEqual([]);
   await expect(page.getByTestId("tree-foot")).toHaveText(
-    "0 of 12 files included · rebuild with --files all",
+    "0 of 12 files are in this page. To add the rest, run xpl bundle --files all",
   );
 });
 

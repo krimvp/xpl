@@ -26,8 +26,9 @@ import {
   type SequenceLayout,
 } from "../layout/sequenceLayout.js";
 import { useStore } from "../hooks.js";
-import { arrowHeadPath, openArrowHeadPath, roundedPath, type Box } from "../svg.js";
-import { READABLE_ZOOM, unionBox } from "../viewport.js";
+import { arrowHeadPath, openArrowHeadPath, roundedPath } from "../svg.js";
+import { READABLE_ZOOM } from "../viewport.js";
+import { sequenceFocus } from "../sequenceFocus.js";
 import { SequenceKey } from "./Legend.js";
 import {
   PanZoom,
@@ -70,42 +71,8 @@ export function SequenceView({
   // Each selected arrow is one focus box: its label with both ends (the heads of the two participants it
   // joins), so a frame shows who talks to whom; several are framed together when they fit, else the first
   // whole and "+N more". When even one is too wide, its label (`core`) is what stays in view.
-  const { boxes: startBoxes, core: startCore } = useMemo(() => {
-    const boxes: Box[] = [];
-    let core: Box | undefined;
-    for (const row of layout.rows) {
-      if (!selected.has(row.step.id)) continue;
-      const left = row.labelAnchor === "middle" ? row.labelX - row.labelWidth / 2 : row.labelX;
-      const label = {
-        x: Math.max(row.bandLeft, left - 12),
-        y: row.bandTop,
-        width: row.labelWidth + 24,
-        height: row.bandBottom - row.bandTop,
-      };
-      const ends = layout.lifelines
-        .filter((lifeline) => lifeline.id === row.step.from || lifeline.id === row.step.to)
-        .map((lifeline) => ({
-          x: lifeline.x - lifeline.headWidth / 2,
-          y: row.bandTop,
-          width: lifeline.headWidth,
-          height: row.bandBottom - row.bandTop,
-        }));
-      core ??= label;
-      boxes.push(unionBox([label, ...ends])!);
-    }
-    for (const lifeline of layout.lifelines) {
-      if (!selected.has(lifeline.id)) continue;
-      const head = {
-        x: lifeline.x - lifeline.headWidth / 2,
-        y: lifeline.headTop,
-        width: lifeline.headWidth,
-        height: lifeline.headHeight,
-      };
-      core ??= head;
-      boxes.push(head);
-    }
-    return { boxes, core };
-  }, [layout, selected]);
+  const startFocus = useMemo(() => sequenceFocus(layout, selected), [layout, selected]);
+  const { boxes: startBoxes, core: startCore } = startFocus;
 
   if (layout.lifelines.length === 0) {
     return (
@@ -131,7 +98,7 @@ export function SequenceView({
       fitPadding={present ? PRESENT_FIT_PADDING : undefined}
       // Whole only when its words read at 10px or more (13.5 units at 0.75); else framed on the step.
       readableZoom={present ? PRESENT_READABLE_ZOOM : READABLE_ZOOM}
-      focus={startBoxes.length > 0 ? { boxes: startBoxes, core: startCore } : undefined}
+      focus={startBoxes.length > 0 ? startFocus : undefined}
       keepInView={startCore}
       overlay={(t, size) => <StickyHeads lifelines={layout.lifelines} t={t} paneWidth={size.w} />}
       onBackgroundClick={() => store.clearSelection()}

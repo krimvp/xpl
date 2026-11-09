@@ -50,7 +50,7 @@ import { posix } from "node:path";
 import type { Node } from "web-tree-sitter";
 import { SpanIndex, nodeSpan, spanBetween, spanLineCount } from "../ast.js";
 import { probeModule, repoPath, resolveBareSpecifier, pathsConfigFor } from "./ts-modules.js";
-import { LocalScopes, patternNames } from "./ts-scope.js";
+import { LocalScopes, moduleCallOf, patternNames } from "./ts-scope.js";
 import type {
   ClassifiedSite,
   ExportFact,
@@ -128,20 +128,6 @@ const SCAN_TYPES = [
 
 function isFunctionValue(node: Node | null | undefined): boolean {
   return !!node && FUNCTION_VALUE.has(node.type);
-}
-
-/** `require("./x")` with a single string literal argument (a CommonJS import, not a definition). */
-function isRequireCall(node: Node | null | undefined): boolean {
-  const call = unwrapValue(node);
-  if (call?.type !== "call_expression") return false;
-  const fn = call.childForFieldName("function");
-  const args = call.childForFieldName("arguments");
-  return (
-    fn?.type === "identifier" &&
-    fn.text === "require" &&
-    args?.namedChildCount === 1 &&
-    args.namedChild(0)?.type === "string"
-  );
 }
 
 /** The function node an initialiser evaluates to (arrow / function expression, possibly cast or parenthesised). */
@@ -1251,8 +1237,8 @@ class Extractor {
   private declarators(outer: Node, declaration: Node, scope: Scope): void {
     const list = declaration.namedChildren.filter((c) => c.type === "variable_declarator");
     list.forEach((declarator, i) => {
-      // `const x = require("./x")` binds an import; it is not a definition of x.
-      if (isRequireCall(declarator.childForFieldName("value"))) return;
+      // `const x = require("./x")` and `const { x } = await import("./x")` bind imports; they define no x.
+      if (moduleCallOf(declarator.childForFieldName("value"))) return;
       const first = i === 0 ? outer : declarator;
       const last = i === list.length - 1 ? outer : declarator;
       const nameNode = declarator.childForFieldName("name");
@@ -1842,11 +1828,11 @@ class Extractor {
   private onDeclarator(d: Node): void {
     const nameNode = d.childForFieldName("name");
     const valueNode = d.childForFieldName("value");
-    // `const x = require("./y")` / `const { a, b: c } = require("./y")`
-    const call = unwrapValue(valueNode);
-    if (call?.type === "call_expression") {
+    // `const x = require("./y")` / `const { a, b: c } = require("./y")` / `const { a } = await import("./y")`
+    const call = moduleCallOf(valueNode);
+    if (call) {
       const arg = call.childForFieldName("arguments")?.namedChild(0);
-      if (isRequireCall(call) && arg && nameNode) {
+      if (arg && nameNode) {
         const module = stringContent(arg);
         this.handled.add(call.id);
         if (nameNode.type === "identifier") {

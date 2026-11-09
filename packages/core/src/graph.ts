@@ -49,7 +49,10 @@ export interface GraphNode {
   kind: Node["kind"];
   /** For symbol nodes: the indexed symbol's kind. */
   symbolKind?: IndexedSymbol["kind"];
-  /** The reader's word for `symbolKind` when it differs from it (`ModelNode.kindWord`): "struct", "field". */
+  /**
+   * The reader's word for `symbolKind` when it differs from it (`ModelNode.kindWord`): "struct", "field";
+   * "constant" for a value declared `const` (read from `DeriveOptions.text`).
+   */
   kindWord?: string;
   /** Some included node renders inside this one. */
   container: boolean;
@@ -127,8 +130,6 @@ const TYPE_KINDS: ReadonlySet<IndexedSymbol["kind"]> = new Set([
   "type",
   "enum",
 ]);
-/** The longest type text a row shows; a longer one is cut and ends in "…". */
-const MEMBER_TYPE_MAX = 28;
 
 /**
  * The type a field's declaration line names, read off the text after its name: `attempts: number;` (TypeScript),
@@ -150,7 +151,28 @@ function memberType(line: string, name: string): string | undefined {
   else return undefined;
   type = type.trim().replace(/[,;]$/, "").trim();
   if (type === "" || /^[={]/.test(type)) return undefined;
-  return type.length > MEMBER_TYPE_MAX ? `${type.slice(0, MEMBER_TYPE_MAX - 1).trimEnd()}…` : type;
+  return type;
+}
+
+/**
+ * A type's text without the function types in it (each becomes `fn`): TypeScript `(w: Worker) => void`, Go
+ * `func(w *Worker) error`, Python `Callable[[Worker], None]`. What is left names the types a value holds.
+ */
+function withoutFunctions(type: string): string {
+  const patterns = [
+    /\([^()]*\)\s*=>\s*(?:[\w.$]+(?:<[^<>]*>)?(?:\[\])*)/,
+    /\bfunc\s*\([^()]*\)\s*(?:\([^()]*\)|[\w.*[\]]+)?/,
+    /\bCallable\[(?:[^[\]]|\[[^[\]]*\])*\]/,
+  ];
+  let text = type;
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const pattern of patterns) {
+      const next = text.replace(pattern, "fn");
+      if (next !== text) [text, changed] = [next, true];
+    }
+  }
+  return text;
 }
 
 /** Where `name` stands in `line` as a whole word (not part of a longer name), or -1. */
@@ -591,6 +613,11 @@ export function deriveGraph(
     };
   };
 
+  // the derived edges from a folded table's fields (`members`): named "holds" like the rows' own arrows
+  const heldByFolded = new Set<ElementId>();
+  const hasRows = new Set(parents.values());
+  const isFieldOf = (id: ElementId, type: ElementId): boolean =>
+    model.node(id)?.symbolKind === "variable" && model.parent(id) === type;
   for (const ref of index.refs) {
     const kind = REF_TO_EDGE_KIND[ref.kind];
     if (!kind || !kinds.has(kind)) continue;
@@ -600,8 +627,11 @@ export function deriveGraph(
     if (dropRef?.(ref)) continue;
     const a = rep.repr(fromEl);
     const b = rep.repr(toEl);
-    // a data-model view draws what the types hold, not the uses inside a type's methods
-    if (members && a !== undefined && a !== fromEl && isType(a)) continue;
+    // a data-model view draws what the types hold, not the uses inside a type's methods; a field of a folded
+    // table (its rows not shown) still holds what it holds: its arrow starts at the table (R6-1)
+    const lifted = members && a !== undefined && a !== fromEl && isType(a);
+    const field = lifted && kind === "references" && !hasRows.has(a) && isFieldOf(fromEl, a);
+    if (lifted && !field) continue;
     if (a !== undefined && kind === "calls") {
       const hop = dispatched(ref);
       const implEl = hop && !dropRef?.(hop) ? endpoint(hop.to) : undefined;
@@ -613,6 +643,7 @@ export function deriveGraph(
       const loop = a === b && kind === "calls" && a === fromEl && b === toEl;
       if (a === b ? !loop : nested(a, b)) continue;
       addEdge(kind, a, b, ref);
+      if (field) heldByFolded.add(derivedEdgeId(kind, a, b));
     } else if (a !== undefined) {
       if (!throughVia(a, toEl)) addStub("out", a, toEl, kind);
     } else if (b !== undefined && !throughVia(b, fromEl)) addStub("in", b, fromEl, kind);
@@ -727,6 +758,12 @@ export function deriveGraph(
     const line = sym && opts.text?.(sym.file)?.split("\n")[sym.range.startLine - 1];
     return line ? memberType(line, sym.path.split(".").pop()!) : undefined;
   };
+  // a value declared `const` (`export const applyCommand = {…}`) is a constant to its reader, not a variable
+  const isConstant = (id: ElementId): boolean => {
+    const sym = symbolOf(id);
+    const line = sym && opts.text?.(sym.file)?.split("\n")[sym.range.startLine - 1];
+    return line !== undefined && /^\s*(?:export\s+)?(?:declare\s+)?const\s/.test(line);
+  };
   // rows in the order the code declares them
   const rowOf = new Map<ElementId, number>();
   for (const table of tables) {
@@ -747,6 +784,7 @@ export function deriveGraph(
     };
     if (node.symbolKind !== undefined) out.symbolKind = node.symbolKind;
     if (node.kindWord !== undefined) out.kindWord = node.kindWord;
+    else if (node.symbolKind === "variable" && isConstant(id)) out.kindWord = "constant";
     if (node.role !== undefined) out.role = node.role;
     if (node.tech !== undefined) out.tech = node.tech;
     if (node.opens !== undefined) {
@@ -767,12 +805,37 @@ export function deriveGraph(
     return out;
   });
 
+  // a row whose type names the other type only in a function's signature (`Array<(worker: Worker) => void>`)
+  // holds functions, not that type: no arrow (V5-09)
+  const holdsNothingOf = (edge: DerivedEdge): boolean => {
+    if (edge.kind !== "references" || !rowOf.has(edge.from)) return false;
+    const type = typeOf(edge.from);
+    const name = symbolOf(edge.to)?.path.split(".").pop();
+    return (
+      type !== undefined &&
+      name !== undefined &&
+      wordAt(type, name) >= 0 &&
+      wordAt(withoutFunctions(type), name) < 0
+    );
+  };
   const outEdges = [...edges.values()]
     .filter((e) => !hidden.has(e.id) && !hidden.has(e.from) && !hidden.has(e.to))
+    .filter((e) => !holdsNothingOf(e))
     .sort((a, b) => cmp(a.id, b.id));
   // a row's arrow: the field holds a value of that type ("Queue.ready holds Job")
+  // an interface or a parent type lifted to a box that is no type (a file, a folder, a group): "Job queue
+  // implements Runner" would say the queue is a kind of runner; it implements an interface in it (R6-R3)
   for (const edge of outEdges)
-    if (edge.kind === "references" && rowOf.has(edge.from) && edge.label === undefined)
+    if (!edge.stored && edge.label === undefined && !isType(edge.to)) {
+      if (edge.kind === "implements") edge.label = "implements an interface in";
+      else if (edge.kind === "extends") edge.label = "extends a type in";
+    }
+  for (const edge of outEdges)
+    if (
+      edge.kind === "references" &&
+      (rowOf.has(edge.from) || heldByFolded.has(edge.id)) &&
+      edge.label === undefined
+    )
       edge.label = "holds";
   const { stubs, ghosts } = planStubs([...stubAggs.values()], {
     model,

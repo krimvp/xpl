@@ -391,6 +391,17 @@ describe("deriveGraph: derived edges", () => {
     expect(ids(graph.edges)).toContain(
       "edge:implements:file:queue/queue.go->file:runner/runner.go",
     );
+    // R6-R3: between two files it says what is true: the queue implements an interface in the runner's file,
+    // not "queue.go implements runner.go"; between the types themselves it stays "implements"
+    const lifted = graph.edges.find((e) => e.kind === "implements")!;
+    expect(lifted.label).toBe("implements an interface in");
+    const types = derive(
+      ["sym:queue/queue.go#Queue", "sym:runner/runner.go#JobQueue"],
+      {},
+      {},
+      world,
+    );
+    expect(types.graph.edges.find((e) => e.kind === "implements")!.label).toBeUndefined();
   });
 
   it("aggregates through a group, and skips edges internal to it", () => {

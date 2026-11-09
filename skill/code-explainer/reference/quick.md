@@ -4,7 +4,7 @@ One page to keep open while you work. `SKILL.md` has the workflow and the length
 
 ## What every patch needs
 
-- **A summary for every box and participant** a view shows: overlays (`{id, summary}`) in the same patch as the view. `xpl status` counts the rest as unexplained. A field row of a data map needs none: it shows its declaration. A summary has 2 sentences and 45 words at most, and says what the part is for.
+- **A summary for every box and participant** a view shows: overlays (`{id, summary}`) in the same patch as the view. `xpl status` lists the rest as "without summary" and counts them in `to do: N with no text`. A field row of a data map needs none: it shows its declaration. A summary has 2 sentences and 45 words at most, and says what the part is for.
 - **A tour summary** that gives the answer in its first sentence, then up to four reasons. For a change, it gives the behaviour, the risk and the tests.
 - **Notes** that start with `### Plain title`, then 1-3 short sentences (50 words at most; 280 characters in a presentation). A note may hold a small pipe table for a comparison.
 - **`code` on every step**: at most 2 ranges, the one the note talks about first. For a before and after, put the base range first. Set `editor.primary` on the file the note is about. Ranges over 40 lines apart are separate places, and a slide shows at most 3 places of one file (`far-ranges`). Code that a step only shows gets a file-relative `span` with no `symbol`, so it does not widen the bundle.

@@ -32,6 +32,7 @@ const ICON_WORDS: Record<string, string> = {
   method: "a method",
   type: "a type",
   variable: "a variable",
+  constant: "a constant",
   field: "a field",
   enum: "an enum",
   key: "a setting",
@@ -229,14 +230,14 @@ export function KeyLine({
     </svg>
   );
   const kinds = shows.kinds ?? [];
-  // the kinds when the map mixes them, or draws only arrows that are not calls (a class hierarchy)
-  if (kinds.length > 1 || (kinds.length === 1 && kinds[0] !== "calls"))
-    for (const kind of kinds)
-      items.push({
-        key: `kind-${kind}`,
-        swatch: line("lg-edge", headOf(kind)),
-        words: KIND_SHORT[kind] ?? kind,
-      });
+  // the kinds when the map mixes them, or draws only arrows that are not calls (a class hierarchy); a map of
+  // calls alone names them when the line says anything else, so an arrow without words has one here (R6-3)
+  const kindItems = kinds.map((kind) => ({
+    key: `kind-${kind}`,
+    swatch: line("lg-edge", headOf(kind)),
+    words: KIND_SHORT[kind] ?? kind,
+  }));
+  if (kinds.length > 1 || (kinds.length === 1 && kinds[0] !== "calls")) items.push(...kindItems);
   if (shows.authored)
     items.push({
       key: "authored",
@@ -273,6 +274,12 @@ export function KeyLine({
       items.push({ key: "stub", swatch: line("lg-edge is-stub"), words: "leads outside this map" });
   }
   if (items.length === 0) return null;
+  if (
+    kinds.length === 1 &&
+    kinds[0] === "calls" &&
+    items.every((item) => item.key !== "kind-calls")
+  )
+    items.splice(sharedBadge ? 1 : 0, 0, ...kindItems);
   return (
     <p className="key-line" data-testid="key-line" aria-label="Key to this map's lines">
       {items.map((item) => (

@@ -594,10 +594,13 @@ export function PanZoom({
     big && !allInSight
       ? (start.current?.others ?? []).filter(
           (box) =>
-            t.x + box.x * t.k < -1 ||
-            t.y + box.y * t.k < -1 ||
-            t.x + (box.x + box.width) * t.k > size.w + 1 ||
-            t.y + (box.y + box.height) * t.k > size.h + 1,
+            // (a box taller or wider than the pane, such as a lifeline, is never all in sight: not counted)
+            box.width * t.k <= size.w &&
+            box.height * t.k <= size.h &&
+            (t.x + box.x * t.k < -1 ||
+              t.y + box.y * t.k < -1 ||
+              t.x + (box.x + box.width) * t.k > size.w + 1 ||
+              t.y + (box.y + box.height) * t.k > size.h + 1),
         ).length
       : 0;
   const readableAgain = allInSight && minFitZoom === undefined;
@@ -691,6 +694,7 @@ export function PanZoom({
           {tools}
           <button
             type="button"
+            className="pz-save"
             title="Save the whole diagram as a PNG image, as it looks here"
             onClick={() => void saveDiagramImage(content.current!, width, height, imageName)}
           >
@@ -701,6 +705,7 @@ export function PanZoom({
       {textView && (
         <button
           type="button"
+          className="pz-text"
           aria-pressed={textMode}
           aria-controls={textId}
           onClick={() => setTextMode((shown) => !shown)}

@@ -80,6 +80,36 @@ describe("the tests of a guide section", () => {
     ]);
   });
 
+  // R6-P2: a step on a library's group listed the 21 tests of a docs generator, a member of a member
+  it("a group lists the tests among its own members, not the tests deep inside a bigger member", () => {
+    const tested = model([{}]);
+    const explainer = structuredClone(tested.explainer);
+    const group = (id: string, members: string[]) => ({
+      id,
+      kind: "group" as const,
+      label: id,
+      summary: "",
+      members,
+      parent: null,
+      anchors: [],
+      provenance: { origin: "llm" as const },
+    });
+    explainer.nodes.push(
+      group("grp:docs", ["file:src/b.ts", `file:${TEST_FILE}`]),
+      group("grp:library", ["file:src/a.ts", "grp:docs"]),
+      group("grp:checked", ["file:src/a.ts", `file:${TEST_FILE}`]),
+    );
+    const groups = new ExplainerModel(explainer, tested.index);
+    expect(stepTests(["grp:library"], groups)).toEqual([]);
+    expect(stepTests(["grp:checked"], groups).map((t) => t.name)).toEqual([
+      "test_one",
+      "test_two",
+      "test_three",
+    ]);
+    // the docs group itself, in focus: its tests are its own
+    expect(stepTests(["grp:docs"], groups)).toHaveLength(3);
+  });
+
   it("a step without test code has no tests", () => {
     const bundle = makeBundle();
     const plain = new ExplainerModel(bundle.explainer, bundle.index);

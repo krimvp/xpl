@@ -95,6 +95,30 @@ describe("imports", () => {
     ]);
   });
 
+  it("a destructured `await import()` or `require()` inside a function binds its names, so their calls resolve", async () => {
+    const r = await refs(
+      {
+        "cli.ts": src(
+          "export async function dev() {",
+          "  const { createServer } = await import('./server');",
+          "  createServer();",
+          "}",
+          "export function build() {",
+          "  const { run: go } = require('./build');",
+          "  go();",
+          "}",
+        ),
+        "server/index.ts": "export function createServer() {}\n",
+        "build.ts": "export function run() {}\n",
+      },
+      "call",
+    );
+    expect(r).toEqual([
+      "cli.ts#dev -> server/index.ts#createServer (call)",
+      "cli.ts#build -> build.ts#run (call)",
+    ]);
+  });
+
   it("default imports resolve to the named default export, an anonymous `default` symbol, or the module", async () => {
     const r = await refs(
       {

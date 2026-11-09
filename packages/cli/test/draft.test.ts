@@ -161,8 +161,8 @@ describe.each(Object.keys(ENTRIES))("xpl draft on %s", (fixture) => {
     expect(view.include!.every((id) => !/test|README|\.ya?ml/.test(id))).toBe(true);
     const focused = patch.tours![0]!.steps!.flatMap((s) => s.focus);
     for (const box of view.include!) expect(focused).toContain(box);
-    // inside the skill's budget: parts past it share one step
-    expect(patch.tours![0]!.steps!.length).toBeLessThanOrEqual(DRAFT_LIMITS.repoSteps);
+    // inside the skill's budget, with 2 steps left for the main path and its risks: parts past it share one step
+    expect(patch.tours![0]!.steps!.length).toBeLessThanOrEqual(DRAFT_LIMITS.repoSteps - 2);
     // the first step shows what the project is: the README
     expect(patch.tours![0]!.steps![0]!.code![0]!.file).toBe("README.md");
     // the last step says where to go next, back on the system map

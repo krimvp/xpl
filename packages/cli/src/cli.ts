@@ -81,7 +81,8 @@ const defaultIo: Io = {
 
 // ─── Help ───────────────────────────────────────────────────────────────────────────────────────
 
-const DOCS_REFERENCE = "Docs: https://krimvp.github.io/xpl/docs/reference/";
+const DOCS_URL = "https://krimvp.github.io/xpl/docs/reference/";
+const DOCS_REFERENCE = `Docs: ${DOCS_URL}`;
 
 const HELP_WIDTH = 110;
 
@@ -209,9 +210,8 @@ function helpText(): string {
     "",
     "<id> arguments accept sym:..., file:..., dir:..., src/a.ts#A.b and src/a.ts.",
     "<explainer> arguments name a guide: <name> for the file .explainer/<name>.explainer.json.",
-    "Environment: XPL_VIEWER_HTML=<file> overrides the viewer page (view, bundle); XPL_SKIP_STALE_CHECK=1 skips",
-    "the comparison of the index with the working tree (about a second per 5000 files); XPL_WASM_DIR, XPL_DEBUG,",
-    "XPL_CLI, XPL_NO_UPDATE_CHECK and XPL_SCIP_TIMEOUT_MS are described in the CLI reference.",
+    "Environment: XPL_VIEWER_HTML=<file> sets the viewer page. XPL_SKIP_STALE_CHECK=1 skips the check of the",
+    "index against the working tree. The CLI reference describes the other XPL_ variables.",
     "Setup: xpl skill install; xpl doctor --agent claude. Offline indexing: xpl index --precise off.",
     "First guide: xpl start <name> --question <question> --audience <reader>; then xpl view <name>.",
     "Repeat use: xpl index; xpl outline; xpl show <id> --refs; xpl new <name>; xpl apply <name> patch.json;",
@@ -256,8 +256,9 @@ function commandHelp(command: CommandSpec, topic?: string): string {
       ? ["", "Options:", ...optionRows(command.options)]
       : []),
     "",
-    `Global options (${DOCS_REFERENCE})`,
+    "Global options:",
     ...optionRows(GLOBAL_OPTIONS),
+    `More: reference/cli.md, "xpl ${command.name}", or ${DOCS_URL}`,
   ].join("\n");
 }
 

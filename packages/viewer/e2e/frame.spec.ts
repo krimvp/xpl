@@ -7,7 +7,9 @@ import { expect, test, type Page } from "@playwright/test";
 import {
   ARCHITECTURE_BUNDLE,
   byId,
+  GO_BUNDLE,
   openVariant,
+  PY_BUNDLE,
   smallestDiagramText,
   TS_BUNDLE,
   watchProblems,
@@ -126,6 +128,99 @@ test.describe("while no code is on screen the diagram takes the code column's wi
   });
 });
 
+/**
+ * V6-01, R6-5: in Explore, while nothing is selected, Concepts and Details are one line under the diagram, so
+ * a tall sequence or flow opens whole at 1440x900. The first selection opens the panels, once.
+ */
+test.describe("Explore with nothing selected gives the diagram the height (V6-01)", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  /** The canvas's size, the ids of the steps and lifelines not wholly in it, the strip's height. */
+  const explore = (page: Page) =>
+    page.evaluate(() => {
+      const svg = document.querySelector(".explore .pz-svg")!;
+      const pane = svg.getBoundingClientRect();
+      const cut = [
+        ...svg.querySelectorAll(
+          ":is(g.step, .lifeline-head, .flow-stage, .nodes g)[data-element-id]",
+        ),
+      ]
+        .filter((g) => {
+          const r = g.getBoundingClientRect();
+          return (
+            r.left < pane.left - 1 ||
+            r.right > pane.right + 1 ||
+            r.top < pane.top - 1 ||
+            r.bottom > pane.bottom + 1
+          );
+        })
+        .map((g) => (g as SVGElement).dataset.elementId);
+      const strip = document.querySelector<HTMLElement>("[data-testid=lower-folded]");
+      return {
+        height: Math.round(pane.height),
+        cut: [...new Set(cut)],
+        strip: strip ? Math.round(strip.getBoundingClientRect().height) : 0,
+      };
+    });
+
+  for (const [name, bundle] of [
+    ["TS", TS_BUNDLE],
+    ["Python", PY_BUNDLE],
+    ["Go", GO_BUNDLE],
+  ] as const) {
+    test(`${name}: the dispatch sequence opens whole, at 11px text or more`, async ({ page }) => {
+      const problems = watchProblems(page);
+      await page.goto(`${bundle.href}?mode=explore&view=view:dispatch`);
+      await expect(page.locator(".explore .lifeline-head").first()).toBeVisible();
+      await expect.poll(async () => (await explore(page)).cut).toEqual([]);
+      const open = await explore(page);
+      // (900 less the header, the strip and a banner: 432-464 with the panels open)
+      expect(open.height).toBeGreaterThan(700);
+      expect(open.strip).toBeLessThanOrEqual(44);
+      expect(await smallestDiagramText(page)).toBeGreaterThanOrEqual(11);
+      expect(problems).toEqual([]);
+    });
+  }
+
+  test("a 6-stage flow opens whole at 10.5px or more; a concept chip opens the panels with its details", async ({
+    page,
+  }) => {
+    const problems = watchProblems(page);
+    await openVariant(
+      page,
+      (bundle) => {
+        const view = bundle.explainer.views.find((v: Loose) => v.id === "view:dispatch");
+        const template = view.steps[0];
+        view.type = "flow";
+        view.frames = [];
+        view.steps = Array.from({ length: 6 }, (_, i) => ({
+          ...structuredClone(template),
+          id: `dispatch:${i + 1}`,
+          label: `Stage ${i + 1} of the flow`,
+          shape: i === 5 ? "terminal" : "stage",
+          next: i === 5 ? [] : [{ step: `dispatch:${i + 2}` }],
+        }));
+      },
+      "?mode=explore&view=view:dispatch",
+      { width: 1440, height: 900 },
+    );
+    await expect(page.locator(".explore .flow-stage").first()).toBeVisible();
+    await expect.poll(async () => (await explore(page)).cut).toEqual([]);
+    // (with the panels open, 464px: three stages at the flow's 11px floor)
+    expect((await explore(page)).height).toBeGreaterThan(700);
+    expect(await smallestDiagramText(page)).toBeGreaterThanOrEqual(10.5);
+    // the concept is a chip on the strip; its click opens Concepts and Details, the diagram re-fits once
+    await page.getByRole("button", { name: "Retry policy" }).click();
+    await expect(page.getByTestId("lower-folded")).toHaveCount(0);
+    await expect(page.locator('.details[data-details-id="concept:retry-policy"]')).toBeVisible();
+    await expect.poll(async () => (await explore(page)).height).toBeLessThan(560);
+    // clearing the selection keeps the panels: the diagram does not move again
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".lower .details")).toBeVisible();
+    expect(problems).toEqual([]);
+  });
+});
+
 test.describe("a phone gives the diagram most of the screen (R3-2)", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
@@ -163,6 +258,28 @@ test.describe("a phone gives the diagram most of the screen (R3-2)", () => {
       expect(problems).toEqual([]);
     });
   }
+
+  test("Tour, then Flow: the flow opens at its top with the code closed; its steps are one tap away (R6-3, R6-4)", async ({
+    page,
+  }) => {
+    const problems = watchProblems(page);
+    await page.goto(TS_BUNDLE.href);
+    await expect(page.getByTestId("guide")).toBeVisible();
+    await page.getByTestId("perspective-flow").click();
+    await expect(page.locator(".workspace-caption h2")).toBeInViewport();
+    await expect
+      .poll(() => page.locator(".workspace-columns").evaluate((el) => el.scrollTop))
+      .toBe(0);
+    await expect(page.locator(".workspace-source")).toHaveCount(0);
+    await expect(
+      page.locator(".workspace-location").getByRole("button", { name: "Show code" }),
+    ).toBeVisible();
+    // the step selected in the Tour is no reason for a link to the list: clear it, then use the link
+    await page.evaluate(() => window.__xpl!.select([]));
+    await page.getByTestId("caption-steps").click();
+    await expect(page.getByTestId("parts-panel")).toBeInViewport();
+    expect(problems).toEqual([]);
+  });
 
   test("the Code tab with no file open shows the whole file list, and a hint at its own height (R5-8)", async ({
     page,
@@ -431,6 +548,20 @@ test.describe("Present keeps the 12px floor and widens the diagram column (D7, D
     expect(seven.smallest).toBeGreaterThanOrEqual(11.9);
     expect(problems).toEqual([]);
   });
+});
+
+test("Present: the slide's title bar keeps no room for Save image and Text view, so the title is whole (adhd R6-2)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${ARCHITECTURE_BUNDLE.href}?mode=present&step=2`);
+  await expect(page.getByTestId("present")).toHaveAttribute("data-step", "2");
+  const title = page.locator(".present .diagram-caption .caption-title");
+  await expect(title).toBeVisible();
+  await expect.poll(() => title.evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0);
+  // (the two buttons are there, only out of the slide)
+  await expect(page.locator(".present .pz-toolbar .pz-save")).toBeHidden();
+  await expect(page.locator(".present .pz-toolbar .pz-text")).toBeHidden();
 });
 
 test.describe("the phone caption's disclosure (R4-21, R4-22)", () => {

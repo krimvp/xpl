@@ -6,9 +6,10 @@ text file points at the whole file. Rust has experimental declarations and some 
 Ruby and PHP have named declarations and no references.
 
 Tree-sitter WASM extracts symbols without installing language toolchains. References (calls, imports,
-inheritance, type uses and reads) come from xpl's scope-aware heuristic resolver or, when available, a
-compiler-grade SCIP indexer. References always keep their source label. The viewer draws heuristic arrows
-dashed; the authoring skill treats them as hints to confirm.
+inheritance, type uses and reads) come from a SCIP indexer (a tool built on the language's own type checker)
+when it can run, else from xpl's own resolver, which matches names within each scope. Each reference keeps
+its label: **precise** (checked by a language tool) or **heuristic** (matched by name). The viewer draws
+heuristic arrows dashed; the authoring skill treats them as hints to confirm.
 
 Web requests are references too. A request with a literal or template path (`fetch`, axios, ky, got, `useSWR`,
 Python `requests` and `httpx`, Go `net/http`) is linked to the handler of the route with the same method and
@@ -16,11 +17,14 @@ path, when the repository defines one (Express, Koa, Hono, Fastify, Next.js rout
 FastAPI, Flask, net/http, chi, gin, echo; simple prefix mounts included). Parameters (`:id`, `{id}`,
 `<int:id>`, `[id]`, `${id}`) match any segment, the query string is ignored, and a URL to a host other than a
 local or example one is left out. These links are always heuristic: a proxy or another server can answer the
-same path. Maps show them as `requests` edges.
+same path. Maps draw them as `requests` arrows.
 
-`xpl index` reports analysis coverage separately for file anchors, symbols, declaration ranges, nesting and
-each kind of reference. An empty list of references does not prove full coverage. Saved indexes and exports
-keep the analysed files, the limits and the failures; an older index loads with its coverage marked unknown.
+`xpl index` prints one line per language. The line ends with how far its references can be trusted:
+`refs: precise` (with the tool's name), `refs: heuristic` or `refs: none`. A plain line under the table names
+each language whose references are matched by name or whose symbols can be missing. `xpl index --verbose` also
+lists, for each kind of symbol and reference, what was found and what is not supported. No reference found
+does not mean there is none. Saved indexes and exports keep the analysed files, the limits and the failures;
+an older index loads with its coverage marked unknown.
 
 ## Precise reference tools and artifacts
 

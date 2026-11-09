@@ -663,9 +663,10 @@ const EditorPane = memo(function EditorPane({
             {language} · {lines} lines
           </span>
         )}
-        {/* Shown once lines are selected (a disabled button read as broken), never on a slide. It keeps its
-            place while hidden: a drag that selects lines must not move the code under the pointer. */}
-        {!folded && (
+        {/* Shown once lines are selected (a disabled button read as broken), in Explore only (a reader asks
+            with Feedback in the header, R3-15). It keeps its place while hidden: a drag that selects lines
+            must not move the code under the pointer. */}
+        {!folded && !reader && (
           <button
             className={"pane-toggle pane-ask" + (cursor ? "" : " is-idle")}
             type="button"

@@ -325,7 +325,9 @@ Conventions (all packages):
     ("holds Job", "held by DeadJob.job") say "holds", never "references ×1".
   - `ModelNode.kindWord` and `GraphNode.kindWord` (`symbolKindWord` in `languages.ts`): the reader's word for
     a symbol kind where the index's kind is not the language's own. A Go struct (indexed `class`) is
-    "struct"; a `variable` inside a `class` or `interface` is a "field". Absent when the kind is the word.
+    "struct"; a `variable` inside a `class` or `interface` is a "field". `deriveGraph` also gives a value
+    declared `const` the word "constant" (read from `DeriveOptions.text`; `export const applyCommand = {…}`
+    was a "variable", V6-02). Absent when the kind is the word.
     The viewer's badge, icon ("S"), Key line, Details badge and parts list use it; CSS keeps the indexed
     kind (`kind-class`).
 
@@ -960,7 +962,8 @@ Tool commands and diagnostic details remain author-facing.
 
 **Reference sites.** Each pack emits syntactic sites `{ kind, name, qualifier, site }` for calls (including
 `new X()`, composite literals, JSX components, Python decorators), imports without a binding (`import "./x"`,
-`import("./x")`, `require("./x")`), `extends` / `implements` (Python class bases and Go embedded fields are
+`import("./x")`, `require("./x")`; a declarator `const { a } = await import("./x")` or `= require("./x")`
+binds `a` as an import, also inside a function, so calls to `a` resolve), `extends` / `implements` (Python class bases and Go embedded fields are
 `extends`), type positions (`type-ref`), assignments to fields and module variables (`write`) and reads
 (`read`): a use of a module- or package-level variable or constant (`LIMIT`, `config.LIMIT`), or of a field of
 a value whose type is known (`this.queue`, `job.attempts`), that is not a call, a target or a declaration.
@@ -1196,7 +1199,10 @@ id wins (validation reports the duplicates).
   `heuristic` unless the `implements` link is precise. Aggregate per `(kind, a, b)` into
   `edge:<kind>:<a>-><b>` with `count`, `resolution` (`precise` or `heuristic` when all references agree, otherwise `mixed`) and derived
   anchors: each site as `call-site` (calls) or `usage`, plus each target's definition, at most 50 of each,
-  never stored.
+  never stored. A derived `implements` or `extends` edge whose head is no type (a file, a folder, a group)
+  is labelled "implements an interface in" / "extends a type in": "Job queue implements Runner" on a folder
+  map read as if the queue were a kind of runner (R6-R3); the parts list says "has an interface implemented
+  by" at the other end.
 - **Stored edges** are shown whatever their `kind`, when both ends are represented in the view. One whose id
   equals a derived id overlays that edge (label, summary, anchors) and keeps its derived resolution; the
   others carry `llm`, `user` or `static` after their provenance. Stored edges follow the same nesting rule
@@ -1601,9 +1607,12 @@ Global: `--root <dir>` (default cwd), `--json` (machine output), `--index <path>
 [command]`), `-v`/`--version`; options may come before or after the command name. `<id>` arguments accept
 `sym:…`, `file:…`, `dir:…`, `src/a.ts#A.b`, `src/a.ts`, `./src/`, and come back with "did you mean"
 suggestions when wrong. `<explainer>` is a name (`jobrunner`), a file name or a path. `validate`, `lint`,
-`ready`, `bundle` and `status` use the only repository guide when the name is omitted and print `using <name>`
-to stderr. With several guides they list the names; with none they point to `xpl new`. Writes still need an
-explicit name. Output is compact and copy-pasteable, for Claude as much as for people: exact ids,
+`ready`, `bundle`, `status`, `anchors`, `draft`, `resolve` and `change` use the only repository guide when the
+name is omitted and print `using <name>` to stderr (`change`: a lone argument that names no guide is the
+range). With several guides they list the names; with none they point to `xpl new`. `new` and `apply` still
+need an explicit name. Each `--help` is short: the usage, the summary, at most 8 lines of prose (a kind table
+of `draft` has a row per kind besides), one line per option, and a last line that points to `cli.md` and the
+docs site, which hold the rest (`cli.test.ts` checks it). Output is compact and copy-pasteable, for Claude as much as for people: exact ids,
 `<line> <offset>│ code` with the 0-based offsets
 that spans use, `+34..36` for the span of a reference site. `--json` on every command prints `{ "ok": true,
 …, "warnings"? }`; errors print `{ "ok": false, "error", … }`. Results, issue lists and patch rejections go to
@@ -1621,17 +1630,17 @@ stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning
 | `xpl update <explainer> [--since <rev>] [-o file] [--precise auto\|off\|require]` | after work on the code, for a map guide: runs `index`, `resolve --write`, `change <rev>..HEAD` (with `--since`) and `draft map` in-process (`commands/update.ts`); stops at the first failing step with its message; applies nothing and prints where the draft is |
 | `xpl start <name> --question q --audience a [--entry symbol] [--precise auto\|off\|require]` | first-guide path: runs `index`, `new`, `draft repo` (or `draft path` with `--entry`) and `apply`; saves the checked patch and all draft notes outside the repository, prints up to three notes and apply warnings (full lists in `--json` and the notes file), then names `view` and `lint` as next steps; refuses an existing guide |
 | `xpl new <name> [--title t] [--repo r] [--url u]` | create `.explainer/<name>.explainer.json` bound to the index; never overwrites; repo name from `--repo`, else `package.json`, `go.mod`, `pyproject.toml`, git remote, directory name |
-| `xpl apply <explainer> <patch.json\|-> [--actor llm\|user] [--dry-run]` | §4.7; prints every issue of a rejected patch at once; atomic; `--help` summarises the patch format |
+| `xpl apply <explainer> <patch.json\|-> [--actor llm\|user] [--dry-run]` | §4.7; prints every issue of a rejected patch at once; atomic; `--help` says how a patch merges and points to `patch-format.md` |
 | `xpl validate [explainer] [--lenient]` | §4.6 |
 | `xpl anchors <explainer> [id...] [--full] [--max-lines n]` | each anchor of an element (or of every element) resolved now: role, `file#symbol +span`, status, lines, and the code at them with offsets (a long anchor: its first lines, an elision line, its last lines); a base anchor prints as `<file>@base +a..b … [before the change]` with the base code; `tour:<id>` (or `tour:<id>/<step>`) also shows what a step without `code` derives from its `focus`, marked derived; verifies spans without reading JSON |
-| `xpl resolve <explainer> [--write] [--allow-stale]` | §4.2 re-resolve against the index of the current code; report drifted llm elements, missing anchors; `--write` saves |
+| `xpl resolve [explainer] [--write] [--allow-stale]` | §4.2 re-resolve against the index of the current code; report drifted llm elements, missing anchors; `--write` saves |
 | `xpl feedback <explainer> [--import <file> \| --export <file> \| --outcomes <file>]` | durable reader feedback: stable-ID import deduplication, snapshot context inspection, portable export and selected-ID outcome merges; no generation |
 | `xpl revise <explainer> --select <id,id> [--include <id,id>] [-o file]` / `--run <id> [--proposal file \| --decisions file \| --accept]` | explicitly selected feedback; bounded ordinary patch proposals, source and explanation diff; author subset/missing-anchor decisions; identity/freshness/readiness before atomic acceptance; prior artifact and retry journal |
 | `xpl status [explainer] [--view <id>] [--all]` | `--all` inventories every repository guide against one current index, without saving prose; otherwise the skill's to-do list, read-only: per view the shown nodes, stored edges and steps without a summary or with one that still starts with `TODO` (a draft's placeholder; static edges optional), concepts without one (or a TODO one), drift (user-owned drift counted apart), missing anchors, broken references (ids gone from the index), stale derived-edge overlays, queued requests; per graph view the ghosts and stubs it draws (counts, the most referenced ghost ids, and for each folded ghost up to 3 of the elements it stands for with their counts; `--json`: every ghost with its count and all its `targets` (`{id, count}`), and every stub id, in `views[].ghosts`) with a warning above 12 ghosts; the tours (id, step count, steps whose focus ids or view are gone; a tour without a summary, or a TODO one, counts as unexplained); `--view <id>`: that view only, with what it draws (each arrow: id, kind, ends, references, stored or derived, label; each `hidden` id and what it takes out; a flow's step links) |
 | `xpl ready [explainer] [--note reason] [--require-review]` | shared readiness report before export; `--json` adds `ok` to the report above; 0 ready (warnings allowed), 1 blockers/failure, 2 usage; writes nothing; a note records intentional warning/omission decisions |
 | `xpl lint [explainer] [--patch <file\|->] [--warn-only]` | checks the text a reader sees (the index, when there is one, counts the boxes and arrows of maps): rules below; `--patch` lints the explainer as it would be after `xpl apply` of that patch (merged in memory as actor `llm`, nothing written; a patch apply would reject prints the rejection and exits 1); exit 1 with any finding (so `lint --patch && apply` stops on one), 0 with `--warn-only` unless a `todo-left` error |
 | `xpl health` | a quick check of the indexed files (below): committed secrets, secrets in browser variables, `.env` files, code files over 1,000 lines, possibly unused code files; each finding with file, line, severity, why and fix; secret values masked; always exits 0 (a report, not a gate) |
-| `xpl change <explainer> [<base>..<head>]` | records the change from git in the explainer and prints its analysis (§4.8; below); without a range, prints the analysis of the change already recorded |
+| `xpl change [explainer] [<base>..<head>]` | records the change from git in the explainer and prints its analysis (§4.8; below); without a range, prints the analysis of the change already recorded; with one guide, a lone argument that names no guide is the range |
 | `xpl pr prepare <url\|owner/repo#number\|owner/repo> [number] [--cache-dir dir] [--precise off\|auto\|require]` | resolves GitHub base/head through existing `gh`, fetches an isolated detached head, indexes head only and publishes an immutable input manifest; no agent or ready result |
 | `xpl pr cleanup <input-directory> [--cache-dir dir]` | removes only a marked owned PR input directly under the selected cache; refuses symlinks and developer-tree paths |
 | `xpl pr link <staged-dir> --url <base-url> --visibility team\|public` / `xpl pr check-link <PR>` | points one PR comment at the staged current version after a GitHub base/head check; a PR workflow marks it outdated when base/head move (below) |
@@ -1722,7 +1731,7 @@ does not bypass this requirement. Reindex before resolving or exporting. `xpl re
 --write` refuses (exit 1) on a stale index, because the ranges it would save are already wrong, unless
 `--allow-stale`.
 
-**`xpl change <explainer> [<base>..<head>]`** records a change and prints what it touches. The range takes any
+**`xpl change [explainer] [<base>..<head>]`** records a change and prints what it touches. The range takes any
 git revisions (`main..HEAD`, `2284ff0^..2284ff0`); `<base>...<head>` starts from their merge base; `<base>` or
 `<base>..` alone ends at the index commit. The head must be the commit the index was built from (full SHA
 compare): otherwise it exits 1 and says to check out the head and run `xpl index`. For a `wt-` index (a root
@@ -1864,7 +1873,12 @@ it to a file; `--json` adds the counts and what was left out.
   custom`, label TODO) from each part to each system it imports, anchored at that import. `excludeFiles` for
   tests and docs on both. The tour: the system map, what it relies on, the inside of the biggest service,
   then one step per part, the main part first, inside the skill's repo budget (`DRAFT_LIMITS.repoSteps`, 9
-  steps with where next): when the parts do not fit, the last part step takes the rest together. A file that
+  steps with where next) less `PATH_ROOM` (2) for the main path and its risks, which a note says to draft
+  with `xpl draft path` on the main part's top function: when the parts do not fit, the parts with the fewest
+  references share one step. A part's step shows the functions and methods other parts call most, then its
+  top symbols. With no `loads` resource, a settings file (yaml, json, toml, ini, env; not a manifest) that
+  the code names in a string literal is the Settings box's lead. A new tour's steps are numbered after the
+  highest `t<n>` of the guide's tours (`continueStepIds`), so a step copied between tours keeps its own id. A file that
   imports a standard-library web server module and also calls what starts it (`ListenAndServe`,
   `createServer`, `serve_forever`; `outside.ts` `SERVER_STARTS`) adds the inbound Clients at that line, since
   the import alone (`net/http` is also a client) proves nothing. Only a program with no inbound system and no
@@ -1883,8 +1897,10 @@ it to a file; `--json` adds the counts and what was left out.
   calls sit in two or more arms, an `opt` around a branch with calls in one arm, at most 5, outermost first.
   An early exit (D8, item 25): an `if` with no `else` whose body ends in `continue`, `return`, `break`,
   `raise` or `throw` gets one more arm, `implicit`, from the next statement of its block to the block's last
-  one, and the branch ends there; when only that arm draws calls (a guard such as `if err != nil { return }`)
-  there is no frame. A frame's label is a TODO for the decision; an `opt`'s quotes the deciding code, and an
+  one, and the branch ends there. When only that arm draws calls, a guard that returns, raises or throws
+  (`if err != nil { return }`) has no frame; one that leaves with `continue` or `break` (TS `if (!job) {
+  sleep(); continue }`, a library call) makes the rest an `opt` whose label says the guard skips it, and the
+  rest's calls stay single tour steps. A frame's label is a TODO for the decision; an `opt`'s quotes the deciding code, and an
   `alt` gets `arms`, one per arm of the branch that has calls, each with a TODO label that quotes its
   condition (`ControlBlock.arms[].condition`; "otherwise" for an `else`). An arm runs from its first call to
   the call before the next arm, so the arms split the frame's steps. An arm starts at the column of its body,
@@ -2824,18 +2840,24 @@ ready pages and draft previews; an export decision never retargets a request to 
 - **Tour** (`Guide.tsx`): the tour as a page. A contents list of the steps on the left. On the right the tour
   title, its `summary` (markdown), then, for a change, **Files in this change** (below), then one section per
   step. A section has its title, the rest of its note, an inline **picture** of the step's view and the
-  interaction or parts it focuses ("This call", "inside X: label" for a step within one part, "In the code"),
+  interaction or parts it focuses ("This call", one card for the calls between the same two parts, "These
+  calls"; "inside X: label" for a step within one part, "In the code"),
   its **Tests**, and the step's buttons. The picture (`Snapshot.tsx`) is a still drawing of the
   view framed on the step's focus, with the same shapes as the live diagram and no clicks or ids; "Open in
   Map" or "Open in Flow" opens the live one. A map picture draws no dashed boxes for code outside the map. A
-  sequence picture frames each focused arrow with both lifelines it joins, takes in the start of the frames
-  around it when there is room (a frame's name is not cut mid-word; the condition of an `alt` or `opt` it is
-  in, the frame's name or its arm's line, always when it is within 360 units, R5-4), and keeps the participant
-  names at its top when it starts lower down (`StickyHeads`, as the live diagram, on an opaque band). The excerpt's caption says how much of
+  sequence picture is framed as the live sequence is (`sequenceFocus.ts`): each focused arrow with both
+  lifelines it joins, the frames around it from their top when within 360 units (an `alt` from its first
+  arm's condition, R6-2; else the arm's own line; a long loop's name only when there is room), and room above
+  for the participant names, which stay at its top when it starts lower down (`StickyHeads`, on an opaque
+  band), so no label sits under them. The frame then slides, within what the focus leaves, to cut as few
+  arrows (end to end with their words) as it can, and of two places that cut as many, takes the one that
+  holds more arrows whole (`Focus.fill`): it never starts mid-label, nor on an empty lifeline beside the
+  arrows. A focused lifeline brings its own arrows in while there is room. The excerpt's caption says how much of
   its code link it shows ("lines 44–55 (12 of its 37 lines)"). A picture is laid out only when its section
   comes near the screen (an IntersectionObserver), and once per view. Tests (`stepTests.ts`) are the test code
   the step's focus points at (`test` anchors, and focused code in test files), one entry per test function,
-  gathered in one list. The summaries of the focused elements only stand in for a missing note. A tour picker
+  gathered in one list. A focused group without code links of its own gives only the tests of its members
+  that are test code (a test file, a group of tests), not those deep inside a bigger member (R6-P2). The summaries of the focused elements only stand in for a missing note. A tour picker
   sits above the title when there are several tours. The Guide opens at its top, except a link to a stable
   step ID scrolls to that section and focuses its heading. Each section has a link named for its step that
   preserves the selected guide, and a selected section offers Continue from this step in Present, including
@@ -2850,10 +2872,12 @@ ready pages and draft previews; an export decision never retargets a request to 
   before/head side. Missing, drifted or unavailable
   source is stated instead of guessed. Source text comes from the bundle or the existing file loader.
 - **Map** and **Flow**: the authored graph view, or flow or sequence view, that best matches the selection
-  (`workspace.ts`), with a picker of the others. The heading shows the selected view's `scope.question` when
+  (`workspace.ts`), with a picker of the others (closed, it reads "Other maps (N)" or "Other flows (N)", not
+  the title above it again, U19; the one shown is marked "(shown)" in its list). The heading shows the selected view's `scope.question` when
   supplied and says "Sequence" for a sequence view, so the reader can tell a structural question from a
   time-ordered one. Without a graph view the Map is generated from the flow's participants (else the top
-  level of the repo); without a flow, Flow lists the guide's steps in order. Count labels on edges (`calls ×N`,
+  level of the repo), titled `Parts of “<flow title>”` (`GENERATED_MAP_ID`), fitted at zoom 1 or less; when
+  it would draw fewer than 3 boxes there is no Map tab (`hasMapTab`, V6-02). Without a flow, Flow lists the guide's steps in order. Count labels on edges (`calls ×N`,
   stubs) are quiet: shown on hover or when an edge or one of its ends is selected. A stub's dotted line is
   drawn only while its box or its ghost is picked, matched or hovered, or the stub itself is selected (not for
   a merely related box: a selected arrow relates both ends); its ghost box always is. A hidden stub has no
@@ -2861,7 +2885,8 @@ ready pages and draft previews; an export decision never retargets a request to 
   touch none of it are dimmed (`is-dim`; `GraphView` `litBoxes`: the selected boxes, the boxes inside them,
   the ends of a selected arrow); their labels are not faded but turn grey (`--edge-label-dim`, 3:1 or more
   on the canvas in both themes). A line under the caption (`Legend.tsx` `KeyLine`) names the marks the map
-  draws now, each drawn with the Key's own classes: the arrow kinds when it mixes them, authored, found,
+  draws now, each drawn with the Key's own classes: the arrow kinds when it mixes them (a map of calls alone
+  names "calls" when the line shows anything else, so an arrow without words has one, R6-3), authored, found,
   matched by name, partly matched, and "code outside this map" (the dashed ghost box; the dotted stub line
   only while one is drawn). On a phone it is one row that scrolls sideways. Reader boxes drop the group,
   directory and symbol badges. A reader map starts whole only when that reads at zoom 0.75 or more; else it
@@ -2871,7 +2896,9 @@ ready pages and draft previews; an export decision never retargets a request to 
   on the Map and the Flow the code column waits for code to show. While nothing is selected (no box, no caret,
   no file opened) the diagram keeps the width and one line says "Click a box, an arrow or a step to see its
   code." (`code-waiting`); the column comes with the first selection, and the diagram re-fits once. On a
-  phone with no file open, the Code tab gives the file list its whole height and the hint its own.
+  phone with no file open, the Code tab gives the file list its whole height and the hint its own. On a phone
+  (one column, 760 px or less) the Map or Flow tab opens at the top of its diagram with the code closed, even
+  when the Tour step had opened code (R6-4); "Show code" or a tap brings it back.
 
 Beside the tabs: a breadcrumb (the guide's title, then the open step's title or the selected element; on a
 Map or Flow with nothing selected, the title alone: the caption's levels and heading say where the reader is),
@@ -2898,7 +2925,8 @@ type ("field · Job[]"). A row picks its element; a row under the pointer or the
 the diagram (`is-hover`); a caret in its code marks the row (`is-match`). On a phone it sits under the
 diagram, which is at least 62% of the screen's height (the canvas 55% or more on a 390×844 phone): the caption
 keeps its levels, title and diagram picker, and its question, "Inside …" links and "Explore all diagrams" sit
-behind "About this map" (or flow; a turning chevron, `aria-expanded` and `aria-controls`; no disclosure when
+behind "About this map" (or flow; a Flow with nothing selected also has "Steps, in order ↓", which scrolls to
+the list under the canvas, R6-3; a turning chevron, `aria-expanded` and `aria-controls`; no disclosure when
 the caption has no question or links to hide); the key line is left out (the toolbar's Key holds it), and so
 is "+N more". Sequence arrows and flow steps carry their number (a circle at the arrow's start, on the step's
 corner): the one the parts list uses. On a phone the zoom toolbar sits above the canvas, not over it. On a
@@ -2929,14 +2957,19 @@ note). `xpl lint` reports such a step (`untitled-step`).
 **Explore.** The header holds the view tabs (the tooltip of a tab is its title and question) and the Views
 menu. Left: the diagram (caption: title and question), below it the concept list and the details panel. Right:
 the code, the file tree (collapsible; files outside the focus are greyed `is-dimmed`, files in it `is-focus`; a
-static bundle lists only the files it embeds, with a footer "N of M files included · rebuild with --files all",
-`tree-foot`; under `xpl view` every indexed file is listed and loaded when opened) beside the stack of
+static bundle lists only the files it embeds, with a footer "N of M files are in this page. To add the rest,
+run xpl bundle --files all", `tree-foot`; under `xpl view` every indexed file is listed and loaded when opened) beside the stack of
 CodeMirror editors (language modes for TS/TSX/JS, Python, Go, Java, YAML and JSON; Rust, Ruby, PHP, TOML and other
 text are plain).
 Both splits (diagram / panels, diagram / code) are resizable. Below 900 px the halves stack. D9: while no
 code is on screen the right column is the file tree alone, with "Click a box, an arrow or a step to see its
 code." under it (`code-idle`), and the diagram takes the rest of the width; the first selection or file
-brings the editors back at the split's width.
+brings the editors back at the split's width. The same rule on the height (V6-01): until the first selection,
+Concepts and Details are one line under the diagram (`lower-folded`: the concepts as chips with their names,
+the summary on hover, then "Select a box, an arrow, a step or a concept to see what it is."), so a tall
+sequence or flow opens whole at 1440×900 (a diagram row of about 740 px, not 464); the first selection opens
+the panels, and clearing it does not fold them again. "Ask about selected lines" in a code pane's header is
+Explore's alone (a reader asks with Feedback).
 
 **Diagram text alternative** (`components/DiagramText.tsx`, `PanZoom.textView`): every live map,
 sequence and flow has a **Text view** toggle beside its Key. It replaces the picture with native lists and
@@ -3056,7 +3089,9 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
   routed at two levels meet) turns at that place instead (`dropDetours`). Two arrows between the same two
   boxes, one each way, are one route (`twinOf`): the second takes the first one's route read backwards, so the
   line has a head at each end. Each arrow's `own` half (the half that ends at its head) carries its label, its
-  hit path, its keyboard ring and its anchor. Larger levels keep prior label placement to bound layout time;
+  hit path, its keyboard ring and its anchor. The two labels sit off the line, 3 units from it, one on each
+  side (`besideLine`: the first above a level line or left of an upright one, the twin below or right), so
+  two short labels never read as one ("← calls ×3 calls ×1 →", V6-03). Larger levels keep prior label placement to bound layout time;
   larger and pinned levels keep port spacing and routing rules.
   `GraphView.layout` replaces automatic positions at each
   container level before sizing its parent. Pins are finite logical coordinates relative to the rendered container,
@@ -3107,9 +3142,23 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
   (`is-row`; selected, matched and hovered as any box), but not a Tab stop: a table is one stop (`tabOrder`
   in `mapOrder.ts`: the tables in the map's start order, the tour's first box first, then `include`), Down or
   Home on it focuses its first row, and the canvas's Up and Down move through the rows. A table's fold
-  button is not a Tab stop. An arrow from a row is named with the row's table ("Queue.ready holds Job"). A box with `opens` has a zoom button ("See what is
-  inside"; a double-click does the same, and Details offers it too): `store.zoomInto` shows that view, in the
-  map or flow perspective that draws it, as a navigation step (Back returns). Above the diagram, `ZoomTrail`
+  button is not a Tab stop: on a focused table "-" folds it and "+" (or "=", no Shift) shows its rows again
+  (`GraphView` stops the key, so it does not reach the canvas zoom; the keyboard hint says both). A table
+  carries `aria-expanded` (true with its rows, false folded). Folded, its fields' arrows stay: `deriveGraph`
+  lifts a field's `references` to a type box that shows no rows and names that arrow "holds" too, starting at
+  the header; the uses inside its methods still draw nothing. A fold keeps the map as it was: `foldPins`
+  gives every top-level box its old position as a pin when the new graph only folds tables of the last layout
+  (same boxes, fewer tables), and the canvas keeps its old bounds, so no other box moves (R6-1). Any other
+  change (a box added, a table opened again) is laid out afresh. A row whose type names the other type only
+  in a function's signature (`Array<(worker: Worker) => void>`, `func(w *Worker) error`,
+  `Callable[[Worker], None]`) holds functions: it draws no arrow (V5-09). Core gives a row's whole type
+  (`memberType`); the drawing cuts it at 28 characters (`shownType`), its name, tooltip, Text view, Details
+  and parts list keep all of it. A row that the selection's or the applied step's code links name by symbol
+  (`{ symbol: "Queue.ready" }`, "used here" on the Job step) is marked related on its own table (V5-07). A
+  selected row's Details are titled with its table ("DeadJob.job") and list "In" (the table) and "Type". An arrow from a row is named with the row's table
+  ("Queue.ready holds Job"). A box with `opens` has a zoom button ("See what is inside"; a double-click does
+  the same, and Details offers it too): `store.zoomInto` shows that view, in the map or flow perspective
+  that draws it, as a navigation step (Back returns). Above the diagram, `ZoomTrail`
   lists the levels above the current view (`zoomTrail`), each a link (`store.goToLevel`). A box that opens a
   graph view (`GraphNode.expandable`) also offers "Show the inside here": `store.toggleExpanded` adds it to
   `state.expanded`, and the view is drawn through `expandInPlace` (core `levels.ts`), with the boxes of the
@@ -3409,8 +3458,10 @@ from `GET /api/base-file` (each file once; an error shows in its pane).
   pane at its line.
 - **Map badges.** A file or symbol box gets a "New" pill for an added file or a range wholly covered by pure
   insertions. Replacement hunks, including complete rewrites, get "Changed" (`changeStatus`; the box's
-  `data-change`). Groups and directories get none. Boxes are widened so the pill never covers the label. The
-  Guide's pictures show the pills too.
+  `data-change`). A group or folder box gets "New" when the change added all the code it covers, else
+  "Changed" when one of its files changed (`changeMarks` with `codeOf`). A flow step gets the same pill from
+  its code links (`rangesChange` in `FlowDiagram`). Boxes are widened so the pill never covers the label. The
+  Tour's pictures show the pills too.
 - **Files in this change** (Guide, under the summary): source files first, then tests. Each row has its
   status in words, `+n −m`, a "test" tag, and "from <old path>" for a rename. A row opens the file in the
   Code tab at its first change (a removed file: its code before the change). A file the page does not carry
@@ -3509,10 +3560,11 @@ checks on one page.
 Workflow: `xpl index` → `xpl new <name>` → (for a change: `xpl change <name> <base>..<head>`) → optionally
 `xpl draft change|repo|path` for the structure → read the code (`outline`, `search`, `show`, `refs`; `show --at
 base` for the old code) → write the patch → `xpl lint --patch` → `xpl apply` (a rejection writes nothing and
-lists every error at once: fix the patch, apply again) → `xpl validate`, `xpl status` (until `0 unexplained`)
-and `xpl anchors` (read what every span landed on) → the tour → the accuracy pass (a fresh subagent or a
-second pass: no claim beyond its anchors) → `xpl lint` and small fixes (single elements, `stepsUpdate`), a
-newcomer's re-read → `xpl ready` → `xpl bundle --files boundary` (the default in cloud sessions) or `xpl view`.
+lists every error at once: fix the patch, apply again) → `xpl validate`, `xpl status` (until
+`to do: 0 with no text`) and `xpl anchors` (read what every span landed on) → the tour → the accuracy pass
+(a fresh subagent or a second pass: no claim beyond its anchors) → `xpl lint` and small fixes (single
+elements, `stepsUpdate`), a newcomer's re-read → `xpl ready` → `xpl bundle --files boundary` (the default in
+cloud sessions) or `xpl view`.
 
 - **`explain <question>`**: ask one short question if the scope is really ambiguous; find entry points
   (`search -i`, `outline`); trace (`show <entry> --refs`, `refs --out --kind call` at depth 1 and a targeted

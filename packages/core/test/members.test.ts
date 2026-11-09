@@ -122,6 +122,21 @@ describe('boxText: "members"', () => {
     expect(derive(TS_INCLUDE).edges.map((e) => e.label)).toEqual([undefined, undefined, undefined]);
   });
 
+  // R6-1: folding a table (its rows left out) took its arrows away with its rows
+  it("draws a folded table's arrows from the table, still named holds; never a method's uses", () => {
+    const folded = TS_INCLUDE.filter((id) => !id.includes("DeadJob."));
+    expect(derive(folded, "members").edges.map((e) => [e.id, e.label])).toEqual([
+      ["edge:references:sym:src/models.ts#DeadJob->sym:src/models.ts#Job", "holds"],
+      ["edge:references:sym:src/models.ts#Queue.dead->sym:src/models.ts#DeadJob", "holds"],
+    ]);
+    // Queue folded too: its field's arrow stays, the use of Job inside push() does not join it
+    const both = folded.filter((id) => !id.includes("Queue."));
+    expect(derive(both, "members").edges.map((e) => e.id)).toEqual([
+      "edge:references:sym:src/models.ts#DeadJob->sym:src/models.ts#Job",
+      "edge:references:sym:src/models.ts#Queue->sym:src/models.ts#DeadJob",
+    ]);
+  });
+
   it("makes each type with rows a table, rows in code order, each with the type its line names", () => {
     const nodes = derive(TS_INCLUDE, "members").nodes;
     expect(nodes.filter((n) => n.rows).map((n) => n.id)).toEqual(
@@ -184,6 +199,151 @@ describe('boxText: "members"', () => {
       ["Job.id", "field"],
       ["Queue", undefined],
       ["Queue.dead", "field"],
+    ]);
+  });
+});
+
+// R5-5: the Text view and a row's name cut a long type ("Array<(worker: Worker) => v…"); only the drawing may
+describe("a row's long type", () => {
+  it("is given whole", () => {
+    const world = makeWorld({
+      files: [
+        {
+          path: "src/pool.ts",
+          text: [
+            "export class WorkerPool {",
+            "  waiting: Array<(worker: Worker) => void> = [];",
+            "}",
+          ].join("\n"),
+        },
+      ],
+      symbols: [
+        { id: "src/pool.ts#WorkerPool", kind: "class", start: 1, end: 3 },
+        { id: "src/pool.ts#WorkerPool.waiting", kind: "variable", start: 2, end: 2 },
+      ],
+      refs: [],
+    });
+    const view: GraphView = {
+      id: "view:pool",
+      type: "graph",
+      title: "Pool",
+      scope: { root: "repo", depth: 1 },
+      provenance: { origin: "llm" },
+      include: [sym("src/pool.ts#WorkerPool"), sym("src/pool.ts#WorkerPool.waiting")],
+      boxText: "members",
+    };
+    const nodes = deriveGraph(view, new ExplainerModel(emptyExplainer(), world.model), {
+      text: world.getText,
+    }).nodes;
+    expect(nodes.find((n) => n.row !== undefined)!.memberType).toBe(
+      "Array<(worker: Worker) => void>",
+    );
+  });
+});
+
+// V5-09: "WorkerPool.waiting holds Worker" for an array of callbacks that take a Worker: it holds functions
+describe("a field whose type names a type only as a function's parameter", () => {
+  const world = makeWorld({
+    files: [
+      {
+        path: "src/pool.ts",
+        text: [
+          "export class Worker {}",
+          "export class WorkerPool {",
+          "  idle: Worker[] = [];",
+          "  waiting: Array<(worker: Worker) => void> = [];",
+          "}",
+          "type Pool struct {",
+          "\tnotify func(w *Worker) error",
+          "}",
+          "class Pool:",
+          "    on_free: Callable[[Worker], None]",
+        ].join("\n"),
+      },
+    ],
+    symbols: [
+      { id: "src/pool.ts#Worker", kind: "class", start: 1, end: 1 },
+      { id: "src/pool.ts#WorkerPool", kind: "class", start: 2, end: 5 },
+      { id: "src/pool.ts#WorkerPool.idle", kind: "variable", start: 3, end: 3 },
+      { id: "src/pool.ts#WorkerPool.waiting", kind: "variable", start: 4, end: 4 },
+      { id: "src/pool.ts#Pool", kind: "class", start: 6, end: 8 },
+      { id: "src/pool.ts#Pool.notify", kind: "variable", start: 7, end: 7 },
+      { id: "src/pool.ts#PyPool", kind: "class", start: 9, end: 10 },
+      { id: "src/pool.ts#PyPool.on_free", kind: "variable", start: 10, end: 10 },
+    ],
+    refs: ["WorkerPool.idle", "WorkerPool.waiting", "Pool.notify", "PyPool.on_free"].map(
+      (from, i) => ({
+        from: `src/pool.ts#${from}`,
+        to: "src/pool.ts#Worker",
+        kind: "type-ref" as const,
+        line: [3, 4, 7, 10][i]!,
+      }),
+    ),
+  });
+  it("draws no holds arrow for it; a field that holds the type keeps its arrow", () => {
+    const ids = [
+      "Worker",
+      "WorkerPool",
+      "WorkerPool.idle",
+      "WorkerPool.waiting",
+      "Pool",
+      "Pool.notify",
+      "PyPool",
+      "PyPool.on_free",
+    ];
+    const view: GraphView = {
+      id: "view:pool",
+      type: "graph",
+      title: "Pool",
+      scope: { root: "repo", depth: 1 },
+      provenance: { origin: "llm" },
+      include: ids.map((id) => sym(`src/pool.ts#${id}`)),
+      edgeKinds: ["references"],
+      boxText: "members",
+    };
+    const graph = deriveGraph(view, new ExplainerModel(emptyExplainer(), world.model), {
+      text: world.getText,
+    });
+    expect(graph.edges.map((e) => e.id)).toEqual([
+      "edge:references:sym:src/pool.ts#WorkerPool.idle->sym:src/pool.ts#Worker",
+    ]);
+  });
+});
+
+// V6-02: `export const applyCommand = {…}` was a "variable" on its box; the code says it is a constant
+describe("the word on a top-level value's box", () => {
+  const world = makeWorld({
+    files: [
+      {
+        path: "src/cmd.ts",
+        text: ["export const applyCommand = {", "};", "let count = 0;", "const LIMIT = 3;"].join(
+          "\n",
+        ),
+      },
+    ],
+    symbols: [
+      { id: "src/cmd.ts#applyCommand", kind: "variable", start: 1, end: 2 },
+      { id: "src/cmd.ts#count", kind: "variable", start: 3, end: 3 },
+      { id: "src/cmd.ts#LIMIT", kind: "variable", start: 4, end: 4 },
+    ],
+    refs: [],
+  });
+  it('is "constant" for a const declaration and stays "variable" for a let', () => {
+    const view: GraphView = {
+      id: "view:cmd",
+      type: "graph",
+      title: "Commands",
+      scope: { root: "repo", depth: 1 },
+      provenance: { origin: "llm" },
+      include: ["applyCommand", "count", "LIMIT"].map((name) => sym(`src/cmd.ts#${name}`)),
+    };
+    const nodes = deriveGraph(view, new ExplainerModel(emptyExplainer(), world.model), {
+      text: world.getText,
+    }).nodes;
+    expect(nodes.map((n) => [n.label, n.kindWord])).toEqual([
+      ["LIMIT", "constant"],
+      ["applyCommand", "constant"],
+      ["count", undefined],
     ]);
   });
 });

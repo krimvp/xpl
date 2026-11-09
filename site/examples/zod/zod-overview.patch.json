@@ -130,14 +130,6 @@
           "role": "usage"
         },
         {
-          "file": "packages/zod/README.md",
-          "span": {
-            "from": 55,
-            "to": 55
-          },
-          "role": "usage"
-        },
-        {
           "file": "packages/zod/src/v4/core/parse.ts",
           "span": {
             "from": 77,
@@ -200,7 +192,7 @@
     {
       "id": "tour:overview",
       "title": "How Zod validates data with schemas",
-      "summary": "Zod is a TypeScript-first validation library. An application defines a schema and parses data against it. The package's main API (called \"classic\" in the code) hands each parse to a core runtime, which collects the parsed value and any validation issues. A caller can request a throwing parse or a result object that reports success.",
+      "summary": "Zod checks that data from outside a program, such as a form or an API reply, has the shape the program expects. A TypeScript application defines a schema and parses data against it. The package's main API (called \"classic\" in the code) hands each parse to a core runtime, which collects the parsed value and any validation issues. A caller can request a throwing parse or a result object that reports success.",
       "steps": [
         {
           "id": "t1",

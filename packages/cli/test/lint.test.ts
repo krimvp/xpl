@@ -2,6 +2,7 @@
  * `xpl lint`: the reader-text checks (`lintExplainer`, on small hand-made explainers) and the command (text
  * output, `--json`, `--strict`, exit codes) on an explainer applied to the TS fixture.
  */
+import { readFileSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   deriveGraph,
@@ -14,6 +15,7 @@ import {
   codeLike,
   isLiteral,
   LINT_LIMITS,
+  LINT_RULES,
   lintExplainer,
   type LintFinding,
   type LintRule,
@@ -2727,12 +2729,12 @@ describe("xpl lint", () => {
     expect(help.out).toContain(
       "Usage: xpl lint [explainer] [--patch <file|->] [--warn-only] [--strict]",
     );
-    for (const rule of ["repeats-summary", "markdown-in-plain", "markdown-in-summary"]) {
-      expect(help.out).toContain(rule);
-    }
-    for (const rule of ["tour-first-step", "tour-covers-map", "tour-length"]) {
-      expect(help.out).toContain(rule);
-    }
+    // the help is short; the CLI reference lists every rule
+    const reference = readFileSync(
+      new URL("../../../skill/code-explainer/reference/cli.md", import.meta.url),
+      "utf8",
+    );
+    for (const rule of Object.keys(LINT_RULES)) expect(reference, rule).toContain(`\`${rule}\``);
   });
 
   describe("--patch", () => {

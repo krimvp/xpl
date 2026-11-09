@@ -66,7 +66,7 @@ For a GitHub PR handoff (`handoff.json`), follow `reference/create.md`, "Author 
 2. **Name:** `xpl new <name> --title "..."`. A change gets its own guide, titled after it: `xpl new <repo>-pr-42 --title "PR 42: <what it does>"`.
 3. **A change only:** `xpl change <name> <base>..<head>` records it and prints its analysis.
 4. **Draft:** `xpl draft <kind> <name> [<entry id>] --audience "<reader>" --question "<question>" -o <file>`, outside the repo. Each text of the draft holds `TODO: <what to write>`.
-5. **Read and write.** Read the code of each anchor, then write every `TODO`. Every box, flow step and participant a view shows needs a `summary`. Change the draft's structure only where the code shows it is wrong, such as a guessed caller or a box with two jobs. For what you add (groups, frames, flows, concepts, `llm` edges), read `patch-format.md` sections 1 and 2, then that template. Done when no `TODO` is left and you read every claim.
+5. **Read and write.** Read the code of each anchor, then write every `TODO`. Every box, flow step and participant a view shows needs a `summary`, and so does every arrow you store. Change the draft's structure only where the code shows it is wrong, such as a guessed caller or a box with two jobs. For what you add (groups, frames, flows, concepts, `llm` edges), read `patch-format.md` sections 1 and 2, then that template. Done when no `TODO` is left and you read every claim.
 6. **Lint, then apply:** `xpl lint <name> --patch <file> && xpl apply <name> <file>`. A rejection lists every error, with `Did you mean` and the fields to copy. Fix a `probably off by one` warning at once. Never weaken a claim to pass: what you cannot anchor, you cannot claim. Later, patch only the field that changes (`patch-format.md` section 4).
 7. **Check:** `xpl validate <name>`; `xpl status <name>` until `to do: 0 with no text`; `xpl anchors <name> tour:<slug>` shows each step's code. Done when all three are clean.
 8. **Accuracy pass and re-read.** Give a fresh subagent, if you can start one, the `xpl` path, the repo, the guide name and any change range. It checks each claim against `xpl anchors <name>` and each "before" claim against the base. It rates each claim correct, imprecise, overstated, unanchored or wrong, quotes the lines, and changes no file. Without a subagent, do a second pass yourself, one claim at a time. Fix each `xpl lint <name>` finding, or say in the reply why you kept it (`--warn-only`). Then re-read the tour as a newcomer, with the checklist in `writing.md` section 7.
@@ -98,7 +98,7 @@ Length budgets (the other files and the drafts follow this table):
 | map              | 1 + top folders, ≤ 12 | 15-30 words     | 2-3 sentences | the folder maps                | one box per entry      | 0        |
 | presentation     | 5-9                   | ≤ 280 chars     | 2-3 sentences | existing views                 | ≤ 8                    | 0-1      |
 
-A sequence has 3-6 participants in every scope. A class map or a data map may hold 8 boxes when each one answers the question; a step then names the types left off. `draft class` stops at 8 boxes, `draft data` at 6 (8 rows a table). The "Tour summary" column is the one limit, and the other files point here. `tour-summary` flags only more than 5 sentences, so keep to the column yourself. Hard limits for every scope: a note body has 50 words at most (`long-note`). A box, concept or step `summary` has 2 sentences and 45 words at most, and says what the thing is for (`long-summary`). A `detail` paragraph has 80 words at most (`long-detail`).
+This table is the one source of these numbers; the other files point here. Lint checks only part of it: `tour-summary` flags more than 5 sentences, so keep to the column yourself. A small subject can take fewer steps than the column: do not pad it. A second, in-detail tour of a repo may open one sequence per part, 1-2 steps each. A sequence has 3-6 participants in every scope. A class map or a data map may hold 8 boxes when each one answers the question; a step then names the types left off. `draft class` stops at 8 boxes, `draft data` at 6 (8 rows a table). Hard limits for every scope: a note body has 50 words at most (`long-note`). A box, concept or step `summary` has 2 sentences and 45 words at most, and says what the thing is for (`long-summary`). A `detail` paragraph has 80 words at most (`long-detail`).
 
 - **One focus.** Each step focuses one main element, plus at most one concept that explains it.
 - **Cut to the budget.** A draft can hold more steps than the budget. Merge steps that make the same point. Drop a call that does not change the answer, from the sequence and from the tour. Gaps in step ids are fine (`t1`, `t2`, `t5`).
@@ -127,12 +127,12 @@ Three levels, each a zoom (`opens`) into a box of the level above:
 
 1. the system map: each box with a `role` and a `tech`;
 2. the inside of one service: its `component`s, and the outside boxes they talk to;
-3. the code of the main path: a sequence or a flow, made on `expand`.
+3. the code of the main path: one sequence or flow in the first guide; more on `expand`.
 
 Then:
 
 1. **Draft:** `xpl draft repo` gives the system map, a map of each service's inside, and a tour. Its arrows and outside systems are leads: check each by `patch-format.md` 3.10, "Check the draft".
-2. **Main path:** run `xpl draft path` on an obvious entry point (`main`, `cmd/`, a server). Let its part `opens` the sequence, and copy the steps you keep.
+2. **Main path:** the `draft repo` tour leaves room for 3 steps: the main path, the risks and where next. Run `xpl draft path` on an obvious entry point (`main`, `cmd/`, a server). Copy the steps you keep into the tour, with ids it does not use yet. Set `opens` on the box that holds the entry point to the sequence's view id.
 3. **Tour:** the first step on the inside names the files left off the map, in one sentence. Offer 2-3 expansions in the reply.
 
 ## explain map: every file, in plain words

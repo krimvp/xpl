@@ -124,7 +124,8 @@ test.describe("architecture maps", () => {
     );
     await page.goto(TS_BUNDLE.href + "?perspective=flow&view=view:dispatch");
     await page.waitForFunction(() => window.__xpl !== undefined);
-    await expect(page.locator(".workspace-caption .eyebrow")).toHaveText("Flow");
+    // (a sequence is named as one, N9)
+    await expect(page.locator(".workspace-caption .eyebrow")).toHaveText("Sequence");
     await expect(page.locator(".workspace-caption")).toContainText(
       "How does a job get from the queue to a worker?",
     );

@@ -241,9 +241,7 @@ describe("xpl change", () => {
     ]);
 
     const help = await invoke(["change", "--help"]);
-    expect(help.out).toContain("when it calls one of those callers");
     expect(help.out).toContain("A missing test reference does not mean the behaviour has no test");
-    expect(help.out).toContain("changed test files, listed apart from the per-symbol matches");
 
     const drafted = await xplJson<{ patch: ExplainerPatch }>(dir, "draft", "change", "demo");
     expect(drafted.code).toBe(0);
@@ -372,6 +370,25 @@ describe("xpl change", () => {
     expect(shownJson.json.omissions).toContainEqual(
       expect.stringContaining("old.py: removed from the head"),
     );
+  });
+
+  it("with one guide, takes the range as the only argument and records the change in that guide", async () => {
+    const dir = cloneDir(repo);
+    const none = await xpl(dir, "change");
+    expect(none.err).toContain("using demo");
+    expect(none.err).toContain("has no change recorded yet");
+    const recorded = await xpl(dir, "change", "HEAD~1..HEAD");
+    expect(recorded.code, recorded.err).toBe(0);
+    expect(recorded.err).toContain("using demo");
+    expect(readJson<Explainer>(dir, ".explainer/demo.explainer.json").change?.head).toBe(head);
+    // a lone argument that names a guide is the guide, not a revision
+    expect((await xpl(dir, "change", "demo")).out).toContain(
+      "recorded in .explainer/demo.explainer.json",
+    );
+    expect((await xpl(dir, "new", "other")).code).toBe(0);
+    const several = await xpl(dir, "change", "HEAD~1..HEAD");
+    expect(several.code).toBe(2);
+    expect(several.err).toContain("demo, other");
   });
 
   it("marks omissions from a reused index as observations about that index", async () => {

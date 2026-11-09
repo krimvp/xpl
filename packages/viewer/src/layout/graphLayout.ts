@@ -322,9 +322,17 @@ function containerMinWidth(label: string, badge: string, change?: ChangeStatus):
   );
 }
 
+/** The longest type text a row draws; a longer one is cut and ends in "…" (its name and Text view say it all). */
+const ROW_TYPE_MAX = 28;
+
+/** A row's type as drawn: cut to `ROW_TYPE_MAX` characters (core gives the whole of it, R5-5). */
+export function shownType(type: string): string {
+  return type.length > ROW_TYPE_MAX ? `${type.slice(0, ROW_TYPE_MAX - 1).trimEnd()}…` : type;
+}
+
 /** How wide a table must be for this row: its name, a gap and its type, inside the padding. */
 function rowWidth(node: ModelNode): number {
-  const type = node.memberType ? ROW_GAP + textWidth(node.memberType, ROW_TYPE_FONT) : 0;
+  const type = node.memberType ? ROW_GAP + textWidth(shownType(node.memberType), ROW_TYPE_FONT) : 0;
   return Math.ceil(textWidth(node.label, ROW_NAME_FONT, 500) + type) + 2 * PAD_X;
 }
 
@@ -1570,6 +1578,11 @@ function layeredLayout(
     const box = labelBox(wayLabel(edge.label, points));
     const centre = labelOnRoute(own, box, undefined);
     if (centre) twin.label = { ...box, x: centre.x - box.width / 2, y: centre.y - box.height / 2 };
+    // On one line, two labels end to end read as one ("← calls ×3 calls ×1 →", V6-03): each moves off the
+    // line to its own side of it, the lead's above (or left of) it, the twin's below (or right of) it.
+    const first = drawn.laidOut;
+    if (first.label && first.own) first.label = besideLine(first.label, first.own, -1);
+    if (twin.label) twin.label = besideLine(twin.label, own, 1);
     (drawn.holder ? drawn.holder.edges : canvasEdges).push(twin);
   }
   if (facingAway) {
@@ -1841,6 +1854,54 @@ export function spreadLabels(
       break;
     }
   }
+}
+
+/**
+ * Where the boxes of `before` stay when `graph` only folds tables of it (a data map's "-": the same boxes at the
+ * top level, and some table drawn without its rows): every top-level box's position, to lay `graph` out with as
+ * pins. The folded table keeps its top-left corner and its arrows start at its header. Undefined for any other
+ * change (a box added or gone, a table opened again), which is laid out afresh (R6-1).
+ */
+export function foldPins(
+  before: GraphLayout | undefined,
+  graph: DerivedGraph,
+): GraphView["layout"] | undefined {
+  if (!before) return undefined;
+  const top = graph.nodes.filter((node) => node.parent === undefined);
+  const was = new Map(before.nodes.map((node) => [node.id, node]));
+  if (top.length !== before.nodes.filter((node) => !node.ghost).length) return undefined;
+  if (graph.ghosts.length > 0 || before.nodes.some((node) => node.ghost)) return undefined;
+  if (top.some((node) => !was.has(node.id) || (node.rows && !was.get(node.id)!.rows)))
+    return undefined;
+  if (!top.some((node) => !node.rows && was.get(node.id)!.rows)) return undefined;
+  return Object.fromEntries(
+    top.map((node) => [node.id, { x: was.get(node.id)!.x, y: was.get(node.id)!.y }]),
+  );
+}
+
+/** The gap, px, between the line of a two-way pair and each of its two labels (`besideLine`). */
+const PAIR_LABEL_GAP = 3;
+
+/**
+ * A label moved off the segment of `route` its centre sits on, to one side of it: `side` -1 above a level
+ * segment (left of an upright one), 1 below it (right of it). The line then runs between the two labels.
+ */
+function besideLine<T extends Box>(label: T, route: readonly Point[], side: -1 | 1): T {
+  const centre = { x: label.x + label.width / 2, y: label.y + label.height / 2 };
+  let best: [Point, Point] | undefined;
+  let nearest = Infinity;
+  for (let i = 1; i < route.length; i++) {
+    const d = distanceToSegment(centre, route[i - 1]!, route[i]!);
+    if (d < nearest) [nearest, best] = [d, [route[i - 1]!, route[i]!]];
+  }
+  if (!best) return label;
+  const [a, b] = best;
+  if (Math.abs(b.y - a.y) <= Math.abs(b.x - a.x))
+    return {
+      ...label,
+      y: side < 0 ? a.y - label.height - PAIR_LABEL_GAP : a.y + PAIR_LABEL_GAP,
+    };
+  return { ...label, x: side < 0 ? a.x - label.width - PAIR_LABEL_GAP : a.x + PAIR_LABEL_GAP };
 }
 
 /** The second half of a route, by length: from its middle to its end (the head). */

@@ -7,16 +7,12 @@ export const readyCommand: CommandSpec = {
   usage: "xpl ready [explainer] [--note <reason>] [--require-review]",
   summary: "Check source links, required content and reader findings before export",
   details: [
-    "Review state is reported separately. --require-review opts into a team policy requiring a current",
-    "author review of all stored content and its scoped evidence; the default has no review requirement.",
-    "Combines strict validation, working-tree/index freshness, required summaries/story text and reader lint.",
-    "Errors block ready HTML; warnings invite author judgment. --note records intentional omissions or warning",
-    "decisions in the report, without overriding errors. Add the same note to bundle to preserve it in HTML.",
-    "Each finding names the element, field, code, message and repair hint. --json emits ReadinessReport.",
-    "Source checks verify locations and freshness, not prose truth or every runtime path. Offline re-saves",
-    "check only embedded source; this command checks the current workspace. Ordinary checks need no reviewer.",
-    "Exit codes: 0 ready (warnings allowed), 1 blockers or failure, 2 usage error. Nothing is written.",
-    "Omit the explainer when the repository has exactly one; otherwise supply its name.",
+    "Checks a guide before you export it: the code links, the index, the text it needs, and lint.",
+    "Errors block ready HTML. Warnings ask for your judgment.",
+    "--note records why you keep a warning or leave something out. It does not override an error.",
+    "--require-review also asks for a current author review of everything stored.",
+    "It checks where the code is, not whether the text is true. Nothing is written.",
+    "Exit codes: 0 ready (warnings allowed), 1 errors or failure, 2 usage error.",
   ],
   options: {
     "require-review": {

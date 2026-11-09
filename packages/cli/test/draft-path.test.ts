@@ -360,24 +360,30 @@ describe("xpl draft path: loops and branches", () => {
     // the while loop holds every call. `if (result.ok) { ack; continue }` leaves early: the retry code after it is its
     // else (D8), so ack and the retry branch are two arms of one alt, and requeue and deadLetter are two arms inside
     // the second one, not calls that run after ack
+    // `if (!job) { sleep; continue }` draws no call (sleep is a library function), so the rest of the loop body is an
+    // opt whose label says the guard skips it (viz V5-11)
     expect(frames).toEqual([
       "loop pop()..deadLetter(job, result.error)",
+      "opt lease()..deadLetter(job, result.error)",
       "alt ack(job)..deadLetter(job, result.error)",
       "alt requeue(job, backoff)..deadLetter(job, result.error)",
     ]);
+    expect(view.frames![1]!.label).toBe(
+      "TODO: when the rest of the loop body runs, in a few words (the code: `if (!job)` skips it with `continue`)",
+    );
     const arms = (f: number) =>
       view.frames![f]!.arms!.map((a) => [
         a.label.match(/`[^`]+`/)?.[0] ?? a.label,
         `${label(a.fromStep)}..${label(a.toStep)}`,
       ]);
-    expect(arms(1)).toEqual([
+    expect(arms(2)).toEqual([
       ["`if (result.ok)`", "ack(job)..ack(job)"],
       ["`if (result.ok)`", "requeue(job, backoff)..deadLetter(job, result.error)"],
     ]);
-    expect(view.frames![1]!.arms![1]!.label).toMatch(/^TODO: otherwise, .*leaves early/);
+    expect(view.frames![2]!.arms![1]!.label).toMatch(/^TODO: otherwise, .*leaves early/);
     // the frame names the decision; only its arms quote the code (structure R4-06: no text asked for twice)
-    expect(view.frames![2]!.label).not.toContain("`");
-    expect(arms(2)).toEqual([
+    expect(view.frames![3]!.label).not.toContain("`");
+    expect(arms(3)).toEqual([
       [
         "`if (attempts <= this.config.retry.maxRetries)`",
         "requeue(job, backoff)..requeue(job, backoff)",

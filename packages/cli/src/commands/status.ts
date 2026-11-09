@@ -129,7 +129,7 @@ const isTodo = (text: unknown): boolean => typeof text === "string" && /^\s*TODO
 
 /**
  * What each view shows and what of it has no summary yet. A summary that still starts with `TODO` (a draft's
- * placeholder) counts as none: `0 unexplained` means the text is written.
+ * placeholder) counts as none: `to do: 0 with no text` means the text is written.
  */
 function viewStatuses(model: ExplainerModel): ViewStatus[] {
   return viewContentStatuses(model).map((status) => {
@@ -441,32 +441,13 @@ export const statusCommand: CommandSpec = {
   summary:
     "To-do list: boxes with no text, changed or missing code links, reader requests, tour problems",
   details: [
-    "--all resolves every .explainer/*.explainer.json guide against the current index and reports moved,",
-    "drifted and missing anchors, including user-owned anchors and unreadable guides. No prose is written.",
-    "Moved code keeps its prose; drift and missing evidence need explicit repair. Watch status is included in --json.",
-    "Omit the explainer when the repository has exactly one; otherwise supply its name.",
-    "The skill's to-do list for an explainer, without changing anything:",
-    "  - per view, the visible nodes, edges and steps that have no `summary`, or one that still starts with",
-    "    `TODO` (static edges are optional). The total counts each id once;",
-    "  - per graph view, where it stops (`outside this map`): the ghost boxes and stubs it draws (counts, and the",
-    `    most referenced ghost ids), with a warning above ${CROWDED_GHOSTS} ghosts (a view without "stubs" keeps the 8`,
-    "    most referenced and folds the rest). A folded ghost (ghost:rest:file:<path>, ghost:more:in|out) is not an",
-    "    element: it gets a line under the counts that names up to 3 of the elements it stands for, and includeAdd",
-    "    takes any of them. --json lists every ghost id with its count and all its targets, and every stub id, in",
-    "    views[].ghosts;",
-    "  - concepts without a summary;",
-    "  - tours: id, number of steps, and the steps whose focus ids (or view) no longer resolve; a tour without a",
-    "    summary (or a TODO one) counts as having no text;",
-    "  - llm elements whose anchors drifted (re-explain them, keeping userFields) and missing anchors; drift the",
-    "    user owns is counted apart (ask the user);",
-    "  - broken references: ids that vanished from the index (overlays of deleted symbols, include, members,",
-    "    related, participants, step ends), and stored derived-edge overlays that no graph view derives now;",
-    "  - explain-this requests the viewer queued in .explainer/requests.json (record selected outcomes with xpl feedback --outcomes).",
-    "",
-    "--view <id>: only that view, and what it draws: a graph view's edges (id, kind, ends, references, stored or",
-    "derived, label, whether it has a summary) and each id in its `hidden` with the edge it takes out; a flow's",
-    "links between steps (a return with no step goes back to the caller); a sequence's messages. --json adds",
-    "`edges: {drawn, hidden}` or `edges: {links}` to the view.",
+    "The to-do list of a guide. It changes nothing.",
+    "It lists the boxes, arrows and steps that a view shows with no text, and the tours with no summary.",
+    "It lists drifted and missing code links, ids that are gone, and reader requests from the viewer.",
+    "Per map, it counts what lies outside it: the dashed boxes and the arrows to them.",
+    "--view <id> shows one view and the arrows (or step links) it draws.",
+    "--all checks every guide in the repository against the current index.",
+    "With one guide in the repository, leave out its name.",
   ],
   options: {
     all: {
