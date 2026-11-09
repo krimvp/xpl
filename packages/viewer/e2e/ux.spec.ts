@@ -466,7 +466,7 @@ test.describe("the Guide", () => {
       "requeue(job, backoff)",
     ]);
     await expect(sequence.locator(".frame-kind")).toHaveText("loop");
-    await expect(sequence.locator(".frame-label")).toHaveText("[until success or maxRetries]");
+    await expect(sequence.locator(".frame-label")).toHaveText("[while the runner is running]");
     const retry = sequence.locator('[data-frame-id="frame:retry"] .frame-box');
     const loop = (await retry.boundingBox())!;
     const pop = (await sequence.locator('[data-element-id="dispatch:1"] .label').boundingBox())!;

@@ -52,8 +52,8 @@
         },
         {
           "id": "frame:retry",
-          "kind": "alt",
-          "label": "failed, retries left",
+          "kind": "opt",
+          "label": "the attempt failed and retries are left",
           "fromStep": "dispatch:3",
           "toStep": "dispatch:3"
         }

@@ -174,7 +174,7 @@ for (const example of EXAMPLES) {
         {
           id: "frame:retry",
           kind: "loop",
-          label: "until success or maxRetries",
+          label: "while the runner is running",
           fromStep: "dispatch:2",
           toStep: "dispatch:3",
         },
