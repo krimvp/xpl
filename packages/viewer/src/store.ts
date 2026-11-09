@@ -7,7 +7,6 @@
  * the current view, code focus, reverse lookup, matches) lives in derive.ts and is memoised per state.
  */
 import {
-  artifactIdentity,
   applyUserEdits,
   makeUserEdit,
   makeGraphEdits,
@@ -74,6 +73,7 @@ import {
   type AnswerHistory,
 } from "./data.js";
 import { changeAt, changeOf, hasBase } from "./diff.js";
+import { identityOf } from "./derive.js";
 import { workspaceView } from "./workspace.js";
 import { serializeExplainer, withViewFields } from "./edits.js";
 import { clampStep, stepIndex, type Mode, type TourPosition } from "./modes.js";
@@ -342,7 +342,7 @@ export class ViewerStore {
     this.editStorageKey = this.editAttachment
       ? `xpl-edits:${JSON.stringify([this.editAttachment.root, this.editAttachment.guide])}`
       : undefined;
-    const identity = artifactIdentity(bundle.explainer, bundle.index);
+    const identity = identityOf(bundle.explainer, bundle.index);
     this.feedbackStorageKey = `xpl-feedback:${identity.explainerHash}:${identity.sourceHash}`;
     this.indexModel = asIndexModel(bundle.index);
     this.api = bundle.server?.api
@@ -1277,7 +1277,7 @@ export class ViewerStore {
             sourceWarning: bundle.sourceWarning,
             exportInfo: bundle.exportInfo,
           });
-          version = artifactIdentity(bundle.explainer, bundle.index);
+          version = identityOf(bundle.explainer, bundle.index);
         }
         const result = await api.putEdits(version, write.edits);
         if (!write.applied) this.acceptAuthor(write, result);
@@ -1403,7 +1403,7 @@ export class ViewerStore {
       throw new Error("This guide preview is read-only. Open its own service to edit it.");
     const draft = this.state.textDrafts[id] ?? {
       edit: makeUserEdit(this.state.explainer, this.indexModel, collection, id, fields),
-      version: artifactIdentity(this.state.explainer, this.indexModel.index),
+      version: identityOf(this.state.explainer, this.indexModel.index),
     };
     this.set({ textDrafts: { ...this.state.textDrafts, [id]: draft } });
     return draft;
@@ -1481,7 +1481,7 @@ export class ViewerStore {
       throw new Error("Open Explore to edit this map.");
     if (this.state.editDraft) throw new Error("Save or cancel the author draft first.");
     const edits = makeGraphEdits(this.state.explainer, this.indexModel, viewId, action);
-    await this.saveEdits(edits, artifactIdentity(this.state.explainer, this.indexModel.index));
+    await this.saveEdits(edits, identityOf(this.state.explainer, this.indexModel.index));
   }
 
   private acceptAuthor(
@@ -1587,7 +1587,7 @@ export class ViewerStore {
       const id = `author:${++this.authorSequence}`;
       if (!this.api) {
         const current = this.state.explainer;
-        const expected = artifactIdentity(current, this.indexModel.index);
+        const expected = identityOf(current, this.indexModel.index);
         if (version && JSON.stringify(version) !== JSON.stringify(expected))
           throw new Error(
             "This explanation changed while you were editing. Reopen the editor and inspect it before saving.",
@@ -1988,7 +1988,7 @@ export class ViewerStore {
       kind,
       elementId: id,
       at,
-      context: artifactIdentity(this.state.explainer, this.state.model.index.index),
+      context: identityOf(this.state.explainer, this.state.model.index.index),
       ...(this.state.sourceWarning ? { sourceWarning: this.state.sourceWarning } : {}),
       ...(note?.trim() ? { note: note.trim() } : {}),
       ...(this.state.viewId ? { view: this.state.viewId } : {}),

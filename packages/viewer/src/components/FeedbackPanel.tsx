@@ -1,7 +1,6 @@
 /** Questions and answers are feedback history; guide changes still require explicit revision review. */
 import { useEffect, useRef, useState } from "react";
 import {
-  artifactIdentity,
   feedbackContextReason,
   hashText,
   type FeedbackKind,
@@ -10,6 +9,7 @@ import {
 } from "@xpl/core";
 import { useDerived, useStore, useViewerState } from "../hooks.js";
 import { messageOf } from "../data.js";
+import { identityOf } from "../derive.js";
 
 /** Lines of evidence read per reference when looking for the boxes that hold it (a long range is a hint, not a tour). */
 const MAP_LINES = 200;
@@ -108,7 +108,7 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
   const id =
     state.selection[state.selection.length - 1] ??
     (state.cursor ? `file:${state.cursor.file}` : undefined);
-  const current = artifactIdentity(state.explainer, state.model.index.index);
+  const current = identityOf(state.explainer, state.model.index.index);
   useEffect(() => {
     panel.current?.focus();
     void store
