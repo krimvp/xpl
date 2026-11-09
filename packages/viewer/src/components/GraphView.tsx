@@ -64,6 +64,7 @@ import { readerBadge } from "../readerWords.js";
 import { READABLE_ZOOM } from "../viewport.js";
 import { GhostTargetList } from "./GhostTargets.js";
 import { KeyLine, Legend } from "./Legend.js";
+import { MatrixView } from "./MatrixView.js";
 import { BoxIcon, iconName } from "./icons.js";
 import {
   PanZoom,
@@ -501,8 +502,40 @@ export function GraphView({
     [layout, store, changes, state.model],
   );
 
+  // Boxes and arrows, or the same as a matrix: the view's `render` says which it opens as, the reader's choice
+  // holds until the diagram starts over (another view, another tour step).
+  const stored = state.model.view(viewId);
+  const opensAsMatrix = stored?.type === "graph" && stored.render === "matrix";
+  const [choice, setChoice] = useState<{ key: string; matrix: boolean }>();
+  const matrix = choice?.key === resetKey ? choice.matrix : opensAsMatrix;
+  const matrixToggle = (
+    <button
+      type="button"
+      className="matrix-toggle"
+      aria-pressed={matrix}
+      title={
+        matrix
+          ? "Show this map as boxes and arrows again"
+          : "Show this map as a dependency matrix: a row and a column per box, the arrows in the cells"
+      }
+      onClick={() => setChoice({ key: resetKey, matrix: !matrix })}
+    >
+      Matrix
+    </button>
+  );
+
   let body;
-  if (error) body = <div className="diagram-message is-error">Layout failed: {error}</div>;
+  if (matrix && graph.nodes.length > 0)
+    body = (
+      <MatrixView
+        graph={graph}
+        selected={marks.selected}
+        matches={marks.matches}
+        related={related}
+        toggle={matrixToggle}
+      />
+    );
+  else if (error) body = <div className="diagram-message is-error">Layout failed: {error}</div>;
   else if (!layout) body = <div className="diagram-message">Laying out the graph…</div>;
   else if (layout.nodes.length === 0) {
     body = (
@@ -537,7 +570,12 @@ export function GraphView({
         focus={focus}
         keepInView={preview ? undefined : selectionBox}
         onBackgroundClick={() => store.clearSelection()}
-        tools={<Legend shows={keyShows!} />}
+        tools={
+          <>
+            <Legend shows={keyShows!} />
+            {matrixToggle}
+          </>
+        }
       >
         <g
           className="graph"
@@ -587,7 +625,7 @@ export function GraphView({
                     onPointerDownCapture={dismiss}
                     onWheelCapture={menu ? dismissOnWheel : undefined}
                   >
-                    {keyShows && layout && !present && (
+                    {keyShows && layout && !present && !matrix && (
                       <KeyLine
                         shows={keyShows}
                         stubLines={allEdgesOf(layout).some((edge) => edge.stub && !quietStub(edge))}

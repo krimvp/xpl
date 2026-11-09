@@ -2437,6 +2437,7 @@ const STRUCTURAL_TEXT_FIELDS = new Set([
   "edgeKinds",
   "excludeFiles",
   "boxText",
+  "render",
   "participants",
   "fromStep",
   "toStep",

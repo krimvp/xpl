@@ -575,6 +575,17 @@
             }
           ]
         },
+        "render": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": ["matrix"]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "stubs": {
           "anyOf": [
             {

@@ -290,6 +290,10 @@ Conventions (all packages):
     warnings skip it. An `llm` edge needs no evidence at an end that is a sketch; the other end, when it is
     code, still does. `deriveGraph` passes it on as `GraphNode.sketch`; the viewer badges the box "sketch"
     (whatever its role, whose shape it keeps), draws it dotted, and the map's Key names it. `null` clears it.
+24. `GraphView` adds `render?: "matrix"`: the view opens as a dependency matrix (§6) instead of boxes and
+    arrows, for a map too dense to read as a drawing. The reader can switch between the two on any map
+    either way; the field only sets how the view opens, also in a tour step. `null` clears it; any other
+    value is a validation error. The guide's still pictures (`GraphPicture`) stay boxes and arrows.
 
 Patch-side types (never stored) live in `packages/core/src/patch.ts`; its header holds the authoritative
 merge rules and `skill/code-explainer/reference/patch-format.md` is the practical guide. The authoring
@@ -2796,6 +2800,28 @@ transition IDs and shows the checked source anchors of both endpoints (only the 
 the caller). Details names its direction and explains that links have no separate source anchor. The
 toggle precedes the list in keyboard order. Selection uses the same store action as the diagram. The list updates with the current level, nodes and edge-kind filters. Scrolling it never zooms
 the hidden SVG. Turning the toggle off restores the diagram and its selection.
+
+**Dependency matrix** (`matrix.ts`, `components/MatrixView.tsx`): every live map has a **Matrix** toggle
+after its Key (`aria-pressed`); a view with `render: "matrix"` opens with it pressed. The choice holds until
+the diagram starts over (`resetKey`: another view or tour step). The matrix replaces the pan/zoom canvas with
+a table in its own scrolling frame: one row per box (a number, then the label) and one column per box (the
+number only; the full name, with its container, is the title and accessible name). A container gets a row
+only when an arrow ends on it. Cell (row, column) holds the arrows from the row's box to the column's: the
+arrows `drawnEdges` draws (what a click selects, as a click on the arrow) and every derived or stored edge id
+of the pair (what the caret lights). It shows the reference count and the trust of the map's arrow by fill,
+never by colour alone (as the map's dashes): solid for precise and static, short stripes for heuristic, long
+stripes for mixed, an outline for `llm` and `user`; the matrix's key names each fill the cells use, with the
+words of the map's key line. `buildMatrix` orders the
+boxes topologically, the listed order where the arrows leave a choice; in a cycle the box with the fewest
+arrows still to come goes first. So every arrow of a map without cycles lies above the diagonal, and a cell
+below it (`is-back`, a corner mark in the warning colour) goes back up the order; with its mirror cell it is
+a cycle. A key line above the table says this. Two-way link: a cell click selects the drawn arrows, a row or
+column header selects the box, the caret's matches light cells (`is-match`) and headers, and the first lit
+cell scrolls into the frame. Keyboard (`role="grid"`, one tab stop): the arrow keys move between cells and
+headers, Home and End go to the ends of a row, Enter or Space selects (Shift adds). The headers are sticky;
+at 640 px and narrower the row labels are cut at 128 px with "…", and the zoom toolbar (Matrix included)
+stays one row that scrolls sideways. The map's key line is hidden while the matrix shows. Stubs and ghosts
+are not in the matrix.
 
 **Save image** (`image.ts`, `PanZoom.imageName`): the zoom toolbar of every live map, sequence and flow has
 "Save image" after its Key. It downloads `<view title>.png` (characters a file system refuses become `-`):

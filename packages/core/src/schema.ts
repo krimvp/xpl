@@ -24,6 +24,7 @@
  *  16. Node adds `sketch` (true): a group that is an idea, linked to no code (no members, no anchors).
  *  17. Reference.kind adds "request" (a web request to the server route that answers it, always heuristic) and
  *      Edge.kind adds "requests" (lifted request references).
+ *  18. GraphView adds `render` ("matrix"): the view opens as a dependency matrix instead of boxes and arrows.
  *
  * Two files per repo:
  *   index-<commit>.json    SymbolIndex. Static analysis of one commit. Built once, shared by every view.
@@ -513,6 +514,12 @@ export interface GraphView extends ViewBase {
    * their header. Absent: the label and its badge only.
    */
   boxText?: "summary";
+  /**
+   * (amended) How the view opens. `"matrix"`: as a dependency matrix, one row and one column per box and the
+   * arrows in the cells, for a map too dense to read as boxes and arrows. Absent: boxes and arrows. The
+   * reader can switch between the two either way.
+   */
+  render?: "matrix";
   /** Finite positions relative to the rendered container's stable origin (canvas for roots).
    * Negative children expand the frame around that origin. Everything else is auto-laid-out. */
   layout?: Record<ElementId, { x: number; y: number }>;

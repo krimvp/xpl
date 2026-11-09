@@ -18,6 +18,11 @@ A guide holds diagrams and tours. A diagram is one of three kinds:
   system, the services inside it and what they rely on. A box can open into the level below it. On a quick
   map (`xpl draft map`) each box also shows its one-sentence summary. Select a box and choose "What it leads
   to" or "What leads to it": the map lights up every box reached along its arrows.
+- A **dependency matrix** shows the same map as a table: a row and a numbered column per box, and in each
+  cell the arrows from the row's box to the column's, with their count. Press **Matrix** in the toolbar of any
+  map; a guide can also open a dense map this way. Cells below the diagonal go back up the order: a cell
+  there and its mirror cell above make a cycle. Select a cell to select its arrow and show its code. The
+  cells of the code under the cursor light up, as on the map.
 - A **flow** follows the steps and decisions of a process.
 - A **sequence** shows who calls whom, in order.
 

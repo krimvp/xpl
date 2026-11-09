@@ -1286,6 +1286,13 @@ class Validator {
         id,
       );
     }
+    if (view.render !== undefined && view.render !== "matrix") {
+      this.error(
+        `${path}.render`,
+        'render must be "matrix" (the view opens as a dependency matrix)',
+        id,
+      );
+    }
     if (view.layout !== undefined) {
       if (!isRecord(view.layout)) this.error(`${path}.layout`, "layout must map ids to {x, y}", id);
       else {

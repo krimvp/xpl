@@ -5213,3 +5213,238 @@ code {
     display: none;
   }
 }
+
+/* A map as a dependency matrix (MatrixView.tsx): a row and a numbered column per box, the arrows in the cells.
+   The cell colours are the arrows' trust colours on the map: solid for precise, striped for heuristic, an outline
+   for an authored arrow. The table scrolls in its own frame; the headers stay in sight. */
+.matrix {
+  /* inside the graph host's box, however wide the table: the table scrolls, not the page */
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+}
+.matrix-bar {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.matrix-key {
+  flex: 1;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.matrix-key-back {
+  border-bottom: 2px solid var(--warn);
+}
+.matrix-tools {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.matrix-tools button,
+.matrix-toggle {
+  min-width: 26px;
+  height: 24px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.matrix-toggle[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+.matrix-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.matrix-grid {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.matrix-grid th,
+.matrix-grid td {
+  height: 28px;
+  padding: 0;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  outline: none;
+}
+.matrix-grid thead th,
+.matrix-corner {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  min-width: 30px;
+  background: var(--panel);
+  color: var(--muted);
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+}
+.matrix-corner {
+  left: 0;
+  z-index: 3;
+  cursor: default;
+}
+.matrix-row {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  max-width: 220px;
+  padding: 0 10px 0 6px !important;
+  background: var(--panel);
+  color: var(--fg);
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.matrix-num {
+  display: inline-block;
+  min-width: 2.2ch;
+  margin-right: 6px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  text-align: right;
+}
+.matrix-cell {
+  min-width: 30px;
+  text-align: center;
+}
+.matrix-cell.is-below {
+  background: var(--canvas);
+}
+.matrix-cell.is-diagonal {
+  background: var(--border);
+}
+.matrix-cell.has-arrow {
+  position: relative;
+  color: var(--fg);
+  font-weight: 650;
+  cursor: pointer;
+}
+/* Trust by fill, not by colour alone (D5): solid where the code was found, stripes where it was matched by name
+   (the map's dash), long stripes where partly, an outline for the author's arrow, the same on the swatches. */
+.matrix-cell.res-precise,
+.matrix-cell.res-static,
+.matrix-swatch.res-precise {
+  background: color-mix(in srgb, var(--edge) 24%, var(--panel));
+}
+.matrix-cell.res-heuristic,
+.matrix-swatch.res-heuristic {
+  background: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--edge-heuristic) 40%, var(--panel)) 0 4px,
+    var(--panel) 4px 7px
+  );
+}
+.matrix-cell.res-mixed,
+.matrix-swatch.res-mixed {
+  background: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--edge-heuristic) 40%, var(--panel)) 0 9px,
+    var(--panel) 9px 12px
+  );
+}
+.matrix-cell.res-llm,
+.matrix-swatch.res-llm {
+  box-shadow: inset 0 0 0 2px var(--edge-llm);
+}
+.matrix-cell.res-user,
+.matrix-swatch.res-user {
+  box-shadow: inset 0 0 0 2px var(--edge-user);
+}
+.matrix-key-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  margin-top: 4px;
+}
+.matrix-key-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.matrix-swatch {
+  display: inline-block;
+  width: 16px;
+  height: 12px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}
+/* An arrow back up the order: a corner mark in the warning colour. */
+.matrix-cell.is-back::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  border-top: 9px solid var(--warn);
+  border-left: 9px solid transparent;
+}
+.matrix-grid th.is-hot,
+.matrix-cell.has-arrow:hover {
+  background-color: var(--hover);
+  color: var(--fg);
+}
+.matrix-grid th.is-related,
+.matrix-cell.is-related {
+  box-shadow: inset 0 0 0 2px var(--related);
+}
+.matrix-grid th.is-match,
+.matrix-cell.is-match {
+  box-shadow: inset 0 0 0 3px var(--match);
+}
+.matrix-grid th.is-match {
+  background: var(--match-soft);
+}
+.matrix-grid th.is-selected,
+.matrix-cell.is-selected {
+  box-shadow: inset 0 0 0 3px var(--accent);
+}
+.matrix-grid th.is-selected {
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+.matrix-grid [data-r]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -4px;
+}
+/* A narrow pane: the zoom toolbar (with Matrix) stays one row, never taller, and scrolls sideways when the
+   buttons do not fit, rather than breaking its labels over two lines. */
+.pz-toolbar button {
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  :where(.workspace, .explore) .pz-toolbar {
+    flex-wrap: nowrap;
+    gap: 2px;
+    overflow-x: auto;
+  }
+  :where(.workspace, .explore) .pz-toolbar button {
+    padding: 0 5px;
+  }
+  .matrix-row {
+    max-width: 128px;
+  }
+  .matrix-key {
+    font-size: 12px;
+  }
+}
