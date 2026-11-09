@@ -378,7 +378,7 @@ function stepNumbers(steps: readonly string[], rows: readonly Row[]): string {
 }
 
 /**
- * What a frame's name or an arm's condition shows when clicked, and what it cannot show (V5-05): a frame and an
+ * What a frame's name or an arm's condition shows when clicked, and what it cannot show: a frame and an
  * arm have no code link of their own (the schema gives them none), so the line that tests the condition is not
  * highlighted. The tooltip says where to look: the code above the frame's first step.
  */
@@ -391,8 +391,8 @@ function frameLimit(box: FrameBox, rows: readonly Row[]): string {
 }
 
 /**
- * A frame's tab and name: a button that selects the frame's steps (V4-09). With arms, the name says what the
- * frame decides and is set apart from the conditions (R4-17): no brackets, italic.
+ * A frame's tab and name: a button that selects the frame's steps. With arms, the name says what the
+ * frame decides and is set apart from the conditions: no brackets, italic.
  */
 function FrameHead({
   box,
@@ -565,7 +565,7 @@ function StepShape({
       />
       <path className="line" d={path} />
       <path className="head" d={head} />
-      {/* On a plate of the canvas' colour, tinted like each frame it sits in (N16): no lifeline runs through
+      {/* On a plate of the canvas' colour, tinted like each frame it sits in: no lifeline runs through
           the words, and inside a loop the plate is not a white box on the grey frame. */}
       {[0, ...Array.from({ length: row.depth }, (_, n) => n + 1)].map((n) => (
         <rect

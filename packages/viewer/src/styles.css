@@ -17,7 +17,7 @@
   --fg: #1c2127;
   --muted: #55616f;
   --faint: #5e6876;
-  /* an arrow's words while the arrow steps back (`.edge.is-dim`): 3:1 or more on the canvas (R3-5) */
+  /* an arrow's words while the arrow steps back (`.edge.is-dim`): 3:1 or more on the canvas */
   --edge-label-dim: #7d8591;
   --border: #dbe0e7;
   --border-strong: #bcc5d0;
@@ -55,7 +55,7 @@
   --edge-stub: #7b8794;
   /* The dependency matrix's marks (stripes, the diagonal): 3:1 on the panel, and the numbers 3:1 on them. */
   --matrix-mark: #7b8794;
-  /* Trust is never shown by colour alone (D5): one dash pattern per kind of line, the same in both themes,
+  /* Trust is never shown by colour alone: one dash pattern per kind of line, the same in both themes,
      on the map, the key line and the Key. Heuristic: dashed; mixed: dash-dot; outside the map: dotted. */
   --dash-heuristic: 6 4;
   --dash-mixed: 12 3 2 3;
@@ -454,7 +454,7 @@ code {
   position: relative;
 }
 
-/* Present (U5): the author's "Edit" stays out of the room's sight until the mouse moves (PresentMode
+/* Present: the author's "Edit" stays out of the room's sight until the mouse moves (PresentMode
    `data-pointer`), the header is pointed at, or the keyboard reaches it. */
 .header.is-present .edit-menu {
   transition: opacity 0.15s;
@@ -734,7 +734,7 @@ code {
 }
 
 .tab.is-active {
-  /* (the open view's whole title, U27; the strip scrolls) */
+  /* (the open view's whole title; the strip scrolls) */
   max-width: 64ch;
   background: var(--panel);
   color: var(--fg);
@@ -1153,7 +1153,7 @@ code {
   border-radius: 8px;
 }
 
-/* D9: no code on screen: the code column is the file tree alone (a strip when folded), and the diagram
+/* no code on screen: the code column is the file tree alone (a strip when folded), and the diagram
    takes the rest of the width. (Stacked on a narrow screen, it is the tree and one line under the diagram.) */
 @media (min-width: 901px) {
   .explore:has(> .right > .code-area.is-idle) {
@@ -1508,7 +1508,7 @@ code {
   stroke-width: 2.2;
 }
 
-/* Solid: a dashed box means "outside this map" (ghost) or "outside this code"; linked is not one of those (R3-12). */
+/* Solid: a dashed box means "outside this map" (ghost) or "outside this code"; linked is not one of those. */
 .lg-box.is-related {
   fill: var(--related-soft);
   stroke: var(--related);
@@ -1729,7 +1729,7 @@ code {
   font-weight: 650;
 }
 
-/* (a phone keeps the toolbar on one row: the count is in the button's title; "+N more" goes too, R3-23:
+/* (a phone keeps the toolbar on one row: the count is in the button's title; "+N more" goes too:
    "Fit all" is the one way to see the rest) */
 @media (max-width: 640px) {
   .pz-fit-count,
@@ -1801,7 +1801,7 @@ code {
 .kind-group {
   --k-hue: 18;
 }
-/* not the purple of an author's arrow (--edge-llm), which means "added by the author" (V2-10) */
+/* not the purple of an author's arrow (--edge-llm), which means "added by the author" */
 .kind-class {
   --k-hue: 246;
 }
@@ -2390,11 +2390,11 @@ code {
   stroke-linecap: round;
 }
 
-/* With something selected, the arrows that do not touch it step back (V2-05): its own arrows read on a busy map. */
+/* With something selected, the arrows that do not touch it step back: its own arrows read on a busy map. */
 .edge.is-dim {
   opacity: 0.22;
 }
-/* ... but their words stay readable (R3-5): the label is not faded, it turns grey (3:1 or more). */
+/* ... but their words stay readable: the label is not faded, it turns grey (3:1 or more). */
 .edge-labels > .edge.is-dim {
   opacity: 1;
 }
@@ -2564,7 +2564,7 @@ code {
   fill: var(--muted);
 }
 
-/* the condition on a halo of the canvas: a lifeline never runs through "[until …]" (U9, N19) */
+/* the condition on a halo of the canvas: a lifeline never runs through "[until …]" */
 .frame-label {
   paint-order: stroke;
   stroke: var(--canvas);
@@ -2582,7 +2582,7 @@ code {
   font-size: 13px;
 }
 
-/* What an alt with arms decides: set apart from the conditions in brackets, which share one tone (R4-17). */
+/* What an alt with arms decides: set apart from the conditions in brackets, which share one tone. */
 .frame-label.frame-title {
   font-style: italic;
   font-weight: 650;
@@ -3899,7 +3899,7 @@ code {
   }
 }
 
-/* D7: a slide whose diagram does not read whole at the 12px floor gets the width it asks for
+/* a slide whose diagram does not read whole at the 12px floor gets the width it asks for
    (PresentMode `--diagram-need`, the widest its step asked for), up to 65% of the screen; the code gives
    the room. A diagram still too big then starts on the step's focus, "Fit all" in sight. */
 @media (min-width: 641px) {
@@ -3911,7 +3911,7 @@ code {
   }
 }
 
-/* present (U5): the Edit menu (a presenter's tools, not the audience's) shows once the mouse moves over the
+/* present: the Edit menu (a presenter's tools, not the audience's) shows once the mouse moves over the
    page, or when it has the keyboard focus, like the zoom buttons. */
 .app:has(> .present:not([data-pointer])) .header .edit-menu:not(:focus-within) {
   opacity: 0;
@@ -3978,7 +3978,7 @@ code {
 }
 
 /* present: the zoom toolbar sits in the diagram's title bar (PanZoom ToolbarSlot), off the picture: "Fit all"
-   never covers a box, fitted or not (D9). It keeps its width while hidden, so the title does not move. */
+   never covers a box, fitted or not. It keeps its width while hidden, so the title does not move. */
 .present .caption-tools {
   flex: none;
   margin-left: auto;
@@ -4012,7 +4012,7 @@ code {
   opacity: 0;
 }
 
-/* D7: while part of the diagram is out of sight, "Fit all" stays on the slide, alone (the other buttons
+/* while part of the diagram is out of sight, "Fit all" stays on the slide, alone (the other buttons
    come with the mouse): the room sees that there is more, and the presenter needs no hover to show it. */
 .present .pz-toolbar:has(> .pz-fit.is-cue) {
   opacity: 1;
@@ -4025,7 +4025,7 @@ code {
   visibility: hidden;
 }
 
-/* present (N10): a lower level names its parent box once ("xpl ›"), not every level above it: the title
+/* present: a lower level names its parent box once ("xpl ›"), not every level above it: the title
    is the one thing the room reads. */
 .present .diagram-caption .zoom-trail > span:not(:last-child) {
   display: none;
@@ -4038,7 +4038,7 @@ code {
   content: " ›";
 }
 
-/* present on a phone or a touch screen (R3-25): no pointer to reveal the toolbar, so "Fit all" shows, alone
+/* present on a phone or a touch screen: no pointer to reveal the toolbar, so "Fit all" shows, alone
    (the other buttons would cover the slide); the title bar is the title, without the question. */
 @media (max-width: 640px), (hover: none) {
   .present .pz-toolbar {
@@ -5006,7 +5006,7 @@ code {
 .graph-author summary {
   cursor: pointer;
 }
-/* D9: Explore's diagram can take most of the width: "Edit map" stays by the title, clear of the panels that
+/* Explore's diagram can take most of the width: "Edit map" stays by the title, clear of the panels that
    open over the right of the page (Jobs, Search), and its controls open to the right of it. */
 .explore .diagram-caption > .caption-question {
   order: 2;
@@ -5311,7 +5311,7 @@ code {
   opacity: 1;
 }
 
-/* ── Diagrams (round-1 diagram work): the key line, quiet stubs, the toolbar on a phone, step numbers, the
+/* ── Diagrams: the key line, quiet stubs, the toolbar on a phone, step numbers, the
    parts panel ("On this map"). ─────────────────────────────────────────────────────────────────────────── */
 
 /* The map's canvas takes what the key line above it leaves. */
@@ -5562,7 +5562,7 @@ code {
 }
 
 /* A map as a dependency matrix (MatrixView.tsx): a row and a numbered column per box, the arrows in the cells.
-   Trust by fill, never by colour alone (D5): solid where the code was found, stripes where it was matched by
+   Trust by fill, never by colour alone: solid where the code was found, stripes where it was matched by
    name, long stripes where partly, an outline for the author's arrow, a dotted outline outside the map. The
    stripes and the diagonal use --matrix-mark (3:1 on the panel, contrast.test.ts). The table scrolls in its
    own frame; the headers stay in sight and are opaque, so cells never show through them. */
@@ -5952,7 +5952,7 @@ code {
   .matrix-row {
     max-width: 128px;
   }
-  /* V4-07: the tools on a row of their own, the key folded behind its button, so the grid's rows show */
+  /* the tools on a row of their own, the key folded behind its button, so the grid's rows show */
   .matrix-bar {
     flex-wrap: wrap;
     padding: 6px 8px;
@@ -5977,7 +5977,7 @@ code {
   }
 }
 
-/* N18: "Skip to the content", the first stop of the Tab key; out of sight until it has the focus. */
+/* "Skip to the content", the first stop of the Tab key; out of sight until it has the focus. */
 .skip-link {
   position: absolute;
   left: 8px;
@@ -5992,7 +5992,7 @@ code {
 .skip-link:focus {
   top: 8px;
 }
-/* R4-25: the area the skip link moves the focus to takes it without a ring around the whole page (the next
+/* the area the skip link moves the focus to takes it without a ring around the whole page (the next
    Tab goes on from there). */
 .app > main[tabindex="-1"]:focus {
   outline: none;

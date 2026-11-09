@@ -2870,7 +2870,7 @@ function pathFrames(
         withCalls.length === 1 && withCalls[0]!.arm.implicit ? withCalls[0]!.arm : undefined;
       // a guard that returns with no drawn call (`if err != nil { return err }`) frames nothing: the code after it
       // is the path itself. One that skips the rest of a loop body (`if (!job) { sleep(); continue }`) makes that
-      // rest an opt, so the skip is not lost (viz V5-11).
+      // rest an opt, so the skip is not lost.
       const skips = guard?.leavesWith === "continue" || guard?.leavesWith === "break";
       if (guard && !skips) continue;
       inFrame = withCalls.flatMap((a) => a.calls);

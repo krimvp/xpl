@@ -129,7 +129,7 @@ function Shell() {
 
   return (
     <div className="app" data-mode={state.mode}>
-      {/* N18: the first Tab offers a jump past the header to the guide, the diagram or the slide. */}
+      {/* the first Tab offers a jump past the header to the guide, the diagram or the slide. */}
       <a className="skip-link" href="#" onClick={skipToContent}>
         Skip to the content
       </a>

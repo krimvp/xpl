@@ -11,7 +11,7 @@ import { makeBundle } from "./world.js";
 
 describe("the caption of a talk", () => {
   it("takes at most 40% of the column, and leaves the diagram 200px, or 45% of a very short column", () => {
-    // 1280x720: a 659px column: 40% of it (D9)
+    // 1280x720: a 659px column: 40% of it
     expect(captionCap(659, 40)).toBe(264);
     // 853x480 with a two-row header: a 384px column, 40% of it is less than what the diagram leaves
     expect(captionCap(384, 34)).toBe(154);

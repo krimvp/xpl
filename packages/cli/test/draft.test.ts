@@ -211,7 +211,7 @@ describe.each(Object.keys(ENTRIES))("xpl draft on %s", (fixture) => {
     for (const step of tour.slice(2, -1)) {
       expect(steps.map((s) => s.id)).toContain(step.focus[0]);
     }
-    // and last, where to go next: on the map, with no box focused (structure R4-07)
+    // and last, where to go next: on the map, with no box focused
     expect(tour.at(-1)!.note).toContain("Where to go next");
     expect(tour.at(-1)!.focus).toEqual([]);
   });

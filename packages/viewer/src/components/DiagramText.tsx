@@ -13,8 +13,8 @@ type Props =
 
 /**
  * What the diagram draws, as lists: each box and arrow is a button that shows its code. A sequence lists its
- * steps in reading order with its frames and their arms among them (V4-08); a data map nests each table's
- * fields under it, in code order, and names a field's arrow "Queue.ready holds Job" (V4-14).
+ * steps in reading order with its frames and their arms among them; a data map nests each table's
+ * fields under it, in code order, and names a field's arrow "Queue.ready holds Job".
  */
 export function DiagramText(props: Props) {
   const store = useStore();
@@ -28,7 +28,7 @@ export function DiagramText(props: Props) {
   if ("graph" in props) {
     const { graph } = props;
     heading = "Boxes";
-    // in the map's reading order (the parts list's and the matrix's), a box's insides under it (N17); a
+    // in the map's reading order (the parts list's and the matrix's), a box's insides under it; a
     // table's fields in code order, each with its type
     const byId = new Map(graph.nodes.map((node) => [node.id, node]));
     const depthOf = (id: string): number => {

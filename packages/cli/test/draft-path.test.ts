@@ -342,7 +342,7 @@ describe("xpl draft path: too many calls", () => {
     expect(view.participants).toContain("sym:store.py#Store");
     const left = notes.find((n) => n.startsWith("calls left out of the sequence"))!;
     expect(left).toContain("the ones that reach the least code");
-    // bare names, as a reader writes them (R4-08)
+    // bare names, as a reader writes them
     expect(left.match(/(?<!#)\bJob\.step\d+/g)).toHaveLength(2);
     expect(left).not.toContain("sym:");
   });
@@ -358,10 +358,10 @@ describe("xpl draft path: loops and branches", () => {
     const label = (id: string) => view.steps!.find((s) => s.id === id)!.label;
     const frames = view.frames!.map((f) => `${f.kind} ${label(f.fromStep)}..${label(f.toStep)}`);
     // the while loop holds every call. `if (result.ok) { ack; continue }` leaves early: the retry code after it is its
-    // else (D8), so ack and the retry branch are two arms of one alt, and requeue and deadLetter are two arms inside
+    // else, so ack and the retry branch are two arms of one alt, and requeue and deadLetter are two arms inside
     // the second one, not calls that run after ack
     // `if (!job) { sleep; continue }` draws no call (sleep is a library function), so the rest of the loop body is an
-    // opt whose label says the guard skips it (viz V5-11)
+    // opt whose label says the guard skips it
     expect(frames).toEqual([
       "loop pop()..deadLetter(job, result.error)",
       "opt lease()..deadLetter(job, result.error)",
@@ -381,7 +381,7 @@ describe("xpl draft path: loops and branches", () => {
       ["`if (result.ok)`", "requeue(job, backoff)..deadLetter(job, result.error)"],
     ]);
     expect(view.frames![2]!.arms![1]!.label).toMatch(/^TODO: otherwise, .*leaves early/);
-    // the frame names the decision; only its arms quote the code (structure R4-06: no text asked for twice)
+    // the frame names the decision; only its arms quote the code (no text asked for twice)
     expect(view.frames![3]!.label).not.toContain("`");
     expect(arms(3)).toEqual([
       [
@@ -403,17 +403,17 @@ describe("xpl draft path: loops and branches", () => {
       "requeue(job, backoff)",
       "deadLetter(job, result.error)",
     ]);
-    // the success outcome keeps a step of its own (an opt or alt arm outweighs a plain call: structure R4-04)
+    // the success outcome keeps a step of its own (an opt or alt arm outweighs a plain call)
     const ack = view.steps!.find((s) => s.label === "ack(job)")!.id;
     const ackStep = tour.find((s) => s.focus.length === 1 && s.focus[0] === ack)!;
-    // nested branches get different headings: the outer one is about the arm it holds (structure R5-04)
+    // nested branches get different headings: the outer one is about the arm it holds
     expect(ackStep.note!.split("\n")[0]).toBe(
       "### TODO: what happens in this arm (the code: `if (result.ok)`), as a plain statement",
     );
     expect(branch.note!.split("\n")[0]).toBe(
       "### TODO: what this branch decides, as a plain statement",
     );
-    // a log line is drawn, but a call that changes state gets the tour step first (viz V5-06)
+    // a log line is drawn, but a call that changes state gets the tour step first
     const step = (name: string) => view.steps!.find((s) => s.label.startsWith(name))!.id;
     expect(tour.some((s) => s.focus.includes(step("log(")))).toBe(false);
     expect(tour.some((s) => s.focus.includes(step("lease(")))).toBe(true);
@@ -440,7 +440,7 @@ describe("xpl draft path: loops and branches", () => {
       "Lease(ctx)",
     ]);
     expect(view.frames![2]!.arms![0]!.label).toContain("`if result.OK()`");
-    // `result.OK()` is the alt's own guard and a one-line check: no step, no lifeline (viz V5-06)
+    // `result.OK()` is the alt's own guard and a one-line check: no step, no lifeline
     expect(view.steps!.map((s) => s.label)).not.toContain("OK()");
     expect(view.participants).not.toContain("sym:internal/worker/worker.go#Result");
   });

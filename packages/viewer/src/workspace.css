@@ -83,7 +83,7 @@
 .switch-notice:empty {
   padding: 0;
 }
-/* D9: "Show code" with nothing selected: no empty code column, one line says how to fill it. */
+/* "Show code" with nothing selected: no empty code column, one line says how to fill it. */
 .code-waiting {
   margin: 0;
   color: var(--muted);
@@ -934,7 +934,7 @@
   font-size: 11px;
   overflow-wrap: anywhere;
 }
-/* R4-4, R5-3: the Tour keeps its right column for every step of a tour that has related files; a step with
+/* the Tour keeps its right column for every step of a tour that has related files; a step with
    none lists where its own code is. On a phone the step's card shows that code already: no bar for it. */
 .related-files.is-own-code ul {
   margin: 0;
@@ -1182,7 +1182,7 @@
   font-size: 13px;
   pointer-events: none;
 }
-/* V2-07: the step's words at 14 units, the actor line under them at 13 (flowLayout sizes the box to them; 13 is
+/* the step's words at 14 units, the actor line under them at 13 (flowLayout sizes the box to them; 13 is
    the smallest flow text, which Present's zoom is set for) */
 .flow-stage .flow-stage-label {
   font-size: 14px;
@@ -1339,7 +1339,7 @@
   .workspace-source {
     min-height: 450px;
   }
-  /* R5-8: no code open yet (the Code tab on arrival): the file list gets the room, the hint its own height. */
+  /* no code open yet (the Code tab on arrival): the file list gets the room, the hint its own height. */
   .workspace-source:has(.editor-stack.is-empty) {
     min-height: 0;
   }
@@ -1497,7 +1497,7 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-/* R5-N1: the code before a change reads as removed lines, as in the code pane. */
+/* the code before a change reads as removed lines, as in the code pane. */
 .guide-source pre.is-before {
   border-left: 3px solid var(--danger);
   background: color-mix(in srgb, var(--danger) 7%, transparent);
@@ -1549,7 +1549,7 @@
   text-align: left;
 }
 
-/* r3-frame (R3-2): on a phone the diagram gets most of the screen (55% or more of its height). The caption
+/* on a phone the diagram gets most of the screen (55% or more of its height). The caption
    keeps its levels and title; its question, "Inside …" links, picker and "Explore all diagrams" sit behind
    "About this map". The key line goes (the toolbar's Key says it all), and the topic column under the diagram
    starts below it, its first line peeking in at the bottom. */
@@ -1562,9 +1562,9 @@
   .workspace-caption {
     padding: 12px 16px;
   }
-  /* R4-21: a chevron says whether the details are open (aria-expanded says it to a screen reader). The
-     disclosure shows only when it hides more than "Explore all diagrams" (R4-24); the diagram picker
-     always stays in sight, under the title, as wide as the caption (R4-22, R4-23). */
+  /* a chevron says whether the details are open (aria-expanded says it to a screen reader). The
+     disclosure shows only when it hides more than "Explore all diagrams"; the diagram picker
+     always stays in sight, under the title, as wide as the caption. */
   .workspace-caption.has-about .caption-about {
     display: inline-flex;
     align-items: center;
@@ -1610,7 +1610,7 @@
     height: max(62vh, 320px);
   }
 }
-/* r3-frame (R3-3): in the Tour the right column shows only when it has something for the step on screen
+/* in the Tour the right column shows only when it has something for the step on screen
    (related files, or a box picked from the step); otherwise the text takes its width. The Code tab with
    nothing selected gives the code that width too. */
 .workspace:is([data-perspective="guide"], [data-perspective="code"]) .workspace-context:empty {
@@ -1621,7 +1621,7 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
-/* R5-4: in a Tour picture the lifeline names kept at the top hide what scrolled under them completely. */
+/* in a Tour picture the lifeline names kept at the top hide what scrolled under them completely. */
 .guide-snapshot .sticky-band {
   opacity: 1;
 }

@@ -53,7 +53,7 @@ const TRUST: Record<DerivedEdge["resolution"], string> = {
 };
 
 /**
- * The matrix's key: a cell's fill says its trust, never its colour alone (DECISIONS D5). Solid is found in the
+ * The matrix's key: a cell's fill says its trust, never its colour alone. Solid is found in the
  * code, stripes are matched by name (the map's dash), long stripes are partly matched, an outline is added by
  * the author, a dotted outline leads outside the map. The words are the map's key line's.
  */
@@ -101,7 +101,7 @@ export function MatrixView({
   const [pos, setPos] = useState<Pos>(() => firstCell(cells));
   const [hot, setHot] = useState<Pos>();
   const [textMode, setTextMode] = useState(false);
-  // On a phone the key's words fold behind a "Key" button, so the grid gets the frame (V4-07); wider, they
+  // On a phone the key's words fold behind a "Key" button, so the grid gets the frame; wider, they
   // always show and the button is not drawn (styles.css).
   const [keyOpen, setKeyOpen] = useState(false);
   const keyId = useId();

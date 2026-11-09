@@ -2573,7 +2573,7 @@ function structureChecks(lint: Linter, explainer: Explainer): void {
     });
   }
 
-  // say it once: a note copied from a step of another tour (S-03)
+  // say it once: a note copied from a step of another tour
   const seen: { id: string; tourId: string; words: string[] }[] = [];
   for (const { tourId, step } of steps) {
     const note = str(step.note);

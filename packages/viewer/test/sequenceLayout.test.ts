@@ -207,7 +207,7 @@ describe("layoutSequence", () => {
     );
   });
 
-  // V4-10, V4-08, V4-09: Tab went to every arm's condition before step 1, and the text view left the frames out
+  // Tab went to every arm's condition before step 1, and the text view left the frames out
   it("reads a frame's name, then each arm's condition before its steps, in the order they are drawn", () => {
     const { model: m, view } = model((v) => {
       v.steps = [

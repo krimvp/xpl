@@ -362,7 +362,7 @@ describe("analyzeChange", () => {
   });
 
   it("a test reaches a symbol through one of its callers, or by building the class of a method", () => {
-    // `serves` calls App.serve, which calls the changed App.helper: one call between them (newcomer R5-S1)
+    // `serves` calls App.serve, which calls the changed App.helper: one call between them
     const helper = analysis.symbols[1]!;
     expect(helper.tests).toEqual([
       expect.objectContaining({

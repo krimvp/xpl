@@ -50,7 +50,7 @@ export function GuideSource({
     [links],
   );
   const total = links.length;
-  // R5-N1: the reader pages through the step's code links (the code before a change among them).
+  // the reader pages through the step's code links (the code before a change among them).
   const [picked, setPicked] = useState<number | undefined>(undefined);
   const textOf = (candidate: { focus: FocusRange; base: boolean }) =>
     (candidate.base ? state.baseFiles : state.files)[candidate.focus.file];
@@ -109,7 +109,7 @@ export function GuideSource({
             <code>{file}</code>
             {base && " (before the change)"} · {start === end ? "line" : "lines"} {start}
             {start !== end && `–${end}`}
-            {/* (N12: "(of 44–80)" read as a second range: say how much of the code link this is) */}
+            {/* ("(of 44–80)" read as a second range: say how much of the code link this is) */}
             {(start !== range.startLine || end < range.endLine) &&
               ` (${end - start + 1} of its ${range.endLine - range.startLine + 1} lines)`}
             {total > 1 && ` · code link ${position} of ${total}`}

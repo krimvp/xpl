@@ -61,7 +61,7 @@ describe("xpl index", () => {
     expect(out).toMatch(/typescript\s+8 files\s+\d+ symbols\s+refs: heuristic/);
     expect(out).toMatch(/yaml\s+1 file\s+16 symbols\s+refs: none/);
     expect(index.languages.typescript.refs).toBe("heuristic");
-    // one plain line per limited language under the table; the coverage report waits for --verbose (L5-4)
+    // one plain line per limited language under the table; the coverage report waits for --verbose
     expect(out).toContain(
       "\ntext: file only; no symbols or references.\ntypescript: references matched by name; some can be missing.\n",
     );

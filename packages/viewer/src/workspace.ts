@@ -149,7 +149,7 @@ export function workspaceView(state: ViewerState, type: "map" | "flow"): View | 
 /**
  * The ids a map's first view looks for its first box in (GraphView `order`): the focus of the first tour step
  * on this map (the tour being read first), then the map's include list. A map opened with nothing selected
- * starts on the box the tour starts on, not on whatever box the include list names first (V4-02).
+ * starts on the box the tour starts on, not on whatever box the include list names first.
  */
 export function startOrder(
   model: ExplainerModel,
@@ -179,7 +179,7 @@ function generatedInclude(state: ViewerState): ElementId[] {
 
 /**
  * True when the Map tab has a map to show: one the guide has, or one made of 3 boxes or more. A map of a flow's
- * one or two boxes says less than the flow itself (V6-02).
+ * one or two boxes says less than the flow itself.
  */
 export function hasMapTab(state: ViewerState): boolean {
   return (
@@ -241,7 +241,7 @@ export function workspaceMap(state: ViewerState) {
  * sequence of three steps or more whose code (every step's anchors in the current code) is all in one file, the
  * steps of one function, where the question lives in the code and a big canvas only repeats it (review
  * 2026-10-03, senior §5). A flow with two or more outcomes (terminal steps) is a choice between them: it is
- * drawn as a diagram, where the outcomes sit side by side (a narrow outline cut them off, R5-N2).
+ * drawn as a diagram, where the outcomes sit side by side (a narrow outline cut them off).
  */
 export function codeFirstView(view: View | undefined): boolean {
   if (!view || view.type === "graph") return false;
@@ -306,7 +306,7 @@ export function stepLinks(flow: ProcessFlow, stepId: string): StepLink[] {
 }
 
 /**
- * The direction (right or down) each graph view was first laid out in, for the page's life (R5-5): the Tour's
+ * The direction (right or down) each graph view was first laid out in, for the page's life: the Tour's
  * picture, the Map, Present and Explore draw a view the same way round, and a pane that changes shape (Show
  * code, a wider slide column) changes only the zoom. The first pane a view is drawn in picks it.
  */

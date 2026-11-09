@@ -98,7 +98,7 @@ function statementsOf(block: SyntaxNode): SyntaxNode[] {
 
 /**
  * An `if` with no `else` whose body ends by leaving (`continue`, `return`, `break`, `raise`, `throw`) makes the
- * statements after it in its block an `else`: the arm from the next statement to the block's last one (D8).
+ * statements after it in its block an `else`: the arm from the next statement to the block's last one.
  */
 function implicitElse(node: SyntaxNode, arms: readonly Arm[]): Arm | undefined {
   if (arms.length !== 1) return undefined;

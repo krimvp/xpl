@@ -73,7 +73,7 @@ for (const type of ["sequence", "flow"] as const) {
     await expect
       .poll(() => linesWith(page.locator('[data-file="src/runner.ts"]'), ".xpl-hl"))
       .toEqual([76, 77, 78]);
-    // a sequence's steps are its author's by definition: its text view lists them without saying so (T-10)
+    // a sequence's steps are its author's by definition: its text view lists them without saying so
     if (type === "sequence") await expect(text).not.toContainText("drawn by the author");
     if (type === "flow") {
       await expect(text).toContainText("drawn by the author");

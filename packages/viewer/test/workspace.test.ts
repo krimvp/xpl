@@ -221,7 +221,7 @@ it("restores a step, explicit view, selection and range together", () => {
   });
 });
 
-describe("one direction per view (R5-5)", () => {
+describe("one direction per view", () => {
   // one layer per file, then one per method: long one way and thin the other, so the pane decides
   const graph = () => {
     const bundle = makeBundle();
@@ -242,7 +242,7 @@ describe("one direction per view (R5-5)", () => {
   });
 });
 
-// V6-02: a guide with no map got a made-up "System map" of its flow's one or two boxes, drawn at twice the size
+// a guide with no map got a made-up "System map" of its flow's one or two boxes, drawn at twice the size
 describe("the map a guide without one gets", () => {
   const withoutMap = (participants?: string[]) => {
     const bundle = makeBundle();

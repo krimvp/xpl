@@ -14,7 +14,7 @@ export const PERSPECTIVES: { id: Perspective; label: string; hint: string }[] = 
 export function WorkspaceTabs() {
   const store = useStore();
   const state = useViewerState();
-  // a guide without a map of its own, whose flow has one or two parts: no Map tab (V6-02)
+  // a guide without a map of its own, whose flow has one or two parts: no Map tab
   const map = hasMapTab(state);
   // a guide with no flow or sequence: no Flow tab
   const flow = hasFlowTab(state);
@@ -34,7 +34,7 @@ export function WorkspaceTabs() {
           title={hint}
           onClick={() => {
             // Leaving the Tour while another step than the applied one is on screen: that step is the one
-            // being read, so the tab opens on its diagram and title (R4-5).
+            // being read, so the tab opens on its diagram and title.
             const on = readingStep.current;
             const applied = state.applied;
             if (

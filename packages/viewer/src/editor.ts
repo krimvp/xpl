@@ -954,7 +954,7 @@ export function scrollToLine(view: EditorView, line: number, margin = 44): void 
     effects: EditorView.scrollIntoView(target.from, { y: "start", yMargin: margin }),
   });
   if (view.state.field(diffField) === NO_DIFF) {
-    // The pane starts on a whole line: half of a wrapped line at the top edge reads as a cut (U5).
+    // The pane starts on a whole line: half of a wrapped line at the top edge reads as a cut.
     requestAnimationFrame(() => {
       if (!view.dom.isConnected) return;
       view.requestMeasure({

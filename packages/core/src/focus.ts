@@ -357,7 +357,7 @@ export interface ReverseIndex {
  * `opts.derivedEdges` (from `derivedEdgeMap`) so derived-edge candidates do not rescan the index.
  * An element with several ranges around a line counts with its smallest one. An arrow's "definition" range that
  * is exactly a candidate box's own range is left out: the caret in a drawn box's body lights the box, not every
- * arrow into it (V4-17). The arrow keeps its reference sites, and the definition of an end it draws no box for.
+ * arrow into it. The arrow keeps its reference sites, and the definition of an end it draws no box for.
  */
 export function buildReverseIndex(
   candidateIds: readonly ElementId[],

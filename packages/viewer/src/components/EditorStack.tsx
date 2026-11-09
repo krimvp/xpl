@@ -446,7 +446,7 @@ const EditorPane = memo(function EditorPane({
       diff?.removed
         ?.filter((block) => block.place === "before" && block.at === first)
         .reduce((sum, block) => sum + (block.text ? block.count : 1), 0) ?? 0;
-    // A talk (`wantLines`) shows one whole line above the focus, never a sliver of one (U5): the margin is
+    // A talk (`wantLines`) shows one whole line above the focus, never a sliver of one: the margin is
     // that line's height, wrapped or not.
     const lineAbove =
       first !== undefined && first > 1 && first <= editor.state.doc.lines
@@ -664,7 +664,7 @@ const EditorPane = memo(function EditorPane({
           </span>
         )}
         {/* Shown once lines are selected (a disabled button read as broken), in Explore only (a reader asks
-            with Feedback in the header, R3-15). It keeps its place while hidden: a drag that selects lines
+            with Feedback in the header). It keeps its place while hidden: a drag that selects lines
             must not move the code under the pointer. */}
         {!folded && !reader && (
           <button
@@ -789,7 +789,7 @@ const EditorPane = memo(function EditorPane({
           </div>
         ) : (
           <>
-            {/* Present (R5-6): a markdown code link reads as prose, its own lines only: no raw image
+            {/* Present: a markdown code link reads as prose, its own lines only: no raw image
                 links or headings of the lines around it on a slide. The editor stays, out of sight. */}
             {prose !== undefined && (
               <div

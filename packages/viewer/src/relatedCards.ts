@@ -49,7 +49,7 @@ export function holdsCode(id: ElementId, model: ExplainerModel): boolean {
 
 /**
  * The cards for what is selected, and for the step's own code (`focus`, the code shown). A box that holds
- * other code (a system, a service, a group, a folder) adds only the arrows drawn from or to it (R3-7): a file
+ * other code (a system, a service, a group, a folder) adds only the arrows drawn from or to it: a file
  * read, a setting or a test linked somewhere inside it, or by its own code links, is a fact about that code,
  * not about the whole box, and on the box it reads as a claim about the system ("Its settings are in
  * build.ts"). The rest of the selection (a file, a symbol, an arrow, a concept) and the step's own code links

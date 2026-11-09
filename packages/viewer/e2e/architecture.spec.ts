@@ -103,7 +103,7 @@ test.describe("architecture maps", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(ARCHITECTURE_BUNDLE.href + "?mode=read&perspective=map&view=view:overview");
     await page.waitForFunction(() => window.__xpl !== undefined);
-    // (on a phone the picker stays in sight under the title, R4-22)
+    // (on a phone the picker stays in sight under the title)
     const topic = page.getByRole("combobox", { name: "Choose a diagram" });
     await topic.selectOption("view:completion-path");
     await expect(
@@ -124,7 +124,7 @@ test.describe("architecture maps", () => {
     );
     await page.goto(TS_BUNDLE.href + "?perspective=flow&view=view:dispatch");
     await page.waitForFunction(() => window.__xpl !== undefined);
-    // (a sequence is named as one, N9)
+    // (a sequence is named as one)
     await expect(page.locator(".workspace-caption .eyebrow")).toHaveText("Sequence");
     await expect(page.locator(".workspace-caption")).toContainText(
       "How does a job get from the queue to a worker?",
@@ -301,7 +301,7 @@ test.describe("architecture maps", () => {
       await expect(expand).toBeVisible();
       if (perspective === "map") {
         await expect(expand).toHaveText("Show inside");
-        // the picker stays in sight on a phone, beside the caption's action (R4-22)
+        // the picker stays in sight on a phone, beside the caption's action
         const topic = page.locator(caption).getByRole("combobox", { name: "Choose a diagram" });
         await expect
           .poll(async () => {

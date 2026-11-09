@@ -14,7 +14,7 @@ import {
   type Loose,
 } from "./helpers.js";
 
-// a console error that only one path raises (the keyboard, a phone) fails the test that took it (T-13)
+// a console error that only one path raises (the keyboard, a phone) fails the test that took it
 let problems: string[] = [];
 test.beforeEach(({ page }) => {
   problems = watchProblems(page);
@@ -209,7 +209,7 @@ test("on a phone the map's zoom toolbar, Matrix included, is one row inside the 
   expect(button!.x + button!.width).toBeLessThanOrEqual(390);
 });
 
-// V4-07: at 390 px the key's words filled the matrix's frame beside its tools, and no row showed
+// at 390 px the key's words filled the matrix's frame beside its tools, and no row showed
 test("on a phone the key folds behind its button and at least five rows are in sight", async ({
   page,
 }) => {

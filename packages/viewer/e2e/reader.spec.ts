@@ -493,7 +493,7 @@ test.describe("the reader's screen", () => {
     await expect(first.getByTestId("focus-summary")).toHaveCount(0);
     await expect(first.locator(".guide-mini-node")).toHaveText(["runner.ts", "queue.ts"]);
     // the right-hand column does not say the open section again; no cards for a step that has none (the
-    // tour has some elsewhere, so the column stays and lists the step's own code, R4-4, R5-3)
+    // tour has some elsewhere, so the column stays and lists the step's own code)
     await expect(page.getByTestId("topic-summary")).toHaveCount(0);
     await expect(page.getByRole("region", { name: "Related files" })).toHaveCount(0);
     await expect(page.getByRole("region", { name: "This step's code" })).toBeVisible();
@@ -704,7 +704,7 @@ async function stagesInPane(page: Page): Promise<number> {
   });
 }
 
-test("a Tour step's calls between the same two parts share one card (R5-8)", async ({ page }) => {
+test("a Tour step's calls between the same two parts share one card", async ({ page }) => {
   await openVariant(page, (bundle) => {
     bundle.explainer.tours[0].steps[1].focus = ["dispatch:1", "dispatch:3"];
   });
@@ -714,7 +714,7 @@ test("a Tour step's calls between the same two parts share one card (R5-8)", asy
   await expect(section.locator(".guide-mini-link")).toContainText("pop() · requeue(job, backoff)");
 });
 
-test("the reader's code panes do not offer Ask about selected lines: Explore's do (R3-15)", async ({
+test("the reader's code panes do not offer Ask about selected lines: Explore's do", async ({
   page,
 }) => {
   await openVariant(page, () => undefined, "?perspective=code");

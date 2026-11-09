@@ -327,7 +327,7 @@ Conventions (all packages):
     a symbol kind where the index's kind is not the language's own. A Go struct (indexed `class`) is
     "struct"; a `variable` inside a `class` or `interface` is a "field". `deriveGraph` also gives a value
     declared `const` the word "constant" (read from `DeriveOptions.text`; `export const applyCommand = {…}`
-    was a "variable", V6-02). Absent when the kind is the word.
+    was a "variable"). Absent when the kind is the word.
     The viewer's badge, icon ("S"), Key line, Details badge and parts list use it; CSS keeps the indexed
     kind (`kind-class`).
 
@@ -970,19 +970,19 @@ Tool commands and diagnostic details remain author-facing.
 **Reference sites.** Each pack emits syntactic sites `{ kind, name, qualifier, site }` for calls (including
 `new X()`, composite literals, JSX components, Python decorators), imports without a binding (`import "./x"`,
 `import("./x")`, `require("./x")`; a declarator `const { a } = await import("./x")` or `= require("./x")`
-binds `a` as an import, also inside a function, so calls to `a` resolve), `extends` / `implements` (Python class bases and Go embedded fields are
-`extends`), type positions (`type-ref`), assignments to fields and module variables (`write`) and reads
-(`read`): a use of a module- or package-level variable or constant (`LIMIT`, `config.LIMIT`), or of a field of
-a value whose type is known (`this.queue`, `job.attempts`), that is not a call, a target or a declaration.
-Locals and parameters are not references: the pack leaves out a bare name that a function, block, loop,
-`catch`, comprehension or class body around the use binds, and the resolver decides the rest (only variables
-and fields count; in both modes a function or method used as a value, such as a callback or Go
-method value, remains a `read`, which does not establish invocation or recursion. A class or enum used as a value, such as `x instanceof C`,
-`isinstance(x, C)` or `Color.Red`, is a `type-ref`, as in precise mode). A Python `metaclass=M` is a `type-ref`. A call or assignment spanning more than
-10 lines is reported by its callee or target only. `from` is not given by the pack: the framework takes the
-innermost symbol containing the site's start (line and column), else the module scope `"<file>#"`.
-`classifySite(ctx, line, col)` applies the same rules to one position, so SCIP occurrences are classified
-exactly like sites.
+binds `a` as an import, also inside a function, so calls to `a` resolve), `extends` / `implements` (Python
+class bases and Go embedded fields are `extends`), type positions (`type-ref`), assignments to fields and
+module variables (`write`) and reads (`read`): a use of a module- or package-level variable or constant
+(`LIMIT`, `config.LIMIT`), or of a field of a value whose type is known (`this.queue`, `job.attempts`), that
+is not a call, a target or a declaration. Locals and parameters are not references: the pack leaves out a bare
+name that a function, block, loop, `catch`, comprehension or class body around the use binds, and the resolver
+decides the rest (only variables and fields count; in both modes a function or method used as a value, such as
+a callback or Go method value, remains a `read`, which does not establish invocation or recursion. A class or
+enum used as a value, such as `x instanceof C`, `isinstance(x, C)` or `Color.Red`, is a `type-ref`, as in
+precise mode). A Python `metaclass=M` is a `type-ref`. A call or assignment spanning more than 10 lines is
+reported by its callee or target only. `from` is not given by the pack: the framework takes the innermost
+symbol containing the site's start (line and column), else the module scope `"<file>#"`. `classifySite(ctx,
+line, col)` applies the same rules to one position, so SCIP occurrences are classified exactly like sites.
 
 **Heuristic resolution** (`src/resolve/heuristic.ts`), for a site `qualifier.name`, in order:
 
@@ -1208,7 +1208,7 @@ id wins (validation reports the duplicates).
   anchors: each site as `call-site` (calls) or `usage`, plus each target's definition, at most 50 of each,
   never stored. A derived `implements` or `extends` edge whose head is no type (a file, a folder, a group)
   is labelled "implements an interface in" / "extends a type in": "Job queue implements Runner" on a folder
-  map read as if the queue were a kind of runner (R6-R3); the parts list says "has an interface implemented
+  map read as if the queue were a kind of runner; the parts list says "has an interface implemented
   by" at the other end. Go has no inheritance: a derived `extends` edge from a Go file or symbol (an embedded
   field or interface element) is labelled "embeds" between types and "embeds a type in" otherwise.
 - **Stored edges** are shown whatever their `kind`, when both ends are represented in the view. One whose id
@@ -1623,11 +1623,11 @@ name is omitted and print `using <name>` to stderr (`change`: a lone argument th
 range). With several guides they list the names; with none they point to `xpl new`. `new` and `apply` still
 need an explicit name. Each `--help` is short: the usage, the summary, at most 8 lines of prose (a kind table
 of `draft` has a row per kind besides), one line per option, and a last line that points to `cli.md` and the
-docs site, which hold the rest (`cli.test.ts` checks it). Output is compact and copy-pasteable, for Claude as much as for people: exact ids,
-`<line> <offset>│ code` with the 0-based offsets
-that spans use, `+34..36` for the span of a reference site. `--json` on every command prints `{ "ok": true,
-…, "warnings"? }`; errors print `{ "ok": false, "error", … }`. Results, issue lists and patch rejections go to
-stdout (a rejection exits 1); fatal errors (`error: …`) and warnings (`warning: …`) go to stderr.
+docs site, which hold the rest (`cli.test.ts` checks it). Output is compact and copy-pasteable, for Claude as
+much as for people: exact ids, `<line> <offset>│ code` with the 0-based offsets that spans use, `+34..36` for
+the span of a reference site. `--json` on every command prints `{ "ok": true, …, "warnings"? }`; errors print
+`{ "ok": false, "error", … }`. Results, issue lists and patch rejections go to stdout (a rejection exits 1);
+fatal errors (`error: …`) and warnings (`warning: …`) go to stderr.
 
 | Command | Does |
 |---|---|
@@ -1753,9 +1753,10 @@ textconv); git is only read, never written. The record is written under the expl
 `index`, and nothing is written when it is unchanged. Base anchors that no longer match the new base are
 counted in a warning. Then it prints the analysis (§4.8): the files with `+/-` counts, each changed symbol
 outside tests with its lines, callers (at most 8 listed, `--json` has all), callers via an instance (a guess)
-and tests (marked `through <caller>` or `builds its class; a guess` when not direct), the changed lines outside any symbol, the test files the change touches with their new and changed
-tests, and the symbols with no test. Without a range it re-prints the analysis of the stored record. `--json`:
-`{ ok, path, written, change, analysis, omissions }`.
+and tests (marked `through <caller>` or `builds its class; a guess` when not direct), the changed lines
+outside any symbol, the test files the change touches with their new and changed tests, and the symbols with
+no test. Without a range it re-prints the analysis of the stored record. `--json`: `{ ok, path, written,
+change, analysis, omissions }`.
 
 `xpl search` delegates matching, source ordering, line counts and symbol attribution to core `query`.
 CLI `--under` still resolves targets and globs with suggestions; CLI text comes from the working tree.
@@ -1876,66 +1877,65 @@ it to a file; `--json` adds the counts and what was left out.
   type (`import type`, an annotation) is not one. The change enters at a caller; with none outside tests, at
   the changed public function closest to callers. The tests step names the symbols no test reaches and shows
   the changed test files apart. Step ids are `t10`, `t20`, ... so an inserted step fits between two.
-- `repo`: two levels. A system map (`view:system`): the project as one service group (`role: service`,
-  members = the parts), or one `dir:` box per program when `services/`, `apps/` or `cmd/` (at the root or
-  under `src`) hold two or more; who reaches it (web and CLI frameworks, `role: person`) and what it relies on
-  (database drivers and ORMs, caches, queues, file stores, HTTP clients and SDKs), found from the import lines
-  of code files (`outside.ts`: a catalog per language family, including Java imports and Maven group IDs)
-  and drawn as groups with a role, a `tech` and no
-  members, anchored at one import line per part that imports them. Each service box `opens` the map of its
-  inside: 4-8 parts (top-level folders with code, a single root folder opened, tests, docs, examples and dot
-  folders left out; label and summary TODOs) plus the outside systems they use, with an `llm` edge (`kind:
-  custom`, label TODO) from each part to each system it imports, anchored at that import. `excludeFiles` for
-  tests and docs on both. The tour: the system map, what it relies on, the inside of the biggest service,
-  then one step per part, the main part first, inside the skill's repo budget (`DRAFT_LIMITS.repoSteps`, 9
-  steps with where next) less `PATH_ROOM` (2) for the main path and its risks, which a note says to draft
-  with `xpl draft path` on the main part's top function: when the parts do not fit, the parts with the fewest
-  references share one step. A part's step shows the functions and methods other parts call most, then its
-  top symbols. With no `loads` resource, a settings file (yaml, json, toml, ini, env; not a manifest) that
-  the code names in a string literal is the Settings box's lead. A new tour's steps are numbered after the
-  highest `t<n>` of the guide's tours (`continueStepIds`), so a step copied between tours keeps its own id. A file that
-  imports a standard-library web server module and also calls what starts it (`ListenAndServe`,
-  `createServer`, `serve_forever`; `outside.ts` `SERVER_STARTS`) adds the inbound Clients at that line, since
-  the import alone (`net/http` is also a client) proves nothing. Only a program with no inbound system and no
-  library shape gets an Operator (`role: person`) at its `main` (a Java `main` method of a top-level class
-  too), with one arrow to each part that holds one. When imported outbound systems appear, the saved patch
-  asks whether each is on the default runtime path or is optional. The service and outside boxes keep their
-  ids across drafts. A code file qualifies as a part when any indexed declaration in it has a substantive
-  kind, including a class or method inside a Ruby module or PHP namespace. Imports, namespace wrappers and
-  constants alone do not qualify; tests remain excluded. A `refs: none` index supplies no cross-file call
-  arrows. Imports in comments, JSDoc examples and docstrings, and imports of the project itself, name no
-  outside system. With several services, code outside them (a shared `internal/store`) is a box on the
-  map of each service that uses it. When files are left off an inside map, its first step lists them with the
-  box each shares the most references with.
+- `repo`: two levels. A system map (`view:system`): the project as one service group (`role: service`, members
+  = the parts), or one `dir:` box per program when `services/`, `apps/` or `cmd/` (at the root or under `src`)
+  hold two or more; who reaches it (web and CLI frameworks, `role: person`) and what it relies on (database
+  drivers and ORMs, caches, queues, file stores, HTTP clients and SDKs), found from the import lines of code
+  files (`outside.ts`: a catalog per language family, including Java imports and Maven group IDs) and drawn as
+  groups with a role, a `tech` and no members, anchored at one import line per part that imports them. Each
+  service box `opens` the map of its inside: 4-8 parts (top-level folders with code, a single root folder
+  opened, tests, docs, examples and dot folders left out; label and summary TODOs) plus the outside systems
+  they use, with an `llm` edge (`kind: custom`, label TODO) from each part to each system it imports, anchored
+  at that import. `excludeFiles` for tests and docs on both. The tour: the system map, what it relies on, the
+  inside of the biggest service, then one step per part, the main part first, inside the skill's repo budget
+  (`DRAFT_LIMITS.repoSteps`, 9 steps with where next) less `PATH_ROOM` (2) for the main path and its risks,
+  which a note says to draft with `xpl draft path` on the main part's top function: when the parts do not fit,
+  the parts with the fewest references share one step. A part's step shows the functions and methods other
+  parts call most, then its top symbols. With no `loads` resource, a settings file (yaml, json, toml, ini,
+  env; not a manifest) that the code names in a string literal is the Settings box's lead. A new tour's steps
+  are numbered after the highest `t<n>` of the guide's tours (`continueStepIds`), so a step copied between
+  tours keeps its own id. A file that imports a standard-library web server module and also calls what starts
+  it (`ListenAndServe`, `createServer`, `serve_forever`; `outside.ts` `SERVER_STARTS`) adds the inbound
+  Clients at that line, since the import alone (`net/http` is also a client) proves nothing. Only a program
+  with no inbound system and no library shape gets an Operator (`role: person`) at its `main` (a Java `main`
+  method of a top-level class too), with one arrow to each part that holds one. When imported outbound systems
+  appear, the saved patch asks whether each is on the default runtime path or is optional. The service and
+  outside boxes keep their ids across drafts. A code file qualifies as a part when any indexed declaration in
+  it has a substantive kind, including a class or method inside a Ruby module or PHP namespace. Imports,
+  namespace wrappers and constants alone do not qualify; tests remain excluded. A `refs: none` index supplies
+  no cross-file call arrows. Imports in comments, JSDoc examples and docstrings, and imports of the project
+  itself, name no outside system. With several services, code outside them (a shared `internal/store`) is a
+  box on the map of each service that uses it. When files are left off an inside map, its first step lists
+  them with the box each shares the most references with.
 - `path <entry>`: a sequence of the calls the entry symbol makes (depth 1, source order, at most 6
-  participants and 12 calls), and a tour inside the skill's budget for a question (`DRAFT_LIMITS.pathSteps`,
-  8 steps with the map, the big picture and where next): the main calls share the steps that are left.
-  Frames come from the entry's syntax tree (`control-blocks.ts`, one walk over node types the TS/JS, Python,
-  Go, Java and Rust grammars share): a `loop` around the calls in a loop, an `alt` around a branch whose
-  calls sit in two or more arms, an `opt` around a branch with calls in one arm, at most 5, outermost first.
-  An early exit (D8, item 25): an `if` with no `else` whose body ends in `continue`, `return`, `break`,
-  `raise` or `throw` gets one more arm, `implicit`, from the next statement of its block to the block's last
-  one, and the branch ends there. When only that arm draws calls, a guard that returns, raises or throws
-  (`if err != nil { return }`) has no frame; one that leaves with `continue` or `break` (TS `if (!job) {
-  sleep(); continue }`, a library call) makes the rest an `opt` whose label says the guard skips it, and the
-  rest's calls stay single tour steps. A frame's label is a TODO for the decision; an `opt`'s quotes the deciding code, and an
-  `alt` gets `arms`, one per arm of the branch that has calls, each with a TODO label that quotes its
-  condition (`ControlBlock.arms[].condition`; "otherwise" for an `else`). An arm runs from its first call to
-  the call before the next arm, so the arms split the frame's steps. An arm starts at the column of its body,
-  so a call that computes the condition on the arm's first line (Go's `if err := r.queue.Ack(job); err !=
-  nil {`) runs before the frame; a branch whose arms draw no call has none. A one-line callee that calls
-  nothing, called in a branch's condition before its body (Go's `if result.OK() {`), is not drawn: the
-  guard says it. In the tour, the outermost `alt`/`opt` around a call is its step's branch, except the
-  implicit arm, whose calls are the main path; such a step's heading is about the arm it holds ("what
-  happens in this arm (the code: ...)"), so it differs from the branch inside the implicit arm. When the
-  calls outnumber the steps, an `alt` keeps its step first, then an `opt`, then the call that reaches the
-  most code; a log call (`LOG_CALL`: `log`, `logf`, `debug`, `print`, ...) ranks last. The last step, where
-  to go next, focuses nothing. Left out of the sequence, each with a note: one-line helpers of the entry's
-  class or file that call nothing, and conversions to a type or data built from a class with no constructor
-  (Go's `nodeTyp(t)`). A summary names the subclasses that override a called method. Several entries
-  (`path <explainer> <id> <id2>`) give one sequence each and one tour through them. A method a class
-  inherits starts at the base that defines it (a note says which); its calls to methods of the class and its
-  bases go where the class's method order finds them (a mixin's override).
+  participants and 12 calls), and a tour inside the skill's budget for a question (`DRAFT_LIMITS.pathSteps`, 8
+  steps with the map, the big picture and where next): the main calls share the steps that are left. Frames
+  come from the entry's syntax tree (`control-blocks.ts`, one walk over node types the TS/JS, Python, Go, Java
+  and Rust grammars share): a `loop` around the calls in a loop, an `alt` around a branch whose calls sit in
+  two or more arms, an `opt` around a branch with calls in one arm, at most 5, outermost first. An early exit
+  (item 25): an `if` with no `else` whose body ends in `continue`, `return`, `break`, `raise` or `throw` gets
+  one more arm, `implicit`, from the next statement of its block to the block's last one, and the branch ends
+  there. When only that arm draws calls, a guard that returns, raises or throws (`if err != nil { return }`)
+  has no frame; one that leaves with `continue` or `break` (TS `if (!job) { sleep(); continue }`, a library
+  call) makes the rest an `opt` whose label says the guard skips it, and the rest's calls stay single tour
+  steps. A frame's label is a TODO for the decision; an `opt`'s quotes the deciding code, and an `alt` gets
+  `arms`, one per arm of the branch that has calls, each with a TODO label that quotes its condition
+  (`ControlBlock.arms[].condition`; "otherwise" for an `else`). An arm runs from its first call to the call
+  before the next arm, so the arms split the frame's steps. An arm starts at the column of its body, so a call
+  that computes the condition on the arm's first line (Go's `if err := r.queue.Ack(job); err != nil {`) runs
+  before the frame; a branch whose arms draw no call has none. A one-line callee that calls nothing, called in
+  a branch's condition before its body (Go's `if result.OK() {`), is not drawn: the guard says it. In the
+  tour, the outermost `alt`/`opt` around a call is its step's branch, except the implicit arm, whose calls are
+  the main path; such a step's heading is about the arm it holds ("what happens in this arm (the code: ...)"),
+  so it differs from the branch inside the implicit arm. When the calls outnumber the steps, an `alt` keeps
+  its step first, then an `opt`, then the call that reaches the most code; a log call (`LOG_CALL`: `log`,
+  `logf`, `debug`, `print`, ...) ranks last. The last step, where to go next, focuses nothing. Left out of the
+  sequence, each with a note: one-line helpers of the entry's class or file that call nothing, and conversions
+  to a type or data built from a class with no constructor (Go's `nodeTyp(t)`). A summary names the subclasses
+  that override a called method. Several entries (`path <explainer> <id> <id2>`) give one sequence each and
+  one tour through them. A method a class inherits starts at the base that defines it (a note says which); its
+  calls to methods of the class and its bases go where the class's method order finds them (a mixin's
+  override).
 - `class <entry>` (`draft-class.ts`): the type hierarchy around a class or interface. Up: the targets of the
   entry's `extends` and `implements` references, breadth first, at most 6. Down: the symbols whose `extends` or
   `implements` references point at it, two levels, the map at most 8 boxes. One graph view with `edgeKinds:
@@ -2080,16 +2080,17 @@ field, a short quote and a fix. Rules (thresholds and word lists live in `LINT_L
 - Form: `flow-label-code` (a flow stage label written as code), `markdown-in-plain` (markdown in a title or
   label), `markdown-in-summary` (a heading or link in a summary; inline markdown is fine there).
 - What readers will see: `untitled-step` (no note, or no heading and a first sentence too long for a title),
-  `change-not-shown` (changed files whose code no step shows; docs, tests, lock files and renames may be
-  named instead), `far-ranges` (a step whose ranges in one file make more than 3 places over 40 lines apart:
-  Present's panes per file), `long-talk-note` (a talk note over Present's `LONG_NOTE`), `big-map` (over 8 boxes on
-  a map a tour shows), `many-participants` (over 6 participants on a sequence a tour shows), `crowded-map` (over 2
-  arrows per box, with the edge ids to hide; needs the index), and `system-map-no-edges` (an architecture map with a
-  non-component role, at least two visible boxes and no visible relationships; needs the index). This advisory asks
-  the author to check for source-backed relationships. It does not add edges or assert that any relationship exists.
-  `map-box`: a box a graph view draws with its summary (`boxText: "summary"`, the explain map) whose label is
-  over `mapLabelWords` (5) words, or whose summary is over `mapSummaryChars` (130) characters or starts with an
-  article, "This", "It" or the file's own name instead of a verb.
+  `change-not-shown` (changed files whose code no step shows; docs, tests, lock files and renames may be named
+  instead), `far-ranges` (a step whose ranges in one file make more than 3 places over 40 lines apart:
+  Present's panes per file), `long-talk-note` (a talk note over Present's `LONG_NOTE`), `big-map` (over 8
+  boxes on a map a tour shows), `many-participants` (over 6 participants on a sequence a tour shows),
+  `crowded-map` (over 2 arrows per box, with the edge ids to hide; needs the index), and `system-map-no-edges`
+  (an architecture map with a non-component role, at least two visible boxes and no visible relationships;
+  needs the index). This advisory asks the author to check for source-backed relationships. It does not add
+  edges or assert that any relationship exists. `map-box`: a box a graph view draws with its summary
+  (`boxText: "summary"`, the explain map) whose label is over `mapLabelWords` (5) words, or whose summary is
+  over `mapSummaryChars` (130) characters or starts with an article, "This", "It" or the file's own name
+  instead of a verb.
 
 `--patch <file|->` merges the patch in memory with core `applyPatch`, the call `xpl apply` makes, so the
 findings are those of the explainer after apply; nothing is written. `--json`: `{ ok, path, strict, checked,
@@ -2876,116 +2877,115 @@ ready pages and draft previews; an export decision never retargets a request to 
   title, its `summary` (markdown), then, for a change, **Files in this change** (below), then one section per
   step. A section has its title, the rest of its note, an inline **picture** of the step's view and the
   interaction or parts it focuses ("This call", one card for the calls between the same two parts, "These
-  calls"; "inside X: label" for a step within one part, "In the code": one chip per name and code, and a
-  name that is still there twice gets its diagram's title after it), its **Tests**, and the step's buttons. The picture (`Snapshot.tsx`) is a still drawing of the
-  view framed on the step's focus, with the same shapes as the live diagram and no clicks or ids; "Open in
-  Map" or "Open in Flow" opens the live one. A map picture draws no dashed boxes for code outside the map. A
-  sequence picture is framed as the live sequence is (`sequenceFocus.ts`): each focused arrow with both
-  lifelines it joins, the frames around it from their top when within 360 units (an `alt` from its first
-  arm's condition, R6-2; else the arm's own line; a long loop's name only when there is room), and room above
-  for the participant names, which stay at its top when it starts lower down (`StickyHeads`, on an opaque
-  band), so no label sits under them. The frame then slides, within what the focus leaves, to cut as few
-  arrows (end to end with their words) as it can, and of two places that cut as many, takes the one that
-  holds more arrows whole (`Focus.fill`): it never starts mid-label, nor on an empty lifeline beside the
-  arrows. Every lifeline is one of the boxes not to cut, so a side does not cut a participant's name in half
-  where a place that cuts none exists. A map picture slides the same way past every box and group
-  frame. A focused lifeline brings its own arrows in while there is room. The excerpt's caption says how much of
-  its code link it shows ("lines 44–55 (12 of its 37 lines)"). A picture is laid out only when its section
-  comes near the screen (an IntersectionObserver), and once per view. Tests (`stepTests.ts`) are the test code
-  the step's focus points at (`test` anchors, and focused code in test files), one entry per test function,
-  gathered in one list. A focused group without code links of its own gives only the tests of its members
-  that are test code (a test file, a group of tests), not those deep inside a bigger member (R6-P2). The summaries of the focused elements only stand in for a missing note. A tour picker
-  sits above the title when there are several tours. The Guide opens at its top, except a link to a stable
-  step ID scrolls to that section and focuses its heading. Each section has a link named for its step that
-  preserves the selected guide, and a selected section offers Continue from this step in Present, including
-  after same-page Search navigation. Opening a file in the source pane keeps focus there; it does not refocus
-  the heading. A missing step ID falls back to the guide start with an explanation; its old numeric position
-  does not substitute for the removed step. A missing tour still shows the explanation when no tours remain.
-  Each section shows a source excerpt beside its prose (stacked in narrow sections). `stepSelection`
-  reuses the full code view's checked focus, including explicit `step.code` and before-change anchors.
-  The step's most telling code link (a definition first) supplies at most 12 lines; "code link 2 of 3"
-  numbers it in the step's own order, and ‹ › page through the others (R5-N1), the code before a change
-  among them, marked as removed lines (`pre.is-before`). "Show code" opens the shown range and its
-  before/head side. Missing, drifted or unavailable
-  source is stated instead of guessed. Source text comes from the bundle or the existing file loader.
+  calls"; "inside X: label" for a step within one part, "In the code": one chip per name and code, and a name
+  that is still there twice gets its diagram's title after it), its **Tests**, and the step's buttons. The
+  picture (`Snapshot.tsx`) is a still drawing of the view framed on the step's focus, with the same shapes as
+  the live diagram and no clicks or ids; "Open in Map" or "Open in Flow" opens the live one. A map picture
+  draws no dashed boxes for code outside the map. A sequence picture is framed as the live sequence is
+  (`sequenceFocus.ts`): each focused arrow with both lifelines it joins, the frames around it from their top
+  when within 360 units (an `alt` from its first arm's condition; else the arm's own line; a long loop's name
+  only when there is room), and room above for the participant names, which stay at its top when it starts
+  lower down (`StickyHeads`, on an opaque band), so no label sits under them. The frame then slides, within
+  what the focus leaves, to cut as few arrows (end to end with their words) as it can, and of two places that
+  cut as many, takes the one that holds more arrows whole (`Focus.fill`): it never starts mid-label, nor on an
+  empty lifeline beside the arrows. Every lifeline is one of the boxes not to cut, so a side does not cut a
+  participant's name in half where a place that cuts none exists. A map picture slides the same way past every
+  box and group frame. A focused lifeline brings its own arrows in while there is room. The excerpt's caption
+  says how much of its code link it shows ("lines 44–55 (12 of its 37 lines)"). A picture is laid out only
+  when its section comes near the screen (an IntersectionObserver), and once per view. Tests (`stepTests.ts`)
+  are the test code the step's focus points at (`test` anchors, and focused code in test files), one entry per
+  test function, gathered in one list. A focused group without code links of its own gives only the tests of
+  its members that are test code (a test file, a group of tests), not those deep inside a bigger member. The
+  summaries of the focused elements only stand in for a missing note. A tour picker sits above the title when
+  there are several tours. The Guide opens at its top, except a link to a stable step ID scrolls to that
+  section and focuses its heading. Each section has a link named for its step that preserves the selected
+  guide, and a selected section offers Continue from this step in Present, including after same-page Search
+  navigation. Opening a file in the source pane keeps focus there; it does not refocus the heading. A missing
+  step ID falls back to the guide start with an explanation; its old numeric position does not substitute for
+  the removed step. A missing tour still shows the explanation when no tours remain. Each section shows a
+  source excerpt beside its prose (stacked in narrow sections). `stepSelection` reuses the full code view's
+  checked focus, including explicit `step.code` and before-change anchors. The step's most telling code link
+  (a definition first) supplies at most 12 lines; "code link 2 of 3" numbers it in the step's own order, and ‹
+  › page through the others, the code before a change among them, marked as removed lines (`pre.is-before`).
+  "Show code" opens the shown range and its before/head side. Missing, drifted or unavailable source is stated
+  instead of guessed. Source text comes from the bundle or the existing file loader.
 - **Map** and **Flow**: the authored graph view, or flow or sequence view, that best matches the selection
   (`workspace.ts`), with a picker of the others (closed, it reads "Other maps (N)" or "Other flows (N)", not
-  the title above it again, U19; the one shown is marked "(shown)" in its list). The heading shows the selected view's `scope.question` when
-  supplied and says "Sequence" for a sequence view, so the reader can tell a structural question from a
-  time-ordered one. Without a graph view the Map is generated from the flow's participants (else the top
-  level of the repo), titled `Parts of “<flow title>”` (`GENERATED_MAP_ID`), fitted at zoom 1 or less; when
-  it would draw fewer than 3 boxes there is no Map tab (`hasMapTab`, V6-02). A guide with no flow or sequence
-  view has no Flow tab (`hasFlowTab`; a list of the tour's steps under the name "Flow" only repeated the Tour),
-  and the line above "About this guide" names only the tabs the page shows (`tabsLine`). Count labels on edges (`calls ×N`,
-  stubs) are quiet: shown on hover or when an edge or one of its ends is selected. A stub's dotted line is
-  drawn only while its box or its ghost is picked, matched or hovered, or the stub itself is selected (not for
-  a merely related box: a selected arrow relates both ends); its ghost box always is. A hidden stub has no
-  keyboard stop. Guide pictures and Present follow the same rule. With something selected, the arrows that
-  touch none of it are dimmed (`is-dim`; `GraphView` `litBoxes`: the selected boxes, the boxes inside them,
-  the ends of a selected arrow); their labels are not faded but turn grey (`--edge-label-dim`, 3:1 or more
-  on the canvas in both themes). A line under the caption (`Legend.tsx` `KeyLine`) names the marks the map
-  draws now, each drawn with the Key's own classes: the arrow kinds when it mixes them (a map of calls alone
-  names "calls" when the line shows anything else, so an arrow without words has one, R6-3), authored, found,
-  matched by name, partly matched, and "code outside this map" (the dashed ghost box; the dotted stub line
-  only while one is drawn). On a phone it is one row that scrolls sideways. Reader boxes drop the group,
-  directory and symbol badges. A reader map starts whole only when that reads at zoom 0.75 or more; else it
-  starts on its focus at that zoom, with "Fit all". A flow with nothing picked starts on its first step; a
-  code-first outline also picks that step, so the code pane shows its code.
-- **Code**: the editors and the file tree. On the other tabs "Show code" opens the code beside them. D9:
-  on the Map and the Flow the code column waits for code to show. While nothing is selected (no box, no caret,
+  the title above it again; the one shown is marked "(shown)" in its list). The heading shows the selected
+  view's `scope.question` when supplied and says "Sequence" for a sequence view, so the reader can tell a
+  structural question from a time-ordered one. Without a graph view the Map is generated from the flow's
+  participants (else the top level of the repo), titled `Parts of “<flow title>”` (`GENERATED_MAP_ID`), fitted
+  at zoom 1 or less; when it would draw fewer than 3 boxes there is no Map tab (`hasMapTab`). A guide with no
+  flow or sequence view has no Flow tab (`hasFlowTab`; a list of the tour's steps under the name "Flow" only
+  repeated the Tour), and the line above "About this guide" names only the tabs the page shows (`tabsLine`).
+  Count labels on edges (`calls ×N`, stubs) are quiet: shown on hover or when an edge or one of its ends is
+  selected. A stub's dotted line is drawn only while its box or its ghost is picked, matched or hovered, or
+  the stub itself is selected (not for a merely related box: a selected arrow relates both ends); its ghost
+  box always is. A hidden stub has no keyboard stop. Guide pictures and Present follow the same rule. With
+  something selected, the arrows that touch none of it are dimmed (`is-dim`; `GraphView` `litBoxes`: the
+  selected boxes, the boxes inside them, the ends of a selected arrow); their labels are not faded but turn
+  grey (`--edge-label-dim`, 3:1 or more on the canvas in both themes). A line under the caption (`Legend.tsx`
+  `KeyLine`) names the marks the map draws now, each drawn with the Key's own classes: the arrow kinds when it
+  mixes them (a map of calls alone names "calls" when the line shows anything else, so an arrow without words
+  has one), authored, found, matched by name, partly matched, and "code outside this map" (the dashed ghost
+  box; the dotted stub line only while one is drawn). On a phone it is one row that scrolls sideways. Reader
+  boxes drop the group, directory and symbol badges. A reader map starts whole only when that reads at zoom
+  0.75 or more; else it starts on its focus at that zoom, with "Fit all". A flow with nothing picked starts on
+  its first step; a code-first outline also picks that step, so the code pane shows its code.
+- **Code**: the editors and the file tree. On the other tabs "Show code" opens the code beside them.
+  On the Map and the Flow the code column waits for code to show. While nothing is selected (no box, no caret,
   no file opened) the diagram keeps the width and one line says "Click a box, an arrow or a step to see its
   code." (`code-waiting`); the column comes with the first selection, and the diagram re-fits once. On a
   phone with no file open, the Code tab gives the file list its whole height and the hint its own. On a phone
   (one column, 760 px or less) the Map or Flow tab opens at the top of its diagram with the code closed, even
-  when the Tour step had opened code (R6-4); "Show code" or a tap brings it back.
+  when the Tour step had opened code; "Show code" or a tap brings it back.
 
-Beside the tabs: a breadcrumb (the guide's title, then the open step's title or the selected element; on a
-Map or Flow with nothing selected, the title alone: the caption's levels and heading say where the reader is),
+Beside the tabs: a breadcrumb (the guide's title, then the open step's title or the selected element; on a Map
+or Flow with nothing selected, the title alone: the caption's levels and heading say where the reader is),
 Back and Forward through what was read, "Read its explanation" (jumps to the guide step that best covers the
 selection), and a right rail: the selected element's summary (eyebrow "Selected", or "In this step" while a
 tour step is applied; hidden while a guide section is the topic). In the Tour the rail is decided once per
-tour (R4-4: the text never changes width while the reader scrolls): a tour with related files for any step
-keeps it for every step. In the Tour the rail has one name, "This step's code": where the step's own
-code is (one file and its first lines per row, a click opens it; hidden on a phone, where the step's card
-shows that code and no bar is left for it, R5-3), then the files it relates to; a box picked from a step
-gets "Related files". A tour with none has no rail unless a box is picked from a step
-(`.workspace-context:empty`); the Code tab with nothing selected has no empty rail either. J and K
-step through the Tour (`Guide.tsx`; not in a text field, the code or a menu), as the list of steps says.
-Escape clears the selection on the Map and Flow tabs as in Explore (the Tour's is its step's). The step being read is the last one
-whose top has passed the middle of the Tour; leaving the Tour for another tab applies that step, so the tab
-opens on its diagram and its title. A step's buttons (Show code, Link to this step, Present from this step)
-come after its text and code. The first Tab stop of every page is "Skip to the content", which moves the
-focus to the main area (no ring around it). With nothing picked the rail shows "On this map"
-(`PartsPanel.tsx`, rows from `parts.ts`): the map's boxes in the matrix's order (`boxOrder`, below) with the
-first sentence of their summary and the boxes of this map they use and are used by, by name ("uses worker.ts",
-"used by main.ts and test"; past two, "uses 3 boxes here"; code outside the map does not count). The verb is
-the arrow's: a field "holds Job" and its type is "held by Queue.ready" (a row named with its table; past two,
-"held by 3 fields here"), "implements JobQueue", "extends Base". "Named
-arrows" (those with an author's label), or the numbered steps of a flow or sequence under one heading, "Steps,
-in order". A file's kind is left to its badge; a group says "group of N"; a table's row says "field" and its
-type ("field · Job[]"). A row picks its element; a row under the pointer or the keyboard lights its element on
-the diagram (`is-hover`); a caret in its code marks the row (`is-match`). On a phone it sits under the
-diagram, which is at least 62% of the screen's height (the canvas 55% or more on a 390×844 phone): the caption
-keeps its levels, title and diagram picker, and its question, "Inside …" links and "Explore all diagrams" sit
-behind "About this map" (or flow; a Flow with nothing selected also has "Steps, in order ↓", which scrolls to
-the list under the canvas, R6-3; a turning chevron, `aria-expanded` and `aria-controls`; no disclosure when
-the caption has no question or links to hide); the key line is left out (the toolbar's Key holds it), and so
-is "+N more". Sequence arrows and flow steps carry their number (a circle at the arrow's start, on the step's
-corner): the one the parts list uses. On a phone the zoom toolbar sits above the canvas, not over it. On a
-map, a selected box lists the visible incoming and outgoing arrows, including dashed arrows to boxes outside
-the view, with their other end, relationship label or kind and aggregated count (a dashed box that several
-boxes link to adds "(of 13 in all)", its own total). A selected arrow's heading has a line above it with its
-two ends and how it was found ("CLI → Indexer · heuristic: matched by name"). While an arrow is selected, a
-reader's map draws no lines out of the map but the selected one's: its ends are selected as related boxes and
-would otherwise bring theirs back. Fully shown arrows distinguish authored text, overlays on precise/heuristic
-references, and indexed facts; boundary arrows say that the other end is outside this map. The list shows six
-rows before "Show more"; the related files (`relatedFiles`: config, `resources`, tests; hidden when there are
-none; a box that holds other code adds only the arrows drawn from or to it, never a file read or a setting
-linked inside it or by its own code links, `readerCards`; the step's own code links keep theirs; in the Tour
-they follow the step scrolled to) and, under "Where this is in the code", the details in reader form: no ids,
-provenance or author actions, and roles in plain words ("defined here", "called here", "used here", "setting",
-"test"). The URL keeps `?perspective=<tab>&view=<id>&tour=<id>&step=<n>&focus=<id>…` in step, so a link lands
-on the same place.
+tour (so the text never changes width while the reader scrolls): a tour with related files for any step keeps
+it for every step. In the Tour the rail has one name, "This step's code": where the step's own code is (one
+file and its first lines per row, a click opens it; hidden on a phone, where the step's card shows that code
+and no bar is left for it), then the files it relates to; a box picked from a step gets "Related files". A
+tour with none has no rail unless a box is picked from a step (`.workspace-context:empty`); the Code tab with
+nothing selected has no empty rail either. J and K step through the Tour (`Guide.tsx`; not in a text field,
+the code or a menu), as the list of steps says. Escape clears the selection on the Map and Flow tabs as in
+Explore (the Tour's is its step's). The step being read is the last one whose top has passed the middle of the
+Tour; leaving the Tour for another tab applies that step, so the tab opens on its diagram and its title. A
+step's buttons (Show code, Link to this step, Present from this step) come after its text and code. The first
+Tab stop of every page is "Skip to the content", which moves the focus to the main area (no ring around it).
+With nothing picked the rail shows "On this map" (`PartsPanel.tsx`, rows from `parts.ts`): the map's boxes in
+the matrix's order (`boxOrder`, below) with the first sentence of their summary and the boxes of this map they
+use and are used by, by name ("uses worker.ts", "used by main.ts and test"; past two, "uses 3 boxes here";
+code outside the map does not count). The verb is the arrow's: a field "holds Job" and its type is "held by
+Queue.ready" (a row named with its table; past two, "held by 3 fields here"), "implements JobQueue", "extends
+Base". "Named arrows" (those with an author's label), or the numbered steps of a flow or sequence under one
+heading, "Steps, in order". A file's kind is left to its badge; a group says "group of N"; a table's row says
+"field" and its type ("field · Job[]"). A row picks its element; a row under the pointer or the keyboard
+lights its element on the diagram (`is-hover`); a caret in its code marks the row (`is-match`). On a phone it
+sits under the diagram, which is at least 62% of the screen's height (the canvas 55% or more on a 390×844
+phone): the caption keeps its levels, title and diagram picker, and its question, "Inside …" links and
+"Explore all diagrams" sit behind "About this map" (or flow; a Flow with nothing selected also has "Steps, in
+order ↓", which scrolls to the list under the canvas; a turning chevron, `aria-expanded` and `aria-controls`;
+no disclosure when the caption has no question or links to hide); the key line is left out (the toolbar's Key
+holds it), and so is "+N more". Sequence arrows and flow steps carry their number (a circle at the arrow's
+start, on the step's corner): the one the parts list uses. On a phone the zoom toolbar sits above the canvas,
+not over it. On a map, a selected box lists the visible incoming and outgoing arrows, including dashed arrows
+to boxes outside the view, with their other end, relationship label or kind and aggregated count (a dashed box
+that several boxes link to adds "(of 13 in all)", its own total). A selected arrow's heading has a line above
+it with its two ends and how it was found ("CLI → Indexer · heuristic: matched by name"). While an arrow is
+selected, a reader's map draws no lines out of the map but the selected one's: its ends are selected as
+related boxes and would otherwise bring theirs back. Fully shown arrows distinguish authored text, overlays on
+precise/heuristic references, and indexed facts; boundary arrows say that the other end is outside this map.
+The list shows six rows before "Show more"; the related files (`relatedFiles`: config, `resources`, tests;
+hidden when there are none; a box that holds other code adds only the arrows drawn from or to it, never a file
+read or a setting linked inside it or by its own code links, `readerCards`; the step's own code links keep
+theirs; in the Tour they follow the step scrolled to) and, under "Where this is in the code", the details in
+reader form: no ids, provenance or author actions, and roles in plain words ("defined here", "called here",
+"used here", "setting", "test"). The URL keeps `?perspective=<tab>&view=<id>&tour=<id>&step=<n>&focus=<id>…`
+in step, so a link lands on the same place.
 
 **Step titles** (`stepTitle.ts`) are the same everywhere a step is named: the Guide's contents and headings,
 the breadcrumb, the Flow tab's step list, the tour panel and the Present caption. A note that starts with a
@@ -2998,23 +2998,22 @@ note). `xpl lint` reports such a step (`untitled-step`).
 
 **Explore.** The header holds the view tabs (the tooltip of a tab is its title and question) and the Views
 menu. Left: the diagram (caption: title and question), below it the concept list and the details panel. Right:
-the code, the file tree (collapsible; files outside the focus are greyed `is-dimmed`, files in it `is-focus`; a
-static bundle lists only the files it embeds, with a footer "N of M files are in this page. To add the rest,
-run xpl bundle --files all", `tree-foot`; under `xpl view` every indexed file is listed and loaded when opened) beside the stack of
-CodeMirror editors (language modes for TS/TSX/JS, Python, Go, Java, YAML and JSON; Rust, Ruby, PHP, TOML and other
-text are plain).
-Both splits (diagram / code, details / code) are resizable. Below 900 px the halves stack. D9: while no
-code is on screen the right column is the file tree alone, with "Click a box, an arrow or a step to see its
-code." under it (`code-idle`), and the diagram takes the rest of the width; the first selection or file
-brings the editors back at the split's width. The diagram keeps the height (V6-01): Concepts are one
-line under it (`lower-folded`: the concepts as chips with their names, the summary on hover, and until the
-first selection "Select a box, an arrow, a step or a concept to see what it is."), so a tall sequence or flow
-opens whole at 1440×900 (a diagram row of about 740 px, not 464). The first selection brings Details, at the
-top of the code column (`.right.has-details`, `--lower-height` tall); the file tree stays beside the code
-(it greys the files outside the focus). The pane keeps its height and re-fits once, on what was selected
-(PanZoom's first view follows the pane). Clearing the selection keeps Details, so the diagram does not move
-again. "Ask about selected lines" in a code pane's header is
-Explore's alone (a reader asks with Feedback).
+the code, the file tree (collapsible; files outside the focus are greyed `is-dimmed`, files in it `is-focus`;
+a static bundle lists only the files it embeds, with a footer "N of M files are in this page. To add the rest,
+run xpl bundle --files all", `tree-foot`; under `xpl view` every indexed file is listed and loaded when
+opened) beside the stack of CodeMirror editors (language modes for TS/TSX/JS, Python, Go, Java, YAML and JSON;
+Rust, Ruby, PHP, TOML and other text are plain). Both splits (diagram / code, details / code) are resizable.
+Below 900 px the halves stack. While no code is on screen the right column is the file tree alone, with "Click
+a box, an arrow or a step to see its code." under it (`code-idle`), and the diagram takes the rest of the
+width; the first selection or file brings the editors back at the split's width. The diagram keeps the height:
+Concepts are one line under it (`lower-folded`: the concepts as chips with their names, the summary on hover,
+and until the first selection "Select a box, an arrow, a step or a concept to see what it is."), so a tall
+sequence or flow opens whole at 1440×900 (a diagram row of about 740 px, not 464). The first selection brings
+Details, at the top of the code column (`.right.has-details`, `--lower-height` tall); the file tree stays
+beside the code (it greys the files outside the focus). The pane keeps its height and re-fits once, on what
+was selected (PanZoom's first view follows the pane). Clearing the selection keeps Details, so the diagram
+does not move again. "Ask about selected lines" in a code pane's header is Explore's alone (a reader asks with
+Feedback).
 
 **Diagram text alternative** (`components/DiagramText.tsx`, `PanZoom.textView`): every live map,
 sequence and flow has a **Text view** toggle beside its Key. It replaces the picture with native lists and
@@ -3048,21 +3047,22 @@ stripes and fill for mixed, an outline for `llm` and `user`. `mixed` means preci
 one cell; two authored arrows in one cell take the weaker word (`joinTrust`: heuristic, mixed, user, llm,
 static, precise). The stripes and the diagonal cells use `--matrix-mark`, 3:1 on the panel in both themes
 (`contrast.test.ts`); a count sits on a plate of the panel colour (`.matrix-count`), so stripes never run
-through its digits, and the grid is centred in its pane. When the cells hold kinds with more than one arrowhead, each cell shows them as the
-map's heads (▸ calls, ▹ extends and implements, › imports and references) and the key names them. A last
-column "Out" sums each box's lines out of the map, and a last row "Outside this map" sums the lines into each
-box from code the map does not draw: a click selects those stubs. The accessible name of a cell is the map's
-words: "CLI → Indexer: buildIndex, writeIndex, … (imports ×36). heuristic (matched by name)". A data map's
-matrix folds each table's rows into the table: one row and column per type, and a cell names its fields
-("Queue → Job: holds (ready, inflight)"; its number counts them, `MatrixCell.fields`, and its name adds no
-"(references ×2)"). One `extends` or `implements` arrow says its kind without "×1" (`kindCount`), on the
-map, in the matrix, Details and the text view; its Details say "queue.Queue implements JobQueue" (Go:
-"embeds", core's label) with no count of references, and the Key keys Go's embedded types as "embeds".
-On a data map a row's type names the table it holds as the map names it (`rowTypeText`: "runner.Config",
-not "Config"), a type drawn as one box (a folded table, an interface) spreads its arrows at least 16 px apart
-on a side (`spreadPorts` `roomy`), a selected table lists its rows' arrows under "Arrows on this map" ("To
-Job holds (field job)") and the tables it holds or is held by are marked linked (`heldTables`). A draft's "TODO: … (now: anchors.ts)" label
-shows as "anchors.ts (TODO)", so the rows differ where the header cuts them.
+through its digits, and the grid is centred in its pane. When the cells hold kinds with more than one
+arrowhead, each cell shows them as the map's heads (▸ calls, ▹ extends and implements, › imports and
+references) and the key names them. A last column "Out" sums each box's lines out of the map, and a last row
+"Outside this map" sums the lines into each box from code the map does not draw: a click selects those stubs.
+The accessible name of a cell is the map's words: "CLI → Indexer: buildIndex, writeIndex, … (imports ×36).
+heuristic (matched by name)". A data map's matrix folds each table's rows into the table: one row and column
+per type, and a cell names its fields ("Queue → Job: holds (ready, inflight)"; its number counts them,
+`MatrixCell.fields`, and its name adds no "(references ×2)"). One `extends` or `implements` arrow says its
+kind without "×1" (`kindCount`), on the map, in the matrix, Details and the text view; its Details say
+"queue.Queue implements JobQueue" (Go: "embeds", core's label) with no count of references, and the Key keys
+Go's embedded types as "embeds". On a data map a row's type names the table it holds as the map names it
+(`rowTypeText`: "runner.Config", not "Config"), a type drawn as one box (a folded table, an interface) spreads
+its arrows at least 16 px apart on a side (`spreadPorts` `roomy`), a selected table lists its rows' arrows
+under "Arrows on this map" ("To Job holds (field job)") and the tables it holds or is held by are marked
+linked (`heldTables`). A draft's "TODO: … (now: anchors.ts)" label shows as "anchors.ts (TODO)", so the rows
+differ where the header cuts them.
 
 The order (`boxOrder`, shared with the parts list and the text view; a table's rows in code order): level by
 level of the container tree, a box comes before
@@ -3085,23 +3085,23 @@ grid drawn as SVG for the moment it takes, dashed outlines standing in for the s
 map's `DiagramText`). The map's key line is hidden while the matrix shows.
 
 **Save image** (`image.ts`, `PanZoom.imageName`): the zoom toolbar of every live map, sequence and flow has
-"Save image" after its Key. It downloads `<view title>.png` (characters a file system refuses become `-`):
-the whole diagram at its own size plus 16 units of margin, not the part the viewport shows, at 2 pixels per
-unit (less when a side would pass 16384 px). The diagram is styled by CSS tokens, which an SVG drawn as an
-image does not see, so each element of a copy gets the computed values of its paint properties (fill,
-stroke, opacity, font, text anchor and the like), and the copy is drawn on the pane's background colour:
-the image looks like the screen in either theme, with the selection, trace and match marks it shows. The
-sticky participant heads of a sequence (an overlay) are left out; the heads drawn at the top are in. It
-fetches nothing, so it works in an offline bundle.
-**Diagram keyboard navigation** (`components/PanZoom.tsx`): focus the canvas and press Enter to
-focus its first element. Up/Down cycle through the drawn elements in reading order; Home/End go to the
-first/last. A map's own boxes come before the boxes outside it (`tabOrder`), so Tab starts inside the map. Left/Right follow incoming/outgoing relationships: maps and sequences move through an arrow
-and its source or target; flows move through a link between connected stages. Flow stages come before
-links in keyboard reading order, while the SVG paints links behind them. When there is more than one link, the first
-in drawing order is followed; Up/Down reach the other links. Enter/Space select the focused element and
-show its checked code through the same path as a click. Focused elements are panned into view. Escape
-returns to the canvas without changing selection; Tab and Shift+Tab retain their normal page order.
-Canvas arrow keys still pan, and +/- and 0 still zoom and fit. A focus hint announces these keys.
+"Save image" after its Key. It downloads `<view title>.png` (characters a file system refuses become `-`): the
+whole diagram at its own size plus 16 units of margin, not the part the viewport shows, at 2 pixels per unit
+(less when a side would pass 16384 px). The diagram is styled by CSS tokens, which an SVG drawn as an image
+does not see, so each element of a copy gets the computed values of its paint properties (fill, stroke,
+opacity, font, text anchor and the like), and the copy is drawn on the pane's background colour: the image
+looks like the screen in either theme, with the selection, trace and match marks it shows. The sticky
+participant heads of a sequence (an overlay) are left out; the heads drawn at the top are in. It fetches
+nothing, so it works in an offline bundle. **Diagram keyboard navigation** (`components/PanZoom.tsx`): focus
+the canvas and press Enter to focus its first element. Up/Down cycle through the drawn elements in reading
+order; Home/End go to the first/last. A map's own boxes come before the boxes outside it (`tabOrder`), so Tab
+starts inside the map. Left/Right follow incoming/outgoing relationships: maps and sequences move through an
+arrow and its source or target; flows move through a link between connected stages. Flow stages come before
+links in keyboard reading order, while the SVG paints links behind them. When there is more than one link, the
+first in drawing order is followed; Up/Down reach the other links. Enter/Space select the focused element and
+show its checked code through the same path as a click. Focused elements are panned into view. Escape returns
+to the canvas without changing selection; Tab and Shift+Tab retain their normal page order. Canvas arrow keys
+still pan, and +/- and 0 still zoom and fit. A focus hint announces these keys.
 
 **Graph authoring** (`components/GraphAuthor.tsx`): Explore's stored graph views offer **Edit map** beside
 the caption. Shift-click sibling boxes, name the group and explicitly group them. Ungroup removes the
@@ -3113,161 +3113,154 @@ edits and HTML/JSON export. Successful graph edits and inverses clear selections
 shows. Text/evidence editing and source refresh keep their existing source-focus behavior. Evidence draft
 status stays in the sticky Save/Cancel bar, including the disabled Save reason.
 
-- **Graph view:** a layered layout (dagre, `layout/layered.ts`), direction RIGHT, or DOWN when the pane is taller than wide; when the result
-  would have to be scaled down to fit, the other direction is tried too (graphs of at most 150 elements) and
-  kept if it fits at least 8% larger. The first pane a view is drawn in decides its direction for the page's
-  life (`workspace.ts layoutView`, R5-5): the Tour's picture, the Map and Explore draw a view the same way
-  round, and a pane that changes shape (Show code) changes only the zoom. A slide picks its own (D7 turns a
-  map in the wider column it asks for). The
-  direction is on the graph as `data-direction`. Containers
-  for nested includes, laid out inside-out with room for their header; an edge that crosses a container's
-  border gets a port there (a node of its own in the container's first or last layer), so the part inside
-  is routed around the boxes; edges routed inside their lowest common container, right-angled, with the ends
-  that share a side of a box spread along it and the turns in one gap between layers on separate tracks.
-  Automatic levels of at most 150 boxes and edges spread ports over 15–85% of a box side when this adds no
-  crossing arrow pairs or edge-box intersections. They shorten a longer route only when the new path clears other
-  boxes by at least 8 diagram units and avoids other arrows.
-  An edge that would leave a container on the side away from its other end is laid out again with that port
-  on the other side (a second pass), so no route runs back through the container. A label sits on a level
-  run of its own route long enough to hold it clear of the bends, else beside a run, touching it, on a side
-  its line does not turn to (`labelOnRoute`, `labelSpans`); only then at dagre's point. At levels with at most
-  150 edges, a label that meets another route's orthogonal segment (stubs do not count), lies partly under a
-  box of its level, or was pushed off its own line by another label tries the same spans, then any point of
-  its route, with four units of clearance from those segments and other labels. It stays inside its level and
-  outside boxes. If no place clears everything, the first one clear of boxes and other labels wins, then the
-  first clear of boxes; a label that is under nothing and at its line keeps the earlier position. A route that
-  runs past the place it next turns to, steps up to 16 units across and runs back (where the parts of an edge
-  routed at two levels meet) turns at that place instead (`dropDetours`). Two arrows between the same two
-  boxes, one each way, are one route (`twinOf`): the second takes the first one's route read backwards, so the
-  line has a head at each end. Each arrow's `own` half (the half that ends at its head) carries its label, its
-  hit path, its keyboard ring and its anchor. The two labels sit off the line, 3 units from it, one on each
-  side (`besideLine`: the first above a level line or left of an upright one, the twin below or right), so
-  two short labels never read as one ("← calls ×3 calls ×1 →", V6-03). Larger levels keep prior label placement to bound layout time;
-  larger and pinned levels keep port spacing and routing rules.
-  `GraphView.layout` replaces automatic positions at each
-  container level before sizing its parent. Pins are finite logical coordinates relative to the rendered container,
-  or to the canvas for roots. Negative child coordinates expand the container frame to the left/top
-  without translating those children or changing saved pins. Routes reconnect to the moved frames;
-  unpinned siblings yield space when a pin occupies their old position. Changed levels discard stale
-  dagre tracks and detour around other boxes. Live maps, Reader and Guide
-  pictures share those positions and bounds, including offline HTML. Hidden pins stay stored until
-  restored; opening a map inside another uses the outer map's pins. Each stored level has its own layout.
-  A selected box in Explore has a move handle: drag previews locally, release writes one `editGraph`
-  pin through author history; Enter pins here and arrow keys move by 20 px. The focused handle stays
-  mounted while a save disables its actions. Escape, pointer cancellation and selection changes discard
-  the local preview without an edit.
-  **Edit map** resets selected/all placement to automatic layout with the same undo. Pan/zoom remain
+- **Graph view:** a layered layout (dagre, `layout/layered.ts`), direction RIGHT, or DOWN when the pane is
+  taller than wide; when the result would have to be scaled down to fit, the other direction is tried too
+  (graphs of at most 150 elements) and kept if it fits at least 8% larger. The first pane a view is drawn in
+  decides its direction for the page's life (`workspace.ts layoutView`): the Tour's picture, the Map and
+  Explore draw a view the same way round, and a pane that changes shape (Show code) changes only the zoom. A
+  slide picks its own (a map that does not read whole at the 12px floor turns in the wider column it asks
+  for). The direction is on the graph as `data-direction`. Containers for nested includes, laid out inside-out
+  with room for their header; an edge that crosses a container's border gets a port there (a node of its own
+  in the container's first or last layer), so the part inside is routed around the boxes; edges routed inside
+  their lowest common container, right-angled, with the ends that share a side of a box spread along it and
+  the turns in one gap between layers on separate tracks. Automatic levels of at most 150 boxes and edges
+  spread ports over 15–85% of a box side when this adds no crossing arrow pairs or edge-box intersections.
+  They shorten a longer route only when the new path clears other boxes by at least 8 diagram units and avoids
+  other arrows. An edge that would leave a container on the side away from its other end is laid out again
+  with that port on the other side (a second pass), so no route runs back through the container. A label sits
+  on a level run of its own route long enough to hold it clear of the bends, else beside a run, touching it,
+  on a side its line does not turn to (`labelOnRoute`, `labelSpans`); only then at dagre's point. At levels
+  with at most 150 edges, a label that meets another route's orthogonal segment (stubs do not count), lies
+  partly under a box of its level, or was pushed off its own line by another label tries the same spans, then
+  any point of its route, with four units of clearance from those segments and other labels. It stays inside
+  its level and outside boxes. If no place clears everything, the first one clear of boxes and other labels
+  wins, then the first clear of boxes; a label that is under nothing and at its line keeps the earlier
+  position. A route that runs past the place it next turns to, steps up to 16 units across and runs back
+  (where the parts of an edge routed at two levels meet) turns at that place instead (`dropDetours`). Two
+  arrows between the same two boxes, one each way, are one route (`twinOf`): the second takes the first one's
+  route read backwards, so the line has a head at each end. Each arrow's `own` half (the half that ends at its
+  head) carries its label, its hit path, its keyboard ring and its anchor. The two labels sit off the line, 3
+  units from it, one on each side (`besideLine`: the first above a level line or left of an upright one, the
+  twin below or right), so two short labels never read as one ("← calls ×3 calls ×1 →"). Larger levels keep
+  prior label placement to bound layout time; larger and pinned levels keep port spacing and routing rules.
+  `GraphView.layout` replaces automatic positions at each container level before sizing its parent. Pins are
+  finite logical coordinates relative to the rendered container, or to the canvas for roots. Negative child
+  coordinates expand the container frame to the left/top without translating those children or changing saved
+  pins. Routes reconnect to the moved frames; unpinned siblings yield space when a pin occupies their old
+  position. Changed levels discard stale dagre tracks and detour around other boxes. Live maps, Reader and
+  Guide pictures share those positions and bounds, including offline HTML. Hidden pins stay stored until
+  restored; opening a map inside another uses the outer map's pins. Each stored level has its own layout. A
+  selected box in Explore has a move handle: drag previews locally, release writes one `editGraph` pin through
+  author history; Enter pins here and arrow keys move by 20 px. The focused handle stays mounted while a save
+  disables its actions. Escape, pointer cancellation and selection changes discard the local preview without
+  an edit. **Edit map** resets selected/all placement to automatic layout with the same undo. Pan/zoom remain
   transient navigation. If the layout throws, a grid layout keeps the diagram usable (`data-fallback`). A map
   draws one arrow per pair of boxes and direction (`drawnEdges`): the derived edges of several kinds between
   two boxes merge into one arrow, labelled per kind ("calls ×5 · references ×2"), under the id of the first;
-  an authored edge between the same two boxes replaces them. Edges are styled by resolution,
-  never by colour alone (the same dash in both themes, on the map, the key line and the Key, `--dash-*` in
-  styles.css): precise solid; heuristic thinner, lighter and dashed; `mixed` dash-dot; `llm` and `user`
-  thicker and coloured; stubs dotted, leading to ghost boxes (at most 8 by
-  default plus one "+N more" per direction, see §4.4; ghosts that stand for several elements have a dotted
-  border and a list icon). A ghost that links to several boxes says its count is a total ("calls ×12 in all"):
-  the details of each box give its share. The head says the kind (`keyMarks` `headOf`): filled for calls and
-  most kinds, hollow for `extends` and `implements`, open for `imports` and `references`; the Key has a row
-  per kind drawn (`LegendShows.kinds`), not a fixed "Calls" row. Click selects (shift/ctrl/cmd adds, the
-  background clears); clicking a ghost for one element calls `expandStub`, clicking a folded ghost ("rest of
-  <file>", "+N more") opens a **menu** beside it: its elements with kind and reference count, most referenced
-  first (a "rest of" menu starts with "The whole file", which adds the file as one box), and picking one adds
-  it to the view (`expandStub` on that element); Escape, a click elsewhere or a turn of the wheel over the
-  diagram closes it, the arrow keys move in it. Double-clicking a node calls `drillIn`; a container has a
-  collapse button. A box with a `role` is drawn as what it is (`RoleBox`: a cylinder for `database`, `cache`
-  and `storage`, a pipe for `queue`, a dashed box for `external` and `person`, with a person icon, a heavier
-  border for `service` and `system`) and its badge is its `tech` or its role. A sketch box (`Node.sketch`)
-  keeps its role's shape, is drawn dotted (`.is-sketch`) and badged "sketch". On a view with `boxText:
-  "summary"` a box that is not a container shows its summary under the badge row (`LayoutNode.lines`, wrapped
-  by `graphLayout.wrapText` on at most 3 lines, the last cut with "…"); such a box is at least 300 units wide
-  and grows 16 per line. On a view with `boxText: "members"` a table (`GraphNode.rows`) is laid out by
-  `graphLayout`'s `table` instead of a layered level: the header, then one row per child in `row` order, each
-  `ROW_HEIGHT` (24) high and as wide as the widest name plus type. A row's arrow is pinned to the table's side
-  at the row's height (an entry like a container's border port, so no route runs inside the table), and an
-  arrow to the table itself meets its header band: it means the type, not a field. A map with tables is laid
-  out in the direction that draws it larger in its pane, as any map (`layoutGraphFitting`). Laid out down the
-  page, a row's arrow still leaves the row's right side at its height, then runs down in a lane of its own
-  beside the table (`LANE`, 8 units apart; dagre gets the lanes' room as part of the table's width) and
-  crosses the table's bottom line there; an arrow into a row comes the same way on the left. `RowShape` draws
-  a row as its name and its type (muted, right-aligned) with a rule above; it is a button like a box
-  (`is-row`; selected, matched and hovered as any box), but not a Tab stop: a table is one stop (`tabOrder`
-  in `mapOrder.ts`: the tables in the map's start order, the tour's first box first, then `include`), Down or
-  Home on it focuses its first row, and the canvas's Up and Down move through the rows. A table's fold
-  button is not a Tab stop: on a focused table "-" folds it and "+" (or "=", no Shift) shows its rows again
-  (`GraphView` stops the key, so it does not reach the canvas zoom; the keyboard hint says both). A table
-  carries `aria-expanded` (true with its rows, false folded). Folded, its fields' arrows stay: `deriveGraph`
-  lifts a field's `references` to a type box that shows no rows and names that arrow "holds" too, starting at
-  the header; the uses inside its methods still draw nothing. A fold keeps the map as it was: `foldPins`
-  gives every top-level box its old position as a pin when the new graph only folds tables of the last layout
-  (same boxes, fewer tables), and the canvas keeps its old bounds, so no other box moves (R6-1). Any other
-  change (a box added, a table opened again) is laid out afresh. A row whose type names the other type only
-  in a function's signature (`Array<(worker: Worker) => void>`, `func(w *Worker) error`,
-  `Callable[[Worker], None]`) holds functions: it draws no arrow (V5-09). Core gives a row's whole type
-  (`memberType`); the drawing cuts it at 28 characters (`shownType`), its name, tooltip, Text view, Details
-  and parts list keep all of it. A row that the selection's or the applied step's code links name by symbol
-  (`{ symbol: "Queue.ready" }`, "used here" on the Job step) is marked related on its own table (V5-07). A
-  selected row's Details are titled with its table ("DeadJob.job") and list "In" (the table) and "Type". An arrow from a row is named with the row's table
-  ("Queue.ready holds Job"). A box with `opens` has a zoom button ("See what is inside"; a double-click does
-  the same, and Details offers it too): `store.zoomInto` shows that view, in the map or flow perspective
-  that draws it, as a navigation step (Back returns). Above the diagram, `ZoomTrail`
-  lists the levels above the current view (`zoomTrail`), each a link (`store.goToLevel`). A box that opens a
-  graph view (`GraphNode.expandable`) also offers "Show the inside here": `store.toggleExpanded` adds it to
-  `state.expanded`, and the view is drawn through `expandInPlace` (core `levels.ts`), with the boxes of the
-  view it opens added, so the parts of a service sit inside its box and their arrows cross its border; its
-  collapse button folds it back. At 760 px and narrower, the caption offers a compact "Show inside" button
-  for the sole expandable box on the map, or for a selected one when several can open. Its accessible name
-  identifies the box ("Show what is inside [box], here"). The action stays
-  reachable when that box's SVG corner is outside the pane. If an expanded box extends past the visible
-  pane at readable zoom, a caption button also folds the most recently expanded box on that map by pointer
-  or keyboard. Neither action changes the stored view or pins. Every box has an icon left of its label
+  an authored edge between the same two boxes replaces them. Edges are styled by resolution, never by colour
+  alone (the same dash in both themes, on the map, the key line and the Key, `--dash-*` in styles.css):
+  precise solid; heuristic thinner, lighter and dashed; `mixed` dash-dot; `llm` and `user` thicker and
+  coloured; stubs dotted, leading to ghost boxes (at most 8 by default plus one "+N more" per direction, see
+  §4.4; ghosts that stand for several elements have a dotted border and a list icon). A ghost that links to
+  several boxes says its count is a total ("calls ×12 in all"): the details of each box give its share. The
+  head says the kind (`keyMarks` `headOf`): filled for calls and most kinds, hollow for `extends` and
+  `implements`, open for `imports` and `references`; the Key has a row per kind drawn (`LegendShows.kinds`),
+  not a fixed "Calls" row. Click selects (shift/ctrl/cmd adds, the background clears); clicking a ghost for
+  one element calls `expandStub`, clicking a folded ghost ("rest of <file>", "+N more") opens a **menu**
+  beside it: its elements with kind and reference count, most referenced first (a "rest of" menu starts with
+  "The whole file", which adds the file as one box), and picking one adds it to the view (`expandStub` on that
+  element); Escape, a click elsewhere or a turn of the wheel over the diagram closes it, the arrow keys move
+  in it. Double-clicking a node calls `drillIn`; a container has a collapse button. A box with a `role` is
+  drawn as what it is (`RoleBox`: a cylinder for `database`, `cache` and `storage`, a pipe for `queue`, a
+  dashed box for `external` and `person`, with a person icon, a heavier border for `service` and `system`) and
+  its badge is its `tech` or its role. A sketch box (`Node.sketch`) keeps its role's shape, is drawn dotted
+  (`.is-sketch`) and badged "sketch". On a view with `boxText: "summary"` a box that is not a container shows
+  its summary under the badge row (`LayoutNode.lines`, wrapped by `graphLayout.wrapText` on at most 3 lines,
+  the last cut with "…"); such a box is at least 300 units wide and grows 16 per line. On a view with
+  `boxText: "members"` a table (`GraphNode.rows`) is laid out by `graphLayout`'s `table` instead of a layered
+  level: the header, then one row per child in `row` order, each `ROW_HEIGHT` (24) high and as wide as the
+  widest name plus type. A row's arrow is pinned to the table's side at the row's height (an entry like a
+  container's border port, so no route runs inside the table), and an arrow to the table itself meets its
+  header band: it means the type, not a field. A map with tables is laid out in the direction that draws it
+  larger in its pane, as any map (`layoutGraphFitting`). Laid out down the page, a row's arrow still leaves
+  the row's right side at its height, then runs down in a lane of its own beside the table (`LANE`, 8 units
+  apart; dagre gets the lanes' room as part of the table's width) and crosses the table's bottom line there;
+  an arrow into a row comes the same way on the left. `RowShape` draws a row as its name and its type (muted,
+  right-aligned) with a rule above; it is a button like a box (`is-row`; selected, matched and hovered as any
+  box), but not a Tab stop: a table is one stop (`tabOrder` in `mapOrder.ts`: the tables in the map's start
+  order, the tour's first box first, then `include`), Down or Home on it focuses its first row, and the
+  canvas's Up and Down move through the rows. A table's fold button is not a Tab stop: on a focused table "-"
+  folds it and "+" (or "=", no Shift) shows its rows again (`GraphView` stops the key, so it does not reach
+  the canvas zoom; the keyboard hint says both). A table carries `aria-expanded` (true with its rows, false
+  folded). Folded, its fields' arrows stay: `deriveGraph` lifts a field's `references` to a type box that
+  shows no rows and names that arrow "holds" too, starting at the header; the uses inside its methods still
+  draw nothing. A fold keeps the map as it was: `foldPins` gives every top-level box its old position as a pin
+  when the new graph only folds tables of the last layout (same boxes, fewer tables), and the canvas keeps its
+  old bounds, so no other box moves. Any other change (a box added, a table opened again) is laid out afresh.
+  A row whose type names the other type only in a function's signature (`Array<(worker: Worker) => void>`,
+  `func(w *Worker) error`, `Callable[[Worker], None]`) holds functions: it draws no arrow. Core gives a row's
+  whole type (`memberType`); the drawing cuts it at 28 characters (`shownType`), its name, tooltip, Text view,
+  Details and parts list keep all of it. A row that the selection's or the applied step's code links name by
+  symbol (`{ symbol: "Queue.ready" }`, "used here" on the Job step) is marked related on its own table. A
+  selected row's Details are titled with its table ("DeadJob.job") and list "In" (the table) and "Type". An
+  arrow from a row is named with the row's table ("Queue.ready holds Job"). A box with `opens` has a zoom
+  button ("See what is inside"; a double-click does the same, and Details offers it too): `store.zoomInto`
+  shows that view, in the map or flow perspective that draws it, as a navigation step (Back returns). Above
+  the diagram, `ZoomTrail` lists the levels above the current view (`zoomTrail`), each a link
+  (`store.goToLevel`). A box that opens a graph view (`GraphNode.expandable`) also offers "Show the inside
+  here": `store.toggleExpanded` adds it to `state.expanded`, and the view is drawn through `expandInPlace`
+  (core `levels.ts`), with the boxes of the view it opens added, so the parts of a service sit inside its box
+  and their arrows cross its border; its collapse button folds it back. At 760 px and narrower, the caption
+  offers a compact "Show inside" button for the sole expandable box on the map, or for a selected one when
+  several can open. Its accessible name identifies the box ("Show what is inside [box], here"). The action
+  stays reachable when that box's SVG corner is outside the pane. If an expanded box extends past the visible
+  pane at readable zoom, a caption button also folds the most recently expanded box on that map by pointer or
+  keyboard. Neither action changes the stored view or pins. Every box has an icon left of its label
   (`components/icons.tsx`, `iconName` in `keyMarks.ts`): for an outside system or a person, its technology
-  when that names a thing (git: the repository's book, a browser or HTML page: a window, YAML, JSON, TOML
-  or a file: a file), else its role,
-  else the kind of code (folder, file, group, a letter per symbol kind). When four or more boxes of an
-  architecture map share their badge ("Go" ×7), no box draws it (it stays in the box's accessible name) and
-  the key line says it once ("every box: Go"; `GraphLayout.sharedBadge`, `LayoutNode.badgeShared`). The class
-  chip and the person and outside chips do not use the purple of an author's arrow.
-  Not while presenting. Pan by dragging, zoom with
-  the wheel, the buttons or `+`/`-`, and one fit button, "Fit all" (or `0`; `data-testid="pz-fit"`). The zoom
-  toolbar comes before the canvas in the Tab order. Maps with saved pins keep at least zoom 0.9 on load and
-  Fit (14 px labels render at 12.6 px or more); larger pinned maps pan instead of shrinking further.
-  Their "Pan to explore" badge returns to the starting focus. Automatic maps start framed at zoom 0.75 when
-  fitting below 0.6 would hide their labels; then, while part of the diagram is out of the pane, "Fit all" is
-  marked (`is-cue`: outlined, not filled, so it never reads as pressed) and counts the boxes out of
-  sight ("Fit all (3 out of sight)", or "Fit all (part out of sight)" where the diagram gives no boxes to
-  count, a flow), and once all of the diagram is fitted it offers "Readable size" to come
-  back. The first frame starts on the selection, else on the focus of the first tour step on this map (the
-  tour being read first; `workspace.ts startOrder`; in Explore only while a tour is chosen), else on the
-  first drawn box of `view.include`, and holds that box whole. Fitting and the first frame place the diagram under the band the floating zoom toolbar
-  covers (its bottom + 6 px), so the toolbar never covers a box of a fitted diagram (D6); whether a diagram
-  reads whole is decided on the whole pane, so the band never turns a whole first view into a framed one. A
-  framed first view whose whole height fits the pane starts at the diagram's top, not centred (a sequence's
-  lifeline names come first, R5-2). A focus that spans 90% of the diagram or more on both axes (a step about
-  every box of a map, as `xpl draft map` writes) starts whole when that reads at `READABLE_FLOOR`, even below
-  the view's own floor (Present's 12 px): a frame of part of it shows a corner with boxes cut mid-word.
-  On a phone the first frame fits the part of the pane on screen, not the part under the parts list, with
-  8 px of room around a fitted diagram instead of 24 (a narrow sequence reads whole). A map is laid
-  out again when its pane changes shape by about 15% or more (Show code halves it), so it is not shrunk to a
-  strip and flipped on the next click.
-  Sequence diagrams pan and zoom the same way, and each tour step starts its diagram over
-  on the step's focus, even within one view. View edits (expand, drill in, collapse, edge-kind toggles, the
-  Stubs control) are stored on the view. Selecting a stub focuses the reference sites that cross the boundary
-  there plus the definitions on the far side (of every element a folded ghost stands for); its details list
-  those elements with a button each. Ghosts are pictures in Present: no menu and no Tab stop, named "(outside
-  this map)".
-- **Sequence view:** lifelines, one row per step (`call` solid, `return` dashed, `async` open head), self-calls
-  as loops, frames (`loop`/`alt`/`opt`/`par`) as labelled rectangles around their steps, nested by
+  when that names a thing (git: the repository's book, a browser or HTML page: a window, YAML, JSON, TOML or a
+  file: a file), else its role, else the kind of code (folder, file, group, a letter per symbol kind). When
+  four or more boxes of an architecture map share their badge ("Go" ×7), no box draws it (it stays in the
+  box's accessible name) and the key line says it once ("every box: Go"; `GraphLayout.sharedBadge`,
+  `LayoutNode.badgeShared`). The class chip and the person and outside chips do not use the purple of an
+  author's arrow. Not while presenting. Pan by dragging, zoom with the wheel, the buttons or `+`/`-`, and one
+  fit button, "Fit all" (or `0`; `data-testid="pz-fit"`). The zoom toolbar comes before the canvas in the Tab
+  order. Maps with saved pins keep at least zoom 0.9 on load and Fit (14 px labels render at 12.6 px or more);
+  larger pinned maps pan instead of shrinking further. Their "Pan to explore" badge returns to the starting
+  focus. Automatic maps start framed at zoom 0.75 when fitting below 0.6 would hide their labels; then, while
+  part of the diagram is out of the pane, "Fit all" is marked (`is-cue`: outlined, not filled, so it never
+  reads as pressed) and counts the boxes out of sight ("Fit all (3 out of sight)", or "Fit all (part out of
+  sight)" where the diagram gives no boxes to count, a flow), and once all of the diagram is fitted it offers
+  "Readable size" to come back. The first frame starts on the selection, else on the focus of the first tour
+  step on this map (the tour being read first; `workspace.ts startOrder`; in Explore only while a tour is
+  chosen), else on the first drawn box of `view.include`, and holds that box whole. Fitting and the first
+  frame place the diagram under the band the floating zoom toolbar covers (its bottom + 6 px), so the toolbar
+  never covers a box of a fitted diagram; whether a diagram reads whole is decided on the whole pane, so the
+  band never turns a whole first view into a framed one. A framed first view whose whole height fits the pane
+  starts at the diagram's top, not centred (a sequence's lifeline names come first). A focus that spans 90% of
+  the diagram or more on both axes (a step about every box of a map, as `xpl draft map` writes) starts whole
+  when that reads at `READABLE_FLOOR`, even below the view's own floor (Present's 12 px): a frame of part of
+  it shows a corner with boxes cut mid-word. On a phone the first frame fits the part of the pane on screen,
+  not the part under the parts list, with 8 px of room around a fitted diagram instead of 24 (a narrow
+  sequence reads whole). A map is laid out again when its pane changes shape by about 15% or more (Show code
+  halves it), so it is not shrunk to a strip and flipped on the next click. Sequence diagrams pan and zoom the
+  same way, and each tour step starts its diagram over on the step's focus, even within one view. View edits
+  (expand, drill in, collapse, edge-kind toggles, the Stubs control) are stored on the view. Selecting a stub
+  focuses the reference sites that cross the boundary there plus the definitions on the far side (of every
+  element a folded ghost stands for); its details list those elements with a button each. Ghosts are pictures
+  in Present: no menu and no Tab stop, named "(outside this map)".
+- **Sequence view:** lifelines, one row per step (`call` solid, `return` dashed, `async` open head),
+  self-calls as loops, frames (`loop`/`alt`/`opt`/`par`) as labelled rectangles around their steps, nested by
   `resolveFrames`, each at least as wide as its tab and its "[condition]" (`frameLabelWidth`); the condition
   has a halo, so no lifeline runs through it. An `alt` with `arms` draws its `label` after the tab without
   brackets, each arm's "[condition]" at the top left of the arm, and a dashed line (`frame-divider`) above
   every arm but the first; the layout leaves a row of room above each arm (`FrameBox.arms`). The alt's own
-  label is italic and in the text colour; every "[condition]" (loop, opt, arm) is in one muted tone. A
-  frame's tab and label is a button (`data-frame-head`): a frame has no code link of its own, so a click
-  selects its steps (`FrameBox.steps`) and the code shows theirs, the first step's first. The line that tests
-  the condition is not highlighted (a frame and an arm have no anchors); the tooltip of a frame's name and of
-  an arm's condition, and the Key, say so and where it is: "in the code above step 7". An arm's condition is a button
-  (`data-arm-of` plus `data-arm`; its accessible name names the alt and the arm): a click selects the arm's
-  steps; the arm is marked selected when all its steps are selected and matched when the cursor's code
+  label is italic and in the text colour; every "[condition]" (loop, opt, arm) is in one muted tone. A frame's
+  tab and label is a button (`data-frame-head`): a frame has no code link of its own, so a click selects its
+  steps (`FrameBox.steps`) and the code shows theirs, the first step's first. The line that tests the
+  condition is not highlighted (a frame and an arm have no anchors); the tooltip of a frame's name and of an
+  arm's condition, and the Key, say so and where it is: "in the code above step 7". An arm's condition is a
+  button (`data-arm-of` plus `data-arm`; its accessible name names the alt and the arm): a click selects the
+  arm's steps; the arm is marked selected when all its steps are selected and matched when the cursor's code
   matches one of them. The frame's box (`data-frame-id`) is drawn under the steps; the frame heads, arm
   conditions and steps are drawn, and reached with Tab, in reading order (`readingOrder`: top to bottom, a
   frame's head before its first arm's condition, a condition before its steps). A message label wraps at about
@@ -3275,50 +3268,49 @@ status stays in the sticky Save/Cancel bar, including the disabled Save reason.
   area covers its label and arrow. When the view has moved down, a copy of the participant names stays at the
   top of the pane (`sticky-heads`). The Read-mode Flow tab uses this same renderer for sequence views,
   matching the Guide picture and Explore.
-- **Flow view:** `processFlow` (§4.8) laid out by the same layered layout, top to bottom: stages as boxes, decisions as diamonds,
-  terminals, and the labelled `next` branches. A stage box is as tall as its label (`stageHeight`: 66 units
-  for one line, 18 more per line, at most three; the label at 14 units, the actor at 13). A diamond is as big
-  as its words (`decisionSize`: twice the text block's width and height, between 150 x 84 and 300 x 150), and
-  its arrows start and end on its outline, not on the corners of its bounding box. **Direction and parts**
-  (`layoutFlowFitting`, as `layoutGraphFitting` does for maps): a flow that shows at its natural size top to
-  bottom stays so; else it is also laid out left to right (narrower boxes: 20 characters a line, diamonds 14)
-  and set in 2-4 parts, like lines of text: columns side by side (top to bottom) or rows one under the other
-  (left to right), and the one that fits the pane at the larger scale wins (left to right or parts must win by
-  8%). Left to right is the top-to-bottom layout computed with every box and label turned on its side, then
-  turned back, so every rule below holds either way. A flow is cut into parts only between two bands of
-  boxes where every arrow across the cut goes down and its label is above the cut; of those, the cuts that
-  make the longest part shortest win, each arrow across a cut beyond the first counting as an eighth of the
-  flow's length (`inParts`). An arrow from one part to the next runs down past its part, through the gap,
-  over the next part and into its box. The first pane a flow is drawn in picks its direction and parts for
-  the page (`layoutFlowView`; a Tour picture uses the window's size); Present picks its own. `data-direction`
-  and `data-parts` on the diagram say which, and a projected flow's note says how to read it
-  (`readingOrder`). A repeated end's copies (`repeatEnds`) are dashed and carry no step number. A flow of
-  states and moves (`xpl draft states`; `stateRoles`: the status type is the entry point and first
+- **Flow view:** `processFlow` (§4.8) laid out by the same layered layout, top to bottom: stages as boxes,
+  decisions as diamonds, terminals, and the labelled `next` branches. A stage box is as tall as its label
+  (`stageHeight`: 66 units for one line, 18 more per line, at most three; the label at 14 units, the actor at
+  13). A diamond is as big as its words (`decisionSize`: twice the text block's width and height, between 150
+  x 84 and 300 x 150), and its arrows start and end on its outline, not on the corners of its bounding box.
+  **Direction and parts** (`layoutFlowFitting`, as `layoutGraphFitting` does for maps): a flow that shows at
+  its natural size top to bottom stays so; else it is also laid out left to right (narrower boxes: 20
+  characters a line, diamonds 14) and set in 2-4 parts, like lines of text: columns side by side (top to
+  bottom) or rows one under the other (left to right), and the one that fits the pane at the larger scale wins
+  (left to right or parts must win by 8%). Left to right is the top-to-bottom layout computed with every box
+  and label turned on its side, then turned back, so every rule below holds either way. A flow is cut into
+  parts only between two bands of boxes where every arrow across the cut goes down and its label is above the
+  cut; of those, the cuts that make the longest part shortest win, each arrow across a cut beyond the first
+  counting as an eighth of the flow's length (`inParts`). An arrow from one part to the next runs down past
+  its part, through the gap, over the next part and into its box. The first pane a flow is drawn in picks its
+  direction and parts for the page (`layoutFlowView`; a Tour picture uses the window's size); Present picks
+  its own. `data-direction` and `data-parts` on the diagram say which, and a projected flow's note says how to
+  read it (`readingOrder`). A repeated end's copies (`repeatEnds`) are dashed and carry no step number. A flow
+  of states and moves (`xpl draft states`; `stateRoles`: the status type is the entry point and first
   participant, a state step runs from it to itself and leads only to moves, a move runs inside its function
   and leads to one state) draws states as pills and moves as flat dotted boxes, neither numbered; each keeps
-  its code link and its aria label says "State:" or "Move:". After dagre, the
-  main path of a box with several ways on (the next box more of the flow follows) moves under it when that box
-  has no other way in, and the early exits beside it step aside (`straightened`). A move whose exits would
-  land on (or within 36 units beside) a box of another branch is not made, and the whole straightening is
-  dropped when a route would then cross a box or two boxes overlap. The flow is mirrored when that puts the
-  lower step numbers on the left in more rows (`readsBackwards`). A box shows the step's label large and,
-  under it, the actor: the step's `from`, plus "→ B" when a stage hands work to another part and that fits
-  (`stageActor`); a decision or a terminal shows the actor alone, and so does a step inside one part (the
-  Guide and the details say "inside X", never "X → X"). A flow never zooms below 11 px text
-  (`FLOW_READABLE_ZOOM`, Read's start and the floor of "Fit all"). Recurse and return links are dashed and
-  purple, with "one level down" / "up one level" after their label; a link of a stage to itself is a loop on
-  its right side; labels are drawn after all lines. A code-first view (`codeFirstView`; never a flow with two or more
-  terminal steps: a choice between outcomes is drawn as a diagram, where they sit side by side, R5-N2) puts the
-  code in the main pane (Read: a flow view gets a narrow outline column; Explore: the diagram column is narrow) and the
-  outline keeps the caret's step (else the selection) near its middle (`PanZoom.revealMargin`). The outline
-  starts at the zoom that shows the flow's width, and neither it nor "Fit all" goes below 0.7
-  (`OUTLINE_MIN_ZOOM`): it pans instead. On a phone taller than 560 px, selecting a flow stage gives the
-  diagram a 750 px minimum height. The reader can scroll the page to see lower branches and tap them above the
-  step and source panes. The first screen of a long flow still shows only its first stages; "Fit all", pan and
-  Text view reach the rest. Read keeps sequence views in the diagram pane, regardless of `layout`; "Show code"
-  opens their linked code. Explore narrows a sequence's diagram column only for explicit `layout:
-  "code-first"`, keeping its lifelines, arrows and frames without a caret-following process outline. One-file
-  sequences otherwise keep Explore's usual diagram layout.
+  its code link and its aria label says "State:" or "Move:". After dagre, the main path of a box with several
+  ways on (the next box more of the flow follows) moves under it when that box has no other way in, and the
+  early exits beside it step aside (`straightened`). A move whose exits would land on (or within 36 units
+  beside) a box of another branch is not made, and the whole straightening is dropped when a route would then
+  cross a box or two boxes overlap. The flow is mirrored when that puts the lower step numbers on the left in
+  more rows (`readsBackwards`). A box shows the step's label large and, under it, the actor: the step's
+  `from`, plus "→ B" when a stage hands work to another part and that fits (`stageActor`); a decision or a
+  terminal shows the actor alone, and so does a step inside one part (the Guide and the details say "inside
+  X", never "X → X"). A flow never zooms below 11 px text (`FLOW_READABLE_ZOOM`, Read's start and the floor of
+  "Fit all"). Recurse and return links are dashed and purple, with "one level down" / "up one level" after
+  their label; a link of a stage to itself is a loop on its right side; labels are drawn after all lines. A
+  code-first view (`codeFirstView`; never a flow with two or more terminal steps: a choice between outcomes is
+  drawn as a diagram, where they sit side by side) puts the code in the main pane (Read: a flow view gets a
+  narrow outline column; Explore: the diagram column is narrow) and the outline keeps the caret's step (else
+  the selection) near its middle (`PanZoom.revealMargin`). The outline starts at the zoom that shows the
+  flow's width, and neither it nor "Fit all" goes below 0.7 (`OUTLINE_MIN_ZOOM`): it pans instead. On a phone
+  taller than 560 px, selecting a flow stage gives the diagram a 750 px minimum height. The reader can scroll
+  the page to see lower branches and tap them above the step and source panes. The first screen of a long flow
+  still shows only its first stages; "Fit all", pan and Text view reach the rest. Read keeps sequence views in
+  the diagram pane, regardless of `layout`; "Show code" opens their linked code. Explore narrows a sequence's
+  diagram column only for explicit `layout: "code-first"`, keeping its lifelines, arrows and frames without a
+  caret-following process outline. One-file sequences otherwise keep Explore's usual diagram layout.
 - **Selection and code focus:** clicking any element (node, edge, stub, step, concept) selects it; the editors
   show the code focus (§4.5), one pane per focused file (a file opened from the tree or an anchor row first,
   then the step's `primary`, then focus order; at most 10 panes, the rest are listed): lines carry `xpl-hl`
@@ -3464,18 +3456,18 @@ read-only: no drill-in, expand or collapse, and ghosts are pictures. Framing rul
   not re-split between steps), the code on the right, no file tree unless a step sets `hideFileTree: false`.
 - A diagram never starts below a readable zoom: graphs and sequences at zoom 1 (`PRESENT_READABLE_ZOOM`, so
   the smallest 12-unit text is 12 px or more; a frame of the focus keeps that floor too); a flow with its text
-  at 16 px (`PRESENT_FLOW_MAX_ZOOM`), fitted only when that shows all of it. D7: a map or a sequence that does
+  at 16 px (`PRESENT_FLOW_MAX_ZOOM`), fitted only when that shows all of it. A map or a sequence that does
   not read whole at 12 px asks for more width (`PresentRoom` context: the pixels it lacks, or all the room
   there is when it is too tall at that zoom, since a map may turn in a wider pane); the step's diagram column
   grows to that width, up to 65% (`--diagram-need`, `data-room`), and keeps the widest width the step asked
   for, so going back to a step does not jump. A diagram still too big starts on the step's focus (a sequence
   step with both lifelines it joins; their names stay at the top), and "Fit all" stays on the slide, alone,
   while part of the diagram is out of sight. The zoom toolbar sits in the diagram's title bar (`ToolbarSlot`,
-  a portal DiagramPane provides), off the picture: "Fit all" never covers a box, fitted or framed (D9). A slide
+  a portal DiagramPane provides), off the picture: "Fit all" never covers a box, fitted or framed. A slide
   hides Save image and Text view. A flow is
   never fitted below 11 px text (`FLOW_READABLE_ZOOM`): too tall, it is fitted to its width and the wheel
   scrolls it (`data-fit="width"`; when even the width does not fit, Fit shows all of it anyway).
-- The caption is as tall as its own text (D9), at most 40% of the left column, and the diagram keeps at least
+- The caption is as tall as its own text, at most 40% of the left column, and the diagram keeps at least
   200 px (45% of the column on a very short screen); the diagram gets the rest. The type size is one per tour
   (present/caption.ts): the largest of four at which the tallest caption, measured off-screen, fits that cap
   (a tour with a note over 280 characters starts one size down; a step that widened the diagram column never

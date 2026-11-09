@@ -1143,7 +1143,7 @@ describe("what a map draws", () => {
   });
 });
 
-describe("labels and routes a reader can follow (round 2)", () => {
+describe("labels and routes a reader can follow", () => {
   const overlaps = (a: Box, b: Box) =>
     a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
   type Box = { x: number; y: number; width: number; height: number };
@@ -1250,7 +1250,7 @@ describe("labels and routes a reader can follow (round 2)", () => {
         );
       };
       expect([direction, half(there), half(back)]).toEqual([direction, true, true]);
-      // each label points the way its own arrow goes (R3-18): on one line, two labels must not read alike
+      // each label points the way its own arrow goes: on one line, two labels must not read alike
       const way = (edge: LayoutEdge) => {
         const [a, b] = [edge.points[0]!, edge.points.at(-1)!];
         return Math.abs(b.x - a.x) >= Math.abs(b.y - a.y)
@@ -1266,7 +1266,7 @@ describe("labels and routes a reader can follow (round 2)", () => {
     }
   });
 
-  // V6-03: on a short line the two labels sat end to end and read as one ("← calls ×3 calls ×1 →")
+  // on a short line the two labels sat end to end and read as one ("← calls ×3 calls ×1 →")
   it("keeps the labels of a two-way pair clearly apart, one on each side of their line", async () => {
     const node = (id: string) => ({ id, label: id, kind: "group" as const, container: false });
     const graph: DerivedGraph = {
@@ -1325,7 +1325,7 @@ describe("what a still picture's frame cuts", () => {
   });
 });
 
-// V2-14: "Go" on each of cobra's 7 boxes said nothing a box could tell apart; the map says it once
+// "Go" on each of cobra's 7 boxes said nothing a box could tell apart; the map says it once
 describe("a badge every box shares", () => {
   const go = (id: string): DerivedGraph["nodes"][number] => ({
     id,
@@ -1410,7 +1410,7 @@ describe("tables", () => {
     ghosts: [],
   };
 
-  // R6-1: folding a table laid the whole map out again, and every table jumped
+  // folding a table laid the whole map out again, and every table jumped
   it("keeps every box where it was when a table folds, and lays out afresh for anything else", async () => {
     const before = await layoutGraph(graph);
     const folded: DerivedGraph = {
@@ -1461,7 +1461,7 @@ describe("tables", () => {
     expect(end.y).toBeLessThan(boxes.get("Job.id")!.y);
   });
 
-  // V4-02: a data map laid out to the right is one long row of tall tables; in a tall pane, "Fit all" drew
+  // a data map laid out to the right is one long row of tall tables; in a tall pane, "Fit all" drew
   // its text at 5 px. Top to bottom, the arrow still leaves its row: out of the row's side, down beside it.
   it("lays out top to bottom, each arrow still leaving its row's side and ending on the other table's header", async () => {
     const chain: DerivedGraph = {

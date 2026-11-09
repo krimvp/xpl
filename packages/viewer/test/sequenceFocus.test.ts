@@ -1,7 +1,7 @@
 /**
  * The first view of a sequence too big to show whole (sequenceFocus.ts + viewport.ts frameView): it frames the
- * step's arrow with both its lifelines, and slides so that no arrow's words cross the pane's sides (R6-1,
- * V6-05) and no empty lifeline beside the arrows is kept instead of the ones they join.
+ * step's arrow with both its lifelines, and slides so that no arrow's words cross the pane's sides
+ * and no empty lifeline beside the arrows is kept instead of the ones they join.
  */
 import { ExplainerModel, type SequenceView } from "@xpl/core";
 import { describe, expect, it } from "vitest";

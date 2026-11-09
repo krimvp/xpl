@@ -96,7 +96,7 @@ describe("mapKeyShows", () => {
     expect(shows.icons!.map((icon) => icon.name)).toEqual(["file", "function"]);
   });
 
-  // V2-15: "Your repository (git)" and "Browser (HTML page)" got the globe of an outside system
+  // "Your repository (git)" and "Browser (HTML page)" got the globe of an outside system
   it("keys a box by the icon its technology picks before its role's", () => {
     const shows = mapKeyShows(
       [
@@ -125,7 +125,7 @@ describe("mapKeyShows", () => {
     expect(shows.icons!.map((icon) => icon.name)).toEqual(["group"]);
   });
 
-  // V4-15: the Key of a data map explained boxes as files and functions, rows as "a variable", and its one
+  // the Key of a data map explained boxes as files and functions, rows as "a variable", and its one
   // kind of arrow as "uses a type", while the map labels it "holds"
   it("a data map: tables, the arrow a row holds, and no row icons or code-box row", () => {
     const row = node("sym:q#Queue.ready", { kindClass: "variable", badge: "variable", row: true });

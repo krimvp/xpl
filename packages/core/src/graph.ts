@@ -628,7 +628,7 @@ export function deriveGraph(
     const a = rep.repr(fromEl);
     const b = rep.repr(toEl);
     // a data-model view draws what the types hold, not the uses inside a type's methods; a field of a folded
-    // table (its rows not shown) still holds what it holds: its arrow starts at the table (R6-1)
+    // table (its rows not shown) still holds what it holds: its arrow starts at the table
     const lifted = members && a !== undefined && a !== fromEl && isType(a);
     const field = lifted && kind === "references" && !hasRows.has(a) && isFieldOf(fromEl, a);
     if (lifted && !field) continue;
@@ -806,7 +806,7 @@ export function deriveGraph(
   });
 
   // a row whose type names the other type only in a function's signature (`Array<(worker: Worker) => void>`)
-  // holds functions, not that type: no arrow (V5-09)
+  // holds functions, not that type: no arrow
   const holdsNothingOf = (edge: DerivedEdge): boolean => {
     if (edge.kind !== "references" || !rowOf.has(edge.from)) return false;
     const type = typeOf(edge.from);
@@ -824,7 +824,7 @@ export function deriveGraph(
     .sort((a, b) => cmp(a.id, b.id));
   // a row's arrow: the field holds a value of that type ("Queue.ready holds Job")
   // an interface or a parent type lifted to a box that is no type (a file, a folder, a group): "Job queue
-  // implements Runner" would say the queue is a kind of runner; it implements an interface in it (R6-R3)
+  // implements Runner" would say the queue is a kind of runner; it implements an interface in it
   // Go has no inheritance: its `extends` references are embedded fields and interface elements ("embeds")
   const fromGo = (id: ElementId): boolean => {
     const parsed = parseId(id);

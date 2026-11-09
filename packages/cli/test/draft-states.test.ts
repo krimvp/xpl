@@ -293,7 +293,7 @@ class Job:
     ]);
   });
 
-  // R4-S5: a negated guard fixes the state for the rest of its function, so the moves inside the if/elif/else
+  // a negated guard fixes the state for the rest of its function, so the moves inside the if/elif/else
   // after it count; a state the code tests but never leaves gets a note
   it("finds the moves after a guard that raises, inside an if/elif/else, and names a tested state with no move out", async () => {
     const dir = makeTempDir("xpl-states-guard-");
@@ -423,14 +423,14 @@ func (j *Job) Finish() {
     const shape = await xpl(dir, "draft", "states", "s", "sym:src/shape.ts#Shape");
     expect(shape.err).toContain("sym:src/shape.ts#Shape (an interface) does not enumerate states");
     expect(shape.err).toContain("`xpl outline --kind enum,type` lists candidates");
-    // T43: a near name is offered only when the command takes its kind (not the interface Shape)
+    // a near name is offered only when the command takes its kind (not the interface Shape)
     const typo = await xpl(dir, "draft", "states", "s", "sym:src/shape.ts#Shapes");
     expect(typo.code).toBe(1);
     expect(typo.err).not.toContain("Did you mean");
     expect(typo.err).toContain("`xpl outline --kind enum,type` lists candidates.");
   });
 
-  // R4-S4: a Python Enum is a class in the index, so `outline --kind enum` lists none: the hint says what works
+  // a Python Enum is a class in the index, so `outline --kind enum` lists none: the hint says what works
   it("refuses a Python class that is no Enum with a hint that works for Python, and the route for a state with no enum", async () => {
     const dir = makeTempDir("xpl-states-pyno-");
     writeFile(dir, "jobs.py", "class Job:\n    def __init__(self):\n        self.ready = []\n");

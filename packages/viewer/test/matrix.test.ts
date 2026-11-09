@@ -250,7 +250,7 @@ describe("buildMatrix", () => {
   });
 });
 
-// V3-16: a draft's TODO labels made every row read "TODO: 2-5 plain words for t…"
+// a draft's TODO labels made every row read "TODO: 2-5 plain words for t…"
 it("names a box whose label is still a draft's TODO by its file, which differs from row to row", () => {
   const todo = (file: string) =>
     box(`file:src/${file}`, { label: `TODO: 2-5 plain words for this file (now: ${file})` });
@@ -259,7 +259,7 @@ it("names a box whose label is still a draft's TODO by its file, which differs f
 });
 
 describe("the matrix of a data map", () => {
-  // V4-12: one row and column per field gave a 38 x 38 grid with 11 filled cells, each table's own row at the
+  // one row and column per field gave a 38 x 38 grid with 11 filled cells, each table's own row at the
   // end of the band of the table before it
   it("has one row and column per table, a cell naming the fields that hold the other type", () => {
     const table = (id: string) =>
@@ -294,13 +294,13 @@ describe("the matrix of a data map", () => {
     expect(picture(g)).toEqual(["Queue: . 1 2", "DeadJob: . . 1", "Job: . . ."]);
     const cell = m.cells[0]![2]!;
     expect(cell.text).toBe("holds (ready, inflight)");
-    // the cell counts fields, not references: its name says no "references ×2" (V5-04)
+    // the cell counts fields, not references: its name says no "references ×2"
     expect(cell.fields).toBe(true);
     expect(cell.select).toEqual([
       "edge:references:Queue.ready->Job",
       "edge:references:Queue.inflight->Job",
     ]);
-    // the parts list says the same verb, and names a field with its table (R5-4, R4-9)
+    // the parts list says the same verb, and names a field with its table
     expect(partsOf(g).map((b) => [b.label, b.links])).toEqual([
       ["Queue", []],
       ["ready", ["holds Job"]],
@@ -350,7 +350,7 @@ describe("one order for the parts list and the matrix", () => {
     expect(buildMatrix(g).boxes.map((b) => b.label)).toEqual(["run.ts", "list.ts", "astore.ts"]);
   });
 
-  // V4-14, R4-12: a table's fields came sorted by name; the code's order is the one the table draws
+  // a table's fields came sorted by name; the code's order is the one the table draws
   it("lists a table's fields in the order the code declares them, under the table", () => {
     const g = graph(
       [

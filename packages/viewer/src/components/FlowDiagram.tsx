@@ -530,7 +530,7 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
         readableZoom={present ? PRESENT_FLOW_MAX_ZOOM : FLOW_READABLE_ZOOM}
         // The outline beside the code (a 360 px column) starts at the zoom that shows the flow's whole width,
         // but never below `OUTLINE_MIN_ZOOM`, and its Fit all stops there too: it pans rather than shrinking
-        // the words to 4 px (V1-02).
+        // the words to 4 px.
         readableMin={present ? PRESENT_FLOW_MAX_ZOOM : outline ? OUTLINE_MIN_ZOOM : undefined}
         minFitZoom={outline ? OUTLINE_MIN_ZOOM : undefined}
         panCue={false}

@@ -523,7 +523,7 @@ describe("buildReverseIndex", () => {
     expect(idx.lookup("src/queue.ts", 58)).toEqual([F.queue]);
   });
 
-  it("gives the caret in a drawn box's body to the box, not to the arrow into it (V4-17)", () => {
+  it("gives the caret in a drawn box's body to the box, not to the arrow into it", () => {
     const view = graphView("view:v", [S.dispatch, S.requeue]);
     const m = model({ views: [view] });
     const graph = deriveGraph(view, m);

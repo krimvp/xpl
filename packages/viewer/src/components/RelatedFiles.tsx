@@ -19,7 +19,7 @@ const CARDS_SHOWN = 2;
 /**
  * True when some step of the tour lists related files in the Tour (the cards `RelatedFiles` shows for it).
  * The Tour then keeps its right column for every step, so the text does not change width while the reader
- * scrolls (R4-4); otherwise it has no right column at all.
+ * scrolls; otherwise it has no right column at all.
  */
 export function tourHasCards(tour: Tour, model: ExplainerModel): boolean {
   return tour.steps.some((step) => {
@@ -54,7 +54,7 @@ export function RelatedFiles({
 }: {
   onOpen: () => void;
   reading?: { tourId: string; step: TourStep };
-  /** The Tour keeps its right column for the whole tour (R4-4): a step with no cards lists its own code. */
+  /** The Tour keeps its right column for the whole tour: a step with no cards lists its own code. */
   keepPlace?: boolean;
 }) {
   const store = useStore();

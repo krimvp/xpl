@@ -285,7 +285,7 @@ test.describe("what a big diagram starts on", () => {
 test("a short pane (a laptop at 200%): the fit control is among the zoom buttons, not on the boxes", async ({
   page,
 }) => {
-  // (Explore gives the diagram the panels' height until a selection: 720x450 is no longer short, V6-01)
+  // (Explore gives the diagram the panels' height until a selection: 720x450 is no longer short)
   await page.setViewportSize({ width: 720, height: 360 });
   await open(page, "?mode=explore");
   await showPipeline(page);

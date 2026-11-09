@@ -82,7 +82,7 @@ export function linkWords(
 /** The verbs of an arrow, at its start and at its end: what it says on the map, not "uses" for every kind. */
 function verbsOf(edge: DerivedGraph["edges"][number]): [string, string] {
   if (isHolds(edge)) return ["holds", "held by"];
-  // (lifted to a file or a folder, core says where the interface is: "implements an interface in", R6-R3)
+  // (lifted to a file or a folder, core says where the interface is: "implements an interface in")
   if (edge.kind === "implements")
     return edge.label && !edge.stored
       ? [edge.label, "has an interface implemented by"]
@@ -146,7 +146,7 @@ export function mapParts(graph: DerivedGraph, view: GraphView, model: ExplainerM
       const badge = readerBadge(node.kindWord ?? node.symbolKind ?? node.kind);
       const kind =
         node.row !== undefined
-          ? // a row of a table (data map): a field, with the type it holds (R4-3)
+          ? // a row of a table (data map): a field, with the type it holds
             node.memberType
             ? `field · ${node.memberType}`
             : "field"

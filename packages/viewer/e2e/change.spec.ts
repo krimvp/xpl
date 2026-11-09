@@ -323,7 +323,7 @@ test.describe("the change in the reading screens", () => {
     await expect(page.getByTestId("change-omissions")).toHaveCount(0);
   });
 
-  test("a guide analysed by a language tool lists the tool's limits, not name matching (R5-N5)", async ({
+  test("a guide analysed by a language tool lists the tool's limits, not name matching", async ({
     page,
   }) => {
     const { html, bundle } = readEmbeddedBundle(CHANGE_BUNDLE);
@@ -379,7 +379,7 @@ test.describe("the change in the reading screens", () => {
     await expect(byId(page, "grp:scheduling").locator(":scope > .change-pill text")).toHaveText(
       "Changed",
     );
-    // R6-3: the arrow from Scheduling to worker.ts draws no words of its own; the key line names its kind
+    // the arrow from Scheduling to worker.ts draws no words of its own; the key line names its kind
     await expect(page.getByTestId("key-line").locator('[data-key-item="kind-calls"]')).toHaveText(
       "calls",
     );
@@ -392,7 +392,7 @@ test.describe("the change in the reading screens", () => {
     expect(problems).toEqual([]);
   });
 
-  test("a flow step whose code the change rewrites carries the same Changed pill as a box (R5-N3)", async ({
+  test("a flow step whose code the change rewrites carries the same Changed pill as a box", async ({
     page,
   }) => {
     const problems = watchProblems(page);
@@ -416,7 +416,7 @@ test.describe("the change in the reading screens", () => {
     expect(problems).toEqual([]);
   });
 
-  // T6-05: the pill's "New" and its place on a decision's diamond had no test
+  // the pill's "New" and its place on a decision's diamond had no test
   test('a decision step whose code the change adds says "New" on its diamond', async ({ page }) => {
     const problems = watchProblems(page);
     const { html, bundle } = readEmbeddedBundle(CHANGE_BUNDLE);
@@ -687,7 +687,7 @@ test.describe("reading the diagrams", () => {
     expect(problems).toEqual([]);
   });
 
-  test("Present keeps one type size for the tour; each caption is as tall as its text, at most 40% (D9)", async ({
+  test("Present keeps one type size for the tour; each caption is as tall as its text, at most 40%", async ({
     page,
   }) => {
     const problems = watchProblems(page);

@@ -236,7 +236,7 @@ test.describe("the ghost menu", () => {
   test("a long menu scrolls with the wheel; a turn of the wheel over the diagram puts it away", async ({
     page,
   }) => {
-    // (short enough for the menu to scroll in a diagram that has the panels' height too, V6-01)
+    // (short enough for the menu to scroll in a diagram that has the panels' height too)
     await page.setViewportSize({ width: 1440, height: 520 });
     await openCrowded(page);
     await byId(page, "ghost:rest:file:src/hub.ts").click();

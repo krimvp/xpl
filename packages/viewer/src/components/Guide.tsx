@@ -65,7 +65,7 @@ export function Guide({
   const active =
     state.applied && state.applied.tourId === tour?.id ? state.applied.stepId : undefined;
 
-  // The section being read: the last one whose top has passed the middle of the scroller (R4-5: a step whose
+  // The section being read: the last one whose top has passed the middle of the scroller (a step whose
   // heading and picture fill the lower half is the one read, not the one above it).
   const [reading, setReading] = useState<string | undefined>(undefined);
   useEffect(() => {
@@ -115,7 +115,7 @@ export function Guide({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [tour, store]);
   useEffect(() => onReading?.(reading), [reading, onReading]);
-  // The step on screen, for the reading tabs (R4-5): Map, Flow or Code clicked while another step than the
+  // The step on screen, for the reading tabs: Map, Flow or Code clicked while another step than the
   // applied one is on screen opens on that step (WorkspaceTabs).
   useEffect(() => {
     readingStep.current = reading && tour ? { tourId: tour.id, stepId: reading } : undefined;
@@ -322,7 +322,7 @@ function ChangeOmissions() {
   // The files' own lines read plainly; the tools' reports ("<provider> report: …") are for whoever checks
   // the analysis: one plain line, the reports folded under it.
   const index = state.model.index.index;
-  // A language a SCIP tool covers: its name-matching report says nothing the reader needs (R5-N5).
+  // A language a SCIP tool covers: its name-matching report says nothing the reader needs.
   const precise = (language: string | undefined) =>
     !!language && index.languages[language]?.refs === "precise";
   const reports = omissions.filter(
@@ -447,7 +447,7 @@ function GuideSection({
       ? [{ id, from: element.step.from, label: element.step.label }]
       : [];
   });
-  // Calls between the same two parts share one card (two "This call" cards in a row read as a repeat, R5-8).
+  // Calls between the same two parts share one card (two "This call" cards in a row read as a repeat).
   const callGroups = new Map<string, { id: string; label: string }[]>();
   for (const id of step.focus) {
     const element = state.model.element(id);
@@ -685,7 +685,7 @@ function GuideSection({
           </ul>
         </section>
       )}
-      {/* The step's tools come after its text and its code (R3-8): the title leads straight into the text. */}
+      {/* The step's tools come after its text and its code: the title leads straight into the text. */}
       <div className="section-actions">
         <button
           className="btn section-show-code"

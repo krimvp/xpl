@@ -1,7 +1,7 @@
 /**
- * The frame around a diagram (round 3): what the first view and "Fit all" show, and how much of the screen the
- * diagram gets. The floating zoom toolbar never covers a box of a fitted diagram (D6); on a phone the diagram gets most of the screen
- * (R3-2); the Tour has no empty right column (R3-3).
+ * The frame around a diagram: what the first view and "Fit all" show, and how much of the screen the
+ * diagram gets. The floating zoom toolbar never covers a box of a fitted diagram; on a phone the diagram gets
+ * most of the screen; the Tour has no empty right column.
  */
 import { expect, test, type Page } from "@playwright/test";
 import {
@@ -30,7 +30,7 @@ const boxesUnderToolbar = (page: Page) =>
       .map((g) => (g as SVGElement).dataset.elementId);
   });
 
-test.describe("the zoom toolbar never covers a box of a fitted map (D6)", () => {
+test.describe("the zoom toolbar never covers a box of a fitted map", () => {
   for (const width of [1440, 1280, 1024, 390]) {
     test(`${width}px wide: Read > Map with the code open, Explore, and the system map`, async ({
       page,
@@ -81,7 +81,7 @@ const canvas = (page: Page) =>
     return { width: Math.round(pane.width), cut };
   });
 
-test.describe("while no code is on screen the diagram takes the code column's width (D9, V5-01)", () => {
+test.describe("while no code is on screen the diagram takes the code column's width", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
   test("Explore: the file list alone beside the diagram, the code column with the first selection", async ({
@@ -129,10 +129,10 @@ test.describe("while no code is on screen the diagram takes the code column's wi
 });
 
 /**
- * V6-01, R6-5: in Explore, while nothing is selected, Concepts and Details are one line under the diagram, so
+ * in Explore, while nothing is selected, Concepts and Details are one line under the diagram, so
  * a tall sequence or flow opens whole at 1440x900. The first selection opens the panels, once.
  */
-test.describe("Explore with nothing selected gives the diagram the height (V6-01)", () => {
+test.describe("Explore with nothing selected gives the diagram the height", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
   /** The canvas's size, the ids of the steps and lifelines not wholly in it, the strip's height. */
@@ -279,7 +279,7 @@ test.describe("Explore with nothing selected gives the diagram the height (V6-01
   });
 });
 
-test.describe("a phone gives the diagram most of the screen (R3-2)", () => {
+test.describe("a phone gives the diagram most of the screen", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
   /** The share of the screen's height the element shows of itself, on arrival (no scrolling). */
@@ -305,7 +305,7 @@ test.describe("a phone gives the diagram most of the screen (R3-2)", () => {
       await expect(page.locator(".workspace .pz-svg").first()).toBeVisible();
       await expect.poll(() => shareOfScreen(page, ".workspace .pz-svg")).toBeGreaterThan(0.55);
       // what the caption held is one tap away (a caption with only "Explore all diagrams" to hide shows it
-      // and has no disclosure, R4-24)
+      // and has no disclosure)
       const about = page.getByRole("button", { name: /^About this (map|flow)$/ });
       if (name === "a map") await expect(about).toHaveCount(0);
       else {
@@ -317,7 +317,7 @@ test.describe("a phone gives the diagram most of the screen (R3-2)", () => {
     });
   }
 
-  test("Tour, then Flow: the flow opens at its top with the code closed; its steps are one tap away (R6-3, R6-4)", async ({
+  test("Tour, then Flow: the flow opens at its top with the code closed; its steps are one tap away", async ({
     page,
   }) => {
     const problems = watchProblems(page);
@@ -341,7 +341,7 @@ test.describe("a phone gives the diagram most of the screen (R3-2)", () => {
     expect(problems).toEqual([]);
   });
 
-  test("the Code tab with no file open shows the whole file list, and a hint at its own height (R5-8)", async ({
+  test("the Code tab with no file open shows the whole file list, and a hint at its own height", async ({
     page,
   }) => {
     await page.goto(`${TS_BUNDLE.href}?perspective=code`);
@@ -376,12 +376,12 @@ test.describe("a phone gives the diagram most of the screen (R3-2)", () => {
   });
 });
 
-test("the Tour decides its right column once per tour, so the text never changes width (R3-3, R4-4)", async ({
+test("the Tour decides its right column once per tour, so the text never changes width", async ({
   page,
 }) => {
   await page.goto(TS_BUNDLE.href);
   await expect(page.getByTestId("guide")).toBeVisible();
-  // step 2 lists a settings file, so the column is there from step 1 on, which lists its own code (R5-3)
+  // step 2 lists a settings file, so the column is there from step 1 on, which lists its own code
   await expect(page.locator(".workspace-context")).toBeVisible();
   await expect(page.getByTestId("step-code")).toContainText("runner.ts");
   const width = () =>
@@ -406,7 +406,7 @@ test("the Tour decides its right column once per tour, so the text never changes
   await expect(page.locator(".workspace-context")).toBeHidden();
 });
 
-test("a Tour step with no related files lists its own code, which opens it; a phone shows no bar for it (R5-3)", async ({
+test("a Tour step with no related files lists its own code, which opens it; a phone shows no bar for it", async ({
   page,
 }) => {
   await page.goto(TS_BUNDLE.href);
@@ -421,12 +421,12 @@ test("a Tour step with no related files lists its own code, which opens it; a ph
 });
 
 /**
- * Present (D7, D9): a slide keeps the 12px text floor. A diagram that does not read whole at that size in the
+ * Present: a slide keeps the 12px text floor. A diagram that does not read whole at that size in the
  * 40% column gets a wider one (up to 65%) and then fits whole; one still too big starts on the step's focus,
  * with the lifelines its arrows join in the frame, and "Fit all" in sight without a mouse. The text card is as
  * tall as its text (at most 40% of the column), and "Fit all" sits in the title bar, never on a box.
  */
-test.describe("Present keeps the 12px floor and widens the diagram column (D7, D9)", () => {
+test.describe("Present keeps the 12px floor and widens the diagram column", () => {
   const FILES = ["main", "runner", "queue", "worker", "bus", "metrics", "config"].map(
     (name) => `file:src/${name}.ts`,
   );
@@ -479,7 +479,7 @@ test.describe("Present keeps the 12px floor and widens the diagram column (D7, D
     });
     (bundle.explainer.tours as Loose[]).unshift({
       id: "tour:d7",
-      title: "D7",
+      title: "Wide slides",
       steps: [
         { id: "s1", view: "view:files", focus: [FILES[1]], note: "One line." },
         {
@@ -587,7 +587,7 @@ test.describe("Present keeps the 12px floor and widens the diagram column (D7, D
       width: 1280,
       height: 720,
     });
-    // four lifelines: whole at 12px only in a wider column than 40%, which it gets (D7's middle case)
+    // four lifelines: whole at 12px only in a wider column than 40%, which it gets (the middle case: a wider column, then whole)
     await expect(page.getByTestId("present")).toHaveAttribute("data-step", "3");
     await expect(page.locator(".present-left .pz-svg text").first()).toBeVisible();
     await expect
@@ -665,7 +665,7 @@ test.describe("Present keeps the 12px floor and widens the diagram column (D7, D
     });
 });
 
-test("Present: the slide's title bar keeps no room for Save image and Text view, so the title is whole (adhd R6-2)", async ({
+test("Present: the slide's title bar keeps no room for Save image and Text view, so the title is whole", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -729,7 +729,7 @@ test("J and K step through the Tour, and the list of steps says so", async ({ pa
   await expect.poll(step).toBe("t1");
 });
 
-test.describe("the phone caption's disclosure (R4-21, R4-22)", () => {
+test.describe("the phone caption's disclosure", () => {
   test.use({ viewport: { width: 390, height: 844 } });
   test("says whether it is open, names what it controls, and leaves the diagram picker in sight", async ({
     page,
@@ -749,7 +749,7 @@ test.describe("the phone caption's disclosure (R4-21, R4-22)", () => {
   });
 });
 
-test("a reading tab opens on the Tour's step on screen, not on the one applied before the scroll (R4-5)", async ({
+test("a reading tab opens on the Tour's step on screen, not on the one applied before the scroll", async ({
   page,
 }) => {
   await page.goto(TS_BUNDLE.href);

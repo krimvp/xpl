@@ -1116,7 +1116,7 @@ describe("order checks", () => {
     );
     expect(found[0]!.hint).toContain("where next");
     expect(ends(orderTour(steps("view:map")))).toEqual([]);
-    // language L4-5: other plain ways to say where next pass; "next" inside an ordinary sentence does not count
+    // other plain ways to say where next pass; "next" inside an ordinary sentence does not count
     const endsWith = (note: string) => {
       const t = orderTour(steps("view:map"));
       const last = (t.tours![0]!.steps as { note: string }[]).at(-1)!;
@@ -1555,7 +1555,7 @@ describe("lintExplainer: reader checks", () => {
     }
   });
 
-  // structure R5-02: SKILL.md "a sequence has 3-6 participants"
+  // SKILL.md "a sequence has 3-6 participants"
   it("many-participants: a sequence a tour shows with more than 6 participants", () => {
     const sequence = (id: string, count: number) => ({
       id,
@@ -2307,7 +2307,7 @@ describe("lintExplainer: words and voice on real code English", () => {
       "Dependency injection wires the services.",
     ]);
     expect(ids(mechanisms, "abstract-subject")).toEqual([]);
-    // language L4-1: the whole name of a mechanism passes, not every phrase with its head noun
+    // the whole name of a mechanism passes, not every phrase with its head noun
     const hidden = concepts([
       "Job scheduling picks the next job.",
       "Config loading reads the file.",
@@ -2387,7 +2387,7 @@ describe("lintExplainer: words and voice on real code English", () => {
     expect(ids(found, "filler-word")).toEqual([9, 10, 11, 12].map((i) => `concept:c${i}`));
   });
 
-  // language L4-3: a quote of one word after an article or a verb is a scare quote, the writer's own word
+  // a quote of one word after an article or a verb is a scare quote, the writer's own word
   it("filler-word checks a scare quote of one word, and skips a one-word message the code prints", () => {
     const found = concepts([
       'The pool "manages" its connections.',
@@ -2397,7 +2397,7 @@ describe("lintExplainer: words and voice on real code English", () => {
     expect(ids(found, "filler-word")).toEqual(["concept:c1", "concept:c2"]);
   });
 
-  // language L4-6: a tool word with the map's words around it means xpl's part, even with no noun after it
+  // a tool word with the map's words around it means xpl's part, even with no noun after it
   it("tool-word: xpl's sense outside tours counts when the sentence talks about the map", () => {
     const found = concepts([
       "Lists the boxes; the stubs show code outside this map.",
@@ -2406,7 +2406,7 @@ describe("lintExplainer: words and voice on real code English", () => {
     expect(ids(found, "tool-word")).toEqual(["concept:c1"]);
   });
 
-  // language L5-1: a one-word quote of a value (a region code, a mode, a key) is the code's word, not a scare quote
+  // a one-word quote of a value (a region code, a mode, a key) is the code's word, not a scare quote
   it("we-voice skips every quote; filler-word skips a one-word quote of a value, not a scare quote", () => {
     const found = concepts([
       'Defaults the region to "us" when none is set.',
@@ -2420,7 +2420,7 @@ describe("lintExplainer: words and voice on real code English", () => {
     expect(ids(found, "filler-word")).toEqual(["concept:c5", "concept:c6"]);
   });
 
-  // language L5-2: the verb "maps" and code that draws a box of its own do not make a sentence about the map
+  // the verb "maps" and code that draws a box of its own do not make a sentence about the map
   it("tool-word: a sentence with the verb maps or a code box is not about the guide's map", () => {
     const found = concepts([
       "Builds the gRPC stub for each service and maps its methods to handlers.",
@@ -2430,7 +2430,7 @@ describe("lintExplainer: words and voice on real code English", () => {
     expect(ids(found, "tool-word")).toEqual(["concept:c3"]);
   });
 
-  // newcomer R5-S6: "in all" is "in total", a quoted test name is the code's words, a heading has its step's code
+  // "in all" is "in total", a quoted test name is the code's words, a heading has its step's code
   it('absolute-word skips "in all", a quoted test name, and a heading on a step with code', () => {
     const steps = [
       "### Retries\nThe old code waited 3.5 s in all.",

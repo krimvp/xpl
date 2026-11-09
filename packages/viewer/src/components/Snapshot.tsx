@@ -154,7 +154,7 @@ function GraphSnapshot({
 }) {
   const state = useViewerState();
   const files = state.files;
-  // A still picture draws no dashed boxes for code outside the map (R3-N4): they can not be opened here, and
+  // A still picture draws no dashed boxes for code outside the map: they can not be opened here, and
   // in a small picture they read as parts of the map. The live Map shows them.
   const graph = useMemo(
     () =>

@@ -115,14 +115,14 @@ describe('boxText: "members"', () => {
     );
   });
 
-  // V4-03/V4-05: "references ×1" on every arrow of a data map said nothing; the arrow means the row's field
+  // "references ×1" on every arrow of a data map said nothing; the arrow means the row's field
   // holds a value of the type it points at.
   it('names an arrow from a row "holds", and leaves the arrows of an ordinary map as they are', () => {
     expect(derive(TS_INCLUDE, "members").edges.map((e) => e.label)).toEqual(["holds", "holds"]);
     expect(derive(TS_INCLUDE).edges.map((e) => e.label)).toEqual([undefined, undefined, undefined]);
   });
 
-  // R6-1: folding a table (its rows left out) took its arrows away with its rows
+  // folding a table (its rows left out) took its arrows away with its rows
   it("draws a folded table's arrows from the table, still named holds; never a method's uses", () => {
     const folded = TS_INCLUDE.filter((id) => !id.includes("DeadJob."));
     expect(derive(folded, "members").edges.map((e) => [e.id, e.label])).toEqual([
@@ -178,7 +178,7 @@ describe('boxText: "members"', () => {
     ]);
   });
 
-  // D8/V5-03: a Go struct is indexed as "class"; the reader reads the language's own word on every box.
+  // a Go struct is indexed as "class"; the reader reads the language's own word on every box.
   it('gives a Go struct the word "struct" and a field of any type the word "field"', () => {
     const words = (include: string[]) =>
       derive(include.map(sym), "members").nodes.map((n) => [n.id.split("#")[1], n.kindWord]);
@@ -203,7 +203,7 @@ describe('boxText: "members"', () => {
   });
 });
 
-// R5-5: the Text view and a row's name cut a long type ("Array<(worker: Worker) => v…"); only the drawing may
+// the Text view and a row's name cut a long type ("Array<(worker: Worker) => v…"); only the drawing may
 describe("a row's long type", () => {
   it("is given whole", () => {
     const world = makeWorld({
@@ -241,7 +241,7 @@ describe("a row's long type", () => {
   });
 });
 
-// V5-09: "WorkerPool.waiting holds Worker" for an array of callbacks that take a Worker: it holds functions
+// "WorkerPool.waiting holds Worker" for an array of callbacks that take a Worker: it holds functions
 describe("a field whose type names a type only as a function's parameter", () => {
   const world = makeWorld({
     files: [
@@ -310,7 +310,7 @@ describe("a field whose type names a type only as a function's parameter", () =>
   });
 });
 
-// V6-02: `export const applyCommand = {…}` was a "variable" on its box; the code says it is a constant
+// `export const applyCommand = {…}` was a "variable" on its box; the code says it is a constant
 describe("the word on a top-level value's box", () => {
   const world = makeWorld({
     files: [

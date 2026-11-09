@@ -2,7 +2,7 @@ import { useViewerState, useDerived, useStore } from "../hooks.js";
 
 /**
  * Every concept of the explainer. Click selects (shift adds); matches for the editor caret get `is-match`.
- * `compact` (Explore with nothing selected, V6-01): one line of chips, each the concept's name (its summary
+ * `compact` (Explore with nothing selected): one line of chips, each the concept's name (its summary
  * on hover), so the diagram above keeps the height.
  */
 export function ConceptList({ compact = false }: { compact?: boolean } = {}) {

@@ -165,7 +165,7 @@ describe.each([
   });
 
   // The dependency matrix (MatrixView) tells a cell's trust by its stripes and marks the diagonal and an
-  // arrow back up the order: each of these marks needs 3:1 on the panel the grid is drawn on (D5).
+  // arrow back up the order: each of these marks needs 3:1 on the panel the grid is drawn on.
   it("matrix stripes, diagonal and back-arrow flag on the panel", () => {
     const panel = v("--panel");
     const low = ["--matrix-mark", "--warn"]

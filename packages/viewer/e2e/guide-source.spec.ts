@@ -178,7 +178,7 @@ test("each tour picture is as tall as its frame", async ({ page }) => {
   }
 });
 
-test("a Before/Now step numbers its code links in the step's order and pages to the code before (R5-N1)", async ({
+test("a Before/Now step numbers its code links in the step's order and pages to the code before", async ({
   page,
 }) => {
   const { html, bundle } = readEmbeddedBundle(CHANGE_BUNDLE);

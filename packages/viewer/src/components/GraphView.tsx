@@ -155,7 +155,7 @@ interface Marks {
   related: ReadonlySet<string>;
   /**
    * With something selected on the map: the boxes whose arrows stay in front (the selected boxes, the boxes in
-   * them, and the ends of a selected arrow). An arrow with no end among them is drawn dim (V2-05).
+   * them, and the ends of a selected arrow). An arrow with no end among them is drawn dim.
    */
   lit?: ReadonlySet<string>;
   /** In a still picture: what the frame cuts (graphLayout `cutAt`), drawn faded. */
@@ -416,7 +416,7 @@ export function GraphView({
       layout !== undefined &&
       allEdgesOf(layout).some((edge) => !edge.stub && selected.has(edge.id));
     // a row whose field the step's code points at (Queue.ready, "used here" for the Job table) is marked on its
-    // own table, as a caret on that line would mark it (V5-07)
+    // own table, as a caret on that line would mark it
     const rows = dataMap && layout ? anchoredRows(layout, [...stepAnchors(selection)]) : [];
     const held = dataMap && layout ? heldTables(layout, selected) : [];
     return {
@@ -428,7 +428,7 @@ export function GraphView({
     };
   }, [selection, matches, related, layout, dataMap, state.applied, state.model]);
 
-  // (a fold keeps the canvas it was drawn on too, so the pane does not move the boxes that stayed: R6-1)
+  // (a fold keeps the canvas it was drawn on too, so the pane does not move the boxes that stayed)
   const drawnCanvas = useMemo(() => {
     const bounds = layout ? graphBounds(layout) : undefined;
     const kept = foldCanvas.current;
@@ -472,7 +472,7 @@ export function GraphView({
     const found = layout ? startFocus(layout, selection, order) : undefined;
     if (!found || !layout) return undefined;
     // the boxes without boxes inside them, a table as one (its rows are not boxes): a frame cuts as few of
-    // them as it can, and "Fit all (N out of sight)" counts them (V4-02)
+    // them as it can, and "Fit all (N out of sight)" counts them
     const leaves: Box[] = [];
     const walk = (list: readonly LayoutNode[], x: number, y: number) => {
       for (const node of list) {
@@ -496,7 +496,7 @@ export function GraphView({
   }, [layout, shift, selection]);
 
   // The pane's shape, coarsely (steps of about 15%): when it changes (Show code halves the pane, a phone turns),
-  // the map is laid out again for it, so it never shrinks to a strip and then flips on the next click (U3).
+  // the map is laid out again for it, so it never shrinks to a strip and then flips on the next click.
   const [paneShape, setPaneShape] = useState("");
   useLayoutEffect(() => {
     const el = host.current;
@@ -510,16 +510,16 @@ export function GraphView({
   }, []);
 
   // The layout direction (right or down) is chosen for the first pane the view is drawn in, and kept for
-  // the view (`layoutView`, R5-5): the Tour's picture, this map and Explore draw it the same way round.
+  // the view (`layoutView`): the Tour's picture, this map and Explore draw it the same way round.
   useEffect(() => {
     if (paneShape === "") return; // (measured right after the first render)
     let cancelled = false;
     const el = host.current;
     const viewport = el ? { width: el.clientWidth, height: el.clientHeight } : undefined;
-    // a table folded on this map: every box stays where it was (R6-1)
+    // a table folded on this map: every box stays where it was
     const last = drawn.current;
     const kept = last?.viewId === viewId ? foldPins(last.layout, graph) : undefined;
-    // (a slide picks its own: D7 turns a map in the wider column it asks for)
+    // (a slide picks its own: a map that does not read whole at the 12px floor turns in the wider column it asks for)
     (present ? layoutGraphFitting : layoutView.bind(null, viewId))(
       graph,
       viewport,
@@ -612,7 +612,7 @@ export function GraphView({
   // Boxes and arrows, or the same as a matrix: the view's `render` says which it opens as, the reader's choice
   // holds until the diagram starts over (another view, another tour step). A matrix of three boxes says
   // nothing the map does not, nor does one whose arrows the author drew (each cell a "•"), and Present shows
-  // the author's picture: there the switch is offered only when the view opens as a matrix (V3-13). A table
+  // the author's picture: there the switch is offered only when the view opens as a matrix. A table
   // counts as one box (the matrix folds its rows into it).
   const stored = state.model.view(viewId);
   const opensAsMatrix = stored?.type === "graph" && stored.render === "matrix";
@@ -674,7 +674,7 @@ export function GraphView({
             ? "On a table: Down: go into its rows. -: fold it to one box. +: show its rows again."
             : undefined
         }
-        // (the map a guide without one gets is small: one box drawn twice its size says nothing more, V6-02)
+        // (the map a guide without one gets is small: one box drawn twice its size says nothing more)
         maxFitZoom={viewId === GENERATED_MAP_ID ? 1 : present ? PRESENT_MAX_FIT_ZOOM : undefined}
         fitPadding={present ? PRESENT_FIT_PADDING : undefined}
         minFitZoom={pinned ? GRAPH_READABLE_ZOOM : undefined}
@@ -1099,7 +1099,7 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
               <g
                 className="collapse"
                 role="button"
-                // (a table is one Tab stop, D9: its fold button is a click, as on a phone)
+                // (a table is one Tab stop: its fold button is a click, as on a phone)
                 tabIndex={node.rows ? -1 : 0}
                 aria-label={
                   expandedHere
@@ -1516,7 +1516,7 @@ function GhostShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
       className={`node ghost${fold ? " is-fold" : ""}${open ? " is-open" : ""}${stateClasses(node.id, marks)}`}
       data-element-id={still ? undefined : node.id}
       transform={`translate(${node.x} ${node.y})`}
-      // (read-only, a reader's map or a slide: the dashed box does nothing, so it is no Tab stop, D5)
+      // (read-only, a reader's map or a slide: the dashed box does nothing, so it is no Tab stop)
       role={still || readOnly ? undefined : "button"}
       tabIndex={still || readOnly ? undefined : 0}
       aria-label={still ? undefined : label}
@@ -1715,7 +1715,7 @@ function allEdgesOf(layout: Pick<GraphLayout, "nodes" | "edges">): LayoutEdge[] 
 /**
  * A line out of the map that no one looks at: not drawn, and not in the Tab order (its ghost box still is).
  * With an arrow of the map selected, its ends (selected as related boxes, and under the caret) do not bring
- * their lines out back: they would bury the arrow the reader asked about (uiux R3-4).
+ * their lines out back: they would bury the arrow the reader asked about.
  */
 function stubIsQuiet(edge: LayoutEdge, marks: Marks, hovered: string | undefined): boolean {
   if (!edge.stub) return false;

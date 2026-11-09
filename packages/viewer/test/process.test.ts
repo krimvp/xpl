@@ -142,7 +142,7 @@ describe("process flows and related files", () => {
     });
   });
 
-  it("a box that holds other code shows only the arrows drawn from or to it (R3-7)", () => {
+  it("a box that holds other code shows only the arrows drawn from or to it", () => {
     const bundle = makeBundle();
     bundle.index.resources = [
       {

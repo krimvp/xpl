@@ -80,7 +80,7 @@ describe("the tests of a guide section", () => {
     ]);
   });
 
-  // R6-P2: a step on a library's group listed the 21 tests of a docs generator, a member of a member
+  // a step on a library's group listed the 21 tests of a docs generator, a member of a member
   it("a group lists the tests among its own members, not the tests deep inside a bigger member", () => {
     const tested = model([{}]);
     const explainer = structuredClone(tested.explainer);

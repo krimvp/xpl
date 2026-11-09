@@ -5,7 +5,7 @@
  *   open          Present, for a tour step that asks for the tree (`editor.hideFileTree: false`)
  *   hidden        Present by default: the code gets the whole width
  *
- * `idle` (Explore, D9): while no code is on screen the area is the file tree alone (a strip when folded)
+ * `idle` (Explore): while no code is on screen the area is the file tree alone (a strip when folded)
  * with a line that says how to fill it, and the diagram beside it takes the rest of the width. The first
  * selection, or a file clicked in the tree, brings the code, and the column then stays.
  */

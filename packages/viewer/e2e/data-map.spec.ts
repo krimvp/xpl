@@ -15,7 +15,7 @@ import {
   type Loose,
 } from "./helpers.js";
 
-// a console error that only one path raises (the keyboard, a phone) fails the test that took it (T-13)
+// a console error that only one path raises (the keyboard, a phone) fails the test that took it
 let problems: string[] = [];
 test.beforeEach(({ page }) => {
   problems = watchProblems(page);
@@ -106,13 +106,13 @@ test("the matrix of a data map has a row per table, and a cell names the fields"
   // (three tables are too few for the reader's switch: the view opens as a matrix)
   await openDataMap(page, "mode=explore", { render: "matrix" });
   await expect(page.getByRole("rowheader")).toHaveText(["1Queue", "2DeadJob", "3Job"]);
-  // the fields, not a count of references (V5-04)
+  // the fields, not a count of references
   await expect(byId(page, HOLDS)).toHaveAccessibleName(
     "DeadJob → Job: holds (job). heuristic (matched by name)",
   );
 });
 
-// V5-04: "holds" in every place a field's arrow is named, each time with the table that owns the field
+// "holds" in every place a field's arrow is named, each time with the table that owns the field
 test('a field\'s arrow is "holds" in its details, its name and the parts list, with the owning type', async ({
   page,
 }) => {
@@ -140,7 +140,7 @@ test('a field\'s arrow is "holds" in its details, its name and the parts list, w
   await expect(details.locator(".facts dd").first()).toHaveText("DeadJob.job");
 });
 
-// R5-7: every row was its own Tab stop, and the first stop was whichever table the layout put first
+// every row was its own Tab stop, and the first stop was whichever table the layout put first
 test("Tab stops once per table, starting at the tour's first table; arrow keys walk its rows", async ({
   page,
 }) => {
@@ -172,8 +172,8 @@ test("Tab stops once per table, starting at the tour's first table; arrow keys w
   await expect.poll(() => selectionOf(page)).toEqual([`${DEAD}.error`]);
 });
 
-// R6-1: a fold took the table's arrows away and laid the whole map out again; T6-02: the test refocused the
-// table before "+", so a fold that lost focus passed; T6-03: "=" (no Shift) opens it too
+// a fold took the table's arrows away and laid the whole map out again; the test once refocused the
+// table before "+", so a fold that lost focus passed; "=" (no Shift) opens it too
 test("a focused table folds with minus and opens with plus or =, keeping its arrows, its place and focus", async ({
   page,
 }) => {
@@ -221,7 +221,7 @@ test("a focused table folds with minus and opens with plus or =, keeping its arr
   }
 });
 
-// V5-07: the step's code showed Queue.ready as "used here", and its row on the map was not marked
+// the step's code showed Queue.ready as "used here", and its row on the map was not marked
 test("a row the step's code names is marked on its own table", async ({ page }) => {
   await openDataMap(
     page,
@@ -254,7 +254,7 @@ test("a selected table lists its rows' arrows and marks the tables it holds as l
   await expect(byId(page, QUEUE)).toHaveClass(/is-related/);
 });
 
-// R4-4: a clicked row showed only its name ("job"), not its table or its type
+// a clicked row showed only its name ("job"), not its table or its type
 test("a selected row's details name its table and its type", async ({ page }) => {
   await openDataMap(page);
   await byId(page, DEAD).getByRole("button", { name: /^job/ }).click();
@@ -265,7 +265,7 @@ test("a selected row's details name its table and its type", async ({ page }) =>
   await expect(details.locator(".facts dd").nth(1)).toHaveText("Job");
 });
 
-// D8/V5-03: Go structs were "class" on the chip, the icon and the Key
+// Go structs were "class" on the chip, the icon and the Key
 test('a Go struct is a "struct" on its box, its icon and the Key; its fields are fields', async ({
   page,
 }) => {

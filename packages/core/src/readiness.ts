@@ -120,7 +120,7 @@ export function viewContentStatuses(model: ExplainerModel): ViewContentStatus[] 
       const graph = deriveGraph(view, model);
       status.nodes = {
         total: graph.nodes.length,
-        // a field row of a data map shows its declaration (name and type): a summary is extra (D8)
+        // a field row of a data map shows its declaration (name and type): a summary is extra
         unexplained: graph.nodes
           .filter((n) => n.row === undefined && !explained(n.id))
           .map((n) => n.id),

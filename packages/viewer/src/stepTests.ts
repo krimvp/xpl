@@ -74,7 +74,7 @@ export function stepTests(
 /**
  * What of a focus element's code its tests come from: the element itself, but for a group without code links of
  * its own only those of its members that are test code (a test file, a group of tests). A big member (a docs
- * generator's folder, say) holds tests of its own, which say nothing about this step (R6-P2).
+ * generator's folder, say) holds tests of its own, which say nothing about this step.
  */
 function ownTestCode(id: ElementId, model: ExplainerModel): ElementId[] {
   const node = model.node(id);

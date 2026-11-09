@@ -199,7 +199,7 @@ function buildInfo(id: ElementId, model: ExplainerModel, vd: ViewDerived): Eleme
       const nested = node.kind === "group" ? 0 : model.children(id).length;
       if (nested > 0)
         facts.push({ label: "Inside it", value: `${nested} ${nested === 1 ? "part" : "parts"}` });
-      // a field: named with its type ("Queue.ready"), and the type it holds (R4-4)
+      // a field: named with its type ("Queue.ready"), and the type it holds
       const field = node.kindWord === "field";
       if (field) {
         const memberType = vd.graph?.nodes.find((n) => n.id === id)?.memberType;

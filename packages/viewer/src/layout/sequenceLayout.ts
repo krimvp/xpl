@@ -45,9 +45,9 @@ export interface Row {
   labelY: number;
   labelAnchor: "middle" | "start";
   labelWidth: number;
-  /** The label on lines of about `LABEL_CHARS` characters (a long call signature wraps, V2-07). */
+  /** The label on lines of about `LABEL_CHARS` characters (a long call signature wraps). */
   lines: string[];
-  /** How many frames the row sits in: its label's plate takes their tint, not the canvas' (N16). */
+  /** How many frames the row sits in: its label's plate takes their tint, not the canvas'. */
   depth: number;
   /** The hit area of the step. */
   bandLeft: number;
@@ -359,7 +359,7 @@ export type SequenceItem =
 
 /**
  * The sequence top to bottom, as it is read: a frame's name before its first arm's condition, before the steps
- * under them. The order of the Tab key in the diagram and of its text view (V4-10, V4-08).
+ * under them. The order of the Tab key in the diagram and of its text view.
  */
 export function readingOrder(layout: Pick<SequenceLayout, "frames" | "rows">): SequenceItem[] {
   const items: { item: SequenceItem; y: number; rank: number }[] = [];

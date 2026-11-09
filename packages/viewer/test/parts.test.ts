@@ -53,7 +53,7 @@ describe("the parts of a diagram in words", () => {
     expect(asFlow[0]!.from).toBeUndefined();
   });
 
-  // R6-R3: "Job queue implements Runner" on a folder map read as if the queue were a kind of runner
+  // "Job queue implements Runner" on a folder map read as if the queue were a kind of runner
   it("says where the interface is when an implements arrow joins two files", () => {
     const { model, overview } = world();
     const graph = deriveGraph(overview, model);

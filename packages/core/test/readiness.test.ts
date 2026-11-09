@@ -245,7 +245,7 @@ describe("ready export rules", () => {
     });
   });
 
-  // D8 / content R4-3: a row of a data map shows its field's name and type; the draft writes no text for it
+  // a row of a data map shows its field's name and type; the draft writes no text for it
   it("needs no summary on a field row of a data map, and needs one on the same field drawn as a box", () => {
     const world = makeWorld({
       files: [{ path: "q.ts", text: "export interface Job {\n  id: string;\n}" }],

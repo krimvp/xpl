@@ -38,7 +38,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
   const [sourceOpen, setSourceOpen] = useState(startWithSource);
   /** The guide section scrolled to (Guide), for the breadcrumb: where the reader is, not what was clicked. */
   const [reading, setReading] = useState<string | undefined>(undefined);
-  /** On a phone the caption's question, links and picker sit behind "About this map" (R3-2). */
+  /** On a phone the caption's question, links and picker sit behind "About this map". */
   const [aboutOpen, setAboutOpen] = useState(false);
   const captionId = useId();
   const columns = useRef<HTMLDivElement>(null);
@@ -66,7 +66,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
   const active = state.selection[state.selection.length - 1];
   const info = active ? describeElement(active, state.model, derived.view) : undefined;
   const tour = store.currentTour() ?? state.model.tours[0];
-  // The Tour decides once per tour whether it has a right column (R4-4).
+  // The Tour decides once per tour whether it has a right column.
   const keepRail = useMemo(
     () => state.perspective === "guide" && !!tour && tourHasCards(tour, state.model),
     [state.perspective, tour, state.model],
@@ -141,7 +141,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
   // The topic column names the picked element (not in the guide while its section is the topic).
   const topicShown =
     !!info && onScreen && !wholeFlow && !(state.perspective === "guide" && appliedStep);
-  // D9: on the Map and the Flow the code column waits for code to show. While nothing is selected (no box,
+  // on the Map and the Flow the code column waits for code to show. While nothing is selected (no box,
   // no caret, no file opened) the diagram keeps the width, and the column appears with the first selection.
   // Once code has shown, the column stays until "Hide code" or another tab: clearing the selection does not
   // move the diagram again.
@@ -159,7 +159,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
     derived.panes.length === 0;
   const showSource = code || codeFirst || (sourceOpen && !waiting);
   // Where the reader is: the step on screen, else what is selected. A map or a flow with nothing selected
-  // is named by its caption (title and levels), not a second time here (U24).
+  // is named by its caption (title and levels), not a second time here.
   const crumb = readingStep
     ? stepTitle(readingStep, state.model)
     : appliedStep
@@ -179,7 +179,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
     if (state.openSeq > 0 && state.openedFile) setSourceOpen(true);
   }, [state.openSeq, state.openedFile]);
   // A phone shows one column: the Map or Flow tab opens on its diagram, not on the code the Tour step had opened below it
-  // (R6-4). The code comes back with "Show code" or a tap on a box.
+  //. The code comes back with "Show code" or a tap on a box.
   const lastPerspective = useRef(state.perspective);
   useEffect(() => {
     if (lastPerspective.current === state.perspective) return;
@@ -298,13 +298,13 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                     className={
                       "workspace-caption" +
                       (aboutOpen ? " is-about-open" : "") +
-                      // (the disclosure only when it hides something besides "Explore all diagrams", R4-24)
+                      // (the disclosure only when it hides something besides "Explore all diagrams")
                       (viewQuestion || insides.length > 0 ? " has-about" : "")
                     }
                   >
                     <div>
                       <p className="eyebrow">
-                        {/* (the kind of diagram: a sequence is not called a flow, N9) */}
+                        {/* (the kind of diagram: a sequence is not called a flow) */}
                         {state.perspective === "map"
                           ? "Map"
                           : flow?.type === "sequence"
@@ -331,7 +331,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                         About this {diagramWord}
                       </button>
                       {/* (a phone: the list of steps is below the canvas, which shows one or two
-                          lifelines at a readable size: one tap away from the top, R6-3) */}
+                          lifelines at a readable size: one tap away from the top) */}
                       {state.perspective === "flow" && flow && !active && (
                         <button
                           type="button"
@@ -380,7 +380,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
                         </>
                       )}
                       {diagramChoices > 1 && (
-                        // (closed, it names what it offers, not the diagram the title above names, U19)
+                        // (closed, it names what it offers, not the diagram the title above names)
                         <select
                           aria-label="Choose a diagram"
                           value={PICK}

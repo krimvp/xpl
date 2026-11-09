@@ -156,7 +156,7 @@ export interface GraphLayout {
   /** True when the layered layout failed and the grid fallback was used. */
   fallback: boolean;
   direction: Direction;
-  /** The badge every box of the map had ("Go"): drawn on none of them, said once by the key line (V2-14). */
+  /** The badge every box of the map had ("Go"): drawn on none of them, said once by the key line. */
   sharedBadge?: string;
 }
 
@@ -325,7 +325,7 @@ function containerMinWidth(label: string, badge: string, change?: ChangeStatus):
 /** The longest type text a row draws; a longer one is cut and ends in "…" (its name and Text view say it all). */
 const ROW_TYPE_MAX = 28;
 
-/** A row's type as drawn: cut to `ROW_TYPE_MAX` characters (core gives the whole of it, R5-5). */
+/** A row's type as drawn: cut to `ROW_TYPE_MAX` characters (core gives the whole of it). */
 export function shownType(type: string): string {
   return type.length > ROW_TYPE_MAX ? `${type.slice(0, ROW_TYPE_MAX - 1).trimEnd()}…` : type;
 }
@@ -528,7 +528,7 @@ function buildModel(graph: DerivedGraph, changes: ChangeMarks | undefined): Mode
       kind: edge.kind,
     });
   }
-  // The boxes each ghost links to: its count is a total over them when there are several (U12).
+  // The boxes each ghost links to: its count is a total over them when there are several.
   const insides = new Map<string, Set<string>>();
   for (const stub of graph.stubs)
     if (known.has(stub.inside))
@@ -1095,7 +1095,7 @@ function layeredLayout(
   const chains = new Map<string, { from: string[]; to: string[] }>();
   const crossing = new Map<string, { edge: EdgeMeta; end: "from" | "to" }[]>();
   // Two arrows between the same two boxes, one each way: the second (its twin) takes the first one's route,
-  // read backwards, so a two-way link is one line with a head at each end, not two long routes (V2-04).
+  // read backwards, so a two-way link is one line with a head at each end, not two long routes.
   const twinOf = new Map<string, EdgeMeta>();
   {
     const firstOf = new Map<string, EdgeMeta>();
@@ -1595,7 +1595,7 @@ function layeredLayout(
     const box = labelBox(wayLabel(edge.label, points));
     const centre = labelOnRoute(own, box, undefined);
     if (centre) twin.label = { ...box, x: centre.x - box.width / 2, y: centre.y - box.height / 2 };
-    // On one line, two labels end to end read as one ("← calls ×3 calls ×1 →", V6-03): each moves off the
+    // On one line, two labels end to end read as one ("← calls ×3 calls ×1 →"): each moves off the
     // line to its own side of it, the lead's above (or left of) it, the twin's below (or right of) it.
     const first = drawn.laidOut;
     if (first.label && first.own) first.label = besideLine(first.label, first.own, -1);
@@ -1877,7 +1877,7 @@ export function spreadLabels(
  * Where the boxes of `before` stay when `graph` only folds tables of it (a data map's "-": the same boxes at the
  * top level, and some table drawn without its rows): every top-level box's position, to lay `graph` out with as
  * pins. The folded table keeps its top-left corner and its arrows start at its header. Undefined for any other
- * change (a box added or gone, a table opened again), which is laid out afresh (R6-1).
+ * change (a box added or gone, a table opened again), which is laid out afresh.
  */
 export function foldPins(
   before: GraphLayout | undefined,

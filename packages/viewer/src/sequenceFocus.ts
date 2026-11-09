@@ -5,7 +5,7 @@
  *
  * - Each selected arrow is one focus box: its label with both its lifelines (who talks to whom), and the
  *   condition of the choice it is in when that is near (an `alt` from its top, so the first arm's condition
- *   shows too, R6-2). Its label (`core`) is what stays in view when even one is too wide.
+ *   shows too). Its label (`core`) is what stays in view when even one is too wide.
  * - Above each, the room the sticky lifeline names take once the view starts lower down: a label is shown
  *   under them, never behind them.
  * - A selected lifeline is its head, with its own arrows as neighbours: they come in while there is room.
@@ -85,7 +85,7 @@ export function sequenceFocus(
     };
     core ??= head;
     boxes.push(head);
-    // (its own arrows, nearest first: a picture about a participant shows its calls, R6-R2)
+    // (its own arrows, nearest first: a picture about a participant shows its calls)
     for (const row of layout.rows)
       if (row.step.from === lifeline.id || row.step.to === lifeline.id)
         neighbours.push(

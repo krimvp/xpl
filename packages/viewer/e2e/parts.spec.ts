@@ -54,7 +54,7 @@ test("a sequence's steps in words carry the numbers its arrows carry", async ({ 
   await page.goto(TS_BUNDLE.href + "?perspective=flow&view=view:dispatch");
   await page.waitForFunction(() => window.__xpl !== undefined);
   const steps = page.getByTestId("parts-panel").getByRole("list", { name: "Steps" });
-  // every step, not only the first: a numbering that counted frames or arms would drift from step 2 on (T-07)
+  // every step, not only the first: a numbering that counted frames or arms would drift from step 2 on
   const ids = ["dispatch:1", "dispatch:2", "dispatch:3"];
   await expect(steps.locator(".parts-number")).toHaveText(["1", "2", "3"]);
   await expect

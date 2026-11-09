@@ -42,7 +42,7 @@ export function isHolds(edge: { kind: string; label?: string | undefined }): boo
 
 /**
  * The words of an arrow without a label of its own: its kind and how many references it counts ("calls ×3").
- * A class extends or implements another once, so a count of one says nothing there: "implements" (V5-04).
+ * A class extends or implements another once, so a count of one says nothing there: "implements".
  */
 export function kindCount(kind: string, count: number): string {
   return count === 1 && (kind === "extends" || kind === "implements") ? kind : `${kind} ×${count}`;

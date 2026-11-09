@@ -240,7 +240,7 @@ export function KeyLine({
   );
   const kinds = shows.kinds ?? [];
   // the kinds when the map mixes them, or draws only arrows that are not calls (a class hierarchy); a map of
-  // calls alone names them when the line says anything else, so an arrow without words has one here (R6-3)
+  // calls alone names them when the line says anything else, so an arrow without words has one here
   const kindItems = kinds.map((kind) => ({
     key: `kind-${kind}`,
     swatch: line("lg-edge", headOf(kind)),

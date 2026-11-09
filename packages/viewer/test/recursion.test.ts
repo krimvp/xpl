@@ -184,7 +184,7 @@ describe("code-first views", () => {
     ).toBe(true);
   });
 
-  it("leave out a flow with two or more outcomes: it is a choice, drawn as a diagram (R5-N2)", () => {
+  it("leave out a flow with two or more outcomes: it is a choice, drawn as a diagram", () => {
     const flow = steps(["tree.go", "tree.go", "tree.go", "tree.go"]);
     const shaped = (shapes: SequenceView["steps"][number]["shape"][]): SequenceView => ({
       ...flow,

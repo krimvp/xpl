@@ -281,7 +281,7 @@ describe("xpl outline", () => {
       expect(find(commas.json.tree, "file:src/runner.ts")).toBeDefined();
     });
 
-    // adhd-text R3-09 / R5-03: `--kind enum,type` names the candidates `draft states` points at, at any depth
+    // `--kind enum,type` names the candidates `draft states` points at, at any depth
     it("searches every level when no --depth is given", async () => {
       const { code, out } = await xpl(dir, "outline", "--kind", "type");
       expect(code).toBe(0);

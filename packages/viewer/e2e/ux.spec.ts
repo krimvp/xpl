@@ -123,7 +123,7 @@ test("a phone reader keeps the theme button in the header, and the Map leads to 
   );
   await page.getByTestId("perspective-map").click();
   // on a phone the way to Explore sits behind "About this map" with the caption's question, when the map has
-  // one; a map with nothing else to hide shows the link itself (R4-24)
+  // one; a map with nothing else to hide shows the link itself
   const about = page.getByRole("button", { name: "About this map" });
   if (await about.isVisible()) await about.click();
   await page.getByTestId("explore-link").click();
@@ -254,7 +254,7 @@ test.describe("Present: a flow step", () => {
       // part of the 8-stage flow is out of sight at 16px: "Fit all" is a cue, and it shows every stage
       const badge = page.getByTestId("pz-fit");
       await expect(badge).toHaveClass(/is-cue/);
-      // while part of the flow is out of sight it stays on the slide, alone (D7); the zoom buttons come
+      // while part of the flow is out of sight it stays on the slide, alone; the zoom buttons come
       // with the mouse
       await expect(badge).toBeVisible();
       await expect(page.getByRole("button", { name: "Zoom in" })).toBeHidden();

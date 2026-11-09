@@ -149,7 +149,7 @@ export function buildMatrix(graph: DerivedGraph, include: readonly string[] = []
 
 /**
  * A draft's label "TODO: 2-5 plain words for this file (now: anchors.ts)" as "anchors.ts (TODO)": the rows of a
- * draft would all read the same where the header cuts them (V3-16).
+ * draft would all read the same where the header cuts them.
  */
 function shortTodo(label: string): string {
   const now = /^TODO\b.*\(now: ([^)]+)\)\s*$/.exec(label);

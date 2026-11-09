@@ -1,6 +1,6 @@
 /**
  * The caption of a talk (PresentMode): how much of the left column it may take, and at which type size.
- * One type size for the whole tour; each caption is as tall as its own text, up to the cap (D9), and the
+ * One type size for the whole tour; each caption is as tall as its own text, up to the cap, and the
  * diagram gets the rest.
  */
 
@@ -10,7 +10,7 @@
  */
 const DIAGRAM_MIN = 200;
 const DIAGRAM_MIN_SHARE = 0.45;
-/** The caption never takes more than this share of the left column (D9). */
+/** The caption never takes more than this share of the left column. */
 const CAPTION_MAX_SHARE = 0.4;
 /** The gap between the diagram and the caption (`.present-left` gap). */
 const GAP = 8;

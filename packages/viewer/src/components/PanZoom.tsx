@@ -84,14 +84,14 @@ export const PRESENT_FLOW_FOCUS_ZOOM = 10 / 13;
  */
 export const Presenting = createContext(false);
 /**
- * Present (D7): how many more pixels of width the diagram's pane needs for all of the diagram to read at the
+ * Present: how many more pixels of width the diagram's pane needs for all of the diagram to read at the
  * 12px floor (`PRESENT_READABLE_ZOOM`), `Infinity` when more width alone would not do it (the diagram is too
  * tall at that zoom; a map may still turn when its pane gets wider). PresentMode widens the diagram column up
  * to a limit and keeps the widest width a step asked for.
  */
 export const PresentRoom = createContext<((extra: number) => void) | undefined>(undefined);
 /**
- * Present (D9): where the zoom toolbar goes instead of over the picture, the diagram's title bar (null until
+ * Present: where the zoom toolbar goes instead of over the picture, the diagram's title bar (null until
  * that element is in the page). "Fit all" there never covers a box, fitted or not.
  */
 export const ToolbarSlot = createContext<HTMLElement | null | undefined>(undefined);
@@ -224,7 +224,7 @@ export function PanZoom({
   /**
    * The band at the top of the pane that the floating toolbar covers, px (0 when the toolbar sits above the
    * canvas, as on a phone). Fitting and the first view place the diagram under it: the toolbar never covers
-   * a box of a fitted diagram (D6).
+   * a box of a fitted diagram.
    */
   const [band, setBand] = useState(0);
   /** The band is at the bottom of the pane (Present), not the top: the diagram is not moved down under it. */
@@ -234,7 +234,7 @@ export function PanZoom({
   const presenting = useContext(Presenting);
   const slot = useContext(ToolbarSlot);
   // In Present too the first view keeps clear of the band: "Fit all" stays on the slide while part of the
-  // diagram is out of sight, and it never covers a box (D9).
+  // diagram is out of sight, and it never covers a box.
   const fitSize = useMemo(() => {
     const h = shown !== undefined && shown < size.h ? shown : size.h;
     return { w: size.w, h: Math.max(1, h - band) };
@@ -257,7 +257,7 @@ export function PanZoom({
     const measure = () => {
       if (el.clientWidth > 0 || el.clientHeight > 0) {
         setSize({ w: el.clientWidth, h: el.clientHeight });
-        // On a phone the pane can reach below the screen (the parts list follows it): fit to what shows (N11).
+        // On a phone the pane can reach below the screen (the parts list follows it): fit to what shows.
         const below = el.getBoundingClientRect().top;
         setShown(
           window.innerWidth <= PHONE_WIDTH && below >= 0
@@ -284,7 +284,7 @@ export function PanZoom({
     return () => observer.disconnect();
   }, []);
 
-  // In Present a frame of the focus keeps the floor too (D7: text never under 12px when a slide starts).
+  // In Present a frame of the focus keeps the floor too (text never under 12px when a slide starts).
   const least = presenting ? (readableMin ?? readableZoom) : readableMin;
   const own = readableZoom !== undefined ? (least ?? readableZoom) : READABLE_FLOOR;
   // A phone (not a slide) shows all of a diagram whose 14-unit labels read at 10px, rather than one or two
@@ -334,7 +334,7 @@ export function PanZoom({
     const next = frameView(fitSize, { width, height }, start.current, options);
     if (!next) return;
     // A frame of the focus with all of the diagram's height in the pane starts at its top, not centred
-    // under an empty band (a sequence's lifeline names come first, R5-2).
+    // under an empty band (a sequence's lifeline names come first).
     const y =
       height * next.transform.k + 2 * fitPadding <= fitSize.h ? fitPadding : next.transform.y;
     setT({ ...next.transform, y: y + bandTop });
@@ -695,7 +695,7 @@ export function PanZoom({
             }}
           >
             {readableAgain ? "Readable size" : "Fit all"}
-            {/* (a cue says what is out of sight: a bare "Fit all" in its frame read as pressed, R5-N2) */}
+            {/* (a cue says what is out of sight: a bare "Fit all" in its frame read as pressed) */}
             {!readableAgain && (outOfSight > 0 || cue) && (
               <span className="pz-fit-count">
                 {" "}
@@ -757,7 +757,7 @@ export function PanZoom({
         arrows. Enter: show its code. Escape: back to the diagram.
         {keyboardMore && ` ${keyboardMore}`}
       </span>
-      {/* Before the canvas: Tab reaches the zoom buttons drawn above the diagram before its boxes (U51). In
+      {/* Before the canvas: Tab reaches the zoom buttons drawn above the diagram before its boxes. In
           Present they sit in the diagram's title bar (ToolbarSlot), off the picture. */}
       {slot === undefined ? toolbar : slot ? createPortal(toolbar, slot) : null}
       <svg

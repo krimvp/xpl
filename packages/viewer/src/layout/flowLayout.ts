@@ -95,7 +95,7 @@ export const STAGE_LABEL_CHARS = 28;
 export const STAGE_LABEL_CHARS_ACROSS = 20;
 /** Characters per line of a decision's label in a left-to-right flow: a narrower, taller diamond. */
 export const DECISION_LABEL_CHARS_ACROSS = 14;
-/** A stage box is as tall as its words: one line of label is 66 units, each more adds a line (V2-07). */
+/** A stage box is as tall as its words: one line of label is 66 units, each more adds a line. */
 export function stageHeight(label: string, chars = STAGE_LABEL_CHARS): number {
   return 66 + 18 * (wrapWords(label, chars, 3).length - 1);
 }
@@ -299,15 +299,15 @@ export async function layoutFlow(
   const transitions = joins.filter(
     (edge) => result.boxes.has(edge.from) && result.boxes.has(edge.to) && edge.from !== edge.to,
   );
-  // Where a path splits, the lower step numbers go on the left (V2-06): the whole flow is mirrored when that
+  // Where a path splits, the lower step numbers go on the left: the whole flow is mirrored when that
   // agrees with more of its rows than dagre's own order does, and the ends a choice leads to are put in order.
   const number = new Map(source.stages.map(({ step }, i) => [step.id, i] as const));
   const indexOf = (id: string) =>
     number.get(children.find((child) => child.id === id)?.copyOf ?? id) ?? 0;
   const facing = readsBackwards(result, indexOf) ? mirrored(result) : result;
-  // The main path of a run of choices goes straight down (V1-08): a box moves under the one before it, its
+  // The main path of a run of choices goes straight down: a box moves under the one before it, its
   // early exits step aside. Kept only when no route then runs through a box and no box lands on another
-  // (an exit moved aside can reach the next choice's ends, V3-03).
+  // (an exit moved aside can reach the next choice's ends).
   const straight = straightened(facing, transitions, 36, indexOf);
   let routed: Point[][] = routeFlow(
     straight ?? facing,
@@ -853,7 +853,7 @@ function straightened(
         edge = side < 0 ? b.x - gap : b.x + b.width + gap;
       }
     }
-    // an exit pushed aside onto a box of another branch (V3-03): this box stays where dagre put it
+    // an exit pushed aside onto a box of another branch: this box stays where dagre put it
     const landed = [...before.keys()].some((k) => {
       const a = boxes.get(k)!;
       return [...boxes].some(

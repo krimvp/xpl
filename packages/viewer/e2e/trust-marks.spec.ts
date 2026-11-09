@@ -1,5 +1,5 @@
 /**
- * Trust is never shown by colour alone (DECISIONS D5, AGENTS.md "never blur precise and heuristic"): an arrow
+ * Trust is never shown by colour alone (AGENTS.md "never blur precise and heuristic"): an arrow
  * matched by name is dashed on the map, on the key line under the caption and in the Key, with one dash in all
  * three places and in both themes; a line out of the map has a dash of its own, and is not drawn (nor in the
  * Tab order) until its box is selected.

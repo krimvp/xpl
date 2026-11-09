@@ -258,7 +258,7 @@ test("Related files follow the tour step scrolled to, not the one applied before
 }) => {
   await page.goto(TS_BUNDLE.href);
   await expect(page.getByTestId("guide")).toBeVisible();
-  // step 1 (the Scheduling group) has no cards of its own: the column lists where its code is (R5-3)
+  // step 1 (the Scheduling group) has no cards of its own: the column lists where its code is
   // (one name for the column in the Tour, whatever it lists)
   const column = page.getByRole("region", { name: "This step's code" });
   await expect(page.getByRole("region", { name: "Related files" })).toHaveCount(0);

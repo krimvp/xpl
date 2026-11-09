@@ -52,7 +52,7 @@ describe("xpl draft data", () => {
     expect(patch.nodes?.find((n) => n.id === "sym:src/queue.ts#Queue")?.summary).toBe(
       "TODO: one plain sentence: what it holds and what for (class, 6 fields; holds `Job`; held by `Runner`).",
     );
-    // field rows get no text to write (D8): only the types have nodes
+    // field rows get no text to write: only the types have nodes
     expect(patch.nodes?.map((n) => n.id)).toEqual(types(view));
     // the tour: the first type, the next three as they joined (with the field that links them), the rest, then
     // where to go next with the types left off
@@ -73,7 +73,7 @@ describe("xpl draft data", () => {
     expect(steps.at(-1)?.note).toMatch(
       /^### Where to go next\n\nTODO: the types left off the map .* Left off: Config, /,
     );
-    // a cut list ends in "…", with no stop after it (adhd-text R5-06)
+    // a cut list ends in "…", with no stop after it
     expect(steps.at(-1)?.note).toMatch(/, …$/);
     expect(r.out).toContain(
       "draft data for jobrunner: a data map of 6 types (a table each) with 27 field rows (a row needs no text),",
@@ -90,7 +90,7 @@ describe("xpl draft data", () => {
     expect(lint.json.counts).toEqual({ "todo-left": expect.any(Number) });
   });
 
-  // R4-S1 / V4-04: the attributes `__init__` sets are fields, so the classes that keep the state are tables
+  // the attributes `__init__` sets are fields, so the classes that keep the state are tables
   it("maps a Python repo with the classes whose `__init__` sets their fields: Queue holds Job, Runner holds Queue", async () => {
     const { patch, view, r } = await draft("py-jobrunner");
     expect(types(view)).toEqual([
@@ -176,7 +176,7 @@ describe("xpl draft data", () => {
     );
   });
 
-  // D8: two types of one name are told apart by their package
+  // two types of one name are told apart by their package
   it("qualifies a Go type name that another type the draft names shares, in its label and the hints", async () => {
     const { patch } = await draft("go-jobrunner");
     const node = (id: string) => patch.nodes?.find((n) => n.id === id);

@@ -22,7 +22,7 @@ export function boxName(label: string, kind?: string, change?: string): string {
 /**
  * The order Tab takes a map's boxes in. A data map's tables (`rows`) go in the order the map starts in (GraphView
  * `order`: the tour's first box, then the view's include list), one stop each; their rows are reached with the
- * arrow keys (D9). Any other map: reading order. The boxes outside the map (`ghost`) come after its own.
+ * arrow keys. Any other map: reading order. The boxes outside the map (`ghost`) come after its own.
  */
 export function tabOrder<
   T extends { id: string; x: number; y: number; rows?: boolean; ghost?: boolean },

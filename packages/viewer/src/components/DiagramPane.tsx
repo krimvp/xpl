@@ -21,7 +21,7 @@ export function DiagramPane() {
   const state = useViewerState();
   const derived = useDerived();
   const view = derived.view.view;
-  // Present: the zoom toolbar goes into the title bar, off the picture (D9).
+  // Present: the zoom toolbar goes into the title bar, off the picture.
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   const tourId = state.tour?.tourId;
   const order = useMemo(

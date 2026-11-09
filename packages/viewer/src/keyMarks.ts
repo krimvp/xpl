@@ -74,7 +74,7 @@ export function headOf(kind: string): "filled" | "hollow" | "open" {
 }
 
 /**
- * Technologies whose icon says more than their role's (V2-15): a git repository is not "outside" the way a
+ * Technologies whose icon says more than their role's: a git repository is not "outside" the way a
  * web service is, a browser is a window, a settings file is a file.
  */
 const TECH_ICONS: [RegExp, string][] = [

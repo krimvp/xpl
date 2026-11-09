@@ -1,5 +1,5 @@
 /**
- * How a flow is laid out for reading (round 2, V2-06 and V1-08): the step numbers read left to right where a path
+ * How a flow is laid out for reading: the step numbers read left to right where a path
  * splits, the main path of a run of choices goes straight down, and a box is as tall as its words.
  */
 import { processFlow, type SequenceView } from "@xpl/core";

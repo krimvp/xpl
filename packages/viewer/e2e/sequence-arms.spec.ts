@@ -14,7 +14,7 @@ import {
   type Loose,
 } from "./helpers.js";
 
-// a console error that only one path raises (the keyboard, a phone) fails the test that took it (T-13)
+// a console error that only one path raises (the keyboard, a phone) fails the test that took it
 let problems: string[] = [];
 test.beforeEach(({ page }) => {
   problems = watchProblems(page);
@@ -95,7 +95,7 @@ test("an alt frame draws a line between two arms and each arm's condition", asyn
     "[retries left]",
     "[else]",
   ]);
-  // the frame's own label names the decision, without brackets, set apart from the conditions (R4-17)
+  // the frame's own label names the decision, without brackets, set apart from the conditions
   const title = head(page).locator(".frame-label");
   await expect(title).toHaveText("how the attempt ends");
   const style = (el: Element) => {
@@ -178,7 +178,7 @@ test("at phone width the arms and their conditions stay inside the frame", async
   await page.screenshot({ path: screenshotPath("sequence-arms-390") });
 });
 
-// V4-10: Tab went to every condition before step 1; V4-09: a frame's name did nothing
+// Tab went to every condition before step 1, and a frame's name did nothing
 test("Tab reads the frames, the conditions and the steps top to bottom; a frame's name selects its steps", async ({
   page,
 }) => {
@@ -225,7 +225,7 @@ test("Tab reads the frames, the conditions and the steps top to bottom; a frame'
     .toBe("src/runner.ts:68");
 });
 
-// V5-05: a frame has no code link of its own (no anchors in the schema): its name and conditions say where the
+// a frame has no code link of its own (no anchors in the schema): its name and conditions say where the
 // condition is instead of pretending to show it
 test("a frame's name and an arm's condition say that the condition has no code link of its own", async ({
   page,
@@ -240,7 +240,7 @@ test("a frame's name and an arm's condition say that the condition has no code l
   );
 });
 
-// V4-08: the text view was a straight run of calls, with no frames or arms
+// the text view was a straight run of calls, with no frames or arms
 test("the text view lists the frames and the arms in reading order, with the step numbers", async ({
   page,
 }) => {
