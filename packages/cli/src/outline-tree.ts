@@ -115,6 +115,11 @@ export interface OutlineOptions {
    * parent symbols) is listed too, so the matches keep their place; everything else is left out.
    */
   kinds?: ReadonlySet<string>;
+  /**
+   * The lines of a file as an editor numbers them, when the text is at hand. The index counts the empty "line"
+   * after a final newline (`IndexedFile.lines`, the region whole-file anchors hash); `wc -l` and editors do not.
+   */
+  fileLines?: (path: string) => number | undefined;
 }
 
 /** The symbol kinds a `--kind` filter takes (`IndexedSymbol.kind`). */
@@ -218,7 +223,7 @@ function makeNode(model: IndexModel, fans: Fans, id: string, opts: OutlineOption
         type: "file",
         label: baseName(parsed.path),
         kind: file.language,
-        range: { startLine: 1, endLine: file.lines },
+        range: { startLine: 1, endLine: opts.fileLines?.(parsed.path) ?? file.lines },
       };
     }
     case "symbol": {

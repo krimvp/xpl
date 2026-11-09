@@ -35,7 +35,7 @@ describe("xpl outline", () => {
     expect(lines[0]).toMatch(/^repo {2}\S+ {2}12 files, \d+ symbols$/);
     expect(out).toMatch(/^ {2}dir:src {2}dir {2}7 files {2}in=\d+ out=\d+$/m);
     expect(out).toMatch(
-      /^ {4}file:src\/runner\.ts {2}typescript {2}1-111 {2}in=\d+ out=\d+ {2}\[\+4\]$/m,
+      /^ {4}file:src\/runner\.ts {2}typescript {2}1-110 {2}in=\d+ out=\d+ {2}\[\+4\]$/m,
     );
     // depth 2 stops at files: symbols are not listed
     expect(out).not.toContain("sym:src/runner.ts#Runner");
@@ -64,6 +64,8 @@ describe("xpl outline", () => {
       "",
       "[+n]: n children below the depth limit (raise --depth, or --under <id> to open one)",
     ]);
+    // --json reports the depth it showed, not the default it started from
+    expect((await xplJson(maven, "outline")).json.depth).toBe(3);
     // an explicit depth is kept as asked
     const two = await xpl(maven, "outline", "--depth", "2");
     expect(two.out).toMatch(
@@ -82,7 +84,7 @@ describe("xpl outline", () => {
       "2",
     );
     expect(code).toBe(0);
-    expect(out).toMatch(/^file:src\/runner\.ts {2}typescript {2}1-111 /);
+    expect(out).toMatch(/^file:src\/runner\.ts {2}typescript {2}1-110 /);
     expect(out).toMatch(/^ {2}sym:src\/runner\.ts#Runner {2}class {2}12-93 /m);
     expect(out).toMatch(
       /^ {4}sym:src\/runner\.ts#Runner\.dispatch {2}method {2}42-88 {2}in=\d+ out=\d+$/m,
@@ -198,7 +200,8 @@ describe("xpl outline", () => {
     expect(runner).toMatchObject({
       type: "file",
       kind: "typescript",
-      range: { startLine: 1, endLine: 111 },
+      // as `wc -l` counts: the final newline ends line 110 and starts none
+      range: { startLine: 1, endLine: 110 },
     });
     const dispatch = find(json.tree, "sym:src/runner.ts#Runner.dispatch")!;
     expect(dispatch).toMatchObject({
@@ -322,7 +325,7 @@ describe("xpl outline", () => {
     it("counts only what matches in [+n]", async () => {
       // depth 2 from the repo stops at the files: src/queue.ts holds one class and no other match
       const { out } = await xpl(dir, "outline", "--kind", "class", "--depth", "2");
-      expect(out).toMatch(/^ {4}file:src\/queue\.ts {2}typescript {2}1-104 .* \[\+1\]$/m);
+      expect(out).toMatch(/^ {4}file:src\/queue\.ts {2}typescript {2}1-103 .* \[\+1\]$/m);
       expect(out).toMatch(/^ {4}file:src\/runner\.ts {2}typescript .* \[\+2\]$/m);
       expect(out).not.toContain("keys hidden");
     });

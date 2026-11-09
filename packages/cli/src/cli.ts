@@ -274,6 +274,14 @@ function topicUsage(command: CommandSpec, topic: string): string | undefined {
   return [`xpl ${command.name} ${args}`, ...options].join(" ");
 }
 
+/** The summary of one kind: the command's summary up to its colon, then what the kind's row says it draws. */
+function topicSummary(command: CommandSpec, topic: string): string | undefined {
+  const row = command.details?.find((line) => new RegExp(`^ {2}${topic}\\b`).test(line));
+  const text = row?.replace(/^ {2}\S+(?: [<[][^ ]+)*\s+/, "");
+  const lead = command.summary.split(":")[0];
+  return text && lead !== command.summary ? `${lead}: ${text}` : undefined;
+}
+
 function commandHelp(command: CommandSpec, topic?: string): string {
   const kind = helpTopic(command, topic);
   const details =
@@ -281,7 +289,7 @@ function commandHelp(command: CommandSpec, topic?: string): string {
   return [
     ...usageLines((kind && topicUsage(command, kind)) ?? command.usage),
     "",
-    ...wrapHelpLine(command.summary),
+    ...wrapHelpLine((kind && topicSummary(command, kind)) ?? command.summary),
     ...(details ? ["", ...wrapHelp(details)] : []),
     ...(Object.keys(command.options).length > 0
       ? ["", "Options:", ...optionRows(command.options)]

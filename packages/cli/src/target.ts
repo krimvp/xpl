@@ -50,6 +50,8 @@ export function resolveTarget(
     const word =
       input
         .replace(/^(?:sym|file|dir):/, "")
+        // a file's name without its extension (`src/nope.ts`: nope)
+        .replace(/^([^#]*\/)?([^#/]+)\.[A-Za-z]+$/, "$1$2")
         .split(/[#/.]/)
         .filter(Boolean)
         .at(-1) ?? input;

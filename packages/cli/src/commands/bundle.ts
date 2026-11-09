@@ -111,7 +111,7 @@ export const bundleCommand: CommandSpec = {
   summary: "Check readiness, then write one self-contained HTML file",
   details: [
     "Runs the `xpl ready` check, then writes one HTML file with the viewer, the guide, the index and the code.",
-    "The file works offline. Errors block it (exit 1, nothing written); --draft writes a labelled preview.",
+    "The file works offline. Errors block it (exit 1, nothing written); --draft writes a labeled preview.",
     "--files referenced (the default) embeds the files the guide shows. boundary adds callers, callees and tests.",
     "--files all embeds every indexed file. A recorded change embeds its changed files and their old code.",
     "--embed-index pruned (the default) keeps only what the embedded files and the views need.",
@@ -239,7 +239,7 @@ export const bundleCommand: CommandSpec = {
     if (!report.ready && !draft) {
       throw new CliError(
         `${describeReadiness(report)}
-Repair these findings, or use --draft for a labelled preview.`,
+Repair these findings, or use --draft for a labeled preview.`,
         1,
         { readiness: report },
       );

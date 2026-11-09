@@ -280,7 +280,7 @@ export const changeCommand: CommandSpec = {
   details: [
     "Records the change between two commits in the guide (from `git diff -M`), then prints what it touches.",
     "It lists the changed files and symbols, their direct callers outside tests, and the tests that reference them.",
-    "A missing test reference does not mean the behaviour has no test.",
+    "A missing test reference does not mean the behavior has no test.",
     "<base>..<head> takes git revisions (main..HEAD); <base>...<head> starts at their merge base.",
     "The head must be the commit of the index: check it out and run `xpl index` first.",
     "Without a range, it prints the change already recorded. One argument is a range when no guide has its name.",

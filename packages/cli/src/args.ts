@@ -114,6 +114,18 @@ export function parseCommandArgs(
     parsed = parseArgs({ args: [...argv], options: config, allowPositionals: true, strict: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    // `--limit -1`: parseArgs takes "-1" for an option, and says so in its own words
+    const ambiguous = /^Option '(?:-\w, )?(--[\w-]+)(?: <value>)?' argument is ambiguous/.exec(
+      message,
+    );
+    if (ambiguous) {
+      const flag = ambiguous[1]!;
+      const value =
+        argv[argv.findIndex((a) => a === flag || a === `-${all[flag.slice(2)]?.short}`) + 1];
+      throw new UsageError(
+        `${flag} needs a value (got "${value}"; a value that starts with "-" is written ${flag}=${value})`,
+      );
+    }
     const unknown = /Unknown option '([^']+)'/.exec(message);
     if (!unknown)
       throw new UsageError(message.replace(/\. To specify a positional argument.*$/s, ""));

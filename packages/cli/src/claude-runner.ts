@@ -160,7 +160,7 @@ function runner(ctx: Ctx, options: { skillDir?: string; timeoutMs?: number } = {
           child.once("error", reject);
         });
         const ended = new Promise<number | null>((resolve, reject) => {
-          abort = () => reject(new CliError("Claude attempt cancelled; output discarded."));
+          abort = () => reject(new CliError("Claude attempt canceled; output discarded."));
           signal.addEventListener("abort", abort, { once: true });
           timer = setTimeout(
             () =>

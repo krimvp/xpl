@@ -140,14 +140,17 @@ describe("xpl cli", () => {
 
   it("`xpl draft <kind> --help` shows the row of that kind, not the other kinds", async () => {
     const help = (await invoke(["draft", "path", "--help"])).out;
-    expect(help).toContain("  path <explainer> <entry>");
-    expect(help).not.toMatch(/^ {2}(?:change|repo|map|class|states) </m);
+    expect(help).toContain("  path [explainer] <entry>");
+    expect(help).not.toMatch(/^ {2}(?:change|repo|map|class|states) \[/m);
     expect(help).toContain("Exit codes:");
-    expect((await invoke(["draft", "--help"])).out).toMatch(/^ {2}states </m);
+    expect((await invoke(["draft", "--help"])).out).toMatch(/^ {2}states \[/m);
     // the usage and the sentences are those of the kind asked for
     const repo = (await invoke(["draft", "repo", "--help"])).out;
     expect(repo.split("\n")[0]).toBe(
-      "Usage: xpl draft repo <explainer> [--audience <reader>] [--question <question>] [-o <file>]",
+      "Usage: xpl draft repo [explainer] [--audience <reader>] [--question <question>] [-o <file>]",
+    );
+    expect(repo.split("\n")[2]).toBe(
+      "Print a patch skeleton with TODOs to write: a system map, a map of each service's parts, a tour of at most 7",
     );
     expect(repo).not.toContain("Several path entries");
     expect(repo).toContain("Exit codes: 0 ok, 1 nothing to draft, 2 usage error.");
@@ -163,6 +166,13 @@ describe("xpl cli", () => {
     const unknown = await invoke(["outline", "--frobnicate"]);
     expect(unknown.code).toBe(2);
     expect(unknown.err).toContain("unknown option --frobnicate");
+
+    // a value that starts with "-": xpl's words, not Node's
+    const dashed = await invoke(["outline", "--limit", "-1"]);
+    expect(dashed.code).toBe(2);
+    expect(dashed.err.split("\n")[0]).toBe(
+      'error: --limit needs a value (got "-1"; a value that starts with "-" is written --limit=-1)',
+    );
 
     const bad = await invoke(["outline", "--depth", "abc"]);
     expect(bad.code).toBe(2);

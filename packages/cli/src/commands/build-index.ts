@@ -191,7 +191,7 @@ export const indexCommand: CommandSpec = {
     } catch (error) {
       if (signal.aborted)
         throw new CliError(
-          "Indexing cancelled; no partial index was published. Any previous complete index is retained.",
+          "Indexing canceled; no partial index was published. Any previous complete index is retained.",
           130,
         );
       throw new CliError(errorMessage(error));

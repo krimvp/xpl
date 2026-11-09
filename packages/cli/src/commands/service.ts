@@ -1,4 +1,4 @@
-/** Repository-scoped ownership around the existing viewer server. No PID is ever signalled. */
+/** Repository-scoped ownership around the existing viewer server. No PID is ever signaled. */
 import { spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync, readFileSync, realpathSync, openSync, closeSync } from "node:fs";
@@ -388,7 +388,7 @@ export const serviceCommand: CommandSpec = {
       }
       if (!(await contact(instance)))
         throw new CliError(
-          "cannot verify service ownership; inspect xpl service status. No process was signalled.",
+          "cannot verify service ownership; inspect xpl service status. No process was signaled.",
         );
       if (!(await contact(instance, true)))
         throw new CliError("service stop was not confirmed; inspect xpl service status");

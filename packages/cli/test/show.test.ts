@@ -25,6 +25,9 @@ describe("xpl show", () => {
     expect(code).toBe(1);
     expect(err).toContain('"nope" is not a file, directory or symbol in the index.');
     expect(err).toContain("Find ids with `xpl search nope` or `xpl outline`.");
+    // a file path: the search word is its name, not its extension
+    const file = await xpl(dir, "show", "file:src/nope.ts");
+    expect(file.err).toContain("Find ids with `xpl search nope` or `xpl outline`.");
   });
 
   it("prints the header and every line with its absolute line and 0-based offset", async () => {

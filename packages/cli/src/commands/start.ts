@@ -161,14 +161,13 @@ export const startCommand: CommandSpec = {
       const sym = suggestEntry(ws.model, ws.texts, question);
       if (sym) suggested = `sym:${sym.id}`;
     }
-    // one entry everywhere: the draft's own note on room for the path names the same guess
-    if (suggested)
+    // the path hint below names the command once: the draft's own note on room for the path keeps only the room
+    if (!entry) {
       notes = notes.map((note) =>
-        note.startsWith("room is left")
-          ? note.replace(/`xpl draft path (\S+) \S+`/, `\`xpl draft path $1 ${suggested}\``)
-          : note,
+        note.startsWith("room is left") ? note.replace(/: run `xpl draft path .*$/, "") : note,
       );
-    if (suggested) await atomicWrite(notesFile, jsonFile({ notes, applyWarnings }));
+      await atomicWrite(notesFile, jsonFile({ notes, applyWarnings }));
+    }
     const pathHint = entry
       ? undefined
       : `drafted an overview of the whole repository, not the path that answers the question (no --entry). ` +

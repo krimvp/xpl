@@ -26,6 +26,7 @@ export const outlineCommand: CommandSpec = {
     "`recursive` marks a symbol that calls itself. [+n] marks n children below the depth limit.",
     "A chain of folders that each hold only one folder (src/main/java/app) is one row.",
     "Go code says `struct` and `field`, and --kind takes them; --json keeps the kinds `class` and `variable`.",
+    "Ruby modules and PHP namespaces show as `other`; a constant in a class shows as `field`.",
     "With --kind, the folders, files and symbols that hold a match are listed too.",
   ],
   options: {
@@ -71,6 +72,12 @@ export const outlineCommand: CommandSpec = {
         keys,
         repoName,
         ...(kinds ? { kinds } : {}),
+        fileLines: (path) => {
+          const lines = ws.texts.lines(path);
+          if (!lines) return undefined;
+          // a final newline ends the last line; it starts none (as `xpl show` prints a file)
+          return lines.length > 1 && lines.at(-1) === "" ? lines.length - 1 : lines.length;
+        },
       });
     let shown = depth;
     let tree = outline(shown);

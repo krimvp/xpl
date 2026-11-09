@@ -112,11 +112,13 @@ describe("xpl start", () => {
     expect(result.out).toContain(
       "run `xpl draft path job-retries sym:src/runner.ts#Runner.dispatch -o <file>`",
     );
-    // and every note that names a path to draft names the same entry
-    expect([...result.out.matchAll(/xpl draft path job-retries (\S+)/g)].map((m) => m[1])).toEqual([
-      "sym:src/runner.ts#Runner.dispatch`",
-      "sym:src/runner.ts#Runner.dispatch",
-    ]);
+    // the command is named once; the draft's note keeps only the room it leaves for the path
+    expect(
+      [...result.out.matchAll(/xpl draft path job-retries ([^\s`]+)/g)].map((m) => m[1]),
+    ).toEqual(["sym:src/runner.ts#Runner.dispatch"]);
+    expect(result.out).toContain(
+      "note: room is left for 2 more steps (9 at most), the main path and its risks\n",
+    );
   });
 
   it("starts a path draft at a named source symbol", async () => {

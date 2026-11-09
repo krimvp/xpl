@@ -20,7 +20,7 @@ export const newCommand: CommandSpec = {
   details: [
     "Creates an empty guide bound to the index. It does not overwrite a file that exists.",
     "Fill it with `xpl apply <name> patch.json`.",
-    "The repository name is --repo, else package.json, go.mod, pyproject.toml, Cargo.toml, the git remote or the folder.",
+    "The repository name is --repo, else package.json, go.mod, pyproject.toml, Cargo.toml, pom.xml, the git remote or the folder.",
     "--url records where the repository lives. xpl never takes it from the git remote, which can hold secrets.",
   ],
   options: {

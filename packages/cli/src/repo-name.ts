@@ -6,8 +6,9 @@
  *   2. the last element of the module path in go.mod (`example.com/jobrunner/v2` -> `jobrunner`)
  *   3. `name` under `[project]` in pyproject.toml
  *   4. `name` under `[package]` in Cargo.toml
- *   5. the base name of the git remote (`origin`, else the first one), without `.git`
- *   6. the name of the directory
+ *   5. the project's `artifactId` in pom.xml
+ *   6. the base name of the git remote (`origin`, else the first one), without `.git`
+ *   7. the name of the directory
  */
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -15,7 +16,7 @@ import { basename, join } from "node:path";
 
 export interface RepoName {
   name: string;
-  /** Where it came from: `package.json`, `go.mod`, `pyproject.toml`, `Cargo.toml`, `git remote origin`, `directory name`. */
+  /** Where it came from: `package.json`, `go.mod`, `pyproject.toml`, `Cargo.toml`, `pom.xml`, `git remote origin`, `directory name`. */
   source: string;
 }
 
@@ -77,6 +78,18 @@ function fromTomlTable(text: string | undefined, wanted: string): string | undef
   return undefined;
 }
 
+/** The project's own `<artifactId>` in a pom.xml: not the parent's, not a dependency's or a plugin's. */
+function fromPom(text: string | undefined): string | undefined {
+  if (text === undefined) return undefined;
+  const own = text
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(
+      /<(parent|dependencies|dependencyManagement|build|profiles|modules)\b[\s\S]*?<\/\1>/g,
+      "",
+    );
+  return /<artifactId>\s*([^<\s]+)\s*<\/artifactId>/.exec(own)?.[1];
+}
+
 function git(root: string, args: string[]): Promise<string | undefined> {
   return new Promise((resolve) => {
     execFile(
@@ -119,6 +132,7 @@ export async function detectRepoName(root: string): Promise<RepoName> {
     ["go.mod", fromGoMod(read(root, "go.mod"))],
     ["pyproject.toml", fromTomlTable(read(root, "pyproject.toml"), "project")],
     ["Cargo.toml", fromTomlTable(read(root, "Cargo.toml"), "package")],
+    ["pom.xml", fromPom(read(root, "pom.xml"))],
   ];
   for (const [source, name] of fromFiles) if (name) return { name, source };
   const remote = await fromGitRemote(root);

@@ -284,7 +284,7 @@ setInterval(() => {}, 1000);
       }
       expect(await running).toBe(130);
       expect(Date.now() - cancelledAt).toBeLessThan(1500);
-      expect(err.join("\n")).toContain("Indexing cancelled");
+      expect(err.join("\n")).toContain("Indexing canceled");
       // stderr is not a terminal: no progress, but one line says a SCIP tool runs (it can take a minute)
       expect(err.filter((text) => text.startsWith("index: "))).toEqual([
         "index: running scip-typescript for precise references (it can take a minute; `--precise off` skips it)",
@@ -319,7 +319,7 @@ setInterval(() => {}, 1000);
         },
       });
       expect(code).toBe(130);
-      expect(err.join("\n")).toContain("Indexing cancelled");
+      expect(err.join("\n")).toContain("Indexing canceled");
       if (previous) expect(readFile(dir, path)).toBe(before);
       else expect(existsSync(join(dir, path))).toBe(false);
       expect(
