@@ -322,7 +322,7 @@
     {
       "id": "tour:parse-errors",
       "title": "How Zod parse and safeParse handle invalid input",
-      "summary": "In synchronous classic Zod, both methods run the schema and inspect its issues. On invalid input, `parse` throws an error. `safeParse` returns a failed result that builds its error only when read. Either method throws an async error if the schema unexpectedly returns a Promise.",
+      "summary": "A caller picks `safeParse` to branch on a result flag instead of catching an error. In synchronous classic Zod, both methods run the schema and inspect its issues. On invalid input, `parse` throws an error. `safeParse` returns a failed result that builds its error only when read. Either method throws an async error if the schema unexpectedly returns a Promise.",
       "steps": [
         {
           "id": "t1",
@@ -381,7 +381,7 @@
             "outcome:4",
             "outcome:8"
           ],
-          "note": "### No issues return parsed data\n\nThe two success shapes let callers choose whether to unwrap a value or test a result flag. Compare the return lines.",
+          "note": "### No issues return parsed data\n\nThe caller of parse gets the value with no wrapper. safeParse wraps it as `{ success: true, data }`, so the caller tests the success flag before it reads the data.",
           "code": [
             {
               "file": "packages/zod/src/v4/core/parse.ts",
@@ -407,7 +407,7 @@
             "outcome:5",
             "outcome:9"
           ],
-          "note": "### Issues produce different outcomes\n\nThe choice here is between catching an exception and branching on a result flag. Follow the source links for each branch.",
+          "note": "### Issues produce different outcomes\n\nparse throws an error that holds the finished issues, so the caller needs a try block. safeParse returns `{ success: false, error }` from `failure`, so the caller branches on the success flag.",
           "code": [
             {
               "file": "packages/zod/src/v4/core/parse.ts",
@@ -446,6 +446,29 @@
               "file": "packages/zod/src/v4/core/parse.ts",
               "symbol": "failure",
               "find": "error = new Err(issues.map((iss) => util.finalizeIssue(iss, ctx, core.config())));",
+              "role": "definition"
+            }
+          ],
+          "editor": {
+            "primary": "packages/zod/src/v4/core/parse.ts"
+          }
+        },
+        {
+          "id": "t-next",
+          "view": "view:outcome",
+          "focus": [
+            "outcome:1"
+          ],
+          "note": "### Where to go next\n\n`parseAsync` and `safeParseAsync` return the same two shapes for a schema with async checks; the caller awaits them. `util.finalizeIssue` picks the message of each issue that the error holds.",
+          "code": [
+            {
+              "file": "packages/zod/src/v4/core/parse.ts",
+              "symbol": "_parseAsync",
+              "role": "definition"
+            },
+            {
+              "file": "packages/zod/src/v4/core/util.ts",
+              "symbol": "finalizeIssue",
               "role": "definition"
             }
           ],
