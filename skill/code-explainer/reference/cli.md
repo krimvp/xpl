@@ -1193,19 +1193,20 @@ A caller is code that calls. A test, or code that only names a changed type, is 
 
 ### `xpl draft path <id> [<id> ...]`
 
-**Draws** a sequence of the entry's calls (depth 1, source order; at most 6 participants and 12 calls). In Ruby or PHP the index has no references, so there is no call to draw: the draft says so, and you write the steps from `xpl show`.
+**Draws** a sequence of the entry's calls (depth 1, source order; at most 6 participants and 12 calls), past an entry that only forwards. In Ruby or PHP the index has no references, so there is no call to draw: the draft says so, and you write the steps from `xpl show`.
 
 - Each call links to its call site and to the callee's definition. A method of the entry's own class is a lifeline of its own (`Ky.#run` calls `Ky.#retry`), until the lifelines reach 6: the rest of those methods share one lifeline for the class, and a note names them. A method of another class goes to that class's lifeline; a call through an interface, to its one implementation.
 - A callee called twice is drawn at its first call, and again at its first call on the main path when the first was inside a branch (the `delay` of an early exit and the `delay` after it). A one-line check in a branch's condition is not drawn, also when it calls another one-line check.
 - Frames from the syntax tree: a `loop` around calls in a loop, an `alt` around a branch with calls in two or more arms (`arms`), an `opt` around a branch with calls in one arm. An `if` that ends in `continue`, `return`, `break`, `raise` or `throw` makes the rest of its block the other arm. Each label is a TODO that quotes the condition.
 - When the calls cross files, a map of those files first (`view:<entry>-files`), with a summary TODO per file box.
 - A call's label keeps short arguments; long ones are cut to their names and the names of the calls in them (`requeue(job, backoffDelay(…))`).
+- An entry that only forwards (one call the index knows, outside loops and branches, in at most 3 lines of code, like cobra's `Command.Execute` calling `Command.ExecuteC`) is followed: its call is step 1, then the calls of the function it forwards to. Each entry that forwards is a lifeline at the start. It follows at most 3 forwards and stops on a cycle.
 
 Several entries give one sequence each and one tour.
 
 **Tour** (at most 8 steps): the file map, the big picture, one step per main call or branch, then `### Where to go next` on the map.
 
-**Notes it prints**: calls drawn once, helpers not drawn, calls left out over the caps (those that reach the least code), calls with no step, and where an inherited entry resolves.
+**Notes it prints**: calls drawn once, helpers not drawn, calls left out over the caps (those that reach the least code), calls with no step, where an inherited entry resolves, and which entries only forward (`` `Command.Execute` only forwards to `Command.ExecuteC`; the sequence shows the calls of `Command.ExecuteC` ``), with the command to draft from the next one when it stopped after 3.
 
 ### `xpl draft map`
 

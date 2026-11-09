@@ -19,7 +19,9 @@
  *   (no program to run) gets a "Your app" box for the code that calls it.
  * - `draftPath`: a sequence of the entry's outgoing calls (depth 1, source order, at most 6 participants), and a tour
  *   with one step per call after a big-picture step. Several entries: one sequence each, one tour. A method a class
- *   inherits starts at the base that defines it, and self calls follow the class's method order.
+ *   inherits starts at the base that defines it, and self calls follow the class's method order. An entry that only
+ *   forwards (`Command.Execute` calls `Command.ExecuteC` and does nothing else) is followed, at most 3 times: its
+ *   forwarding call comes first, then the calls of the function it forwards to.
  *
  * `draftProblems` checks a draft for what `xpl apply` does not: ids named in a text that exist nowhere, and focus ids
  * off their step's view.
@@ -2481,6 +2483,10 @@ export interface PathEntry {
   via?: IndexedSymbol;
   /** The loops and branches in the entry's body (from its syntax tree): the frames of its sequence. */
   blocks?: readonly ControlBlock[];
+  /** The entries that only forward to this one, the one asked for first, each with its forwarding call. */
+  forwardedBy?: readonly { entry: PathEntry; ref: Reference }[];
+  /** Why following stopped at an entry that forwards too: the next one is on the path already, or the bound. */
+  stopped?: { to: IndexedSymbol; cycle: boolean };
 }
 
 /**
@@ -2697,14 +2703,28 @@ function reachOf(model: IndexModel, start: IndexedSymbol, skip: ReadonlySet<stri
 
 /** One sequence of a path draft: the view, its participants and calls, and what was left out. */
 interface PathSequence {
+  /** Where the calls are: the entry, or what it forwards to. */
   entry: PathEntry;
+  /** The entry asked for: `entry`, or the first that forwards to it. */
+  origin: PathEntry;
+  /** The participant id of `origin`. */
   entryId: string;
   view: PatchView & { type: "sequence" };
   participants: string[];
-  /** The calls, each with its sequence step. */
+  /** The calls of `entry`, each with its sequence step (the forwarding calls before them have no tour step). */
   calls: { call: Call; step: PatchSequenceStep }[];
+  /** The ids of the steps of the forwarding calls. */
+  forwardSteps: string[];
+  /** Callees of `entry` that are not drawn (helpers, conversions, guards) or drawn once for several calls. */
+  skipped: number;
   notes: string[];
 }
+
+/** `Serializer.dumps`, or `URLSafeTimedSerializer.dumps` for a method asked on a class that inherits it. */
+const askedName = (entry: PathEntry) =>
+  entry.via
+    ? `${entry.via.path}.${entry.symbol.path.slice(entry.symbol.path.lastIndexOf(".") + 1)}`
+    : entry.symbol.path;
 
 function pathSequence(
   input: DraftInput,
@@ -2716,9 +2736,25 @@ function pathSequence(
   const notes: string[] = [];
   const sym = entry.symbol;
   const entryId = `sym:${sym.id}`;
-  const asked = entry.via
-    ? `${entry.via.path}.${sym.path.slice(sym.path.lastIndexOf(".") + 1)}`
-    : sym.path;
+  const forwards = entry.forwardedBy ?? [];
+  const origin = forwards[0]?.entry ?? entry;
+  const asked = askedName(origin);
+  if (forwards.length > 0) {
+    const [, ...to] = [...forwards.map((f) => askedName(f.entry)), sym.path].map(tick);
+    notes.push(
+      `${tick(asked)} only forwards to ${to.join(", which only forwards to ")}; ` +
+        `the sequence shows the calls of ${tick(sym.path)}`,
+    );
+  }
+  if (entry.stopped) {
+    const to = tick(entry.stopped.to.path);
+    notes.push(
+      entry.stopped.cycle
+        ? `${tick(sym.path)} forwards back to ${to}, already on the path: the sequence stops at ${tick(sym.path)}`
+        : `followed ${FORWARD_HOPS} forwards at most: ${tick(sym.path)} only forwards to ${to} too; ` +
+            `\`xpl draft path <explainer> sym:${entry.stopped.to.id} -o <file>\` draws the calls of ${to}`,
+    );
+  }
 
   // the entry and what it contains (nested functions are part of it)
   const inside = new Set<string>();
@@ -2731,10 +2767,10 @@ function pathSequence(
   // the class the entry runs on: the one it was asked on, else its own
   const runtime = entry.via ?? entryOwner;
   const family = new Set(runtime ? methodOrder(model, runtime).map((c) => c.id) : []);
-  if (entry.via) {
-    notes.push(
-      `${asked} is inherited: it resolves to ${entryId}, the first class in ${entry.via.path}'s method order ` +
-        `that defines it. The path starts there, and its calls to methods of ${entry.via.path} and its bases go ` +
+  if (origin.via) {
+    notes.unshift(
+      `${asked} is inherited: it resolves to sym:${origin.symbol.id}, the first class in ${origin.via.path}'s method order ` +
+        `that defines it. The path starts there, and its calls to methods of ${origin.via.path} and its bases go ` +
         `where that order finds them`,
     );
   }
@@ -2904,7 +2940,7 @@ function pathSequence(
   const lightest = (list: readonly Call[]) =>
     [...list].sort((a, b) => a.score - b.score || list.indexOf(b) - list.indexOf(a))[0]!;
   const dropped: Call[] = [];
-  while (calls.length > L.pathCalls) {
+  while (calls.length > L.pathCalls - forwards.length) {
     const drop = lightest(calls);
     dropped.push(drop);
     calls = calls.filter((c) => c !== drop);
@@ -2916,7 +2952,7 @@ function pathSequence(
   // Over the lifeline cap, the entry's own methods that matter least fold into one lifeline for their class
   // (the first ones keep their own), so their calls stay: the cap folds lifelines before it drops calls.
   const folded: Call[] = [];
-  while (participantsOf().length > L.participants) {
+  while (participantsOf().length > L.participants - forwards.length) {
     const own = calls.filter((c) => c.classLane !== undefined && c.participant !== c.classLane);
     const laneShown = own.some((c) => participantsOf().includes(c.classLane!));
     // folding the one method left into a new class lifeline would not save one
@@ -2938,7 +2974,7 @@ function pathSequence(
           .join(", "),
     );
   }
-  while (participantsOf().length > L.participants) {
+  while (participantsOf().length > L.participants - forwards.length) {
     // the participant whose calls matter least goes
     const weight = new Map<string, number>();
     for (const c of calls) {
@@ -2958,16 +2994,40 @@ function pathSequence(
         `the ones that reach the least code: ${dropped.map((c) => c.callee.path).join(", ")}`,
     );
   }
-  const participants = participantsOf();
+  // the entries that only forward come first, each a lifeline, so the reader sees where the path starts
+  const participants = [
+    ...new Set([...forwards.map((f) => `sym:${f.entry.symbol.id}`), ...participantsOf()]),
+  ];
 
   const viewId = ids.get("view", pathSlug(asked));
   const stepSlug = viewId.slice("view:".length);
-  const steps = calls.map((call, i): { call: Call; step: PatchSequenceStep } => {
-    const name = call.ref.to
-      .slice(call.ref.to.indexOf("#") + 1)
+  /** The name a call site calls (`ExecuteC` of `c.ExecuteC()`). */
+  const calledName = (ref: Reference) =>
+    ref.to
+      .slice(ref.to.indexOf("#") + 1)
       .split(".")
       .at(-1)!
       .replace(/~\d+$/, "");
+  const forwardSteps = forwards.map(({ entry: from, ref }, i): PatchSequenceStep => {
+    const to = forwards[i + 1]?.entry.symbol ?? sym;
+    const { file } = from.symbol;
+    return {
+      id: `${stepSlug}:${i + 1}`,
+      from: `sym:${from.symbol.id}`,
+      to: `sym:${to.id}`,
+      label: callLabel(texts, file, ref.site, calledName(ref)),
+      kind: "call",
+      summary: todo(
+        `why ${tick(from.symbol.path)} hands over to ${tick(to.path)} (it does nothing else), in one sentence.`,
+      ),
+      anchors: [
+        siteAnchor(model, texts, ref.from, file, ref.site.startLine, ref.site.endLine),
+        definition(to),
+      ].filter((a): a is AnchorInput => a !== undefined),
+    };
+  });
+  const steps = calls.map((call, i): { call: Call; step: PatchSequenceStep } => {
+    const name = calledName(call.ref);
     const site = siteAnchor(
       model,
       texts,
@@ -2993,7 +3053,7 @@ function pathSequence(
     return {
       call,
       step: {
-        id: `${stepSlug}:${i + 1}`,
+        id: `${stepSlug}:${forwards.length + i + 1}`,
         from: entryId,
         to: call.participant,
         label: callLabel(texts, sym.file, call.ref.site, name),
@@ -3014,13 +3074,81 @@ function pathSequence(
       root: "repo",
       depth: 2,
       question: todo("the question this path answers"),
-      entryPoints: [sym.id],
+      entryPoints: [origin.symbol.id],
     },
     participants,
-    steps: steps.map((s) => s.step),
+    steps: [...forwardSteps, ...steps.map((s) => s.step)],
     ...(frames.length > 0 ? { frames } : {}),
   };
-  return { entry, entryId, view, participants, calls: steps, notes };
+  return {
+    entry,
+    origin,
+    entryId: `sym:${origin.symbol.id}`,
+    view,
+    participants,
+    calls: steps,
+    forwardSteps: forwardSteps.map((s) => s.id),
+    skipped: repeated.size + built.length + helpers.length + guards.length,
+    notes,
+  };
+}
+
+/** Forwards a path follows at most (`ExecuteContext` -> `Execute` -> `ExecuteC`). */
+export const FORWARD_HOPS = 3;
+/** Lines of code an entry that only forwards has at most (Go's `_, err := c.ExecuteC()` and `return err`). */
+export const FORWARD_LINES = 3;
+
+/**
+ * The call an entry only forwards with: its body has at most `FORWARD_LINES` lines of code, and the one call the
+ * index knows of it is drawn, outside loops and branches (a call in an `if`'s condition counts: Go's `main`
+ * with `if err := run(); err != nil {`). Undefined for anything else, recursion included.
+ */
+function forwardOf(input: DraftInput, entry: PathEntry): Call | undefined {
+  if (bodyLines(input.texts, entry.symbol) > FORWARD_LINES) return undefined;
+  const { symbol, via, blocks } = entry;
+  const seq = pathSequence(input, { symbol, via, blocks }, new FreeIds(input.explainer));
+  if ("error" in seq || seq.calls.length !== 1 || seq.skipped > 0 || seq.view.frames)
+    return undefined;
+  const { call } = seq.calls[0]!;
+  return call.callee.id === symbol.id ? undefined : call;
+}
+
+/**
+ * The entry whose calls a path draws: past the entries that only forward (`Command.Execute`, whose one line calls
+ * `Command.ExecuteC`), at most `FORWARD_HOPS` of them, to the first that does more. A forward back to an entry on
+ * the path stops there, and so does one to a function with no call to draw. `blocksOf` reads the loops and
+ * branches of each function it reaches.
+ */
+export async function followForwards(
+  input: DraftInput,
+  entry: PathEntry,
+  blocksOf: (sym: IndexedSymbol) => Promise<readonly ControlBlock[] | undefined>,
+): Promise<PathEntry> {
+  let current = entry;
+  for (;;) {
+    const call = forwardOf(input, current);
+    if (!call) return current;
+    const target = runsFor(input.model, call.callee);
+    const chain = [...(current.forwardedBy ?? []), { entry: current, ref: call.ref }];
+    if (chain.some((f) => f.entry.symbol.id === target.id))
+      return { ...current, stopped: { to: target, cycle: true } };
+    if (chain.length > FORWARD_HOPS) return { ...current, stopped: { to: target, cycle: false } };
+    // a method of the class the path runs on keeps that class (a subclass's override still wins)
+    const owner = ownerOf(input.model, target);
+    const via =
+      current.via && owner && methodOrder(input.model, current.via).includes(owner)
+        ? current.via
+        : undefined;
+    const blocks = await blocksOf(target);
+    const next: PathEntry = {
+      symbol: target,
+      ...(via ? { via } : {}),
+      ...(blocks ? { blocks } : {}),
+      forwardedBy: chain,
+    };
+    if ("error" in pathSequence(input, next, new FreeIds(input.explainer))) return current;
+    current = next;
+  }
 }
 
 /**
@@ -3208,15 +3336,13 @@ export function draftPath(input: DraftInput, entries: readonly PathEntry[]): Dra
       );
     }
     const quietNames = quiet.map((c) => c.callee.path);
-    const start = seq.entry.via
-      ? `${seq.entry.via.path}.${seq.entry.symbol.path.slice(seq.entry.symbol.path.lastIndexOf(".") + 1)}`
-      : seq.entry.symbol.path;
+    const start = askedName(seq.origin);
     tourSteps.push(
       tourStep(
         model,
         next(),
         seq.view.id,
-        [seq.entryId],
+        [seq.entryId, ...seq.forwardSteps],
         note(
           index === 0
             ? todo("the answer to the question, as a plain statement")
@@ -3242,7 +3368,10 @@ export function draftPath(input: DraftInput, entries: readonly PathEntry[]): Dra
             ? `Calls without a step of their own: ${nameList(quietNames)}. ${todo("say what they do in one sentence, or drop this one.")}`
             : "",
         ),
-        [definition(seq.entry.symbol)],
+        // where the reader asked, then where the calls are when it only forwards
+        [seq.origin, ...(seq.origin === seq.entry ? [] : [seq.entry])].map((e) =>
+          definition(e.symbol),
+        ),
       ),
     );
     for (const group of main) {
@@ -3331,7 +3460,7 @@ export function draftPath(input: DraftInput, entries: readonly PathEntry[]): Dra
             "what each part is for, one short sentence each, in path order. Name a part in plain words (the runner), not by its file.",
           ),
         ),
-        [definition(first.entry.symbol)],
+        [definition(first.origin.symbol)],
       ),
     );
   }

@@ -1927,7 +1927,7 @@ it to a file; `--json` adds the counts and what was left out.
   and imports of the project itself, name no outside system. With several services, code outside them (a
   shared `internal/store`) is a box on the map of each service that uses it. When files are left off an inside
   map, its first step lists them with the box each shares the most references with.
-- `path <entry>`: a sequence of the calls the entry symbol makes (depth 1, source order, at most 6
+- `path <entry>`: a sequence of the calls the entry symbol makes (depth 1 past forwards, source order, at most 6
   participants and 12 calls), and a tour inside the skill's budget for a question (`DRAFT_LIMITS.pathSteps`, 8
   steps with the map, the big picture and where next): the main calls share the steps that are left. Frames
   come from the entry's syntax tree (`control-blocks.ts`, one walk over node types the TS/JS, Python, Go, Java
@@ -1962,7 +1962,15 @@ it to a file; `--json` adds the counts and what was left out.
   that override a called method. Several entries (`path <explainer> <id> <id2>`) give one sequence each and
   one tour through them. A method a class inherits starts at the base that defines it (a note says which); its
   calls to methods of the class and its bases go where the class's method order finds them (a mixin's
-  override).
+  override). An entry that only forwards is followed (`followForwards`): its body has at most 3 lines of code
+  (`FORWARD_LINES`) and makes one call the index knows, drawn and outside any frame (a call in an `if`'s
+  condition counts, so Go's `if err := run(); err != nil {` in `main` forwards). Cobra's `Command.Execute`,
+  whose one line calls `Command.ExecuteC`, draws that call as step 1, then the calls of `ExecuteC`, with each
+  entry that forwards as a lifeline ahead of the rest (they count against the caps of 6 participants and 12
+  calls). A note says "`A` only forwards to `B`; the sequence shows the calls of `B`".
+  Following stops after 3 forwards (`FORWARD_HOPS`; a note gives the `draft path` command for the next one),
+  at a forward back to an entry on the path (a cycle), and before a function with no call to draw. The tour's
+  big-picture step focuses the asked entry and the forwarding calls, and links both definitions.
 - `class <entry>` (`draft-class.ts`): the type hierarchy around a class or interface. Up: the targets of the
   entry's `extends` and `implements` references, breadth first, at most 6. Down: the symbols whose `extends` or
   `implements` references point at it, two levels, the map at most 8 boxes. One graph view with `edgeKinds:
@@ -3983,7 +3991,9 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
   concepts, flows, `llm` edges, base anchors and every sentence are written by the selected authoring agent.
   A draft covers about one view and most of the tour steps of a hand-written explainer, with roughly half
   its anchors. `xpl draft path` is
-  depth 1, so a path whose layers call each other through a variable (`self.app`) is not rebuilt.
+  depth 1 past the entries that only forward, so a path whose layers call each other through a variable
+  (`self.app`) is not rebuilt. A forward is a one-call body of at most 3 lines: a facade that also logs or
+  checks its arguments with an indexed call is not followed.
 - `xpl lint` is mechanical: it catches slogans, absolute words, long sentences, code titles and order
   problems, not wrong claims. `repeats-summary` finds near-verbatim repeats only.
 - Workspace packages are private; build/pack produce a standalone local npm tarball with
