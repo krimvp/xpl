@@ -726,6 +726,36 @@ describe("xpl draft repo: monorepos and one big package", () => {
     expect(notes.join("\n")).not.toContain("PostgreSQL");
   });
 
+  it("playgrounds, project templates, demos and sandboxes take no box, and a note says so", async () => {
+    const dir = makeTempDir("xpl-arch-playground-");
+    writeFile(dir, "package.json", '{ "name": "bundler-monorepo", "private": true }\n');
+    writeFile(dir, "pnpm-workspace.yaml", "packages:\n  - 'packages/*'\n  - 'playground/**'\n");
+    for (const pkg of ["bundler", "create-bundler", "plugin-legacy"]) {
+      writeFile(dir, `packages/${pkg}/package.json`, `{ "name": "${pkg}" }\n`);
+      writeFile(
+        dir,
+        `packages/${pkg}/src/index.ts`,
+        `export function ${pkg.replace(/-/g, "")}() {}\n`,
+      );
+    }
+    writeFile(
+      dir,
+      "packages/create-bundler/template-react/src/App.tsx",
+      "export function App() { return null; }\n",
+    );
+    for (const place of ["playground/css", "playground/hmr", "demo/site", "sandbox/try"])
+      writeFile(dir, `${place}/main.ts`, "export function main() {}\n");
+    const { patch, notes } = await drafted(dir);
+    expect(graph(patch, "view:overview")?.include).toEqual([
+      "dir:packages/bundler/src",
+      "dir:packages/create-bundler/src",
+      "dir:packages/plugin-legacy/src",
+    ]);
+    expect(notes).toContain(
+      "5 code files are left off the maps as not the product (tests, examples, fixtures, docs, benchmarks, playgrounds, templates, demos and sandboxes): `playground` (2), `demo` (1), `packages/create-bundler/template-react` (1) and `sandbox` (1)",
+    );
+  });
+
   it("a folder with most of the code is opened, whatever is around it", async () => {
     const dir = makeTempDir("xpl-arch-big-");
     writeFile(dir, "setup.py", "from setuptools import setup\nsetup()\n");

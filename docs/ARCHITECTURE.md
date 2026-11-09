@@ -1924,6 +1924,11 @@ it to a file; `--json` adds the counts and what was left out.
   type (`import type`, an annotation) is not one. The change enters at a caller; with none outside tests, at
   the changed public function closest to callers. The tests step names the symbols no test reaches and shows
   the changed test files apart. Step ids are `t10`, `t20`, ... so an inserted step fits between two.
+- `repo`, `map` and `data` leave code that is not the product off their maps (`notProduct` in `draft.ts`):
+  tests, examples, fixtures, docs, benchmarks, scripts, playgrounds (`playground/`), project templates
+  (`templates/`, `template-*/`: create-vite's `template-react-ts`), demos, sandboxes and dot folders. A
+  `repo` note counts the code files it left off by their outermost such folder (vite: `playground` (1119),
+  `packages/vite/src/node/__tests__` (152), ...), so the reader knows the boxes are the product.
 - `repo`: two levels. A system map (`view:system`): the project as one service group (`role: service`, members
   = the parts), or one `dir:` box per program when `services/`, `apps/` or `cmd/` (at the root or under `src`)
   hold two or more; who reaches it (web and CLI frameworks, `role: person`) and what it relies on (database
@@ -1931,7 +1936,7 @@ it to a file; `--json` adds the counts and what was left out.
   files (`outside.ts`: a catalog per language family, including Java imports and Maven group IDs) and drawn as
   groups with a role, a `tech` and no members, anchored at one import line per part that imports them. Each
   service box `opens` the map of its inside: 4-8 parts (top-level folders with code, a single root folder
-  opened, tests, docs, examples and dot folders left out; label and summary TODOs) plus the outside systems
+  opened; label and summary TODOs) plus the outside systems
   they use, with an `llm` edge (`kind: custom`, label TODO) from each part to each system it imports, anchored
   at that import. `excludeFiles` for tests and docs on both. The tour: the system map, what it relies on, the
   inside of the biggest service, then one step per part, the main part first, inside the skill's repo budget
@@ -2062,8 +2067,8 @@ it to a file; `--json` adds the counts and what was left out.
   left off. Notes say why each type is left off (the box limit, or a group with no room, with the
   `xpl draft data <explainer> sym:…` that maps it), why a box has no rows (by kind and language) and when
   an arrow is heuristic.
-- `map` (`draft-map.ts`): the quick map, every code file outside tests, examples, fixtures, docs, benchmarks
-  and dot folders, except a file with no symbols that no reference leaves (a docstring-only `__init__.py`;
+- `map` (`draft-map.ts`): the quick map, every code file that is the product (`notProduct`, as for `repo`),
+  except a file with no symbols that no reference leaves (a docstring-only `__init__.py`;
   the note counts them as empty files). One graph view per folder, `view:map` for the top (below folders that hold all the code)
   and `view:map-<path>` below it, with `boxText: "summary"`, `excludeFiles` as for an overview and the
   default stubs (what uses the folder and what it uses). When the index has `request` references, a new

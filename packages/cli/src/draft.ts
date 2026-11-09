@@ -132,7 +132,51 @@ export const NOT_DESIGN: readonly string[] = [
   "**/fixtures/**",
   "**/__fixtures__/**",
   "**/__mocks__/**",
+  "**/playground/**",
+  "**/playgrounds/**",
+  "**/template/**",
+  "**/templates/**",
+  "**/template-*/**",
+  "**/demo/**",
+  "**/demos/**",
+  "**/sandbox/**",
+  "**/sandboxes/**",
 ];
+
+/** What `notProduct` leaves out, in the words of a note. */
+export const NOT_PRODUCT_WORDS =
+  "tests, examples, fixtures, docs, benchmarks, playgrounds, templates, demos and sandboxes";
+
+/**
+ * Code that is not the product, so no map of the project spends a box on it: tests, examples, fixtures, docs,
+ * benchmarks, playgrounds, project templates, demos, sandboxes and dot folders (`NOT_PRODUCT_WORDS`).
+ */
+export function notProduct(path: string): boolean {
+  return (
+    isTestFile(path) ||
+    matchesAnyGlob(path, OVERVIEW_EXCLUDE) ||
+    matchesAnyGlob(path, NOT_DESIGN) ||
+    path.split("/").some((segment) => segment.startsWith("."))
+  );
+}
+
+/**
+ * The code files `notProduct` leaves out, by the outermost folder that is not the product (`playground`,
+ * `packages/create-vite/template-react`), most files first; test files among the product's own files count together.
+ */
+function notProductFolders(files: readonly string[]): string[] {
+  const count = new Map<string, number>();
+  for (const file of files) {
+    const parts = file.split("/");
+    let i = 1;
+    while (i < parts.length && !notProduct(`${parts.slice(0, i).join("/")}/x`)) i++;
+    const key = i < parts.length ? tick(parts.slice(0, i).join("/")) : "test files";
+    count.set(key, (count.get(key) ?? 0) + 1);
+  }
+  return [...count]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([key, n]) => `${key} (${n})`);
+}
 
 /** File and directory names that usually hold the entry point of a project. */
 export const ENTRY_NAMES =
@@ -1583,13 +1627,9 @@ export function draftRepo(input: DraftInput): Draft {
   const reuse = (prefix: string, slug: string): string =>
     stored.has(`${prefix}:${slug}`) ? `${prefix}:${slug}` : ids.get(prefix, slug);
 
-  const outside = (path: string) =>
-    isTestFile(path) ||
-    matchesAnyGlob(path, OVERVIEW_EXCLUDE) ||
-    matchesAnyGlob(path, NOT_DESIGN) ||
-    path.split("/").some((segment) => segment.startsWith("."));
-  const isCode = (path: string) =>
-    CODE_LANGUAGES.has(model.file(path)?.language ?? "") && !outside(path);
+  const outside = notProduct;
+  const isCodeFile = (path: string) => CODE_LANGUAGES.has(model.file(path)?.language ?? "");
+  const isCode = (path: string) => isCodeFile(path) && !outside(path);
   const codeUnder = (dir: string) => model.filesUnder(dir).filter(isCode);
 
   const children = (dir: string): Unit[] => {
@@ -2373,6 +2413,12 @@ export function draftRepo(input: DraftInput): Draft {
     ),
   );
 
+  const notProductFiles = model.files.map((f) => f.path).filter((f) => isCodeFile(f) && outside(f));
+  if (notProductFiles.length > 0) {
+    notes.push(
+      `${plural(notProductFiles.length, "code file is", "code files are")} left off the maps as not the product (${NOT_PRODUCT_WORDS}): ${plainList(notProductFolders(notProductFiles))}`,
+    );
+  }
   const patch: ExplainerPatch = {
     nodes,
     ...(edges.length > 0 ? { edges } : {}),

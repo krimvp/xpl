@@ -458,7 +458,7 @@ index: built; shop moved to it
 change: 5c1e0a2 since 9f3b7d4, 1 file
 draft: /work/map.json
   1 new box, 1 tour step, 7 TODOs to write
-note: 4 code files on 2 maps; 0 files left off (tests, examples, fixtures, docs and benchmarks)
+note: 4 code files on 2 maps; 0 files left off (tests, examples, fixtures, docs, benchmarks, playgrounds, templates, demos and sandboxes)
 next: write each TODO, then `xpl lint shop --patch /work/map.json` and `xpl apply shop /work/map.json`
 ```
 
@@ -1180,7 +1180,7 @@ A caller is code that calls. A test, or code that only names a changed type, is 
 - Who reaches it: a web or command-line framework, or a web server start call (`ListenAndServe`). A program with only a `main` gets an `Operator` box there. A library is the `system` box, and a "Your app" box (`role: external`, `tech: your app`) at the README example calls it.
 - What it relies on (databases, queues, APIs), from its imports, and a `Settings file` box.
 - Each arrow it adds there gets a label TODO and a summary TODO, so `ready` finds no empty text once the TODOs are written.
-- Each service box `opens` a map of its inside: at most 8 parts, and the outside systems each imports.
+- Each service box `opens` a map of its inside: at most 8 parts, and the outside systems each imports. Code that is not the product gets no box: tests, examples, fixtures, docs, benchmarks, playgrounds, project templates (`templates/`, `template-*/`), demos and sandboxes.
 
 **Tour** (at most 7 steps): the system map with the README, what it relies on, the inside, one step per part (at the functions other parts call most), then `### Where to go next`, at the code where the main path starts. Room is left for 2 steps of the main path.
 
@@ -1189,7 +1189,7 @@ A caller is code that calls. A test, or code that only names a changed type, is 
 - That the kind of project and its users are a guess.
 - The settings files, and whether the code loads them or only names them.
 - The `xpl draft path` command that fills the room for the main path. For a library it starts where the request goes, past the builder that returns the client (ky: `Ky.create`, not `createInstance`). In Ruby or PHP, which have no references, the note says to write those steps from `xpl show` instead.
-- The outside systems found, and the files left off the inside map.
+- The outside systems found, the files left off the inside map, and the code files left off because they are not the product, counted by folder.
 
 ### `xpl draft path <id> [<id> ...]`
 
@@ -1210,7 +1210,7 @@ Several entries give one sequence each and one tour.
 
 ### `xpl draft map`
 
-**Draws** a quick map of every code file outside tests, examples, fixtures, docs and benchmarks.
+**Draws** a quick map of every code file outside tests, examples, fixtures, docs, benchmarks, playgrounds, templates, demos and sandboxes.
 
 - One graph view per folder (`boxText: "summary"`): `view:map` for the top (below `src/` when it holds all the code), `view:map-<path>` below it. A folder box `opens` its folder's map.
 - Every box gets a label and a one-sentence summary to write. A file's TODO holds its header comment, what it defines, and the files it uses and that use it.
@@ -1271,7 +1271,7 @@ next: write each TODO, then `xpl lint jobrunner --patch path.json` and `xpl appl
 $ xpl draft map jobrunner -o map.json
 wrote map.json
 draft map for jobrunner: a map of 7 boxes, 7 summaries, a tour of 2 steps (short is right for a small subject: do not pad it), 2 anchors, 22 TODOs to write
-note: 7 code files on 1 map; 1 file left off (tests, examples, fixtures, docs and benchmarks); 4 files that are not code have no box: `README.md`, `config/default.yaml`, `package.json` and `tsconfig.json`
+note: 7 code files on 1 map; 1 file left off (tests, examples, fixtures, docs, benchmarks, playgrounds, templates, demos and sandboxes); 4 files that are not code have no box: `README.md`, `config/default.yaml`, `package.json` and `tsconfig.json`
 next: write each TODO, then `xpl lint jobrunner --patch map.json` and `xpl apply jobrunner map.json`
 $ xpl draft change jobrunner
 error: .explainer/jobrunner.explainer.json has no change recorded: run `xpl change jobrunner <base>..<head>` first (e.g. main..HEAD), then `xpl draft change jobrunner`
