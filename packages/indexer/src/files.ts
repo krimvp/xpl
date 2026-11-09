@@ -12,7 +12,7 @@
  * un-ignored one would swamp the index); `pnpm-lock.yaml` and `npm-shrinkwrap.json` count as lockfiles.
  */
 import { execFile } from "node:child_process";
-import { open, lstat, readFile, readdir, realpath } from "node:fs/promises";
+import { lstat, readFile, readdir, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import {
   EXCLUSION_REASONS,
@@ -165,6 +165,8 @@ export interface DiscoveredFile {
   path: FilePath;
   abs: string;
   language: FileLanguage;
+  /** The text the content filters read (absent with `content: false`). */
+  text?: string;
 }
 
 export interface DiscoverOptions {
@@ -253,23 +255,13 @@ function pathExclusion(path: string): ExclusionReason | undefined {
 
 /** Content eligibility shared with Git cleanliness. Undefined retains unreadable/deleted changes. */
 export async function isIndexInputFile(abs: string): Promise<boolean | undefined> {
-  const reason = await contentExclusion(abs);
-  return reason === undefined ? true : reason === "unreadable" ? undefined : false;
+  const read = await readCandidate(abs);
+  return "text" in read ? true : read.reason === "unreadable" ? undefined : false;
 }
 
 /** The page `xpl bundle` writes carries this: such a page is generated, not source. */
 const BUNDLE_MARK =
   '<script id="xpl-data" type="application/json">{"schema":"code-explainer/bundle@0"';
-
-async function contentExclusion(abs: string): Promise<ExclusionReason | undefined> {
-  const reason = await contentFilterExclusion(abs);
-  if (reason || !/\.html?$/i.test(abs)) return reason;
-  try {
-    return (await readFile(abs, "utf8")).includes(BUNDLE_MARK) ? "generated" : undefined;
-  } catch {
-    return "unreadable";
-  }
-}
 
 /**
  * Why discovery leaves out the file at `path` (relative to `root`, on disk), or undefined when it would index it:
@@ -279,7 +271,10 @@ export async function fileExclusion(
   root: string,
   path: FilePath,
 ): Promise<ExclusionReason | undefined> {
-  return pathExclusion(path) ?? (await contentExclusion(join(root, ...path.split("/"))));
+  const reason = pathExclusion(path);
+  if (reason) return reason;
+  const read = await readCandidate(join(root, ...path.split("/")));
+  return "text" in read ? undefined : read.reason;
 }
 
 /**
@@ -294,28 +289,30 @@ export function textExclusion(path: FilePath, text: string): ExclusionReason | u
   return /\.html?$/i.test(path) && text.includes(BUNDLE_MARK) ? "generated" : undefined;
 }
 
-/** Is `path` (relative to `root`) a text file within the limits? Cheap checks first, then a NUL sniff. */
-async function contentFilterExclusion(abs: string): Promise<ExclusionReason | undefined> {
+/**
+ * Why a candidate is not a text file within the limits, or its text. Cheap checks first (lstat, size), then
+ * one whole read: a NUL in the first `BINARY_SNIFF_BYTES` is binary, an exported explainer page is generated.
+ * Discovery keeps the text, so the build does not open the file a second time.
+ */
+async function readCandidate(abs: string): Promise<{ reason: ExclusionReason } | { text: string }> {
   let info;
   try {
     info = await lstat(abs);
   } catch {
-    return "unreadable"; // deleted since git listed it, or unreadable
+    return { reason: "unreadable" }; // deleted since git listed it, or unreadable
   }
-  if (!info.isFile()) return "non-file";
-  if (info.size > MAX_FILE_BYTES) return "oversized";
-  if (info.size === 0) return undefined;
-  let handle;
+  if (!info.isFile()) return { reason: "non-file" };
+  if (info.size > MAX_FILE_BYTES) return { reason: "oversized" };
+  let bytes;
   try {
-    handle = await open(abs, "r");
-    const buffer = Buffer.alloc(Math.min(BINARY_SNIFF_BYTES, info.size));
-    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
-    return buffer.subarray(0, bytesRead).includes(0) ? "binary" : undefined;
+    bytes = await readFile(abs);
   } catch {
-    return "unreadable";
-  } finally {
-    await handle?.close();
+    return { reason: "unreadable" };
   }
+  if (bytes.subarray(0, BINARY_SNIFF_BYTES).includes(0)) return { reason: "binary" };
+  const text = bytes.toString("utf8");
+  if (/\.html?$/i.test(abs) && text.includes(BUNDLE_MARK)) return { reason: "generated" };
+  return { text };
 }
 
 /**
@@ -373,21 +370,17 @@ export async function discoverFiles(
     };
   }
 
-  // Content filters (stat + NUL sniff), a bounded number of files at a time.
+  // Content filters (stat, read, NUL sniff), a bounded number of files at a time.
   const kept: DiscoveredFile[] = [];
   const BATCH = 64;
   for (let i = 0; i < selected.length; i += BATCH) {
     options.signal?.throwIfAborted();
     const batch = selected.slice(i, i + BATCH);
-    const verdicts = await Promise.all(
-      batch.map(async (f) => {
-        return await contentExclusion(f.abs);
-      }),
-    );
+    const verdicts = await Promise.all(batch.map((f) => readCandidate(f.abs)));
     batch.forEach((file, j) => {
-      const reason = verdicts[j];
-      if (reason) record(reason, file.path);
-      else kept.push(file);
+      const read = verdicts[j]!;
+      if ("reason" in read) record(read.reason, file.path);
+      else kept.push({ ...file, text: read.text });
     });
   }
   kept.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
@@ -396,7 +389,7 @@ export async function discoverFiles(
   return { files, usedGit, warnings, exclusions: exclusions() };
 }
 
-/** Read a discovered file as UTF-8 text (a leading BOM is kept: columns must match the file on disk). */
+/** A discovered file as UTF-8 text (a leading BOM is kept: columns must match the file on disk). */
 export async function readSource(file: DiscoveredFile): Promise<string> {
-  return (await readFile(file.abs)).toString("utf8");
+  return file.text ?? (await readFile(file.abs)).toString("utf8");
 }

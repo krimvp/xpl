@@ -91,6 +91,9 @@ export class ExtractionCache {
   private readonly fingerprints = new Map<GrammarId, Promise<string | undefined>>();
   private readonly directory: string;
   private directories?: Promise<Map<string, string>>;
+  /** Lookups running now, and since when one has: `wallMs` counts overlapping lookups once. */
+  private active = 0;
+  private activeSince = 0;
 
   constructor(
     private readonly root: string,
@@ -171,7 +174,7 @@ export class ExtractionCache {
     /** Exact versioned input for the off-default semantic experiment; unavailable when reuse is unsafe. */
     onIdentity?: (input: string) => void,
   ): Promise<T> {
-    const started = performance.now();
+    if (this.active++ === 0) this.activeSince = performance.now();
     try {
       const fingerprint = (await this.safeLocation())
         ? await this.fingerprint(profile.grammar)
@@ -238,7 +241,7 @@ export class ExtractionCache {
       }
       return value;
     } finally {
-      this.report.wallMs += performance.now() - started;
+      if (--this.active === 0) this.report.wallMs += performance.now() - this.activeSince;
     }
   }
 }
