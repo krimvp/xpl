@@ -172,20 +172,21 @@ export const draftCommand: CommandSpec = {
   details: [
     "Prints a patch with `TODO: <what to write>` in each text a person writes. `xpl apply` accepts it as it is.",
     "Boxes, steps and code links come from the index. Imports suggest the architecture; they do not prove it.",
-    `${row("change <explainer>")}the change map and a review tour (at most ${DRAFT_LIMITS.changeSteps} steps); run \`xpl change\` first`,
-    `${row("repo <explainer>")}a system map, a map of each service's parts, a tour of at most ${DRAFT_LIMITS.repoSteps - PATH_ROOM} steps`,
-    `${row("path <explainer> <entry>")}the calls an entry makes, framed by its loops and branches; a tour of ${DRAFT_LIMITS.pathSteps} steps`,
-    `${row("map <explainer>")}a map per folder of every code file outside tests; run it again after changes`,
-    `${row("class <explainer> <entry>")}the type hierarchy around a class or an interface (at most ${CLASS_LIMITS.boxes} boxes)`,
-    `${row("states <explainer> <entry>")}the states of a status type on one flow, with where the code sets and tests each`,
-    `${row("data <explainer> [<scope>]")}the types the code keeps and how they link, on one data map (at most ${DATA_LIMITS.boxes} boxes)`,
+    `${row("change [explainer]")}the change map and a review tour (at most ${DRAFT_LIMITS.changeSteps} steps); run \`xpl change\` first`,
+    `${row("repo [explainer]")}a system map, a map of each service's parts, a tour of at most ${DRAFT_LIMITS.repoSteps - PATH_ROOM} steps`,
+    `${row("path [explainer] <entry>")}the calls an entry makes, framed by its loops and branches; a tour of at most ${DRAFT_LIMITS.pathSteps} steps`,
+    `${row("map [explainer]")}a map per folder of every code file outside tests; run it again after changes`,
+    `${row("class [explainer] <entry>")}the type hierarchy around a class or an interface (at most ${CLASS_LIMITS.boxes} boxes)`,
+    `${row("states [explainer] <entry>")}the states of a status type on one flow, with where the code sets and tests each`,
+    `${row("data [explainer] [<scope>]")}the types the code keeps and how they link, on one data map (at most ${DATA_LIMITS.boxes} boxes)`,
     "[path] Several path entries make one tour.",
     "Ids in the guide are not reused. New tour steps follow the guide's own.",
     "Prints the patch, or writes it with -o. Then: `xpl lint <explainer> --patch <file>`, `xpl apply`.",
-    "[all] Exit codes: 0 ok, 1 no change recorded, an unknown entry or nothing to draft, 2 usage error.",
+    "[all] Exit codes: 0 ok, 1 no change recorded, an unknown entry or scope, or nothing to draft, 2 usage error.",
     "[change] Exit codes: 0 ok, 1 no change recorded or nothing to draft, 2 usage error.",
     "[path,class,states] Exit codes: 0 ok, 1 an unknown entry or nothing to draft, 2 usage error.",
-    "[repo,map,data] Exit codes: 0 ok, 1 nothing to draft, 2 usage error.",
+    "[data] Exit codes: 0 ok, 1 an unknown scope or nothing to draft, 2 usage error.",
+    "[repo,map] Exit codes: 0 ok, 1 nothing to draft, 2 usage error.",
   ],
   options: {
     out: { type: "string", short: "o", arg: "<file>", desc: "Write the patch to a file" },
@@ -358,7 +359,7 @@ export const draftCommand: CommandSpec = {
         if (view.scope) view.scope.question = question;
       }
       for (const tour of draft.patch.tours ?? []) {
-        tour.summary = `TODO: answer ${JSON.stringify(question)}${audience ? ` for ${audience}` : ""}. State the scope and excluded behaviour.`;
+        tour.summary = `TODO: answer ${JSON.stringify(question)}${audience ? ` for ${audience}` : ""}. State the scope and excluded behavior.`;
       }
     }
 
@@ -366,6 +367,23 @@ export const draftCommand: CommandSpec = {
     // The draft must apply as it is: check it the way `xpl apply` does, in memory.
     const check = applyPatch(loaded.explainer, draft.patch, ws.model, ws.texts, { actor: "llm" });
     if (!check.ok) {
+      // the code moved since `xpl index`: not a bug of the draft
+      const stale = [
+        ...new Set(
+          check.issues
+            .filter((issue) => issue.severity === "error")
+            .map(
+              (issue) => /^index for (.+) does not match its current text/.exec(issue.message)?.[1],
+            ),
+        ),
+      ];
+      if (stale.length > 0 && stale.every((file) => file !== undefined))
+        throw new CliError(
+          `the draft cannot be built: the code changed after \`xpl index\` (${stale.join(", ")}). ` +
+            `Run \`xpl index\`, then \`xpl resolve ${loaded.name} --write\`, and draft again.`,
+          1,
+          { issues: check.issues },
+        );
       throw new CliError(
         [
           `the draft does not apply to ${loaded.rel} (a bug in xpl draft; please report it):`,
@@ -407,7 +425,7 @@ export const draftCommand: CommandSpec = {
     const lines = [
       summaryLine(kind, loaded.name, counts),
       ...draft.notes.map((n) => `note: ${n.replaceAll("<explainer>", loaded.name)}`),
-      ...warnings.map((w) => `apply warning: ${w}`),
+      ...warnings.map((w) => `warning (when you apply): ${w}`),
       `next: ${outOption ? "" : "save the patch to a file outside the repo (or use -o), "}write each TODO, then ` +
         `\`xpl lint ${loaded.name} --patch ${target}\` and \`xpl apply ${loaded.name} ${target}\``,
     ];

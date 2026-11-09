@@ -23,6 +23,7 @@ import {
   type IndexedSymbol,
   type PatchNode,
   type PatchTourStep,
+  type Reference,
 } from "@xpl/core";
 import { kebab } from "./draft-class.js";
 import {
@@ -97,10 +98,21 @@ function qualifier(model: IndexModel, sym: IndexedSymbol): string {
   return (parts.at(-1) ?? sym.file).replace(/\.[^.]+$/, "");
 }
 
+/**
+ * Is a type reference the object of an indexed access (`Options['baseUrl']`)? The field holds the type of one member
+ * of `Options`, not an `Options`.
+ */
+function indexedAccess(texts: DraftInput["texts"], file: string, site: Reference["site"]): boolean {
+  if (site.startCol === undefined) return false;
+  const line = texts.lines(file)?.[site.startLine - 1] ?? "";
+  return /^[\w$.]+\s*\[\s*[^\]\s]/.test(line.slice(site.startCol - 1));
+}
+
 /** Why a type's box has no rows, in the words of its kind and language. */
 function noFieldsReason(model: IndexModel, type: IndexedSymbol): string {
   if (type.kind === "interface") return "an interface has methods, not fields";
-  if (type.kind === "type") return "a type alias or a function type holds no fields";
+  if (type.kind === "type")
+    return "a type alias holds fields only when it is an object type `{ ... }`";
   if (type.kind === "enum") return "an enum holds values, not fields";
   if (model.file(type.file)?.language === "python")
     return "a Python attribute set outside `__init__` is not a field";
@@ -149,6 +161,7 @@ export function draftData(input: DraftInput, scope: Target): Draft {
         if (!kind || (kind === "references") === (from === type)) continue;
         const to = model.symbol(ref.to);
         if (!to || to.id === type.id || !isCandidate.has(to.id)) continue;
+        if (kind === "references" && indexedAccess(texts, from.file, ref.site)) continue;
         links.push({
           from: type,
           to,

@@ -249,7 +249,9 @@ describe("xpl draft: refusals and reuse", () => {
     expect(JSON.parse(r.out).views[0].id).toBe("view:runner-dispatch");
     expect(r.err).toMatch(/^draft path for d: a sequence of \d+ calls between \d+ participants/);
     expect(r.err).toContain("next: save the patch to a file outside the repo (or use -o)");
-    expect(r.err).toContain("called more than once, drawn once at the first call");
+    expect(r.err).toContain(
+      "called more than once, drawn at the first call (and at the first on the main path): Runner.log (3 calls)",
+    );
   });
 
   it("a second draft takes new ids and leaves what the explainer explains alone", async () => {
@@ -459,7 +461,12 @@ describe("xpl draft change", () => {
     const { json } = await xplJson<DraftJson>(repo, "draft", "change", "pr");
     const patch = json.patch;
     const view = patch.views![0]!;
-    expect(view).toMatchObject({ id: "view:change-map", type: "graph", stubs: { mode: "none" } });
+    expect(view).toMatchObject({
+      id: "view:change-map",
+      type: "graph",
+      stubs: { mode: "none" },
+      edgeKinds: ["calls", "reads", "references", "extends", "implements"],
+    });
     if (view.type !== "graph") return;
     expect(view.include).toEqual(
       expect.arrayContaining([

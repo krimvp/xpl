@@ -67,11 +67,12 @@ describe("xpl draft class", () => {
       ["sym:src/shape.ts#Shape"],
       ["sym:src/circle.ts#Circle"],
       ["sym:src/square.ts#Square"],
+      [],
     ]);
-    // 4 steps is under the budget's 5-8, and right for a small hierarchy: the output says not to pad it
-    expect(r.out).toContain(
-      "a tour of 4 steps (short is right for a small subject: do not pad it)",
+    expect(patch.tours?.[0]?.steps?.at(-1)?.note).toBe(
+      "### Where to go next\n\nTODO: which type to use when, and what to read next, one short sentence each.",
     );
+    expect(r.out).toContain("a tour of 5 steps");
 
     const applied = await xpl(dir, "apply", "shapes", out);
     expect(applied.code, applied.out).toBe(0);

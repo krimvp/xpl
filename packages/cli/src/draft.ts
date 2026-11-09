@@ -135,6 +135,24 @@ export const NOT_DESIGN: readonly string[] = [
 export const ENTRY_NAMES =
   /^(?:main|__main__|cli|cmd|app|apps|application|applications|index|server)$/;
 
+/** The language of `file` when the index has no references for it (Ruby, PHP): no call can be drawn. */
+function noReferences(model: IndexModel, file: string | undefined): string | undefined {
+  const language = file === undefined ? undefined : model.file(file)?.language;
+  return language !== undefined && model.index.languages?.[language]?.refs === "none"
+    ? language
+    : undefined;
+}
+
+/** A program's `main`: a top-level `main` function, or Java's `main` method of a top-level class. */
+export function isMainSymbol(model: IndexModel, sym: IndexedSymbol): boolean {
+  return (
+    (sym.kind === "function" && sym.path === "main") ||
+    (sym.kind === "method" &&
+      /^[^.]+\.main$/.test(sym.path) &&
+      model.file(sym.file)?.language === "java")
+  );
+}
+
 export type DraftKind = "change" | "repo" | "path" | "map" | "class" | "states" | "data";
 
 export interface DraftInput {
@@ -159,6 +177,10 @@ export interface Draft {
 // ─── Text ───────────────────────────────────────────────────────────────────────────────────────
 
 export const todo = (text: string): string => `TODO: ${text}`;
+
+/** A drawn arrow the draft stores needs a summary (`xpl ready` requires one): what it is for. */
+const ARROW_SUMMARY = todo("one plain sentence: what passes along this arrow and why.");
+
 export const tick = (text: string): string => `\`${text}\``;
 
 /** A tour note: `### <title>`, a blank line, then the body sentences (a part that starts with a newline: a block). */
@@ -927,6 +949,8 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
     title: "What this change touches",
     scope: { root: "repo", depth: 1 },
     include,
+    // a changed default value or type is read or named, not called: without these arrows its box floats
+    edgeKinds: ["calls", "reads", "references", "extends", "implements"],
     stubs: { mode: "none" },
   };
 
@@ -1097,7 +1121,7 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
       note(
         todo("what changes for users, as a plain statement"),
         todo(
-          "the behaviour change: before, a user saw one thing; now, another. Give an input that shows it.",
+          "the behavior change: before, a user saw one thing; now, another. Give an input that shows it.",
         ),
         alsoChanged.length > 0
           ? `Also changed: ${nameList(alsoChanged)}. ${todo("say what they change, or why the tour skips them.")}`
@@ -1297,7 +1321,7 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
       [testGroup ?? mainFocus],
       note(
         todo("what the tests cover, as a plain statement"),
-        todo("which test checks each behaviour change, and whether the new branches are tested."),
+        todo("which test checks each behavior change, and whether the new branches are tested."),
         untested.length > 0
           ? `No indexed test reference found for ${nameList(untested)}: ${todo("check whether tests of other code exercise these symbols.")}`
           : "",
@@ -1457,6 +1481,66 @@ export function continueStepIds(patch: ExplainerPatch, explainer: Explainer): vo
 
 /** Steps of a repo tour that `draft repo` leaves for the main path and its risks (the skill's spine, parts 3-4). */
 export const PATH_ROOM = 2;
+
+/**
+ * Where the work of a library's entry goes: from `start`, down the one callee that reaches nearly all (90%) of what the
+ * current function reaches, past builders and thin wrappers, until the calls spread out. For ky: createInstance hands
+ * each request to createRequest, which hands it to `Ky.create`, which splits the work between `#run`, the constructor
+ * and the body reads. A call to a class is a call to its constructor. Only calls inside code files (`isCode`) count.
+ */
+function requestPath(
+  model: IndexModel,
+  isCode: (file: string) => boolean,
+  start: IndexedSymbol,
+): IndexedSymbol {
+  const callable = (sym: IndexedSymbol | undefined): IndexedSymbol | undefined => {
+    if (!sym || !isCode(sym.file)) return undefined;
+    if (sym.kind === "function" || sym.kind === "method") return sym;
+    if (sym.kind === "class") return model.symbol(`${sym.id}.constructor`) ?? undefined;
+    return undefined;
+  };
+  const owner = (id: string): IndexedSymbol | undefined => {
+    // a call from a closure nested in a function is the function's own (createInstance.ky -> createInstance)
+    let sym = model.symbol(id);
+    while (sym && sym.kind === "function" && model.parentSymbol(sym.id)?.kind === "function")
+      sym = model.parentSymbol(sym.id);
+    return sym;
+  };
+  const callees = new Map<string, Set<string>>();
+  for (const ref of model.refs) {
+    if (ref.kind !== "call") continue;
+    const from = owner(ref.from);
+    const to = callable(model.symbol(ref.to));
+    if (!from || !to || to.id === from.id || !isCode(from.file)) continue;
+    let set = callees.get(from.id);
+    if (!set) callees.set(from.id, (set = new Set()));
+    set.add(to.id);
+  }
+  // what a function reaches without passing through the path so far (a retry that calls `#run` again reaches
+  // nothing new)
+  const reachOf = (id: string, path: ReadonlySet<string>): number => {
+    const seen = new Set<string>([id]);
+    const queue = [id];
+    while (queue.length > 0)
+      for (const next of callees.get(queue.pop()!) ?? [])
+        if (!seen.has(next) && !path.has(next)) (queue.push(next), seen.add(next));
+    return seen.size - 1;
+  };
+  let current = start;
+  const visited = new Set([start.id]);
+  for (;;) {
+    const total = reachOf(current.id, visited);
+    const ranked = [...(callees.get(current.id) ?? [])]
+      .filter((id) => !visited.has(id))
+      .map((id) => ({ id, reach: reachOf(id, visited) }))
+      .sort((a, b) => b.reach - a.reach || a.id.localeCompare(b.id));
+    const best = ranked[0];
+    // a leaf is where the work is done, not a step on the way to it
+    if (!best || best.reach === 0 || (best.reach + 1) / total < 0.9) return current;
+    current = model.symbol(best.id)!;
+    visited.add(best.id);
+  }
+}
 
 /** Settings file extensions a literal path can name. */
 const SETTINGS_FILE = /^[\w./-]+\.(?:ya?ml|json|toml|ini|conf|cfg|env)$/;
@@ -1764,6 +1848,7 @@ export function draftRepo(input: DraftInput): Draft {
             ? "1-4 words: what they do with it (for example: sends requests)"
             : "1-4 words: what passes here (for example: stores orders)",
         ),
+        summary: ARROW_SUMMARY,
         anchors: [anchor],
       });
     }
@@ -1772,11 +1857,7 @@ export function draftRepo(input: DraftInput): Draft {
   // ── Who starts a program that no web or command-line framework names: a person at its `main` function (Java's
   // `main` method of a top-level class too), one arrow to each part that holds a `main`. And the settings files the
   // code loads (index `resources`): one box, anchored at the file and the line that loads it.
-  const isMain = (sym: IndexedSymbol) =>
-    (sym.kind === "function" && sym.path === "main") ||
-    (sym.kind === "method" &&
-      /^[^.]+\.main$/.test(sym.path) &&
-      model.file(sym.file)?.language === "java");
+  const isMain = (sym: IndexedSymbol) => isMainSymbol(model, sym);
   const mains =
     inbound.length === 0 && !library
       ? model.files
@@ -1816,6 +1897,7 @@ export function draftRepo(input: DraftInput): Draft {
         to: unit.id,
         kind: "custom",
         label: todo("1-4 words: how they start it (for example: runs the program)"),
+        summary: ARROW_SUMMARY,
         anchors: [definition(syms[0]!)],
       });
     }
@@ -1871,6 +1953,7 @@ export function draftRepo(input: DraftInput): Draft {
         to: settingsId,
         kind: "custom",
         label: todo("1-4 words: what it reads (for example: reads the settings)"),
+        summary: ARROW_SUMMARY,
         anchors: [anchor, { file: read, role: "config" }],
       });
     }
@@ -1906,7 +1989,7 @@ export function draftRepo(input: DraftInput): Draft {
       : {
           id: inside.service,
           label: repoName,
-          role: library ? "component" : "service",
+          role: library ? "system" : "service",
           opens: inside.viewId,
           ...(language ? { tech: language } : {}),
           parent: "repo",
@@ -2063,7 +2146,8 @@ export function draftRepo(input: DraftInput): Draft {
         nodes.push({
           id: appId,
           label: "Your app",
-          role: "system",
+          role: "external",
+          tech: "your app",
           parent: "repo",
           summary: todo(`one line: how an app uses ${repoName}, in plain words.`),
           anchors: [usage],
@@ -2074,6 +2158,7 @@ export function draftRepo(input: DraftInput): Draft {
           to: main.service,
           kind: "calls",
           label: todo("1-4 words: what the app calls (for example: ky.get(), ky.post())"),
+          summary: ARROW_SUMMARY,
           anchors: [usage, callee],
         });
       }
@@ -2189,10 +2274,17 @@ export function draftRepo(input: DraftInput): Draft {
   // one step per part, inside the skill's budget less the 2 steps for the main path and its risks (with the step on
   // where to go next): the last one takes the parts that are left, together
   const room = Math.max(1, L.repoSteps - PATH_ROOM - steps.length - 1);
+  const topCallable =
+    mainTop && (mainTop.kind === "function" || mainTop.kind === "method") ? mainTop : undefined;
+  // a library's main path is the request its entry makes, not the builder that returns the entry
   const pathFrom =
-    mainTop && (mainTop.kind === "function" || mainTop.kind === "method") ? mainTop : entrySym;
+    library && topCallable ? requestPath(model, isCode, topCallable) : (topCallable ?? entrySym);
+  const blind = noReferences(model, pathFrom?.file ?? mainUnit.files[0]);
   notes.push(
-    `room is left for ${PATH_ROOM} more steps (${L.repoSteps} at most), the main path and its risks: run \`xpl draft path <explainer> ${pathFrom ? `sym:${pathFrom.id}` : "<entry>"}\` and copy the steps you keep`,
+    `room is left for ${PATH_ROOM} more steps (${L.repoSteps} at most), the main path and its risks: ` +
+      (blind
+        ? `the index has no references for ${blind}, so \`xpl draft path\` cannot draw it; write those steps from \`xpl show\``
+        : `run \`xpl draft path <explainer> ${pathFrom ? `sym:${pathFrom.id}` : "<entry>"}\` and copy the steps you keep`),
   );
   // over the room, the parts with the fewest references share the last step
   const parts = order.slice(1);
@@ -2271,7 +2363,8 @@ export function draftRepo(input: DraftInput): Draft {
           "the 2-3 parts or questions this tour skipped, and what each answers, one short sentence each.",
         ),
       ),
-      [],
+      // its own code: where the main path starts (with none, the step would show every file of the service)
+      pathFrom ? [definition(pathFrom)] : [],
     ),
   );
 
@@ -2563,6 +2656,23 @@ function bodyLines(texts: TextCache, sym: IndexedSymbol): number {
   return n;
 }
 
+/**
+ * Is a call on the entry's main path: in no arm of a branch it writes (the code after an `if` that leaves early is the
+ * main path; a loop body is too)? An arm starts at its body, so a call in its condition is outside it.
+ */
+function onMainPath(blocks: readonly ControlBlock[], line: number, col: number): boolean {
+  return !blocks.some(
+    (block) =>
+      block.kind === "branch" &&
+      block.arms.some(
+        (arm) =>
+          !arm.implicit &&
+          (line > arm.start || (line === arm.start && col >= arm.startCol)) &&
+          line <= arm.end,
+      ),
+  );
+}
+
 /** How many symbols of the repository (outside tests) a symbol reaches through calls, at most 3 calls deep. */
 function reachOf(model: IndexModel, start: IndexedSymbol, skip: ReadonlySet<string>): number {
   const seen = new Set<string>([start.id]);
@@ -2699,7 +2809,14 @@ function pathSequence(
     const own =
       (owner !== undefined && (owner.id === entryOwner?.id || family.has(owner.id))) ||
       (owner === undefined && callee.file === sym.file && callee.kind === "function");
-    const callsMore = model.refsFrom(runs.id).some((r) => r.kind === "call" && r.to !== runs.id);
+    // a one-liner that only calls other one-liners (`isNonArrayObject` calls `isObject`) is a one-liner too
+    const callsMore = model.refsFrom(runs.id).some((r) => {
+      if (r.kind !== "call" || r.to === runs.id) return false;
+      const target = model.symbol(r.to);
+      const oneLiner =
+        (target?.kind === "function" || target?.kind === "method") && bodyLines(texts, target) <= 1;
+      return !oneLiner;
+    });
     if (!recursion && own && bodyLines(texts, runs) <= 1 && !callsMore) {
       if (!helpers.includes(runs.path)) helpers.push(runs.path);
       continue;
@@ -2714,15 +2831,20 @@ function pathSequence(
       if (!guards.includes(runs.path)) guards.push(runs.path);
       continue;
     }
-    // each recursive call is drawn (they usually recurse on different inputs); other callees once
-    if (!recursion && seen.has(callee.id)) {
+    // each recursive call is drawn (they usually recurse on different inputs); other callees once, at the first call,
+    // and again at the first call on the main path (in no branch arm) when the first was in a branch: the `delay` of
+    // an early exit and the `delay` of the main path both show
+    const main = onMainPath(entry.blocks ?? [], ref.site.startLine, ref.site.startCol ?? 1);
+    if (!recursion && (seen.has(`${callee.id}\0main`) || (seen.has(callee.id) && !main))) {
       repeated.set(callee.id, (repeated.get(callee.id) ?? 1) + 1);
       continue;
     }
     seen.add(callee.id);
-    // a method goes to the lifeline of its class (the entry's own class too: never the entry's lifeline, which
-    // stands for the entry alone), a function to its own; only recursion is a call of the entry to itself
-    const participant = recursion ? entryId : `sym:${(owner ?? callee).id}`;
+    if (main) seen.add(`${callee.id}\0main`);
+    // a method of the entry's own class is a lifeline of its own (`Ky.#run` calls `Ky.#retry`): the class's lifeline
+    // would stand for the entry too. A method of another class goes to the lifeline of its class, a function to its
+    // own; only recursion is a call of the entry to itself.
+    const participant = recursion ? entryId : `sym:${(owner && !own ? owner : callee).id}`;
     const skip = new Set([sym.id]);
     const calleeName = callee.path.slice(callee.path.lastIndexOf(".") + 1);
     const score = recursion
@@ -2736,7 +2858,7 @@ function pathSequence(
   }
   if (repeated.size > 0) {
     notes.push(
-      "called more than once, drawn once at the first call: " +
+      "called more than once, drawn at the first call (and at the first on the main path): " +
         [...repeated].map(([id, n]) => `${model.symbol(id)?.path ?? id} (${n} calls)`).join(", "),
     );
   }
@@ -2746,7 +2868,9 @@ function pathSequence(
     );
   }
   if (helpers.length > 0) {
-    notes.push(`not drawn, one-line helpers that call nothing: ${helpers.join(", ")}`);
+    notes.push(
+      `not drawn, one-line helpers that call nothing or only other one-liners: ${helpers.join(", ")}`,
+    );
   }
   if (guards.length > 0) {
     notes.push(`not drawn, one-line checks that a branch's condition makes: ${guards.join(", ")}`);
@@ -2756,7 +2880,9 @@ function pathSequence(
       error:
         built.length + helpers.length + guards.length > 0
           ? `${entryId} makes no call worth drawing, every call it makes is left out (${notes.join("; ")}): start from a callee with more code, or explain it in a guide step`
-          : `${entryId} makes no call the index knows (calls into libraries outside the repository are not indexed): there is nothing to draw`,
+          : noReferences(model, sym.file)
+            ? `${noReferences(model, sym.file)}: the index has no references for this language, so there is no call to draw; write the steps by hand from \`xpl show ${sym.file}\``
+            : `${entryId} makes no call the index knows (calls into libraries outside the repository are not indexed): there is nothing to draw`,
     };
   }
 

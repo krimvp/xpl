@@ -9,7 +9,7 @@ import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ExplainerPatch, GraphView, PatchGraphView } from "@xpl/core";
 import { headerComment } from "../src/draft-map.js";
-import { git, makeTempDir, writeFile, xpl, xplJson } from "./helpers.js";
+import { copyFixture, git, makeTempDir, writeFile, xpl, xplJson } from "./helpers.js";
 
 interface DraftJson {
   notes: string[];
@@ -125,7 +125,7 @@ describe("xpl draft map", () => {
       ],
     );
     expect(patch.tours?.[0]?.steps?.at(-1)?.note).toBe(
-      "### TODO: where a newcomer starts reading, as a plain statement\n\nTODO: why to start at `src/main.ts`: what runs first and which parts it calls.",
+      "### Where to go next: TODO: where a newcomer starts reading, as a plain statement\n\nTODO: why to start at `src/main.ts`: what runs first and which parts it calls.",
     );
     expect(notes).toEqual([
       "4 code files on 2 maps; 1 file left off (tests, examples, fixtures, docs and benchmarks); 2 files that are not code have no box: `README.md` and `package.json`",
@@ -166,6 +166,18 @@ describe("xpl draft map", () => {
     expect(await lastCode("go")).toEqual([
       { file: "src/index.ts", symbol: "boot", role: "definition" },
     ]);
+  });
+
+  it("starts a Java newcomer at the class with `static void main`", async () => {
+    const dir = copyFixture("java-jobrunner");
+    expect((await xpl(dir, "index", "--precise", "off")).code).toBe(0);
+    expect((await xpl(dir, "new", "m")).code).toBe(0);
+    const json = await xplJson<DraftJson>(dir, "draft", "map", "m");
+    expect(json.code, json.out).toBe(0);
+    expect(json.json.patch.tours?.[0]?.steps?.at(-1)?.code).toEqual([
+      { file: "src/main/java/jobrunner/Main.java", symbol: "Main.main", role: "definition" },
+    ]);
+    expect(json.json.notes.join("\n")).not.toContain("no entry file found");
   });
 
   it("shows the requests of the screen code to the server routes as an arrow between their folders", async () => {
@@ -378,6 +390,25 @@ describe("headerComment", () => {
     );
     expect(header("/**\n * Text helpers.\n * @module text\n */\n\nexport const a = 1;")).toBe(
       "Text helpers.",
+    );
+  });
+
+  it("skips a license or banner comment and reads the comment after it", () => {
+    // ky's source/index.ts opens with a preserved banner, then an import
+    expect(header("/*! MIT License © Sindre Sorhus */\n\nimport {Ky} from './core/Ky.js';")).toBe(
+      undefined,
+    );
+    expect(
+      header(
+        "// Copyright 2024 The Authors.\n// SPDX-License-Identifier: Apache-2.0\n\n// Package queue holds the jobs.\npackage queue",
+      ),
+    ).toBe("Package queue holds the jobs.");
+    expect(
+      header('# Licensed under the MIT license.\n\n"""Retries failed jobs."""\nimport x'),
+    ).toBe("Retries failed jobs.");
+    // the word alone is no banner
+    expect(header("// Checks the license field of a package.\nimport x from 'y';")).toBe(
+      "Checks the license field of a package.",
     );
   });
 

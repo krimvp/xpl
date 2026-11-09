@@ -217,7 +217,8 @@ export function draftClass(input: DraftInput, entry: IndexedSymbol): Draft {
     ...linksOf(entry, "up").map((l) => ({ ...l, way: "up" as const })),
     ...linksOf(entry, "down").map((l) => ({ ...l, way: "down" as const })),
   ].filter((l) => onMap.has(l.sym.id));
-  for (const link of direct.slice(0, CLASS_LIMITS.steps - 1)) {
+  // the last step is "Where to go next"
+  for (const link of direct.slice(0, CLASS_LIMITS.steps - 2)) {
     const name = shortName(link.sym);
     steps.push(
       tourStep(
@@ -253,6 +254,19 @@ export function draftClass(input: DraftInput, entry: IndexedSymbol): Draft {
       `${direct.length - (steps.length - 1)} direct types have no tour step (at most ${CLASS_LIMITS.steps} steps)`,
     );
   }
+  steps.push(
+    tourStep(
+      model,
+      `t${steps.length + 1}`,
+      viewId,
+      [],
+      note(
+        "Where to go next",
+        todo("which type to use when, and what to read next, one short sentence each."),
+      ),
+      [],
+    ),
+  );
   if (
     boxes.some((sym) =>
       [...model.refsFrom(sym.id), ...model.refsTo(sym.id)].some(

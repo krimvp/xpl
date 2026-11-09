@@ -80,7 +80,7 @@ describe("xpl draft data", () => {
     );
     expect(r.out).toContain("note: 5 more linked types left off the map (at most 6 boxes): ");
     expect(r.out).toContain(
-      "note: Listener, Logger, Handler: no fields, so they are not on the map (a type alias or a function type holds no fields)",
+      "note: Listener, Logger, Handler: no fields, so they are not on the map (a type alias holds fields only when it is an object type `{ ... }`)",
     );
     expect(r.out).not.toContain("Python");
 
@@ -228,6 +228,47 @@ describe("xpl draft data", () => {
       "(a separate group: no field or hierarchy links it to the types before it)",
     );
     expect(r.out).not.toContain("left off");
+  });
+
+  it("object type aliases are tables with rows, linked by their fields (ky's options types)", async () => {
+    const dir = makeTempDir("xpl-data-alias-");
+    writeFile(
+      dir,
+      "options.ts",
+      [
+        "export type RetryOptions = {",
+        "  limit?: number;",
+        "};",
+        "export type Hooks = {",
+        "  beforeRequest?: BeforeRequestHook[];",
+        "};",
+        "export type BeforeRequestHook = (request: Request) => void;",
+        "export type KyOptions = {",
+        "  retry?: RetryOptions | number;",
+        "  hooks?: Hooks;",
+        "};",
+        // ky's NormalizedOptions: a field typed as a member of another type does not hold that type
+        "export type NormalizedOptions = {",
+        "  limit: RetryOptions['limit'];",
+        "  next: NonNullable<RetryOptions [ 'limit' ]>;",
+        "};",
+        "",
+      ].join("\n"),
+    );
+    expect((await xpl(dir, "index", "--precise", "off")).code).toBe(0);
+    expect((await xpl(dir, "new", "ky")).code).toBe(0);
+    const out = join(makeTempDir("xpl-data-out-"), "data.json");
+    const r = await xpl(dir, "draft", "data", "ky", "-o", out);
+    expect(r.code, r.err + r.out).toBe(0);
+    const patch = JSON.parse(readFileSync(out, "utf8")) as ExplainerPatch;
+    expect(types(patch.views![0] as GraphView)).toEqual([
+      "sym:options.ts#KyOptions",
+      "sym:options.ts#RetryOptions",
+      "sym:options.ts#Hooks",
+    ]);
+    // NormalizedOptions links to nothing: it is not on the map
+    expect(r.out).toContain("a data map of 3 types (a table each) with 4 field rows");
+    expect(r.out).not.toContain("no fields the index knows");
   });
 
   it("a field of a type's own type draws no arrow, so the type's summary TODO names it", async () => {

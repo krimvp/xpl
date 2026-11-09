@@ -33,6 +33,7 @@ import {
 } from "@xpl/core";
 import {
   ENTRY_NAMES,
+  isMainSymbol,
   NOT_DESIGN,
   aboutAnchor,
   OVERVIEW_EXCLUDE,
@@ -80,28 +81,43 @@ function viewIdOf(root: string, path: string): string {
  */
 export function headerComment(lines: readonly string[] | undefined): string | undefined {
   if (!lines) return undefined;
-  const text: string[] = [];
+  let text: string[] = [];
   let i = 0;
-  while (i < lines.length && /^\s*(?:#!|#.*coding[:=]|$)/.test(lines[i]!)) i++;
-  const first = lines[i]?.trim() ?? "";
-  const block = /^(?:\/\*\*?|"""|''')/.exec(first);
   /** The line after the comment. */
-  let after = i;
-  if (block) {
-    const close = block[0].startsWith("/*") ? "*/" : block[0];
-    for (let n = i; n < lines.length && n < i + 20; n++) {
-      let line = lines[n]!.trim();
-      if (n === i) line = line.slice(block[0].length);
-      const end = line.indexOf(close);
-      if (end !== -1) line = line.slice(0, end);
-      text.push(line.replace(/^\*\s?/, ""));
-      after = n + 1;
-      if (end !== -1) break;
+  let after = 0;
+  // a license or banner comment (`/*! MIT … */`, `// Copyright …`, an SPDX line) says nothing about the file: the
+  // comment after it is the header
+  for (let comments = 0; comments < 4; comments++) {
+    text = [];
+    while (i < lines.length && /^\s*(?:#!|#.*coding[:=]|$)/.test(lines[i]!)) i++;
+    const first = lines[i]?.trim() ?? "";
+    const block = /^(?:\/\*[*!]?|"""|''')/.exec(first);
+    after = i;
+    if (block) {
+      const close = block[0].startsWith("/*") ? "*/" : block[0];
+      for (let n = i; n < lines.length && n < i + 20; n++) {
+        let line = lines[n]!.trim();
+        if (n === i) line = line.slice(block[0].length);
+        const end = line.indexOf(close);
+        if (end !== -1) line = line.slice(0, end);
+        text.push(line.replace(/^\*\s?/, ""));
+        after = n + 1;
+        if (end !== -1) break;
+      }
+    } else if (/^(?:\/\/|#)/.test(first)) {
+      for (; after < lines.length && /^\s*(?:\/\/|#)/.test(lines[after]!); after++) {
+        text.push(lines[after]!.trim().replace(/^(?:\/\/+|#+)\s?/, ""));
+      }
     }
-  } else if (/^(?:\/\/|#)/.test(first)) {
-    for (; after < lines.length && /^\s*(?:\/\/|#)/.test(lines[after]!); after++) {
-      text.push(lines[after]!.trim().replace(/^(?:\/\/+|#+)\s?/, ""));
-    }
+    const banner =
+      first.startsWith("/*!") ||
+      /\b(?:copyright|spdx-license-identifier|licensed under)\b|©|\(c\)\s*\d{4}|\b(?:MIT|Apache|BSD|GPL|ISC|MPL)[- ](?:licen[cs]e|\d)/i.test(
+        text.join(" "),
+      );
+    if (!banner) break;
+    text = [];
+    if (after === i) break;
+    i = after;
   }
   // a comment right above a declaration is that declaration's doc, not the file's
   const next = lines[after]?.trim() ?? "";
@@ -565,17 +581,14 @@ export function draftMap(input: DraftInput): Draft {
     else tours.push({ id: tour.id, steps });
   }
 
-  /** Where a newcomer starts reading: the shallowest mapped file with a `main` function, else with an entry name. */
+  /** Where a newcomer starts reading: the shallowest mapped file with a `main` (Java's in a class), else with an entry name. */
   const entryFile = (): { file: string; symbol?: string } | undefined => {
     const depth = (file: string) => file.split("/").length;
     const first = (files: string[]) =>
       files.sort((a, b) => depth(a) - depth(b) || a.localeCompare(b))[0];
-    const withMain = first(
-      allMapped.filter((f) =>
-        model.topLevelSymbols(f).some((s) => s.kind === "function" && s.path === "main"),
-      ),
-    );
-    if (withMain) return { file: withMain, symbol: "main" };
+    const mainOf = (file: string) => model.symbolsInFile(file).find((s) => isMainSymbol(model, s));
+    const withMain = first(allMapped.filter((f) => mainOf(f) !== undefined));
+    if (withMain) return { file: withMain, symbol: mainOf(withMain)!.path };
     const named = first(
       allMapped.filter((f) => ENTRY_NAMES.test(baseName(f).replace(/\.[^.]+$/, ""))),
     );
@@ -623,7 +636,7 @@ export function draftMap(input: DraftInput): Draft {
           viewOfFile.get(entry.file) ?? "view:map",
           [`file:${entry.file}`],
           note(
-            todo("where a newcomer starts reading, as a plain statement"),
+            `Where to go next: ${todo("where a newcomer starts reading, as a plain statement")}`,
             todo(`why to start at \`${entry.file}\`: what runs first and which parts it calls.`),
           ),
           [

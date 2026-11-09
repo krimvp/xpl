@@ -30,6 +30,13 @@ async function drafted(dir: string): Promise<{ patch: ExplainerPatch; notes: str
   expect(validated.out).toMatch(/no errors, no warnings$/);
   const lint = await xplJson<{ counts: Record<string, number> }>(dir, "lint", "shop");
   expect(Object.keys(lint.json.counts)).toEqual(["todo-left"]);
+  // every text `ready` requires has a TODO to write: none is left empty once the TODOs are written
+  const ready = await xplJson<{ findings: { code: string; elementId: string; field: string }[] }>(
+    dir,
+    "ready",
+    "shop",
+  );
+  expect(ready.json.findings.filter((f) => f.code === "required-content")).toEqual([]);
   return { patch, notes: json.json.notes };
 }
 
@@ -87,7 +94,7 @@ describe("xpl draft repo: one service and what it relies on", () => {
     );
   });
 
-  it("treats a declared framework as a component and does not infer a terminal user from a helper import", async () => {
+  it("treats a declared framework as the system and does not infer a terminal user from a helper import", async () => {
     const framework = makeTempDir("xpl-framework-");
     writeFile(
       framework,
@@ -111,7 +118,7 @@ describe("xpl draft repo: one service and what it relies on", () => {
       'import click\ndef helper():\n    return click.style("message")\n',
     );
     const { patch, notes } = await drafted(framework);
-    expect(patch.nodes!.find((n) => n.label === "flask")?.role).toBe("component");
+    expect(patch.nodes!.find((n) => n.label === "flask")?.role).toBe("system");
     expect(patch.nodes!.map((n) => n.id)).not.toContain("grp:user");
     expect(patch.nodes!.map((n) => n.id)).toContain("grp:your-app");
     expect(notes.some((n) => n.startsWith("the draft guesses the kind of project"))).toBe(true);
@@ -538,7 +545,7 @@ describe("xpl draft repo: a library", () => {
   writeFile(
     dir,
     "source/core/request.ts",
-    'import { retry } from "../utils/retry.js";\n\n// import got from "got";\nexport function request(url: string) {\n  return retry(() => fetch(url));\n}\n',
+    'import { retry } from "../utils/retry.js";\n\n// import got from "got";\nexport function request(url: string) {\n  return parse(retry(() => fetch(url)));\n}\nfunction parse(response: unknown) {\n  return response;\n}\n',
   );
   writeFile(
     dir,
@@ -557,8 +564,10 @@ describe("xpl draft repo: a library", () => {
     const { patch, notes } = await drafted(dir);
     const system = graph(patch, "view:system")!;
     expect(system.include).toEqual(["grp:your-app", "grp:fetchy"]);
+    // the library is the system; the app that calls it is outside the repo
+    expect(patch.nodes!.find((n) => n.id === "grp:fetchy")).toMatchObject({ role: "system" });
     const app = patch.nodes!.find((n) => n.id === "grp:your-app")!;
-    expect(app).toMatchObject({ label: "Your app", role: "system" });
+    expect(app).toMatchObject({ label: "Your app", role: "external", tech: "your app" });
     // anchored at the README line that imports the library
     expect(app.anchors).toEqual([{ file: "README.md", span: { from: 7, to: 7 }, role: "usage" }]);
     const edge = patch.edges!.find((e) => e.from === "grp:your-app")!;
@@ -567,6 +576,16 @@ describe("xpl draft repo: a library", () => {
     expect(edge.anchors![1]).toMatchObject({ file: "source/index.ts", symbol: "fetchy" });
     expect(notes.join("\n")).toContain('"Your app" stands for the code that calls it');
     expect(notes.join("\n")).not.toContain("outside systems found");
+    // the main path starts where the request goes (create only builds the client that hands it on)
+    expect(notes.join("\n")).toContain(
+      "run `xpl draft path shop sym:source/core/request.ts#request`",
+    );
+    // the last step shows where that path starts, not every file of the library
+    const last = patch.tours![0]!.steps!.at(-1)!;
+    expect(last.note).toMatch(/^### Where to go next/);
+    expect(last.code).toEqual([
+      expect.objectContaining({ file: "source/core/request.ts", symbol: "request" }),
+    ]);
     // type tests are tests: no box, and the maps leave them out
     const inside = graph(patch, "view:overview")!;
     expect(inside.include!.some((id) => id.includes("test-d"))).toBe(false);
@@ -748,4 +767,23 @@ it("drafts Rust code into a repository map labeled Rust", async () => {
     "file:src/runner.rs",
     "file:src/worker.rs",
   ]);
+});
+
+it("Ruby has no references: the draft does not send the author to `xpl draft path`, which says why it cannot draw", async () => {
+  const dir = copyFixture("rb-jobrunner");
+  const { notes } = await drafted(dir);
+  expect(notes.filter((n) => n.includes("draft path"))).toEqual([
+    "room is left for 2 more steps (9 at most), the main path and its risks: the index has no references for ruby, so `xpl draft path` cannot draw it; write those steps from `xpl show`",
+  ]);
+  const path = await xpl(
+    dir,
+    "draft",
+    "path",
+    "shop",
+    "sym:lib/jobrunner/runner.rb#Jobrunner.Runner.drain",
+  );
+  expect(path.code).toBe(1);
+  expect(path.err).toContain(
+    "ruby: the index has no references for this language, so there is no call to draw; write the steps by hand from `xpl show lib/jobrunner/runner.rb`",
+  );
 });

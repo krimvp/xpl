@@ -108,7 +108,9 @@ describe("xpl draft path: an algorithm that recurses", () => {
     expect(view.steps![0]!.from).toBe(view.steps![0]!.to);
     expect(view.steps![0]!.summary).toContain("call into itself");
     // (the tree-sitter index has no reference for the conversion `kind(len(path))`; scip-go has one, a `type`)
-    expect(notes.join("\n")).toContain("one-line helpers that call nothing: node.leaf");
+    expect(notes.join("\n")).toContain(
+      "one-line helpers that call nothing or only other one-liners: node.leaf",
+    );
   });
 
   it("leaves out data built from a class with no constructor", async () => {
@@ -242,7 +244,42 @@ describe("xpl draft path: nested calls of the same function", () => {
     const r = await xpl(dir, "draft", "path", "d", "a.ts#Node.walk");
     expect(r.code).toBe(1);
     expect(r.err).toMatch(
-      /every call it makes is left out .*one-line helpers that call nothing: Node\.visit/,
+      /every call it makes is left out .*one-line helpers that call nothing or only other one-liners: Node\.visit/,
+    );
+  });
+});
+
+describe("xpl draft path: a helper called twice, one-line checks (ky's retry code)", () => {
+  it("draws a helper again where the main path calls it, and skips a one-line check that calls a one-line check", async () => {
+    const dir = await repo({
+      "is.ts": [
+        "export const isObject = (value: unknown): value is object => value !== null && typeof value === 'object';",
+        "export const isNonArrayObject = (value: unknown): value is object => isObject(value) && !Array.isArray(value);",
+        "export async function delay(ms: number): Promise<void> {",
+        "  console.log(ms);",
+        "  await new Promise((resolve) => setTimeout(resolve, ms));",
+        "}",
+        "",
+      ].join("\n"),
+      "retry.ts": [
+        'import { delay, isNonArrayObject } from "./is.js";',
+        "export async function retryFromError(error: unknown, wait: number, left: number): Promise<void> {",
+        "  if (wait >= left) {",
+        "    await delay(left);",
+        '    throw new Error("timed out");',
+        "  }",
+        "  if (isNonArrayObject(error)) {",
+        "    console.log(error);",
+        "  }",
+        "  await delay(wait);",
+        "}",
+        "",
+      ].join("\n"),
+    });
+    const { patch, notes } = await drafted(dir, "sym:retry.ts#retryFromError");
+    expect(sequence(patch).steps.map((s) => s.label)).toEqual(["delay(left)", "delay(wait)"]);
+    expect(notes).toContain(
+      "not drawn, one-line checks that a branch's condition makes: isNonArrayObject",
     );
   });
 });
@@ -258,13 +295,14 @@ describe("xpl draft path: a method a class inherits", () => {
     expect(view.id).toBe("view:safe-serializer-dumps");
     expect(view.participants![0]).toBe("sym:ser.py#Serializer.dumps");
     const dump = view.steps!.find((s) => s.label.startsWith("dump_payload"))!;
-    // the mixin's override runs for a SafeSerializer: its lifeline, its definition, and a hint saying why
-    expect(dump.to).toBe("sym:ser.py#SafeMixin");
+    // the mixin's override runs for a SafeSerializer: its own lifeline, its definition, and a hint saying why
+    expect(dump.to).toBe("sym:ser.py#SafeMixin.dump_payload");
     expect(dump.anchors![1]).toMatchObject({ file: "ser.py", symbol: "SafeMixin.dump_payload" });
     expect(dump.summary).toContain("SafeSerializer runs `SafeMixin.dump_payload`");
-    // a method of the entry's own class goes to the class's lifeline, never to the entry's
+    // a method of the entry's own class is a lifeline of its own, never the entry's or the class's
     const signer = view.steps!.find((s) => s.label.startsWith("make_signer"))!;
-    expect(signer.to).toBe("sym:ser.py#Serializer");
+    expect(signer.to).toBe("sym:ser.py#Serializer.make_signer");
+    expect(view.participants).not.toContain("sym:ser.py#Serializer");
     expect(view.steps!.filter((s) => s.from === s.to)).toEqual([]);
   });
 
@@ -321,7 +359,8 @@ describe("xpl draft path: too many calls", () => {
   it("keeps the calls that reach the most code, and lists what it left out", async () => {
     const helpers = Array.from({ length: 13 }, (_, i) =>
       [
-        `    def step${i}(self, x):`,
+        "    @staticmethod",
+        `    def step${i}(x):`,
         `        y = x + ${i}`,
         "        z = y * 2",
         "        return z",
@@ -348,13 +387,16 @@ describe("xpl draft path: too many calls", () => {
         "from store import Store",
         "",
         "",
+        "from steps import Steps",
+        "",
+        "",
         "class Job:",
         "    def run(self, x):",
-        ...Array.from({ length: 13 }, (_, i) => `        x = self.step${i}(x)`),
+        ...Array.from({ length: 13 }, (_, i) => `        x = Steps.step${i}(x)`),
         "        return Store().save(x)",
         "",
-        ...helpers,
       ].join("\n"),
+      "steps.py": ["class Steps:", ...helpers].join("\n"),
     });
     const { patch, notes } = await drafted(dir, "sym:job.py#Job.run");
     const view = sequence(patch);
@@ -365,7 +407,7 @@ describe("xpl draft path: too many calls", () => {
     const left = notes.find((n) => n.startsWith("calls left out of the sequence"))!;
     expect(left).toContain("the ones that reach the least code");
     // bare names, as a reader writes them
-    expect(left.match(/(?<!#)\bJob\.step\d+/g)).toHaveLength(2);
+    expect(left.match(/(?<!#)\bSteps\.step\d+/g)).toHaveLength(2);
     expect(left).not.toContain("sym:");
   });
 });
@@ -533,7 +575,8 @@ describe("xpl draft path: Go code that calls through an interface", () => {
       "calls file:internal/runner/runner.go -> file:internal/worker/pool.go",
     );
     // what implements what points the other way and answers another question: not on this map
-    expect(arrows.filter((a) => !a.startsWith("calls "))).toEqual([]); // each file box gets a summary to write, so "no TODO left" means no box is left without text
+    expect(arrows.filter((a) => !a.startsWith("calls "))).toEqual([]);
+    // each file box gets a summary to write, so "no TODO left" means no box is left without text
     const summaries = new Map(patch.nodes!.map((n) => [n.id, n.summary]));
     expect(files.include!.map((id) => summaries.get(id))).toEqual(
       files.include!.map(() => "TODO: one sentence: what this file is for on this path."),
@@ -550,4 +593,32 @@ describe("xpl draft path: Go code that calls through an interface", () => {
     expect(sentences.length).toBeGreaterThan(0);
     expect(sentences.filter((s) => !s.startsWith("TODO:"))).toEqual([]);
   });
+});
+
+it("code changed after `xpl index`: says to index and resolve, not that the draft has a bug", async () => {
+  const code = (n: number) =>
+    [
+      "export function a(): number {",
+      "  return b() + c();",
+      "}",
+      "",
+      "export function b(): number {",
+      "  const x = c();",
+      `  return x + ${n};`,
+      "}",
+      "",
+      "export function c(): number {",
+      "  const y = 2;",
+      "  return y;",
+      "}",
+      "",
+    ].join("\n");
+  const dir = await repo({ "src/a.ts": code(1) });
+  writeFile(dir, "src/a.ts", code(2));
+  const r = await xpl(dir, "draft", "path", "d", "sym:src/a.ts#a");
+  expect(r.code).toBe(1);
+  expect(r.err).not.toContain("a bug in xpl draft");
+  expect(r.err).toContain(
+    "error: the draft cannot be built: the code changed after `xpl index` (src/a.ts). Run `xpl index`, then `xpl resolve d --write`, and draft again.",
+  );
 });
