@@ -3194,7 +3194,7 @@ function pathFrames(
     if (block.kind === "loop") {
       inFrame = within(block);
       kind = "loop";
-      label = todo(`what repeats and until when, in a few words (the code: ${code})`);
+      label = todo(`what repeats and until when, in a few words (now: ${code})`);
     } else {
       const withCalls = block.arms
         .map((arm) => ({ arm, calls: within(arm) }))
@@ -3217,7 +3217,7 @@ function pathFrames(
             ? todo(
                 `when the rest of the loop body runs, in a few words (the code: ${code} skips it with \`${guard.leavesWith}\`)`,
               )
-            : todo(`when these calls run, in a few words (the code: ${code})`);
+            : todo(`when these calls run, in a few words (now: ${code})`);
       // each arm runs from its first call to the call before the next arm (a call in an `else if` condition
       // stays with the arm above it): the arms split the frame's steps, as validation wants
       if (kind === "alt") {
@@ -3227,7 +3227,7 @@ function pathFrames(
             ? todo(`otherwise, in a few words (the code after ${code}, which leaves early)`)
             : a.arm.condition === "else"
               ? todo("otherwise, in a few words")
-              : todo(`the condition, in a few words (the code: ${tick(a.arm.condition)})`),
+              : todo(`the condition, in a few words (now: ${tick(a.arm.condition)})`),
           fromStep: a.calls[0]!.step.id,
           toStep:
             n + 1 < withCalls.length
@@ -3385,7 +3385,7 @@ export function draftPath(input: DraftInput, entries: readonly PathEntry[]): Dra
       const arm = group.frame?.arms?.find((a) => group.calls.every((c) => holds(a, c.step.id)));
       const armCode =
         group.frame && implicitArms.has(group.frame) && arm
-          ? /the code: (`[^`]+`)/.exec(arm.label)?.[1]
+          ? /now: (`[^`]+`)/.exec(arm.label)?.[1]
           : undefined;
       tourSteps.push(
         tourStep(
