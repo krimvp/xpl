@@ -79,7 +79,7 @@
           "id": "apply-command:1",
           "from": "sym:packages/cli/src/commands/apply.ts#applyCommand",
           "to": "sym:packages/cli/src/repo.ts#resolveExplainerPath",
-          "label": "resolveExplainerPath(ctx, args.positionals[0]!)",
+          "label": "find the guide file",
           "kind": "call",
           "anchors": [
             {
@@ -103,7 +103,7 @@
           "id": "apply-command:2",
           "from": "sym:packages/cli/src/commands/apply.ts#applyCommand",
           "to": "sym:packages/cli/src/commands/apply.ts#readPatch",
-          "label": "readPatch(ctx, args.positionals[1]!)",
+          "label": "read the patch",
           "kind": "call",
           "anchors": [
             {
@@ -127,7 +127,7 @@
           "id": "apply-command:3",
           "from": "sym:packages/cli/src/commands/apply.ts#applyCommand",
           "to": "sym:packages/cli/src/commands/apply.ts#withLockedExplainer",
-          "label": "withLockedExplainer()",
+          "label": "lock the guide file",
           "kind": "call",
           "anchors": [
             {
@@ -149,9 +149,9 @@
         },
         {
           "id": "apply-command:4",
-          "from": "sym:packages/cli/src/commands/apply.ts#applyCommand",
+          "from": "sym:packages/cli/src/commands/apply.ts#withLockedExplainer",
           "to": "sym:packages/cli/src/repo.ts#openWorkspace",
-          "label": "openWorkspace(ctx, { explainer: loaded })",
+          "label": "open the index",
           "kind": "call",
           "anchors": [
             {
@@ -169,13 +169,13 @@
               "role": "definition"
             }
           ],
-          "summary": "Open the index and source text for the guide."
+          "summary": "Under the lock, the callback opens the index and source text for the guide."
         },
         {
           "id": "apply-command:5",
-          "from": "sym:packages/cli/src/commands/apply.ts#applyCommand",
+          "from": "sym:packages/cli/src/commands/apply.ts#withLockedExplainer",
           "to": "sym:packages/core/src/apply.ts#applyPatch",
-          "label": "applyPatch(…)",
+          "label": "check and merge",
           "kind": "call",
           "anchors": [
             {
@@ -193,7 +193,7 @@
               "role": "definition"
             }
           ],
-          "summary": "Core checks anchors and ownership, then returns a result."
+          "summary": "Still under the lock, core checks anchors and ownership, then returns a result."
         }
       ]
     }
@@ -298,7 +298,7 @@
               "role": "definition"
             }
           ],
-          "note": "### A lock covers the read and possible write\n\nThe command loads the guide while holding a file lock. Its save function writes the replacement atomically.",
+          "note": "### A lock covers the read, the check and the write\n\nThe command loads the guide while it holds a file lock, and runs the rest of its work in a callback under that lock. Its save function writes the replacement atomically.",
           "editor": {
             "primary": "packages/cli/src/commands/apply.ts"
           }
@@ -325,7 +325,7 @@
               "role": "definition"
             }
           ],
-          "note": "### The workspace supplies code for checking\n\nThe command opens the guide's index and a source text reader. Core uses both to resolve new code links.",
+          "note": "### The workspace supplies code for checking\n\nThe callback that `withLockedExplainer` runs opens the guide's index and a source text reader. Core uses both to resolve new code links.",
           "editor": {
             "primary": "packages/cli/src/commands/apply.ts"
           }
