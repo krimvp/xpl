@@ -150,15 +150,28 @@ export function normalizeProviderRange(
   return pointsToSpan(sr, start, er, end, lines);
 }
 
-export function providerRange(range: Range, text: string): ProviderRange {
+/** `splitLines` of a source's text by path, split once on first use. */
+export function sourceLines(
+  sources: readonly ProviderSource[],
+): (path: string) => readonly string[] {
+  const texts = new Map(sources.map((s) => [s.path, s.text]));
+  const split = new Map<string, readonly string[]>();
+  return (path) => {
+    let lines = split.get(path);
+    if (!lines) split.set(path, (lines = splitLines(texts.get(path)!)));
+    return lines;
+  };
+}
+
+/** `lines` = `splitLines` of the file's text. */
+export function providerRange(range: Range, lines: readonly string[]): ProviderRange {
   const endLine = range.endLine - 1;
-  const lines = range.endCol === undefined || range.endCol === 1 ? splitLines(text) : undefined;
   // pointsToSpan widens an empty terminal line to column 1 after consuming its newline.
   const blankTerminalLine =
-    range.endLine > range.startLine && range.endCol === 1 && lines?.[endLine] === "";
+    range.endLine > range.startLine && range.endCol === 1 && lines[endLine] === "";
   return {
     start: [range.startLine - 1, (range.startCol ?? 1) - 1],
-    end: blankTerminalLine ? [endLine + 1, 0] : [endLine, range.endCol ?? lines![endLine]!.length],
+    end: blankTerminalLine ? [endLine + 1, 0] : [endLine, range.endCol ?? lines[endLine]!.length],
     encoding: "utf16",
   };
 }
@@ -400,7 +413,15 @@ export function mergeProvider(
     ...entry,
     symbol: { ...entry.symbol, provider: remap[entry.symbol.provider!]! },
   }));
-  const covers = (capability: AnalysisCapability, file: string) =>
+  // asked once per entry and reference, of a few (capability, file) pairs: remember the answers
+  const covered = new Map<string, boolean>();
+  const covers = (capability: AnalysisCapability, file: string) => {
+    const key = `${capability}\0${file}`;
+    let answer = covered.get(key);
+    if (answer === undefined) covered.set(key, (answer = coversUncached(capability, file)));
+    return answer;
+  };
+  const coversUncached = (capability: AnalysisCapability, file: string) =>
     next.analysis.some(
       (report) =>
         report.capabilities[capability] &&
@@ -486,13 +507,28 @@ export function mergeProvider(
       .filter((r) => covers(r.kind, r.from.slice(0, r.from.indexOf("#"))))
       .map((r) => ({ ...r, provider: remap[r.provider!]! })),
   ].filter((r) => validId(r.from) && validId(r.to));
-  const unique = new Map(
-    refs.map((r) => [
-      `${r.from}\0${r.to}\0${r.kind}\0${r.site.startLine}:${r.site.startCol}-${r.site.endLine}:${r.site.endCol}`,
-      r,
-    ]),
-  );
-  return { entries, refs: [...unique.values()], providers };
+  // One reference per from, to, kind and site: a later duplicate takes the place of the first.
+  // Nested maps on the ids, not a joined key string per reference: these run to 100,000 references.
+  const unique: Reference[] = [];
+  const slots = new Map<string, Map<string, number[]>>();
+  const sameSite = (a: Reference, b: Reference) =>
+    a.kind === b.kind &&
+    a.site.startLine === b.site.startLine &&
+    a.site.startCol === b.site.startCol &&
+    a.site.endLine === b.site.endLine &&
+    a.site.endCol === b.site.endCol;
+  for (const r of refs) {
+    let byTo = slots.get(r.from);
+    if (!byTo) slots.set(r.from, (byTo = new Map()));
+    let at = byTo.get(r.to);
+    if (!at) byTo.set(r.to, (at = []));
+    const same = at.find((i) => sameSite(unique[i]!, r));
+    if (same === undefined) {
+      at.push(unique.length);
+      unique.push(r);
+    } else unique[same] = r;
+  }
+  return { entries, refs: unique, providers };
 }
 
 /** Plain relationship result shared by the SCIP tool adapters before conversion to provider facts. */

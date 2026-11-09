@@ -1,6 +1,6 @@
 import { setImmediate } from "node:timers/promises";
 import { performance } from "node:perf_hooks";
-import { hashText, splitLines } from "@xpl/core";
+import { splitLines } from "@xpl/core";
 import type { FileLanguage, FilePath, IndexedFile, Reference } from "@xpl/core";
 import pkg from "../package.json" with { type: "json" };
 import { nodeSpan } from "./ast.js";
@@ -22,7 +22,7 @@ import {
   STRUCTURE_SUPPORT,
   type ExtractionOutcome,
 } from "./analysis.js";
-import { normalizeProvider, providerRange } from "./providers.js";
+import { normalizeProvider, providerRange, sourceLines } from "./providers.js";
 import type {
   IndexProvider,
   ProviderInput,
@@ -107,17 +107,19 @@ export class TreeSitterProvider implements IndexProvider {
       version: pkg.dependencies["web-tree-sitter"],
       configuration: "builtin-packs",
       tool: `web-tree-sitter@${pkg.dependencies["web-tree-sitter"]}`,
-      sourceHashes: Object.fromEntries(input.sources.map((s) => [s.path, hashText(s.text)])),
+      // indexFile hashed the same text: `hashText(source.text)`
+      sourceHashes: Object.fromEntries(files.map((f) => [f.path, f.hash])),
       declarations,
       relationships: [],
       analysis,
     };
     const { entries } = normalizeProvider(input, output);
     const lookup = new SymbolLookup(entries);
+    const texts = new Map(input.sources.map((s) => [s.path, s.text]));
     const repo = new SourceRepoView(
       input.root,
       files.map((f) => f.path),
-      (path) => input.sources.find((s) => s.path === path)?.text ?? input.readText(path),
+      (path) => texts.get(path) ?? input.readText(path),
     );
     const heuristicFiles = resolverFiles.filter((f) => f.pack.refs === "heuristic");
     const resolutionStarted = performance.now();
@@ -132,15 +134,13 @@ export class TreeSitterProvider implements IndexProvider {
     this.resourceSites = resourceSites;
     this.httpSites = httpSites;
     this.warnings = warnings;
+    const linesOf = sourceLines(input.sources);
     output.relationships = refs.map((ref) => ({
       from: ref.from,
       to: ref.to,
       kind: ref.kind,
       file: ref.from.slice(0, ref.from.indexOf("#")),
-      evidence: providerRange(
-        ref.site,
-        input.sources.find((s) => s.path === ref.from.slice(0, ref.from.indexOf("#")))!.text,
-      ),
+      evidence: providerRange(ref.site, linesOf(ref.from.slice(0, ref.from.indexOf("#")))),
       resolution: ref.resolution,
     }));
     return output;
@@ -240,8 +240,8 @@ async function indexFile(
       name: draft.path.split(".").at(-1)!,
       path: draft.path,
       kind: draft.kind,
-      declaration: providerRange(draft.range, text),
-      ...(draft.identifier ? { identifier: providerRange(draft.identifier, text) } : {}),
+      declaration: providerRange(draft.range, lines),
+      ...(draft.identifier ? { identifier: providerRange(draft.identifier, lines) } : {}),
       parentPath: draft.parentPath,
       anchorOnly: draft.anchorOnly,
     }),

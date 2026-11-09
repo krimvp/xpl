@@ -347,6 +347,29 @@ it("diagnoses unknown relationship kinds without manufacturing calls or erasing 
   expect(result.analysis[0]?.results[0]?.analyzedFiles).toEqual([]);
 });
 
+it("keeps one reference per from, to, kind and site", () => {
+  const facts = output();
+  const call = (start: number) => ({
+    from: "f",
+    to: "f",
+    file: "a.ts",
+    kind: "call",
+    resolution: "precise" as const,
+    evidence: { start: [0, start] as [number, number], end: [0, 43] as [number, number] },
+  });
+  facts.relationships = [call(42), call(41), call(42)].map((r) => ({
+    ...r,
+    evidence: { ...r.evidence, encoding: "utf16" as const },
+  }));
+  facts.analysis[0]!.capabilities.call = "supported";
+  facts.analysis[0]!.results[0]!.capabilities.push("call");
+  const merged = mergeProvider({ entries: [], refs: [] }, normalizeProvider(input, facts));
+  expect(merged.refs.map((r) => [r.from, r.to, r.kind, r.site])).toEqual([
+    ["a.ts#f", "a.ts#f", "call", { startLine: 1, startCol: 43, endLine: 1, endCol: 43 }],
+    ["a.ts#f", "a.ts#f", "call", { startLine: 1, startCol: 42, endLine: 1, endCol: 43 }],
+  ]);
+});
+
 it("maps duplicate provider identities and explicit parents to stable source-ordered canonical IDs", () => {
   const snapshot: ProviderInput = {
     ...input,

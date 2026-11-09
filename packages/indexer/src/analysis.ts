@@ -15,7 +15,7 @@ import type {
   ProviderInput,
   ProviderOutput,
 } from "./providers.js";
-import { providerRange } from "./providers.js";
+import { providerRange, sourceLines } from "./providers.js";
 import { hashText } from "@xpl/core";
 
 export const STRUCTURE_SUPPORT = {
@@ -253,6 +253,7 @@ export function relationshipOutput(
     diagnostics,
   );
   const sourceHashes = Object.fromEntries(input.sources.map((s) => [s.path, hashText(s.text)]));
+  const linesOf = sourceLines(input.sources);
   return {
     provider: provider.id,
     version: output.tool.includes("@")
@@ -267,10 +268,7 @@ export function relationshipOutput(
       to: ref.to,
       kind: ref.kind,
       file: ref.from.slice(0, ref.from.indexOf("#")),
-      evidence: providerRange(
-        ref.site,
-        input.sources.find((s) => s.path === ref.from.slice(0, ref.from.indexOf("#")))!.text,
-      ),
+      evidence: providerRange(ref.site, linesOf(ref.from.slice(0, ref.from.indexOf("#")))),
       resolution: ref.resolution,
     })),
     analysis: [analysis],

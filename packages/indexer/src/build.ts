@@ -240,12 +240,15 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
     }
     progress({ phase: "Reading", completed: ++read, total: discovery.files.length });
   }
-  const files: IndexedFile[] = sources.map((s) => ({
-    path: s.path,
-    language: s.language,
-    hash: new FileHasher(splitLines(s.text)).hashFile(),
-    lines: splitLines(s.text).length,
-  }));
+  const files: IndexedFile[] = sources.map((s) => {
+    const lines = splitLines(s.text);
+    return {
+      path: s.path,
+      language: s.language,
+      hash: new FileHasher(lines).hashFile(),
+      lines: lines.length,
+    };
+  });
   const repo = new SourceRepoView(
     root,
     files.map((f) => f.path),
