@@ -2322,20 +2322,20 @@
           "file": "packages/core/src/graph.ts",
           "symbol": "deriveGraph",
           "role": "definition",
-          "hash": "sha256-v2:5cac8df5516e",
+          "hash": "sha256-v2:5e5f23233b4f",
           "resolved": {
             "commit": "99fd484",
             "range": {
               "startLine": 438,
               "endLine": 784
             },
-            "status": "drifted"
+            "status": "ok"
           }
         }
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "e325789"
+        "commit": "99fd484"
       }
     },
     {
@@ -2969,21 +2969,21 @@
               "startLine": 97,
               "endLine": 111
             },
-            "status": "moved"
+            "status": "ok"
           }
         },
         {
           "file": "packages/cli/src/fsutil.ts",
           "symbol": "atomicWrite",
           "role": "definition",
-          "hash": "sha256-v2:08d331540135",
+          "hash": "sha256-v2:7c8ef965c213",
           "resolved": {
             "commit": "99fd484",
             "range": {
               "startLine": 11,
               "endLine": 25
             },
-            "status": "drifted"
+            "status": "ok"
           }
         },
         {
@@ -3021,7 +3021,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-12d0c4277a"
+        "commit": "99fd484"
       }
     },
     {
@@ -4030,14 +4030,14 @@
           "file": "packages/core/src/graph.ts",
           "symbol": "deriveGraph",
           "role": "definition",
-          "hash": "sha256-v2:5cac8df5516e",
+          "hash": "sha256-v2:5e5f23233b4f",
           "resolved": {
             "commit": "99fd484",
             "range": {
               "startLine": 438,
               "endLine": 784
             },
-            "status": "drifted"
+            "status": "ok"
           }
         },
         {
@@ -4051,13 +4051,13 @@
               "startLine": 242,
               "endLine": 251
             },
-            "status": "moved"
+            "status": "ok"
           }
         }
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "e325789"
+        "commit": "99fd484"
       }
     },
     {
@@ -4176,20 +4176,20 @@
           "file": "packages/core/src/focus.ts",
           "symbol": "buildReverseIndex",
           "role": "definition",
-          "hash": "sha256-v2:fdd3bbe92a70",
+          "hash": "sha256-v2:e3a6c71a38b1",
           "resolved": {
             "commit": "99fd484",
             "range": {
               "startLine": 362,
               "endLine": 411
             },
-            "status": "drifted"
+            "status": "ok"
           }
         }
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "6e3e430"
+        "commit": "99fd484"
       }
     },
     {
@@ -4215,7 +4215,7 @@
               "startLine": 424,
               "endLine": 424
             },
-            "status": "moved"
+            "status": "ok"
           }
         },
         {
@@ -4240,14 +4240,14 @@
           "file": "packages/core/src/graph.ts",
           "symbol": "deriveGraph",
           "role": "definition",
-          "hash": "sha256-v2:5cac8df5516e",
+          "hash": "sha256-v2:5e5f23233b4f",
           "resolved": {
             "commit": "99fd484",
             "range": {
               "startLine": 438,
               "endLine": 784
             },
-            "status": "drifted"
+            "status": "ok"
           }
         },
         {
@@ -4261,7 +4261,7 @@
               "startLine": 299,
               "endLine": 395
             },
-            "status": "moved"
+            "status": "ok"
           }
         },
         {
@@ -4293,13 +4293,13 @@
               "startLine": 277,
               "endLine": 285
             },
-            "status": "moved"
+            "status": "ok"
           }
         }
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "e325789"
+        "commit": "99fd484"
       }
     },
     {
@@ -4471,7 +4471,7 @@
               "startLine": 852,
               "endLine": 856
             },
-            "status": "moved"
+            "status": "ok"
           }
         },
         {
@@ -4485,7 +4485,7 @@
               "startLine": 862,
               "endLine": 873
             },
-            "status": "moved"
+            "status": "ok"
           }
         },
         {
@@ -4499,27 +4499,27 @@
               "startLine": 876,
               "endLine": 879
             },
-            "status": "moved"
+            "status": "ok"
           }
         },
         {
           "file": "packages/core/src/graph.ts",
           "symbol": "deriveGraph",
           "role": "definition",
-          "hash": "sha256-v2:5cac8df5516e",
+          "hash": "sha256-v2:5e5f23233b4f",
           "resolved": {
             "commit": "99fd484",
             "range": {
               "startLine": 438,
               "endLine": 784
             },
-            "status": "drifted"
+            "status": "ok"
           }
         }
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "e325789"
+        "commit": "99fd484"
       }
     },
     {
@@ -4534,38 +4534,38 @@
           "file": "packages/viewer/src/components/DiagramPane.tsx",
           "symbol": "DiagramPane",
           "span": {
-            "from": 58,
-            "to": 58
+            "from": 62,
+            "to": 62
           },
           "role": "call-site",
-          "hash": "sha256-v2:84f57970916e",
+          "hash": "sha256-v2:d9451bee692c",
           "resolved": {
             "commit": "99fd484",
             "range": {
-              "startLine": 76,
-              "endLine": 76
+              "startLine": 80,
+              "endLine": 80
             },
-            "status": "drifted"
+            "status": "ok"
           }
         },
         {
           "file": "packages/viewer/src/components/GraphView.tsx",
           "symbol": "GraphView",
           "role": "definition",
-          "hash": "sha256-v2:59ec2255f9ce",
+          "hash": "sha256-v2:09b0a9866907",
           "resolved": {
             "commit": "99fd484",
             "range": {
               "startLine": 317,
               "endLine": 698
             },
-            "status": "drifted"
+            "status": "ok"
           }
         }
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "e325789"
+        "commit": "99fd484"
       }
     },
     {
@@ -4580,18 +4580,18 @@
           "file": "packages/viewer/src/components/DiagramPane.tsx",
           "symbol": "DiagramPane",
           "span": {
-            "from": 68,
-            "to": 76
+            "from": 72,
+            "to": 80
           },
           "role": "call-site",
-          "hash": "sha256-v2:d8f4735312ce",
+          "hash": "sha256-v2:a0d1386b7c4a",
           "resolved": {
             "commit": "99fd484",
             "range": {
-              "startLine": 86,
-              "endLine": 94
+              "startLine": 90,
+              "endLine": 98
             },
-            "status": "drifted"
+            "status": "ok"
           }
         },
         {
@@ -4611,7 +4611,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "e325789"
+        "commit": "99fd484"
       }
     },
     {
@@ -4619,25 +4619,25 @@
       "from": "file:packages/viewer/src/components/GraphView.tsx",
       "to": "file:packages/viewer/src/layout/graphLayout.ts",
       "kind": "calls",
-      "label": "layoutGraphFitting",
-      "summary": "`GraphView` passes the pinned positions, or the box you drag, to `layoutGraphFitting`, which returns the places and routes.",
+      "label": "layoutView, layoutGraphFitting",
+      "summary": "`GraphView` passes the pinned positions, or the box you drag, to `layoutGraphFitting` (through `layoutView` outside a slide), which returns the places and routes.",
       "anchors": [
         {
           "file": "packages/viewer/src/components/GraphView.tsx",
           "symbol": "GraphView",
           "span": {
-            "from": 129,
-            "to": 133
+            "from": 133,
+            "to": 139
           },
           "role": "call-site",
-          "hash": "sha256-v2:a27eccbbcbc9",
+          "hash": "sha256-v2:3e294f12a170",
           "resolved": {
             "commit": "99fd484",
             "range": {
-              "startLine": 446,
-              "endLine": 450
+              "startLine": 450,
+              "endLine": 456
             },
-            "status": "drifted"
+            "status": "ok"
           }
         },
         {
@@ -4655,7 +4655,7 @@
               "startLine": 841,
               "endLine": 841
             },
-            "status": "moved"
+            "status": "ok"
           }
         },
         {
@@ -4669,7 +4669,7 @@
               "startLine": 2202,
               "endLine": 2229
             },
-            "status": "moved"
+            "status": "ok"
           }
         },
         {
@@ -4683,13 +4683,13 @@
               "startLine": 236,
               "endLine": 238
             },
-            "status": "moved"
+            "status": "ok"
           }
         }
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "e325789"
+        "commit": "99fd484"
       }
     },
     {
@@ -6336,7 +6336,7 @@
                   "startLine": 200,
                   "endLine": 208
                 },
-                "status": "moved"
+                "status": "ok"
               }
             },
             {
@@ -6354,7 +6354,7 @@
                   "startLine": 211,
                   "endLine": 211
                 },
-                "status": "moved"
+                "status": "ok"
               }
             },
             {
@@ -6498,7 +6498,7 @@
                   "startLine": 399,
                   "endLine": 399
                 },
-                "status": "moved"
+                "status": "ok"
               }
             },
             {
@@ -6516,7 +6516,7 @@
                   "startLine": 427,
                   "endLine": 427
                 },
-                "status": "moved"
+                "status": "ok"
               }
             },
             {
@@ -6530,7 +6530,7 @@
                   "startLine": 1436,
                   "endLine": 2189
                 },
-                "status": "moved"
+                "status": "ok"
               }
             }
           ],
@@ -6895,14 +6895,14 @@
               "file": "packages/core/src/graph.ts",
               "symbol": "deriveGraph",
               "role": "definition",
-              "hash": "sha256-v2:5cac8df5516e",
+              "hash": "sha256-v2:5e5f23233b4f",
               "resolved": {
                 "commit": "99fd484",
                 "range": {
                   "startLine": 438,
                   "endLine": 784
                 },
-                "status": "drifted"
+                "status": "ok"
               }
             }
           ],
@@ -6920,7 +6920,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "e325789"
+        "commit": "99fd484"
       }
     },
     {
@@ -6939,11 +6939,9 @@
         "file:packages/cli/src/commands/build-index.ts",
         "file:packages/indexer/src/build.ts",
         "file:packages/indexer/src/files.ts",
-        "sym:packages/indexer/src/languages/typescript.ts#typescriptPack",
-        "file:packages/indexer/src/symbols.ts",
-        "file:packages/indexer/src/hash.ts",
         "file:packages/indexer/src/tree-sitter.ts",
-        "file:packages/indexer/src/providers.ts"
+        "sym:packages/indexer/src/languages/typescript.ts#typescriptPack",
+        "file:packages/indexer/src/symbols.ts"
       ],
       "steps": [
         {
@@ -6968,7 +6966,7 @@
                   "startLine": 200,
                   "endLine": 208
                 },
-                "status": "moved"
+                "status": "ok"
               }
             },
             {
@@ -7195,94 +7193,6 @@
           "summary": "The builder reads the current text of each file. The syntax provider reuses the cached facts of an unchanged file, or extracts them again, and records which it did."
         },
         {
-          "id": "indexing:5",
-          "from": "file:packages/indexer/src/build.ts",
-          "to": "file:packages/indexer/src/hash.ts",
-          "label": "hashFile()",
-          "kind": "call",
-          "anchors": [
-            {
-              "file": "packages/indexer/src/tree-sitter.ts",
-              "symbol": "indexFile",
-              "span": {
-                "from": 14,
-                "to": 14
-              },
-              "role": "call-site",
-              "hash": "sha256-v2:f3fc7d026b21",
-              "resolved": {
-                "commit": "99fd484",
-                "range": {
-                  "startLine": 206,
-                  "endLine": 206
-                },
-                "status": "ok"
-              }
-            },
-            {
-              "file": "packages/indexer/src/tree-sitter.ts",
-              "symbol": "indexFile",
-              "span": {
-                "from": 18,
-                "to": 18
-              },
-              "role": "call-site",
-              "hash": "sha256-v2:7e37246860b9",
-              "resolved": {
-                "commit": "99fd484",
-                "range": {
-                  "startLine": 210,
-                  "endLine": 210
-                },
-                "status": "ok"
-              }
-            },
-            {
-              "file": "packages/indexer/src/hash.ts",
-              "symbol": "FileHasher.hashFile",
-              "role": "definition",
-              "hash": "sha256-v2:b535fa85fa6b",
-              "resolved": {
-                "commit": "99fd484",
-                "range": {
-                  "startLine": 60,
-                  "endLine": 62
-                },
-                "status": "ok"
-              }
-            },
-            {
-              "file": "packages/indexer/src/hash.ts",
-              "symbol": "FileHasher.hashRange",
-              "role": "definition",
-              "hash": "sha256-v2:b8c316a86969",
-              "resolved": {
-                "commit": "99fd484",
-                "range": {
-                  "startLine": 52,
-                  "endLine": 57
-                },
-                "status": "ok"
-              }
-            },
-            {
-              "file": "packages/indexer/src/hash.ts",
-              "symbol": "digest",
-              "role": "definition",
-              "hash": "sha256-v2:43edb98798a2",
-              "resolved": {
-                "commit": "99fd484",
-                "range": {
-                  "startLine": 26,
-                  "endLine": 28
-                },
-                "status": "ok"
-              }
-            }
-          ],
-          "summary": "`hashFile` hashes a file with indentation and blank lines kept. The native hasher follows the versioned hash rules of core."
-        },
-        {
           "id": "indexing:6",
           "from": "file:packages/indexer/src/tree-sitter.ts",
           "to": "sym:packages/indexer/src/languages/typescript.ts#typescriptPack",
@@ -7415,11 +7325,29 @@
         },
         {
           "id": "indexing:7",
-          "from": "file:packages/indexer/src/providers.ts",
+          "from": "file:packages/indexer/src/tree-sitter.ts",
           "to": "file:packages/indexer/src/symbols.ts",
           "label": "normalizeProvider(input, output)",
           "kind": "call",
           "anchors": [
+            {
+              "file": "packages/indexer/src/tree-sitter.ts",
+              "symbol": "TreeSitterProvider.analyze",
+              "span": {
+                "from": 66,
+                "to": 66
+              },
+              "role": "call-site",
+              "hash": "sha256-v2:45e8dd93e527",
+              "resolved": {
+                "commit": "99fd484",
+                "range": {
+                  "startLine": 115,
+                  "endLine": 115
+                },
+                "status": "ok"
+              }
+            },
             {
               "file": "packages/indexer/src/providers.ts",
               "symbol": "normalizeProvider",
@@ -7451,34 +7379,6 @@
                 },
                 "status": "ok"
               }
-            }
-          ],
-          "summary": "`normalizeProvider` checks the hashes and ranges that a provider reports, then `assembleSymbols` gives each symbol its id. Two symbols with the same path get numbers in source order."
-        },
-        {
-          "id": "indexing:8",
-          "from": "file:packages/indexer/src/symbols.ts",
-          "to": "file:packages/indexer/src/hash.ts",
-          "label": "hashRange(range)",
-          "kind": "call",
-          "anchors": [
-            {
-              "file": "packages/indexer/src/symbols.ts",
-              "symbol": "assembleSymbols",
-              "span": {
-                "from": 37,
-                "to": 37
-              },
-              "role": "call-site",
-              "hash": "sha256-v2:a5899c1caeac",
-              "resolved": {
-                "commit": "99fd484",
-                "range": {
-                  "startLine": 96,
-                  "endLine": 96
-                },
-                "status": "ok"
-              }
             },
             {
               "file": "packages/indexer/src/hash.ts",
@@ -7493,23 +7393,9 @@
                 },
                 "status": "ok"
               }
-            },
-            {
-              "file": "packages/indexer/src/hash.ts",
-              "symbol": "digest",
-              "role": "definition",
-              "hash": "sha256-v2:43edb98798a2",
-              "resolved": {
-                "commit": "99fd484",
-                "range": {
-                  "startLine": 26,
-                  "endLine": 28
-                },
-                "status": "ok"
-              }
             }
           ],
-          "summary": "`hashRange` hashes all the source lines of each symbol. A change in whitespace therefore changes the hash, and the code links on that symbol drift."
+          "summary": "`normalizeProvider` checks what a provider reports, then `assembleSymbols` gives each symbol its id and hashes its lines. A change in whitespace therefore changes the hash, and the code links on that symbol drift."
         }
       ],
       "frames": [
@@ -7518,19 +7404,19 @@
           "kind": "loop",
           "label": "for each discovered file, in path order",
           "fromStep": "indexing:4",
-          "toStep": "indexing:8"
+          "toStep": "indexing:7"
         },
         {
           "id": "frame:indexing-has-pack",
           "kind": "opt",
           "label": "the file's language has a pack",
           "fromStep": "indexing:6",
-          "toStep": "indexing:8"
+          "toStep": "indexing:7"
         }
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "6a5cfde"
+        "commit": "99fd484"
       }
     },
     {
@@ -7548,12 +7434,10 @@
       "participants": [
         "file:packages/cli/src/commands/build-index.ts",
         "file:packages/indexer/src/build.ts",
+        "file:packages/indexer/src/tree-sitter.ts",
         "file:packages/indexer/src/resolve/heuristic.ts",
         "sym:packages/indexer/src/languages/typescript.ts#typescriptPack",
-        "file:packages/indexer/src/scip/resolvers.ts",
-        "file:packages/indexer/src/commit.ts",
-        "file:packages/indexer/src/tree-sitter.ts",
-        "file:packages/indexer/src/providers.ts"
+        "file:packages/indexer/src/scip/resolvers.ts"
       ],
       "steps": [
         {
@@ -7972,7 +7856,7 @@
         {
           "id": "indexing-refs:7",
           "from": "file:packages/indexer/src/build.ts",
-          "to": "file:packages/indexer/src/commit.ts",
+          "to": "file:packages/indexer/src/build.ts",
           "label": "resolveCommitId({ commit, git, files, root, gitOptions })",
           "kind": "call",
           "anchors": [
@@ -8089,7 +7973,7 @@
                   "startLine": 223,
                   "endLine": 223
                 },
-                "status": "moved"
+                "status": "ok"
               }
             }
           ],
@@ -8117,7 +8001,7 @@
                   "startLine": 211,
                   "endLine": 211
                 },
-                "status": "moved"
+                "status": "ok"
               }
             },
             {
@@ -8163,7 +8047,7 @@
                   "startLine": 225,
                   "endLine": 225
                 },
-                "status": "moved"
+                "status": "ok"
               }
             },
             {
@@ -8181,7 +8065,7 @@
                   "startLine": 246,
                   "endLine": 256
                 },
-                "status": "moved"
+                "status": "ok"
               }
             }
           ],
@@ -8218,7 +8102,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "e325789"
+        "commit": "99fd484"
       }
     },
     {
@@ -8288,7 +8172,7 @@
                   "startLine": 97,
                   "endLine": 111
                 },
-                "status": "moved"
+                "status": "ok"
               }
             },
             {
@@ -9121,14 +9005,14 @@
               "file": "packages/cli/src/fsutil.ts",
               "symbol": "atomicWrite",
               "role": "definition",
-              "hash": "sha256-v2:08d331540135",
+              "hash": "sha256-v2:7c8ef965c213",
               "resolved": {
                 "commit": "99fd484",
                 "range": {
                   "startLine": 11,
                   "endLine": 25
                 },
-                "status": "drifted"
+                "status": "ok"
               }
             },
             {
@@ -9142,7 +9026,7 @@
                   "startLine": 75,
                   "endLine": 77
                 },
-                "status": "moved"
+                "status": "ok"
               }
             },
             {
@@ -9238,7 +9122,7 @@
                   "startLine": 70,
                   "endLine": 78
                 },
-                "status": "moved"
+                "status": "ok"
               }
             }
           ],
@@ -9282,7 +9166,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "e325789"
+        "commit": "99fd484"
       }
     },
     {
@@ -9328,7 +9212,7 @@
                   "startLine": 20,
                   "endLine": 20
                 },
-                "status": "moved"
+                "status": "ok"
               }
             },
             {
@@ -9395,14 +9279,14 @@
               "file": "packages/core/src/graph.ts",
               "symbol": "deriveGraph",
               "role": "definition",
-              "hash": "sha256-v2:5cac8df5516e",
+              "hash": "sha256-v2:5e5f23233b4f",
               "resolved": {
                 "commit": "99fd484",
                 "range": {
                   "startLine": 438,
                   "endLine": 784
                 },
-                "status": "drifted"
+                "status": "ok"
               }
             }
           ],
@@ -9419,18 +9303,18 @@
               "file": "packages/viewer/src/components/DiagramPane.tsx",
               "symbol": "DiagramPane",
               "span": {
-                "from": 58,
-                "to": 58
+                "from": 62,
+                "to": 62
               },
               "role": "call-site",
-              "hash": "sha256-v2:84f57970916e",
+              "hash": "sha256-v2:d9451bee692c",
               "resolved": {
                 "commit": "99fd484",
                 "range": {
-                  "startLine": 76,
-                  "endLine": 76
+                  "startLine": 80,
+                  "endLine": 80
                 },
-                "status": "drifted"
+                "status": "ok"
               }
             },
             {
@@ -9444,7 +9328,7 @@
                   "startLine": 293,
                   "endLine": 311
                 },
-                "status": "moved"
+                "status": "ok"
               }
             },
             {
@@ -9468,25 +9352,25 @@
           "id": "viewer-draw:4",
           "from": "sym:packages/viewer/src/components/GraphView.tsx#GraphView",
           "to": "file:packages/viewer/src/layout/graphLayout.ts",
-          "label": "layoutGraphFitting(graph, viewport)",
+          "label": "layoutView(viewId, graph, viewport)",
           "kind": "call",
           "anchors": [
             {
               "file": "packages/viewer/src/components/GraphView.tsx",
               "symbol": "GraphView",
               "span": {
-                "from": 129,
-                "to": 129
+                "from": 133,
+                "to": 133
               },
               "role": "call-site",
-              "hash": "sha256-v2:06f3657e4c89",
+              "hash": "sha256-v2:0236503ff422",
               "resolved": {
                 "commit": "99fd484",
                 "range": {
-                  "startLine": 446,
-                  "endLine": 446
+                  "startLine": 450,
+                  "endLine": 450
                 },
-                "status": "drifted"
+                "status": "ok"
               }
             },
             {
@@ -9500,11 +9384,11 @@
                   "startLine": 2202,
                   "endLine": 2229
                 },
-                "status": "moved"
+                "status": "ok"
               }
             }
           ],
-          "summary": "`layoutGraphFitting` picks left-to-right or top-down for the pane and keeps pinned positions and the box you drag. A small map tries the other direction when that fits better."
+          "summary": "`layoutView` lets `layoutGraphFitting` pick left-to-right or top-down in the first pane that shows a map, then keeps that direction for the view. Pinned positions and the box you drag keep their place."
         },
         {
           "id": "viewer-draw:5",
@@ -9524,21 +9408,21 @@
                   "startLine": 2015,
                   "endLine": 2033
                 },
-                "status": "moved"
+                "status": "ok"
               }
             },
             {
               "file": "packages/viewer/src/layout/graphLayout.ts",
               "symbol": "buildModel",
               "role": "definition",
-              "hash": "sha256-v2:a141fc6414d7",
+              "hash": "sha256-v2:45e7e561893b",
               "resolved": {
                 "commit": "99fd484",
                 "range": {
                   "startLine": 427,
                   "endLine": 554
                 },
-                "status": "drifted"
+                "status": "ok"
               }
             },
             {
@@ -9552,7 +9436,7 @@
                   "startLine": 1054,
                   "endLine": 1632
                 },
-                "status": "moved"
+                "status": "ok"
               }
             },
             {
@@ -9566,7 +9450,7 @@
                   "startLine": 617,
                   "endLine": 621
                 },
-                "status": "moved"
+                "status": "ok"
               }
             },
             {
@@ -9604,7 +9488,7 @@
                   "startLine": 151,
                   "endLine": 161
                 },
-                "status": "moved"
+                "status": "ok"
               }
             },
             {
@@ -9622,7 +9506,7 @@
                   "startLine": 460,
                   "endLine": 460
                 },
-                "status": "moved"
+                "status": "ok"
               }
             },
             {
@@ -9640,7 +9524,7 @@
                   "startLine": 901,
                   "endLine": 901
                 },
-                "status": "moved"
+                "status": "ok"
               }
             },
             {
@@ -9658,7 +9542,7 @@
                   "startLine": 1686,
                   "endLine": 1686
                 },
-                "status": "moved"
+                "status": "ok"
               }
             },
             {
@@ -9672,7 +9556,7 @@
                   "startLine": 227,
                   "endLine": 234
                 },
-                "status": "moved"
+                "status": "ok"
               }
             }
           ],
@@ -9689,18 +9573,18 @@
               "file": "packages/viewer/src/components/DiagramPane.tsx",
               "symbol": "DiagramPane",
               "span": {
-                "from": 68,
-                "to": 76
+                "from": 72,
+                "to": 80
               },
               "role": "call-site",
-              "hash": "sha256-v2:d8f4735312ce",
+              "hash": "sha256-v2:a0d1386b7c4a",
               "resolved": {
                 "commit": "99fd484",
                 "range": {
-                  "startLine": 86,
-                  "endLine": 94
+                  "startLine": 90,
+                  "endLine": 98
                 },
-                "status": "drifted"
+                "status": "ok"
               }
             },
             {
@@ -9750,7 +9634,7 @@
                   "startLine": 574,
                   "endLine": 574
                 },
-                "status": "moved"
+                "status": "ok"
               }
             },
             {
@@ -9815,7 +9699,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "e325789"
+        "commit": "99fd484"
       }
     },
     {
@@ -10642,7 +10526,7 @@
                   "startLine": 404,
                   "endLine": 404
                 },
-                "status": "moved"
+                "status": "ok"
               }
             }
           ],
@@ -10669,7 +10553,7 @@
                   "startLine": 404,
                   "endLine": 404
                 },
-                "status": "moved"
+                "status": "ok"
               }
             },
             {
@@ -10754,7 +10638,7 @@
                   "startLine": 20,
                   "endLine": 20
                 },
-                "status": "moved"
+                "status": "ok"
               }
             },
             {
@@ -10824,7 +10708,7 @@
                   "startLine": 417,
                   "endLine": 436
                 },
-                "status": "moved"
+                "status": "ok"
               }
             },
             {
@@ -10878,21 +10762,21 @@
               "symbol": "buildReverseIndex",
               "span": {
                 "from": 0,
-                "to": 18
+                "to": 30
               },
               "role": "definition",
-              "hash": "sha256-v2:de84fa5d1067",
+              "hash": "sha256-v2:ac4cbc15cbb4",
               "resolved": {
                 "commit": "99fd484",
                 "range": {
                   "startLine": 362,
-                  "endLine": 380
+                  "endLine": 392
                 },
-                "status": "drifted"
+                "status": "ok"
               }
             }
           ],
-          "summary": "`viewReverseIndex` splits the candidates into drawn elements and concepts, and builds one reverse index for each group. `buildReverseIndex` files the code ranges of each candidate under their file and takes the derived arrows of the view as given."
+          "summary": "`viewReverseIndex` builds a reverse index for drawn elements and one for concepts. `buildReverseIndex` skips an arrow's definition range that equals a drawn box's range, so the caret in a box lights the box."
         },
         {
           "id": "viewer-lookup:7",
@@ -10905,18 +10789,18 @@
               "file": "packages/core/src/focus.ts",
               "symbol": "buildReverseIndex",
               "span": {
-                "from": 12,
-                "to": 12
+                "from": 13,
+                "to": 13
               },
               "role": "call-site",
-              "hash": "sha256-v2:e46f19407fcb",
+              "hash": "sha256-v2:985d6050e3e0",
               "resolved": {
                 "commit": "99fd484",
                 "range": {
-                  "startLine": 374,
-                  "endLine": 374
+                  "startLine": 375,
+                  "endLine": 375
                 },
-                "status": "drifted"
+                "status": "ok"
               }
             },
             {
@@ -10976,7 +10860,7 @@
                   "startLine": 393,
                   "endLine": 410
                 },
-                "status": "moved"
+                "status": "ok"
               }
             },
             {
@@ -11039,36 +10923,36 @@
               "file": "packages/viewer/src/components/DiagramPane.tsx",
               "symbol": "DiagramPane",
               "span": {
-                "from": 60,
-                "to": 60
+                "from": 64,
+                "to": 64
               },
               "role": "call-site",
-              "hash": "sha256-v2:1ef4e6cb13c4",
+              "hash": "sha256-v2:b280da97a910",
               "resolved": {
                 "commit": "99fd484",
                 "range": {
-                  "startLine": 78,
-                  "endLine": 78
+                  "startLine": 82,
+                  "endLine": 82
                 },
-                "status": "drifted"
+                "status": "ok"
               }
             },
             {
               "file": "packages/viewer/src/components/DiagramPane.tsx",
               "symbol": "DiagramPane",
               "span": {
-                "from": 60,
-                "to": 60
+                "from": 77,
+                "to": 77
               },
               "role": "call-site",
-              "hash": "sha256-v2:1ef4e6cb13c4",
+              "hash": "sha256-v2:b280da97a910",
               "resolved": {
                 "commit": "99fd484",
                 "range": {
-                  "startLine": 78,
-                  "endLine": 78
+                  "startLine": 95,
+                  "endLine": 95
                 },
-                "status": "drifted"
+                "status": "ok"
               }
             },
             {
@@ -11086,7 +10970,7 @@
                   "startLine": 230,
                   "endLine": 230
                 },
-                "status": "moved"
+                "status": "ok"
               }
             },
             {
@@ -11147,7 +11031,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "6a5cfde"
+        "commit": "99fd484"
       }
     },
     {
@@ -12550,7 +12434,7 @@
                   "startLine": 543,
                   "endLine": 543
                 },
-                "status": "moved"
+                "status": "ok"
               }
             },
             {
@@ -12568,7 +12452,7 @@
                   "startLine": 511,
                   "endLine": 511
                 },
-                "status": "moved"
+                "status": "ok"
               }
             },
             {
@@ -12642,7 +12526,7 @@
                   "startLine": 549,
                   "endLine": 549
                 },
-                "status": "moved"
+                "status": "ok"
               }
             },
             {
@@ -12667,28 +12551,28 @@
                 "to": 124
               },
               "role": "usage",
-              "hash": "sha256-v2:9aa2dc5eb03d",
+              "hash": "sha256-v2:a7c9d7cff616",
               "resolved": {
                 "commit": "99fd484",
                 "range": {
                   "startLine": 603,
                   "endLine": 607
                 },
-                "status": "drifted"
+                "status": "ok"
               }
             },
             {
               "file": "packages/cli/test/status-resolve.test.ts",
               "symbol": "xpl status: drift the user owns.counts it in the total and again apart: `4 drifted (1 user-owned: ask the user)`",
               "role": "test",
-              "hash": "sha256-v2:54b69ad7389a",
+              "hash": "sha256-v2:d84ab15ecc37",
               "resolved": {
                 "commit": "99fd484",
                 "range": {
                   "startLine": 123,
                   "endLine": 160
                 },
-                "status": "drifted"
+                "status": "ok"
               }
             }
           ],
@@ -13264,7 +13148,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "e325789"
+        "commit": "99fd484"
       }
     },
     {
