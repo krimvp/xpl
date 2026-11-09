@@ -248,7 +248,7 @@ describe("a person's text in a sentence", () => {
 describe("pictureWords: what a still picture shows, for a screen reader", () => {
   it("counts the parts it names, two of one name included, and names a lit part once", () => {
     expect(pictureWords(["index.ts", "util.ts", "index.ts"], ["util.ts", "util.ts"], "boxes")).toBe(
-      "Shows 3 boxes: index.ts, util.ts, index.ts. Lit: util.ts.",
+      "Shows 3 boxes: index.ts, util.ts, index.ts. Selected in this step: util.ts.",
     );
   });
   it("names the first 8 parts, then says how many more", () => {

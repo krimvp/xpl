@@ -180,10 +180,10 @@ for (const width of [1440, 390])
       await expect(
         item.getByRole("region", { name: "Detail change" }).locator("strong").first(),
       ).toHaveText("queue");
-      await expect(item.getByRole("region", { name: "Evidence change" })).toContainText(
+      await expect(item.getByRole("region", { name: "Code links change" })).toContainText(
         "src/queue.ts:28–32 (defined here) · ok",
       );
-      await expect(item.getByRole("region", { name: "Evidence change" })).toContainText(
+      await expect(item.getByRole("region", { name: "Code links change" })).toContainText(
         "src/queue.ts:28–36 (defined here) · ok",
       );
       await expect(item.locator(".job-raw-change pre").first()).toBeHidden();
@@ -252,11 +252,11 @@ for (const width of [1440, 390])
         "Reading selected source and feedback",
       );
       await panel.getByRole("button", { name: "Cancel job" }).click();
-      await expect(panel).toContainText("Cancelled");
+      await expect(panel).toContainText("Canceled");
       await page.reload();
       await page.getByRole("button", { name: "Jobs", exact: true }).click();
       await expect(panel).toContainText("Accepted");
-      await expect(panel).toContainText("Cancelled");
+      await expect(panel).toContainText("Canceled");
       expect(readFileSync(join(root, ".explainer/demo.explainer.json"), "utf8")).toBe(
         acceptedBytes,
       );

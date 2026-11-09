@@ -126,6 +126,103 @@ test.describe("bugs of the review", () => {
     expect(problems).toEqual([]);
   });
 
+  test("a flow whose steps are all in one function names it once in the caption, on the card and the slide", async ({
+    page,
+  }) => {
+    const problems = watchProblems(page);
+    await openVariant(page, (bundle) => {
+      withTwoFlows(bundle);
+      bundle.explainer.tours[0].steps[1].view = "view:dispatch";
+    });
+    const card = page.locator('.guide-snapshot[data-view-id="view:dispatch"]');
+    await card.scrollIntoViewIfNeeded();
+    await expect(card.locator("figcaption .caption-owner")).toHaveText("all in Runner.dispatch");
+    expect(await page.evaluate(() => window.__xpl!.present("tour:intro", 2))).toBe(true);
+    await expect(page.locator(".present .diagram-caption .caption-owner")).toHaveText(
+      "all in Runner.dispatch",
+    );
+    expect(problems).toEqual([]);
+  });
+
+  test("Present at 1440: a flow too big to read whole gets the wider column and frames its focus with the steps beside it", async ({
+    page,
+  }) => {
+    const problems = watchProblems(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openVariant(
+      page,
+      (bundle) => {
+        const view = bundle.explainer.views.find((v: Loose) => v.id === "view:dispatch");
+        const template = view.steps[0];
+        view.type = "flow";
+        view.frames = [];
+        view.steps = Array.from({ length: 14 }, (_, i) => ({
+          ...structuredClone(template),
+          id: `dispatch:${i + 1}`,
+          label: `Step ${i + 1} of a long run of checks`,
+          shape: i % 2 ? "decision" : "stage",
+          next:
+            i === 13
+              ? []
+              : i % 2
+                ? [
+                    { step: `dispatch:${i + 2}`, label: "yes" },
+                    { step: "dispatch:14", label: "no" },
+                  ]
+                : [{ step: `dispatch:${i + 2}` }],
+        }));
+        bundle.explainer.tours[0].steps[1].view = "view:dispatch";
+        bundle.explainer.tours[0].steps[1].focus = ["dispatch:7"];
+      },
+      "?mode=present&tour=tour:intro&step=2",
+      { width: 1440, height: 900 },
+    );
+    await expect(byId(page, "dispatch:7")).toHaveClass(/is-selected/);
+    // (a flow step asked for no room: the column stayed at 40-52% and showed one diamond)
+    await expect(page.getByTestId("present")).toHaveAttribute("data-room", "wide");
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const pane = document.querySelector(".diagram .panzoom")!.getBoundingClientRect();
+          return ["dispatch:6", "dispatch:7", "dispatch:8"].map((id) => {
+            const box = document
+              .querySelector(`.diagram .flow-stage[data-stage-id="${id}"]`)!
+              .getBoundingClientRect();
+            return (
+              box.left >= pane.left - 1 &&
+              box.right <= pane.right + 1 &&
+              box.top >= pane.top - 1 &&
+              box.bottom <= pane.bottom + 1
+            );
+          });
+        }),
+      )
+      .toEqual([true, true, true]);
+    expect(problems).toEqual([]);
+  });
+
+  test("Present on a phone: a tour with a flow step stacks the code under the diagram, full width", async ({
+    page,
+  }) => {
+    const problems = watchProblems(page);
+    await openVariant(
+      page,
+      (bundle) => {
+        withTwoFlows(bundle);
+        bundle.explainer.tours[0].steps[1].view = "view:dispatch";
+      },
+      "?mode=present&tour=tour:intro&step=2",
+      { width: 390, height: 844 },
+    );
+    await expect(page.locator(".diagram .flow-diagram")).toBeVisible();
+    // (the wide split of a flow tour won on a phone: the code was a 24px strip beside the diagram)
+    const code = page.locator(".present-right .editor-stack");
+    await expect
+      .poll(() => code.evaluate((el) => [el.clientWidth, el.clientHeight]))
+      .toEqual([372, 758]);
+    expect(problems).toEqual([]);
+  });
+
   test("Present: a sequence step is framed on its focus, also deep down a long sequence", async ({
     page,
   }) => {
@@ -177,8 +274,8 @@ test.describe("bugs of the review", () => {
     await expect(panes).toHaveCount(2);
     await expect(panes.nth(0).locator('.cm-line[data-line="76"]')).toBeInViewport();
     await expect(panes.nth(1).locator('.cm-line[data-line="46"]')).toBeInViewport();
-    await expect(panes.nth(0).getByTestId("pane-ranges")).toHaveText("range 1 / 2");
-    await expect(panes.nth(1).getByTestId("pane-ranges")).toHaveText("range 2 / 2");
+    await expect(panes.nth(0).getByTestId("pane-ranges")).toHaveText("1 / 2 in this file");
+    await expect(panes.nth(1).getByTestId("pane-ranges")).toHaveText("2 / 2 in this file");
     expect(problems).toEqual([]);
   });
 
@@ -209,15 +306,15 @@ test.describe("bugs of the review", () => {
     const pane = page.locator('.pane[data-file="src/runner.ts"]');
     await expect(pane).toHaveCount(1);
     const stepper = pane.getByTestId("pane-ranges");
-    await expect(stepper).toContainText("range 2 / 2");
+    await expect(stepper).toContainText("2 / 2 in this file");
     await expect(pane.locator('.cm-line[data-line="76"]')).toBeInViewport();
     await stepper.getByRole("button", { name: "Previous range" }).click();
-    await expect(stepper).toContainText("range 1 / 2");
+    await expect(stepper).toContainText("1 / 2 in this file");
     await expect(pane.locator('.cm-line[data-line="46"]')).toBeInViewport();
     // n / p in the code do the same
     await pane.locator('.cm-line[data-line="46"]').click();
     await page.keyboard.press("n");
-    await expect(stepper).toContainText("range 2 / 2");
+    await expect(stepper).toContainText("2 / 2 in this file");
     await expect(pane.locator('.cm-line[data-line="76"]')).toBeInViewport();
     expect(problems).toEqual([]);
   });

@@ -31,7 +31,7 @@ import { SNAPSHOT_WHOLE, type Box } from "../viewport.js";
 import { FlowDiagram } from "./FlowDiagram.js";
 import { GraphPicture, useGraphChanges } from "./GraphView.js";
 import { SequencePicture, StickyHeads } from "./SequenceView.js";
-import { layoutView } from "../workspace.js";
+import { flowOwnerName, layoutView } from "../workspace.js";
 import { pictureWords } from "../readerWords.js";
 import { SNAPSHOT_HEIGHT, SNAPSHOT_TALL_HEIGHT, SnapshotFrame } from "./SnapshotFrame.js";
 
@@ -121,6 +121,7 @@ export function Snapshot({
   }, [near]);
 
   const graph = view.type === "graph";
+  const owner = flowOwnerName(view, model);
   const open = graph ? "Open in Map" : "Open in Flow";
   return (
     <figure
@@ -140,7 +141,15 @@ export function Snapshot({
         </p>
       )}
       <figcaption>
-        <span className="guide-snapshot-title">{view.title}</span>
+        <span className="guide-snapshot-title">
+          {view.title}
+          {/* the function every step is in, said once here, not under each box */}
+          {owner && (
+            <span className="caption-owner">
+              all in <code>{owner}</code>
+            </span>
+          )}
+        </span>
         <button
           type="button"
           className="btn"

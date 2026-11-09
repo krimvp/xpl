@@ -655,36 +655,48 @@ function GuideSection({
           </ul>
         </section>
       )}
-      {changeCallers.length > 0 && (
-        <section
-          className="guide-tests"
-          data-testid="guide-callers"
-          aria-label={`Code that calls what changed, step ${index + 1}`}
-        >
-          <h4>Code that calls what changed</h4>
-          <ul>
-            {changeCallers.map((caller) => (
-              <li key={caller.from}>
-                <button
-                  type="button"
-                  className="guide-test"
-                  title={`Open ${caller.file} at line ${caller.line}`}
-                  onClick={() => {
-                    store.previewStep(tourId, index);
-                    store.openFile(caller.file, caller.line);
-                    store.setPerspective("code");
-                  }}
-                >
-                  <code>{caller.label}</code>
-                  <span className="guide-test-file">
-                    {caller.file}, line {caller.line}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      {/* the code that calls what changed, then the tests that do: a test is no caller to review */}
+      {(
+        [
+          ["guide-callers", "Code that calls what changed", false],
+          ["guide-test-callers", "Tests that call what changed", true],
+        ] as const
+      ).map(([testId, heading, test]) => {
+        const callers = changeCallers.filter((caller) => isTestFile(caller.file) === test);
+        return (
+          callers.length > 0 && (
+            <section
+              key={testId}
+              className="guide-tests"
+              data-testid={testId}
+              aria-label={`${heading}, step ${index + 1}`}
+            >
+              <h4>{heading}</h4>
+              <ul>
+                {callers.map((caller) => (
+                  <li key={caller.from}>
+                    <button
+                      type="button"
+                      className="guide-test"
+                      title={`Open ${caller.file} at line ${caller.line}`}
+                      onClick={() => {
+                        store.previewStep(tourId, index);
+                        store.openFile(caller.file, caller.line);
+                        store.setPerspective("code");
+                      }}
+                    >
+                      <code>{caller.label}</code>
+                      <span className="guide-test-file">
+                        {caller.file}, line {caller.line}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )
+        );
+      })}
       {/* The step's tools come after its text and its code: the title leads straight into the text. */}
       <div className="section-actions">
         <button

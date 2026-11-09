@@ -355,6 +355,36 @@ code {
   flex-shrink: 0;
 }
 
+/* a draft's bar: one line; open, the list of what the author has left, scrolled when long */
+.draft-banner {
+  display: block;
+}
+.draft-banner summary {
+  cursor: pointer;
+}
+.draft-banner-open {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.draft-banner ul {
+  margin: 6px 0 2px;
+  padding-left: 18px;
+  max-height: 30vh;
+  overflow-y: auto;
+}
+
+@media (max-width: 640px) {
+  .draft-banner {
+    padding: 4px 12px;
+    font-size: 12px;
+  }
+  .draft-banner:not([open]) summary {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+}
+
 /* ── Header ───────────────────────────────────────────────────────────────────────────────────── */
 
 .header {
@@ -2038,6 +2068,12 @@ code {
   stroke-width: 2.4;
 }
 
+/* A row the step's code uses: the color of "used here" in the code pane. */
+.node.is-used:not(.is-selected) > .box {
+  fill: var(--hl-usage);
+  stroke: var(--hl-usage-bar);
+}
+
 .node.is-match > .box,
 .node.is-match > .node-frame > .box {
   stroke: var(--match);
@@ -3503,14 +3539,12 @@ code {
   white-space: nowrap;
 }
 
-/* When the pane is narrow the directory gives way, never the file name. It is cut at its start, next to
-   the name ("…/types/"): the right-to-left box puts the ellipsis on the left, the <bdi> keeps the path in
-   its order. */
+/* When the pane is narrow the directory gives way, never the file name. It is cut at its start, a whole
+   folder at a time, next to the name ("…/types/", EditorStack FolderPath). */
 .pane-file .dir {
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  direction: rtl;
+  white-space: nowrap;
   color: var(--muted);
 }
 
@@ -3929,9 +3963,12 @@ code {
 }
 
 /* A flow is tall and branches sideways: a tour with a flow step gives the diagram more of the width (the
-   code beside it wraps its long lines), for all of its steps (PresentMode: one split per tour). */
-.present[data-split="wide"] {
-  grid-template-columns: minmax(340px, 52%) minmax(0, 1fr);
+   code beside it wraps its long lines), for all of its steps (PresentMode: one split per tour). Only beside
+   the code: on a phone the slide stacks (the split outranked the phone rule and left the code 24px). */
+@media (min-width: 641px) {
+  .present[data-split="wide"] {
+    grid-template-columns: minmax(340px, 52%) minmax(0, 1fr);
+  }
 }
 
 /* r3-frame: ... but the code keeps room for the lines the tour focuses (`--code-columns`, present/split.ts:
@@ -4722,8 +4759,9 @@ code {
   stroke: none;
 }
 
-/* A symbol's icon is a letter in a tinted square (C class, ƒ function, ...). */
-.node .box-icon rect:only-of-type {
+/* A symbol's icon is a letter in a tinted square (C class, ƒ function, ...). (Only that square: the browser
+   and storage icons have one rect too, their frame, and lost it.) */
+.node .box-icon .icon-letter {
   fill: hsl(var(--k-hue, 220) var(--pill-s) var(--pill-bg-l));
   stroke: none;
 }
@@ -4772,6 +4810,11 @@ code {
   gap: 4px;
   font-size: 13px;
   color: var(--muted);
+}
+
+/* (padding, not spaces: in a one-line trail each level is a flex box, which drops a space at its ends) */
+.zoom-trail-sep {
+  padding: 0 4px;
 }
 
 .zoom-trail button {

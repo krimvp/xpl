@@ -194,7 +194,7 @@ export function repeatEnds(flow: ProcessFlow): {
   );
   const busy = new Set(
     flow.stages
-      .filter(({ step, shape }) => shape === "terminal" && !leaves.has(step.id))
+      .filter(({ step, shape }) => shape !== "decision" && !leaves.has(step.id))
       .map(({ step }) => step.id)
       .filter(
         (id) =>
@@ -652,10 +652,25 @@ function inParts(
   if (!chosen) return undefined;
   const cutsAt: number[] = chosen;
   cutsAt.sort((a, b) => a - b);
-  const partOf = (id: string) => {
+  const band = (id: string) => {
     const y = boxes.get(id)!.y;
     return cutsAt.filter((cut) => y >= cut).length;
   };
+  // A repeated end whose one way in is at the end of the part before stays in that part, after it: its
+  // arrow is a short one beside the choice, not a lane around the whole flow (ky's "false" to "Throw: no
+  // retry" ran ~3,000 units to a copy at the start of the next row).
+  // (only where the part stays no longer than the longest one: else the flow gets wider, its text smaller)
+  const starts = [top, ...cutsAt];
+  const ends = [...cutsAt, bottom];
+  const longest = Math.max(...ends.map((end, i) => end - starts[i]!));
+  const home = new Map<string, number>();
+  for (const c of layout.children) {
+    const into = c.copyOf ? layout.edges.filter((edge) => edge.to === c.id) : [];
+    const from = into.length === 1 ? band(into[0]!.from) : -1;
+    if (from >= 0 && from === band(c.id) - 1 && c.y + c.height - starts[from]! <= longest)
+      home.set(c.id, from);
+  }
+  const partOf = (id: string) => home.get(id) ?? band(id);
   if (new Set(layout.children.map((c) => partOf(c.id))).size !== parts) return undefined;
   const crossing = layout.edges.filter(
     (edge) =>
@@ -887,15 +902,19 @@ function clearOfOthers<T extends Pick<FlowLayout, "children" | "edges">>(layout:
   const edges = layout.edges.map((edge) => {
     const others = layout.children.filter((c) => c.id !== edge.from && c.id !== edge.to);
     const points = pointsOf(edge);
-    if (!others.some((b) => runsThrough(points, b))) return edge;
+    // (copies: `apartRoutes` moves them)
+    if (!others.some((b) => runsThrough(points, b)))
+      return { ...edge, labels: edge.labels.map((label) => ({ ...label })) };
     const route = aroundBoxes(points, others);
     return {
       ...edge,
+      labels: edge.labels.map((label) => ({ ...label })),
       sections: [
         { startPoint: route[0]!, bendPoints: route.slice(1, -1), endPoint: route.at(-1)! },
       ],
     };
   });
+  apartRoutes(edges, layout.children);
   type Label = FlowLayout["edges"][number]["labels"][number];
   const meets = (a: Box, b: Box, gap: number) =>
     a.x < b.x + b.width + gap &&
@@ -903,39 +922,148 @@ function clearOfOthers<T extends Pick<FlowLayout, "children" | "edges">>(layout:
     a.y < b.y + b.height + gap &&
     b.y < a.y + a.height + gap;
   const placed: Label[] = edges.flatMap((edge) => edge.labels);
-  const free = (label: Label, own: Label) =>
+  // (the words of two arrows out of one choice keep 12 units apart: "yes" 8 units before "no" read as one)
+  const source = new Map(edges.flatMap((edge) => edge.labels.map((l) => [l, edge.from] as const)));
+  const free = (label: Label, own: Label, apart = LABEL_GAP) =>
     !layout.children.some((c) => meets(label, c, 2)) &&
-    !placed.some((other) => other !== own && meets(label, other, 2));
-  const moved = edges.map((edge) => {
-    if (edge.labels.every((label) => free(label, label))) return edge;
-    const points = pointsOf(edge);
-    const labels = edge.labels.map((label) => {
-      if (free(label, label)) return label;
-      // along the route from its start, 4 units at a time: the first place that is free
-      for (let i = 1; i < points.length; i++) {
-        const a = points[i - 1]!,
-          b = points[i]!;
-        const length = Math.abs(b.x - a.x) + Math.abs(b.y - a.y);
-        for (let at = 0; at <= length; at += 4) {
-          const t = length === 0 ? 0 : at / length;
-          const x = a.x + (b.x - a.x) * t,
-            y = a.y + (b.y - a.y) * t;
-          const candidate = {
-            ...label,
-            x: x - label.width / 2,
-            y: y - label.height / 2,
-          };
-          if (free(candidate, label)) {
-            placed[placed.indexOf(label)] = candidate;
-            return candidate;
+    !placed.some(
+      (other) =>
+        other !== own && meets(label, other, source.get(other) === source.get(own) ? apart : 2),
+    );
+  // (twice: words that moved can crowd words placed before them, which then move in their turn)
+  const pass = (list: FlowLayout["edges"]) =>
+    list.map((edge) => {
+      if (edge.labels.every((label) => free(label, label))) return edge;
+      const points = pointsOf(edge);
+      const labels = edge.labels.map((label) => {
+        // where it is, or along the route from its start, 4 units at a time: the first place that is free
+        // (where none is that far from the words beside it, the first place off every box and label)
+        for (const apart of [LABEL_GAP, 2]) {
+          if (free(label, label, apart)) return label;
+          for (let i = 1; i < points.length; i++) {
+            const a = points[i - 1]!,
+              b = points[i]!;
+            const length = Math.abs(b.x - a.x) + Math.abs(b.y - a.y);
+            for (let at = 0; at <= length; at += 4) {
+              const t = length === 0 ? 0 : at / length;
+              const x = a.x + (b.x - a.x) * t,
+                y = a.y + (b.y - a.y) * t;
+              const candidate = {
+                ...label,
+                x: x - label.width / 2,
+                y: y - label.height / 2,
+              };
+              if (free(candidate, label, apart)) {
+                placed[placed.indexOf(label)] = candidate;
+                source.set(candidate, edge.from);
+                return candidate;
+              }
+            }
           }
         }
-      }
-      return label;
+        return label;
+      });
+      return { ...edge, labels };
     });
-    return { ...edge, labels };
+  return { ...layout, edges: pass(pass(edges)) };
+}
+
+/** The least room between the words of two arrows out of one step. */
+const LABEL_GAP = 12;
+
+/** The least room between two routes into different boxes where they run side by side. */
+export const ROUTE_GAP = 14;
+
+/**
+ * Moves routes apart where two into different boxes run side by side closer than `ROUTE_GAP`: the middle
+ * run of the later one (never the run that leaves or enters a box) moves across to the nearest place a gap
+ * away from the other, where it runs through no box and next to no other route. (ky's "Retry timeouts? no"
+ * and "Payload too large? no" ran 1 unit apart: one "+" with one "no" on it, read the wrong way round.)
+ * Works on the edges in place: `clearOfOthers` hands it copies.
+ */
+function apartRoutes(edges: FlowLayout["edges"], boxes: readonly (Box & { id: string })[]): void {
+  const routes = edges.map((edge) =>
+    edge.sections
+      .flatMap((s) => [s.startPoint, ...s.bendPoints, s.endPoint])
+      .map((p) => ({ ...p })),
+  );
+  const along = (p: Point, q: Point): "x" | "y" | undefined =>
+    Math.abs(p.y - q.y) < 0.5 ? "x" : Math.abs(p.x - q.x) < 0.5 ? "y" : undefined;
+  // the run of `f` that runs beside run `i` of route `e`, closer than the gap (its index, else -1)
+  const beside = (e: number, i: number, route: readonly Point[], f: number): number => {
+    const p = route[i]!,
+      q = route[i + 1]!;
+    const v = along(p, q);
+    if (!v) return -1;
+    const u = v === "x" ? "y" : "x";
+    const other = routes[f]!;
+    for (let j = 0; j + 1 < other.length; j++) {
+      const r = other[j]!,
+        t = other[j + 1]!;
+      if (along(r, t) !== v || Math.abs(p[u] - r[u]) >= ROUTE_GAP - 0.01) continue;
+      const overlap =
+        Math.min(Math.max(p[v], q[v]), Math.max(r[v], t[v])) -
+        Math.max(Math.min(p[v], q[v]), Math.min(r[v], t[v]));
+      // (the first runs of two arrows out of one box leave it side by side, at its ports)
+      const ports = i === 0 && j === 0 && edges[e]!.from === edges[f]!.from;
+      if (overlap > 4 && !ports) return j;
+    }
+    return -1;
+  };
+  const rivals = (e: number) =>
+    routes.flatMap((_, f) => (f !== e && edges[f]!.to !== edges[e]!.to ? [f] : []));
+  const clashes = (e: number, route: readonly Point[]) =>
+    route.slice(1).some((_, i) => rivals(e).some((f) => beside(e, i, route, f) >= 0));
+  // run `i` of route `e` moved across to the nearest free place a gap or more from `at`; false when none is
+  const move = (e: number, i: number, at: number): boolean => {
+    const route = routes[e]!;
+    if (i < 1 || i + 2 >= route.length) return false;
+    const v = along(route[i]!, route[i + 1]!)!;
+    const u = v === "x" ? "y" : "x";
+    const was = route[i]![u];
+    const others = boxes.filter((b) => b.id !== edges[e]!.from && b.id !== edges[e]!.to);
+    // the runs before and after keep their way: the route does not turn back on itself
+    const keeps = (w: number) =>
+      Math.sign(w - route[i - 1]![u]) === Math.sign(was - route[i - 1]![u]) &&
+      Math.sign(route[i + 2]![u] - w) === Math.sign(route[i + 2]![u] - was);
+    const places = [1, -1, 2, -2, 3, -3]
+      .map((k) => at + k * ROUTE_GAP)
+      .sort((a, b) => Math.abs(a - was) - Math.abs(b - was));
+    for (const w of places) {
+      if (!keeps(w)) continue;
+      const moved = route.map((p, k) => (k === i || k === i + 1 ? { ...p, [u]: w } : p));
+      if (others.some((b) => runsThrough(moved, b)) || clashes(e, moved)) continue;
+      // a label that sat on the run moves with it
+      const [lo, hi] = [route[i]![v], route[i + 1]![v]].sort((a, b) => a - b);
+      for (const label of edges[e]!.labels) {
+        const size = (axis: "x" | "y") => (axis === "x" ? label.width : label.height);
+        const centre = label[u] + size(u) / 2;
+        const middle = label[v] + size(v) / 2;
+        if (Math.abs(centre - was) < 1 && middle >= lo! - 1 && middle <= hi! + 1)
+          label[u] += w - was;
+      }
+      routes[e] = moved;
+      return true;
+    }
+    return false;
+  };
+  for (let e = 0; e < routes.length; e++) {
+    for (let i = 0; i + 1 < routes[e]!.length; i++) {
+      const route = routes[e]!;
+      const f = rivals(e).find((f) => beside(e, i, route, f) >= 0);
+      if (f === undefined) continue;
+      const j = beside(e, i, route, f);
+      const u = along(route[i]!, route[i + 1]!) === "x" ? "y" : "x";
+      // the later route moves; where it cannot (its run leaves or enters a box), the other one does
+      if (!move(e, i, routes[f]![j]![u])) move(f, j, route[i]![u]);
+    }
+  }
+  edges.forEach((edge, e) => {
+    const route = routes[e]!;
+    edge.sections = [
+      { startPoint: route[0]!, bendPoints: route.slice(1, -1), endPoint: route.at(-1)! },
+    ];
   });
-  return { ...layout, edges: moved };
 }
 
 /** True when an orthogonal route runs into the inside of a box (its border does not count). */

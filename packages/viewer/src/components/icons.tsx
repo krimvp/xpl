@@ -100,7 +100,7 @@ export function BoxIcon({ name, x, y }: { name: string; x: number; y: number }) 
     >
       {letter !== undefined ? (
         <>
-          <rect x={1} y={1} width={14} height={14} rx={3.5} />
+          <rect className="icon-letter" x={1} y={1} width={14} height={14} rx={3.5} />
           <text x={8} y={12}>
             {letter}
           </text>

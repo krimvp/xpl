@@ -444,3 +444,36 @@ test("selected review requires reinspection, survives unrelated tour edits and c
   await expect(dialog).not.toBeVisible();
   await expect(page.getByTestId("review-status")).toHaveText("Not yet reviewed by a person");
 });
+
+test("a draft's bar says what is left in words and opens the list of what to fix", async ({
+  page,
+}) => {
+  const finding = (severity: string, elementId: string, message: string) => ({
+    severity,
+    code: "x",
+    elementId,
+    field: "summary",
+    message,
+    hint: "",
+  });
+  await openVariant(page, (bundle) => {
+    bundle.exportInfo = {
+      status: "draft",
+      report: {
+        ready: false,
+        scope: "embedded-snapshot",
+        errors: 0,
+        warnings: 1,
+        findings: [finding("warning", "tour:intro", "3 diagrams: a tour uses at most 2")],
+      },
+    };
+  });
+  const bar = page.getByTestId("draft-banner");
+  // (it said "0 problems to fix before this page is finished, and 1 warning for readers")
+  await expect(bar.locator("summary")).toHaveText("Draft: 1 note for the author. Show the list");
+  await expect(bar.getByRole("listitem")).toHaveCount(0);
+  await bar.locator("summary").click();
+  await expect(bar.getByRole("listitem")).toHaveText([
+    "Note · Intro talk: 3 diagrams: a tour uses at most 2",
+  ]);
+});

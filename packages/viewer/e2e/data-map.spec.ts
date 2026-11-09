@@ -239,6 +239,11 @@ test("a row the step's code names is marked on its own table", async ({ page }) 
   expect(await page.evaluate(() => window.__xpl!.present("tour:data", 0))).toBe(true);
   await expect(byId(page, `${QUEUE}.ready`)).toHaveClass(/is-related/);
   await expect(byId(page, `${QUEUE}.dead`)).not.toHaveClass(/is-related/);
+  // in the color of "used here" in the code pane, not the green of a linked box
+  await expect(byId(page, `${QUEUE}.ready`).locator(":scope > .box")).toHaveCSS(
+    "stroke",
+    "rgb(139, 79, 220)",
+  );
 });
 
 // a selected table listed none of its rows' arrows, and the tables it holds were not marked linked

@@ -1,9 +1,11 @@
 import { useMemo } from "react";
 import {
+  CODE_LANGUAGE_NAMES,
   collectAnchors,
   readerCoverage,
   parseId,
   type Explainer,
+  type FileLanguage,
   type FilePath,
   type SymbolIndex,
 } from "@xpl/core";
@@ -23,14 +25,9 @@ export function AnalysisCoverage() {
   const linked = useMemo(() => linkedFiles(state.explainer), [state.explainer]);
   const gap = useMemo(() => coverageGap(index, linked), [index, linked]);
   if (gap.files.length === 0) return null;
-  const count = `${gap.files.length} ${gap.files.length === 1 ? "file" : "files"}`;
   return (
     <details className="analysis-coverage" data-testid="analysis-coverage">
-      <summary>
-        {gap.failed
-          ? `Some arrows may be missing: the code analysis failed in ${count} this guide links to.`
-          : `Some arrows may be missing: xpl could not analyze all the code in ${count} this guide links to.`}
-      </summary>
+      <summary>{coverageSummary(gap)}</summary>
       <ul>
         {gap.files.slice(0, 8).map((file) => (
           <li key={file}>
@@ -42,6 +39,17 @@ export function AnalysisCoverage() {
       <p>The full report is under About this guide.</p>
     </details>
   );
+}
+
+/** The bar's one line: what the gap means for the arrows the reader sees. */
+export function coverageSummary(gap: ReturnType<typeof coverageGap>): string {
+  const count = `${gap.files.length} ${gap.files.length === 1 ? "file" : "files"}`;
+  if (gap.failed)
+    return `Some arrows may be missing: the code analysis failed in ${count} this guide links to.`;
+  // a language xpl reads no calls of: no arrow there is xpl's, so none can be missing from what it found
+  if (gap.noCalls)
+    return `xpl finds no calls in ${gap.noCalls.join(" or ")} code: every arrow between the ${count} this guide links to was drawn by the author.`;
+  return `Some arrows may be missing: xpl could not analyze all the code in ${count} this guide links to.`;
 }
 
 /**
@@ -89,12 +97,13 @@ export function linkedFiles(explainer: Explainer): Set<FilePath> {
 
 /**
  * The code files among `linked` that the analysis left out, or failed on, for some kind of relationship;
- * `failed` when a tool failed on one of them.
+ * `failed` when a tool failed on one of them. `noCalls`: the languages of those files, when xpl read calls
+ * in no file of any of them (Ruby, PHP): every arrow between such files is the author's.
  */
 export function coverageGap(
   index: SymbolIndex,
   linked: ReadonlySet<FilePath>,
-): { files: FilePath[]; failed: boolean } {
+): { files: FilePath[]; failed: boolean; noCalls?: string[] } {
   const languageOf = new Map(index.files.map((file) => [file.path, file.language]));
   const reports = index.analysis ?? [];
   // The reports split their files over several results per kind of relationship (the tree-sitter pack for
@@ -128,5 +137,19 @@ export function coverageGap(
         for (const path of missed) files.add(path);
       }
   }
-  return { files: [...files].sort(), failed };
+  const languages = new Set([...files].map((path) => languageOf.get(path) ?? "text"));
+  const calls = covered.get("call");
+  const readsCalls = (language: string) =>
+    index.files.some((file) => file.language === language && calls?.has(file.path));
+  const noCalls =
+    !failed && files.size > 0 && ![...languages].some(readsCalls)
+      ? [
+          ...new Set(
+            [...languages].map(
+              (language) => CODE_LANGUAGE_NAMES[language as FileLanguage] ?? language,
+            ),
+          ),
+        ]
+      : undefined;
+  return { files: [...files].sort(), failed, ...(noCalls ? { noCalls } : {}) };
 }

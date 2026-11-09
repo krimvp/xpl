@@ -8,6 +8,7 @@ import {
   type QueryHit,
   type SymbolIndex,
 } from "@xpl/core";
+import { plainText, snippet, symbolRank, testTitle } from "./searchSnippet.js";
 
 export const SEARCH_PAGE_SIZE = 16;
 /** The guide's own words first (they answer the question), then the code's names, then its text. */
@@ -19,12 +20,6 @@ const GROUPS = [
   { id: "source", title: "Source", kinds: ["source"] },
 ] as const;
 
-/**
- * Names whose code is in the page come first, and names in tests after the others: in a real repository the
- * test cases are sentences that match most words, and they hid the code the reader looks for.
- */
-const symbolRank = (hit: SearchHit, files: Record<string, string>) =>
-  "file" in hit ? (hit.file in files ? 0 : 2) + (isTestFile(hit.file) ? 1 : 0) : 0;
 export type SearchGroupId = (typeof GROUPS)[number]["id"];
 export type SearchPages = Partial<Record<SearchGroupId, number>>;
 export type SearchGroup = {
@@ -41,6 +36,16 @@ export type SearchMessage =
   | { kind: "query"; id: number; pattern: string; pages: SearchPages };
 export type SearchResult = { groups: SearchGroup[]; total: number };
 export type SearchReply = { id: number } & ({ result: SearchResult } | { error: string });
+
+/** A test case (a function in a test file) by its describe titles, not the index's dotted path. */
+function testCaseTitle(
+  index: ReturnType<typeof asIndexModel> | undefined,
+  hit: { file: string; id: string },
+): string | undefined {
+  const id = hit.id.replace(/^sym:/, "");
+  if (!index || !isTestFile(hit.file) || index.symbol(id)?.kind !== "function") return undefined;
+  return testTitle(index, id);
+}
 
 let snapshot: Extract<SearchMessage, { kind: "snapshot" }> | undefined;
 let indexes: ReturnType<typeof asIndexModel>[] = [];
@@ -105,12 +110,17 @@ self.onmessage = (event: MessageEvent<SearchMessage>) => {
           .map(({ hit }) => hit);
         hits.splice(0, hits.length, ...ranked.slice(offset, offset + SEARCH_PAGE_SIZE));
       }
-      // Minified source and long prose never become megabytes of text on the UI thread.
+      // A guide's Markdown reads as plain words, a test as its describe titles; minified source and long
+      // prose never become megabytes of text on the UI thread.
       for (const hit of hits) {
-        const at = hit.text.toLowerCase().indexOf(message.pattern.toLowerCase());
-        const start = Math.max(0, at - 80);
-        const end = Math.min(hit.text.length, start + 400);
-        hit.text = `${start ? "…" : ""}${hit.text.slice(start, end)}${end < hit.text.length ? "…" : ""}`;
+        const index = indexes[snapshot!.snapshots.findIndex((g) => g.id === hit.guide)];
+        const text =
+          hit.kind === "source"
+            ? hit.text
+            : hit.kind === "symbol"
+              ? (testCaseTitle(index, hit) ?? hit.text)
+              : plainText(hit.text);
+        hit.text = snippet(text, message.pattern);
       }
       return { id: group.id, title: group.title, offset, hits, total };
     });

@@ -65,6 +65,15 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
   );
   const active = state.selection[state.selection.length - 1];
   const info = active ? describeElement(active, state.model, derived.view) : undefined;
+  // An arrow is named by its two ends, its label after them: "Scheduling → worker.ts (calls ×3)". A title
+  // that names its ends already ("Queue.ready holds Job") stays as it is.
+  const topicTitle =
+    info &&
+    (info.type === "edge" || info.type === "derived-edge") &&
+    info.where &&
+    !info.title.includes(info.where.split(" → ")[0]!)
+      ? `${info.where} (${info.title})`
+      : info?.title;
   const tour = store.currentTour() ?? state.model.tours[0];
   // The Tour decides once per tour whether it has a right column.
   const keepRail = useMemo(
@@ -164,7 +173,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
     ? stepTitle(readingStep, state.model)
     : appliedStep
       ? stepTitle(appliedStep, state.model)
-      : (info?.title ??
+      : (topicTitle ??
         (state.perspective === "map" || state.perspective === "flow"
           ? ""
           : code
@@ -508,7 +517,7 @@ export function Workspace({ showSource: startWithSource = false }: { showSource?
               <div className="source-topic" data-testid="source-topic">
                 <span className="eyebrow">{appliedStep ? "In this step" : "Selected"}</span>{" "}
                 <strong className={looksLikeCode(info.title) ? "is-code" : undefined}>
-                  {info.title}
+                  {topicTitle}
                 </strong>
                 {info.summary && (
                   <span

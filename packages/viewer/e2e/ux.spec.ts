@@ -245,7 +245,9 @@ test.describe("Present: a flow step", () => {
       const problems = watchProblems(page);
       await openVariant(page, withEightStageFlow, "?mode=present&tour=tour:intro&step=2", size);
       await expect(byId(page, "dispatch:5")).toHaveClass(/is-selected/);
-      // a tour with a flow step gives the diagram more of the width
+      // a tour with a flow step gives the diagram more of the width, and a flow too big to read whole asks
+      // for more (up to 65%), as a map does
+      await expect(page.getByTestId("present")).toHaveAttribute("data-room", "wide");
       const flowPane = (await page.locator(".present-left").boundingBox())!.width;
       expect(flowPane).toBeGreaterThan(size.width * 0.5);
       // read from the back of the room: the flow starts with its text at 16px
@@ -272,10 +274,14 @@ test.describe("Present: a flow step", () => {
           }),
         )
         .toBe(true);
-      // one split for the whole tour: a graph step keeps the same columns (the slide does not jump)
+      // one split for the whole tour: a graph step that reads whole keeps the tour's wide split, without the
+      // room the flow step asked for
       await page.keyboard.press("ArrowLeft");
       await expect(byId(page, "grp:scheduling")).toHaveClass(/is-selected/);
-      expect((await page.locator(".present-left").boundingBox())!.width).toBeCloseTo(flowPane, 0);
+      await expect(page.getByTestId("present")).not.toHaveAttribute("data-room");
+      const mapPane = (await page.locator(".present-left").boundingBox())!.width;
+      expect(mapPane).toBeGreaterThanOrEqual(340);
+      expect(mapPane).toBeLessThan(flowPane);
       expect(problems).toEqual([]);
     });
   }

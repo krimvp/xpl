@@ -91,6 +91,8 @@ function rowsFor(
   }));
 }
 
+/** What a derived arrow counts, in the word of its label ("calls ×3": 3 calls); other kinds count references. */
+const COUNT_NOUN: Record<string, string> = { calls: "call", imports: "import" };
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /** `llm, commit abc123; edited by you: summary` */
@@ -283,7 +285,7 @@ function buildInfo(id: ElementId, model: ExplainerModel, vd: ViewDerived): Eleme
           : verb
             ? `${from} ${verb} ${to}, found in the code${trust ? ` (${trust})` : ""}.`
             : derived
-              ? `${plural(derived.count, "reference")} from ${from} to ${to}, found in the code${trust ? ` (${trust})` : ""}.`
+              ? `${plural(derived.count, COUNT_NOUN[derived.kind] ?? "reference")} from ${from} to ${to}, found in the code${trust ? ` (${trust})` : ""}.`
               : `An arrow found in the code (${ref.kind}).`,
         facts: [
           { label: "From", value: from },

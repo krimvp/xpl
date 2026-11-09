@@ -265,7 +265,7 @@ describe("a flow laid out for reading", () => {
 });
 
 /** Vite's "update, reload or no update" flow: a run of five choices, each with an early exit. */
-function choices() {
+function choices({ reloadGoesOn = false } = {}) {
   const choice = (yes: number, no: number, label: string): Step => ({
     label,
     shape: "decision",
@@ -280,11 +280,69 @@ function choices() {
     choice(6, 4, "Dead end found?"),
     choice(6, 5, "Circular invalidation?"),
     choice(6, 7, "HTML template changed?"),
-    { label: "Reload the page", shape: "terminal" },
+    // (a reload that goes on to the end is no end of its own: it is drawn once)
+    reloadGoesOn
+      ? { label: "Reload the page", next: [{ step: "f:9" }] }
+      : { label: "Reload the page", shape: "terminal" },
     choice(9, 8, "Any updates to send?"),
     { label: "Stop without an update", shape: "terminal" },
     { label: "Send targeted updates", shape: "terminal" },
   ]);
+}
+
+/**
+ * ky's retry decision (`Ky.#calculateRetryDelay`): 12 steps, 9 choices in a row, "Throw: no retry" reached 7
+ * ways. Step 10 is in another function, so it is the one box that names its function.
+ */
+function kyRetry() {
+  const choice = (label: string, ...next: [number, string][]): Step => ({
+    label,
+    shape: "decision",
+    next: next.map(([n, word]) => ({ step: `f:${n}`, label: word })),
+  });
+  return flowOf([
+    choice("Retries left?", [2, "yes"], [12, "no"]),
+    choice("Forced by a hook?", [10, "yes"], [3, "no"]),
+    choice("Method allowed?", [4, "yes"], [12, "no"]),
+    choice("What does shouldRetry say?", [5, "true, other or not set"], [12, "false"]),
+    choice(
+      "Which kind of failure?",
+      [6, "timeout"],
+      [7, "bad status"],
+      [10, "network error"],
+      [12, "other"],
+    ),
+    choice("Retry timeouts?", [10, "yes"], [12, "no"]),
+    choice("Status in the list?", [8, "yes"], [12, "no"]),
+    choice("Did the server say when?", [11, "yes"], [9, "no"]),
+    choice("Payload too large?", [12, "yes"], [10, "no"]),
+    { label: "Compute the backoff wait", next: [] },
+    { label: "Use the server's wait", shape: "terminal", next: [] },
+    { label: "Throw: no retry", shape: "terminal", next: [] },
+  ]);
+}
+const kyActors = new Map([["f:10", "Ky.#calculateDelay"]]);
+
+/**
+ * A flow of `n` steps from where each leads: a number is the next step of a stage, a pair the "yes" and "no"
+ * of a choice ("Choice 4?"). The last two steps are ends.
+ */
+function runOf(n: number, next: Record<number, number | [number, number]>) {
+  return flowOf(
+    Array.from({ length: n }, (_, i): Step => {
+      const way = next[i + 1];
+      if (way === undefined) return { label: `Stage ${i + 1}`, shape: "terminal", next: [] };
+      if (typeof way === "number") return { label: `Stage ${i + 1}`, next: [{ step: `f:${way}` }] };
+      return {
+        label: `Choice ${i + 1}?`,
+        shape: "decision",
+        next: [
+          { step: `f:${way[0]}`, label: "yes" },
+          { step: `f:${way[1]}`, label: "no" },
+        ],
+      };
+    }),
+  );
 }
 
 /** The longest stretch two routes share (on one line, overlapping), in diagram units. */
@@ -312,6 +370,43 @@ function sharedRun(a: FlowLayout["edges"][number], b: FlowLayout["edges"][number
         );
     }
   return longest;
+}
+
+/**
+ * The pairs of routes from different boxes into different boxes that run side by side closer than `gap` for
+ * more than 4 units ("f:6->f:12#5 near f:9->f:10"): on screen they read as one line. (The arrows out of one
+ * box leave it at its ports, `spreadPorts`, some 12 units apart.)
+ */
+function closeRuns(layout: FlowLayout, gap: number): string[] {
+  const segments = (edge: FlowLayout["edges"][number]) => {
+    const points = edge.sections.flatMap((s) => [s.startPoint, ...s.bendPoints, s.endPoint]);
+    return points.slice(1).map((p, i) => [points[i]!, p] as const);
+  };
+  const out: string[] = [];
+  layout.edges.forEach((a, i) =>
+    layout.edges.slice(i + 1).forEach((b) => {
+      if (a.to === b.to || a.from === b.from) return;
+      const near = segments(a).some(([p, q]) =>
+        segments(b).some(([r, t]) => {
+          for (const [u, v] of [
+            ["x", "y"],
+            ["y", "x"],
+          ] as const) {
+            // both run along v, at u values closer than the gap
+            if (Math.abs(p[u] - q[u]) > 0.5 || Math.abs(r[u] - t[u]) > 0.5) continue;
+            if (Math.abs(p[u] - r[u]) >= gap) continue;
+            const overlap =
+              Math.min(Math.max(p[v], q[v]), Math.max(r[v], t[v])) -
+              Math.max(Math.min(p[v], q[v]), Math.min(r[v], t[v]));
+            if (overlap > 4) return true;
+          }
+          return false;
+        }),
+      );
+      if (near) out.push(`${a.from}->${a.to} near ${b.from}->${b.to}`);
+    }),
+  );
+  return out;
 }
 
 /** The scale the viewer fits a layout into a pane at (PanZoom: 24 px of padding a side, at most 1.25). */
@@ -409,15 +504,19 @@ describe("a long flow in a laptop's pane", () => {
   // Then they shared one trunk, and the "yes" and "no" of vite's "Circular invalidation?" could not be told
   // apart: one trunk only for arrows into the same box.
   it("runs the arrows into one box of the next row as one trunk, every other arrow a lane apart", async () => {
-    const layout = await layoutFlow(choices(), { direction: "RIGHT", parts: 2 });
+    const layout = await layoutFlow(choices({ reloadGoesOn: true }), {
+      direction: "RIGHT",
+      parts: 2,
+    });
     const row = (id: string) => (box(layout, id).y > box(layout, "f:1").y + 150 ? 1 : 0);
     const wraps = layout.edges.filter(
       (edge) => edge.to !== undefined && row(edge.from) !== row(edge.to),
     );
-    // "Circular invalidation?": its "no" to the next choice, its "yes" to a copy of "Reload the page"
+    // "Any updates to send?" ends the row: its "no" and "yes" to two ends, the reload's arrow into one of them
     expect(wraps.map((edge) => `${edge.from}->${edge.to}`).sort()).toEqual([
-      "f:4->f:5",
-      "f:4->f:6#3",
+      "f:6->f:9",
+      "f:7->f:8",
+      "f:7->f:9",
     ]);
     // each one's longest run across the flow: its height
     const across = (edge: FlowLayout["edges"][number]) => {
@@ -441,32 +540,8 @@ describe("a long flow in a laptop's pane", () => {
   // a 12-step retry decision (5 choices in a row, one end reached 7 ways): "yes" of step 2 ran straight
   // through the diamond of step 4, its word on 4's question; the wrap into step 10 ran through step 5
   it("in a long run of choices, runs no arrow through a box and puts no word on one", async () => {
-    const choice = (label: string, ...next: [number, string][]): Step => ({
-      label,
-      shape: "decision",
-      next: next.map(([n, word]) => ({ step: `f:${n}`, label: word })),
-    });
-    const flow = flowOf([
-      choice("Retries left?", [2, "yes"], [12, "no"]),
-      choice("Forced by a hook?", [10, "yes"], [3, "no"]),
-      choice("Method allowed?", [4, "yes"], [12, "no"]),
-      choice("What does the check say?", [5, "true, other or not set"], [12, "false"]),
-      choice(
-        "Which kind of failure?",
-        [6, "timeout"],
-        [7, "bad status"],
-        [10, "network error"],
-        [12, "other"],
-      ),
-      choice("Retry timeouts?", [10, "yes"], [12, "no"]),
-      choice("Status in the list?", [8, "yes"], [12, "no"]),
-      choice("Did the server say when?", [11, "yes"], [9, "no"]),
-      choice("Payload too large?", [12, "yes"], [10, "no"]),
-      { label: "Compute the backoff wait", next: [] },
-      { label: "Use the server's wait", shape: "terminal", next: [] },
-      { label: "Throw: no retry", shape: "terminal", next: [] },
-    ]);
-    const layout = await layoutFlowFitting(flow, pane);
+    const flow = kyRetry();
+    const layout = await layoutFlowFitting(flow, pane, { actors: kyActors });
     expect([layout.direction, layout.parts]).toEqual(["RIGHT", 2]);
     expect(routesThroughBoxes(layout)).toEqual([]);
     const onBoxes = layout.edges.flatMap((edge) =>
@@ -484,6 +559,94 @@ describe("a long flow in a laptop's pane", () => {
     );
     expect(onBoxes).toEqual([]);
     expect(overlaps(layout)).toEqual([]);
+  });
+
+  it("draws an end next to each choice that leads to it, so one arrow runs from one row to the next", async () => {
+    const layout = await layoutFlowFitting(kyRetry(), pane, { actors: kyActors });
+    expect([layout.direction, layout.parts]).toEqual(["RIGHT", 2]);
+    // the rows are either side of the run of the arrow from the end of the first row to the start of the next
+    const wrap = layout.edges.find((edge) => edge.from === "f:4" && edge.to === "f:5")!;
+    const points = wrap.sections.flatMap((s) => [s.startPoint, ...s.bendPoints, s.endPoint]);
+    const runs = points.slice(1).map((p, i) => ({ y: p.y, length: Math.abs(p.x - points[i]!.x) }));
+    const second = runs.sort((a, b) => b.length - a.length)[0]!.y;
+    const row = (id: string) => (box(layout, id).y >= second ? 1 : 0);
+    const wraps = layout.edges.filter((edge) => row(edge.from) !== row(edge.to!));
+    expect(wraps.map((edge) => `${edge.from}->${edge.to}`)).toEqual(["f:4->f:5"]);
+    // ("Retry timeouts?" no, to Throw, and "Payload too large?" no, to the wait, ran 1 unit apart: one "+"
+    // with one "no" on it, and "no timeout retry" read as "compute the wait")
+    expect(closeRuns(layout, 14)).toEqual([]);
+    // "Compute the backoff wait", a step that leads nowhere, is drawn again beside each choice that ends in it
+    expect(
+      layout.children.filter((c) => (c.copyOf ?? c.id) === "f:10").map((c) => row(c.id)),
+    ).toEqual([0, 1, 1, 1]);
+  });
+
+  // In these two runs of choices (found by laying out many such flows) the router drew "Choice 5? no" and
+  // "Choice 9? no" side by side, 0 units apart, and "Choice 2? no" through two boxes: `clearOfOthers` moves
+  // them, and each of these fails without its pass.
+  it("moves a route off another route into a different box, and around a box in its way", async () => {
+    const apart = await layoutFlowFitting(
+      runOf(12, {
+        1: 2,
+        2: 3,
+        3: 4,
+        4: [5, 8],
+        5: [6, 10],
+        6: [7, 11],
+        7: [8, 10],
+        8: [9, 12],
+        9: [10, 11],
+        10: [11, 12],
+      }),
+      pane,
+    );
+    expect([apart.direction, apart.parts]).toEqual(["RIGHT", 2]);
+    expect(closeRuns(apart, 14)).toEqual([]);
+    const around = await layoutFlowFitting(
+      runOf(12, {
+        1: [2, 12],
+        2: [3, 10],
+        3: [4, 7],
+        4: [5, 12],
+        5: [6, 10],
+        6: [7, 11],
+        7: [8, 11],
+        8: [9, 11],
+        9: [10, 12],
+        10: [11, 12],
+      }),
+      pane,
+    );
+    expect([around.direction, around.parts]).toEqual(["RIGHT", 3]);
+    expect(routesThroughBoxes(around)).toEqual([]);
+    expect(closeRuns(around, 14)).toEqual([]);
+  });
+
+  // vite's "HTML template changed?" drew its "yes" 8 units before its "no": "yes - no" read as one label
+  it("keeps the words of two arrows out of one choice apart", async () => {
+    for (const flow of [choices(), kyRetry()]) {
+      const layout = await layoutFlowFitting(flow, pane);
+      const touching = layout.edges.flatMap((a, i) =>
+        layout.edges
+          .slice(i + 1)
+          .flatMap((b) =>
+            a.from !== b.from
+              ? []
+              : a.labels.flatMap((l) =>
+                  b.labels
+                    .filter(
+                      (m) =>
+                        l.x < m.x + m.width + 12 &&
+                        m.x < l.x + l.width + 12 &&
+                        l.y < m.y + m.height + 12 &&
+                        m.y < l.y + l.height + 12,
+                    )
+                    .map((m) => `${a.from}: ${l.text} by ${m.text}`),
+                ),
+          ),
+      );
+      expect(touching).toEqual([]);
+    }
   });
 
   it("runs the arrow from the end of one row to the start of the next between the rows", async () => {

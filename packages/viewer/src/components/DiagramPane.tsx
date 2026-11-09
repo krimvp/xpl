@@ -13,7 +13,7 @@ import { ExpandInPlaceAction } from "./ExpandInPlaceAction.js";
 import { FoldBackAction } from "./FoldBackAction.js";
 import { SequenceView } from "./SequenceView.js";
 import { ZoomTrail } from "./ZoomTrail.js";
-import { codeFirstView, startOrder } from "../workspace.js";
+import { codeFirstView, flowOwnerName, startOrder } from "../workspace.js";
 import { renderInline } from "../markdown.js";
 import { plainWords } from "../readerWords.js";
 
@@ -46,6 +46,7 @@ export function DiagramPane() {
     );
   }
   const question = view.scope?.question;
+  const owner = flowOwnerName(view, state.model);
   const present = state.mode === "present";
   // Each tour step starts the diagram over, even in the same view: it looks at the step's focus.
   const resetKey = `${view.id}#${state.stepSeq}`;
@@ -60,6 +61,12 @@ export function DiagramPane() {
         >
           {view.title}
         </span>
+        {/* the function every step of a flow is in, once here, not under each box */}
+        {owner && (
+          <span className="caption-owner">
+            all in <code>{owner}</code>
+          </span>
+        )}
         {/* (cut short on a narrow slide: the whole question on hover) */}
         {question && (
           <span

@@ -354,7 +354,9 @@ test("a Tour picture says in words what it shows and what it lights up", async (
   const picture = page.getByTestId("guide-snapshot").first();
   await expect(picture).toHaveAttribute("aria-label", /^Diagram: /);
   // (the drawing itself is hidden from screen readers: these words stand in for it)
-  await expect(picture).toHaveAccessibleDescription(/^Shows \d+ boxes: .+\. Lit: Scheduling\.$/);
+  await expect(picture).toHaveAccessibleDescription(
+    /^Shows \d+ boxes: .+\. Selected in this step: Scheduling\.$/,
+  );
 });
 
 test("Enter on a map box shows its code, as the diagram's keyboard hint says", async ({ page }) => {

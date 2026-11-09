@@ -384,7 +384,7 @@ export function FeedbackPanel({ onClose }: { onClose: () => void }) {
                           setMessage("Question submitted.");
                         } catch (error) {
                           setMessage(
-                            `Not sent: ${messageOf(error)}. The question is saved. Run /code-explainer feedback in your agent to answer it, or export the feedback file to keep it.`,
+                            `Not sent: ${messageOf(error).replace(/\.$/, "")}. The question is saved. Run /code-explainer feedback in your agent to answer it, or export the feedback JSON to keep it.`,
                           );
                         }
                       })

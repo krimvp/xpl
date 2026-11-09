@@ -288,3 +288,26 @@ test("Related files: the triangle sits in the heading, a file's path shows once"
   await expect(card.getByText("config/default.yaml", { exact: true })).toHaveCount(1);
   await expect(card.locator(".resource-key")).toContainText("Setting:");
 });
+
+test("a selected arrow is named by its two ends, and its count by its kind", async ({ page }) => {
+  const problems = watchProblems(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${TS_BUNDLE.href}?perspective=map`);
+  await page.evaluate(() =>
+    window.__xpl!.select(["edge:calls:grp:scheduling->file:src/worker.ts"]),
+  );
+  await page
+    .locator(".workspace-location")
+    .getByRole("button", { name: "Show code", exact: true })
+    .click();
+  // (it said "calls ×3" alone, and "3 references" beside a pane's "range 1 / 2")
+  await expect(page.getByTestId("breadcrumb-topic")).toHaveText(
+    "Scheduling → worker.ts (calls ×3)",
+  );
+  const topic = page.getByTestId("source-topic");
+  await expect(topic.locator("strong")).toHaveText("Scheduling → worker.ts (calls ×3)");
+  await expect(topic.locator(".source-topic-text")).toHaveText(
+    "3 calls from Scheduling to worker.ts, found in the code (heuristic: matched by name).",
+  );
+  expect(problems).toEqual([]);
+});

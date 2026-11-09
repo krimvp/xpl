@@ -7,15 +7,15 @@ import { useViewerState } from "../hooks.js";
 
 const internal = new Set(["id", "hash", "resolved", "provenance", "userFields"]);
 const labels: Record<string, string> = {
-  anchors: "Evidence",
+  anchors: "Code links",
   edgeKinds: "Arrows shown",
   include: "Boxes shown",
   hidden: "Boxes hidden",
-  opens: "Opens view",
+  opens: "Opens map",
   parent: "Inside",
   root: "Starting at",
   depth: "Levels shown",
-  stubs: "Related boxes",
+  stubs: "Boxes outside this map",
   max: "Maximum",
   index: "Source snapshot",
 };

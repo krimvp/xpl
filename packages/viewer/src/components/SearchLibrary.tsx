@@ -20,6 +20,7 @@ import { ServerApi, messageOf } from "../data.js";
 import { keepTabInside } from "../focusTrap.js";
 import { useStore, useViewerState } from "../hooks.js";
 import { renderInline } from "../markdown.js";
+import { isTemplateTitle, markParts } from "../searchSnippet.js";
 import "../search.css";
 
 const NAVIGATION = [
@@ -203,6 +204,19 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
 
   // Keep Tab inside the dialog; Escape returns focus to its header entry.
   const keyDown = (event: React.KeyboardEvent<HTMLElement>) => {
+    // Up and Down walk from the search box through the results and back (Tab works too).
+    if ((event.key === "ArrowDown" || event.key === "ArrowUp") && !event.altKey) {
+      const stops = [
+        input.current,
+        ...(panel.current?.querySelectorAll<HTMLElement>("a.search-result") ?? []),
+      ].filter((stop): stop is HTMLElement => !!stop);
+      const at = stops.indexOf(event.target as HTMLElement);
+      if (at >= 0) {
+        const next = stops[at + (event.key === "ArrowDown" ? 1 : -1)];
+        event.preventDefault();
+        next?.focus();
+      }
+    }
     if (event.key === "Escape") {
       event.stopPropagation();
       event.preventDefault();
@@ -356,7 +370,9 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
                   <header className="search-group-head">
                     <h3>{group.title}</h3>
                     <span>
-                      {group.offset + 1}–{group.offset + group.hits.length} of {group.total} matches
+                      {group.total > group.hits.length
+                        ? `${group.offset + 1}–${group.offset + group.hits.length} of ${group.total} matches`
+                        : `${group.total} ${group.total === 1 ? "match" : "matches"}`}
                     </span>
                   </header>
                   {/* one page of results: no Previous and Next */}
@@ -404,7 +420,9 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
                                 hit,
                                 guide === current ? state.model.node(hit.id) : undefined,
                               )
-                              ? "Test"
+                              ? isTemplateTitle(hit.text)
+                                ? "Test, one per case"
+                                : "Test"
                               : kindLabel(guide === current ? state.model.node(hit.id) : undefined)
                             : (HIT_WORDS[hit.kind] ?? hit.kind);
                       // Where the hit is, in a reader's words: the file and its lines (the snapshot's commit
@@ -422,7 +440,11 @@ export function SearchLibrary({ onClose }: { onClose: () => void }) {
                       const content = (
                         <>
                           <span className="search-kind">{label}</span>
-                          <span className="search-result-text">{hit.text}</span>
+                          <span className="search-result-text">
+                            {markParts(hit.text, pattern).map((part, at) =>
+                              part.match ? <mark key={at}>{part.text}</mark> : part.text,
+                            )}
+                          </span>
                           <small
                             title={
                               "file" in hit

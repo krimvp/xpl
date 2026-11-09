@@ -605,3 +605,33 @@ test("the guide's steps come before the code's names, and test cases come last, 
       "Test always fails: dead-lettered after maxRetries requeues",
     ]);
 });
+
+test("a result reads as plain words with the match marked, and the arrow keys walk the results", async ({
+  page,
+}) => {
+  await openVariant(page, (bundle) => {
+    bundle.explainer.tours[0].steps[1].note =
+      "### Requeue `once`\n\nA failed job is **requeued** with a growing delay.";
+  });
+  await page.getByRole("button", { name: "Search and guides" }).click();
+  const panel = page.getByRole("dialog", { name: "Search and guides" });
+  const input = panel.getByRole("searchbox");
+  await input.fill("requeue");
+  const steps = panel.getByRole("region", { name: "Tour and flow steps" });
+  // one page of results: the count, not "1–2 of 2 matches"
+  await expect(steps.locator(".search-group-head span")).toHaveText("2 matches");
+  const results = steps.locator(".search-result");
+  await expect(results).toHaveCount(2);
+  const text = steps.locator(".search-result-text").filter({ hasText: "with a growing delay" });
+  await expect(text).toHaveText("Requeue once A failed job is requeued with a growing delay.");
+  await expect(text.locator("mark")).toHaveText(["Requeue", "requeue"]);
+  await input.press("ArrowDown");
+  await expect(results.nth(0)).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(results.nth(1)).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  // (on into the next group)
+  await expect(panel.locator("a.search-result").nth(2)).toBeFocused();
+  for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowUp");
+  await expect(input).toBeFocused();
+});

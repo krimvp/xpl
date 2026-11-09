@@ -14,7 +14,7 @@ const ICON_WORDS: Record<string, string> = {
   person: "a person",
   system: "a whole system",
   service: "a program",
-  component: "a part of it",
+  component: "a part of a program (a package or folder)",
   database: "a database",
   cache: "a cache",
   queue: "a queue",
@@ -188,7 +188,7 @@ const KIND_WORDS: Record<string, string> = {
   extends: "Extends (hollow head): points at the parent class or type",
   embeds:
     "Embeds (hollow head): the struct or interface takes in the type it points at, with its fields and methods",
-  implements: "Implements (hollow head): points at the interface it fulfils",
+  implements: "Implements (hollow head): points at the interface it fulfills",
   references: "Uses a type (open head): points at the type it names",
   holds: "Holds (open head): the field in that row holds a value of the type it points at",
   reads: "Reads: points at the data it reads",

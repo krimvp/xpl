@@ -25,6 +25,7 @@ import { codeFirstView } from "./workspace.js";
 import { isFormField, ownsKeys, tourKeyAction } from "./present/keys.js";
 import { PresentMode } from "./present/PresentMode.js";
 import type { ViewerStore } from "./store.js";
+import type { ReadinessReport } from "@xpl/core";
 
 export function App({ store }: { store: ViewerStore }) {
   return (
@@ -157,13 +158,7 @@ function Shell() {
         {state.mode !== "present" &&
           state.exportInfo?.status === "draft" &&
           state.exportInfo.report.errors + state.exportInfo.report.warnings > 0 && (
-            <div className="drift-banner" role="status" data-testid="draft-banner">
-              <p>
-                <strong>Draft.</strong> {count(state.exportInfo.report.errors, "problem")} to fix
-                before this page is finished, and{" "}
-                {count(state.exportInfo.report.warnings, "warning")} for readers.
-              </p>
-            </div>
+            <DraftBar report={state.exportInfo.report} />
           )}
         {state.sourceWarning && (
           <div className="drift-banner" role="alert" data-testid="source-warning">
@@ -199,6 +194,37 @@ function skipToContent(event: React.MouseEvent) {
   if (!main) return;
   if (!main.hasAttribute("tabindex")) main.tabIndex = -1;
   main.focus();
+}
+
+/**
+ * A draft's bar: what the author has left, in words, and the list behind it (the readiness check saved with
+ * the page). Closed, it is one line; a reader who wants to know what is unfinished opens it.
+ */
+function DraftBar({ report }: { report: ReadinessReport }) {
+  const state = useViewerState();
+  const notes = count(report.warnings, "note");
+  return (
+    <details className="drift-banner draft-banner" data-testid="draft-banner">
+      <summary>
+        <strong>Draft:</strong>{" "}
+        {report.errors > 0
+          ? `${count(report.errors, "problem")} to fix and ${notes} for the author.`
+          : `${notes} for the author.`}{" "}
+        <span className="draft-banner-open">Show the list</span>
+      </summary>
+      <ul>
+        {report.findings.map((finding, at) => (
+          <li key={at}>
+            {finding.severity === "error" ? "Problem" : "Note"} ·{" "}
+            {state.model.tour(finding.elementId)?.title ??
+              state.model.view(finding.elementId)?.title ??
+              state.model.label(finding.elementId)}
+            : {finding.message}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
 }
 
 const count = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;

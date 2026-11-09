@@ -1761,7 +1761,7 @@ export class ViewerStore {
       this.set({
         feedback: held,
         feedbackStorageError:
-          "Browser storage unavailable: this browser does not let the page save. Export the feedback file to keep your note.",
+          "Browser storage unavailable: this browser does not let the page save. Export the feedback JSON to keep your note.",
       });
       return;
     }
@@ -1781,7 +1781,7 @@ export class ViewerStore {
       this.set({
         feedback: held,
         feedbackStorageError:
-          "Browser storage unavailable: this browser does not let the page save. Export the feedback file to keep your note.",
+          "Browser storage unavailable: this browser does not let the page save. Export the feedback JSON to keep your note.",
       });
       return;
     }
@@ -1800,7 +1800,7 @@ export class ViewerStore {
     } catch {
       this.set({
         feedbackStorageError:
-          "Browser storage unavailable: this browser does not let the page save. Export the feedback file to keep your note.",
+          "Browser storage unavailable: this browser does not let the page save. Export the feedback JSON to keep your note.",
       });
     }
   }

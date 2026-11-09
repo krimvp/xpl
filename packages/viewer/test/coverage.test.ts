@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AnalysisReport, SymbolIndex } from "@xpl/core";
-import { coverageGap } from "../src/components/AnalysisCoverage.js";
+import { coverageGap, coverageSummary } from "../src/components/AnalysisCoverage.js";
 
 const files = ["jobrunner/queue.py", "jobrunner/runner.py"];
 const index = (analysis: AnalysisReport[]) =>
@@ -28,6 +28,37 @@ const treeSitter: AnalysisReport = {
 };
 
 describe("coverageGap", () => {
+  it("says that xpl found no calls in a language it reads no calls of, so the author drew the arrows", () => {
+    // what the Ruby pack reports: names in part, no relationships at all
+    const ruby: AnalysisReport = {
+      provider: "ruby",
+      capabilities: { symbols: "partial" },
+      files,
+      results: [
+        { capabilities: ["symbols"], status: "partial", analyzedFiles: files, limitations: [] },
+        {
+          capabilities: ["call", "import", "extends", "implements", "type-ref", "read", "write"],
+          status: "unsupported",
+          analyzedFiles: [],
+          limitations: [],
+        },
+      ],
+    };
+    const rubyIndex = {
+      files: files.map((path) => ({ path, language: "ruby", hash: "x", lines: 1 })),
+      analysis: [ruby],
+    } as unknown as SymbolIndex;
+    const gap = coverageGap(rubyIndex, new Set(files));
+    expect(gap).toEqual({ files, failed: false, noCalls: ["Ruby"] });
+    // (it said "Some arrows may be missing", where xpl had found none and the author drew every one)
+    expect(coverageSummary(gap)).toBe(
+      "xpl finds no calls in Ruby code: every arrow between the 2 files this guide links to was drawn by the author.",
+    );
+    expect(coverageSummary(coverageGap(index([treeSitter]), new Set(files)))).toBe(
+      "Some arrows may be missing: xpl could not analyze all the code in 2 files this guide links to.",
+    );
+  });
+
   it("names linked files that no report analyzed for a kind of relationship", () => {
     expect(coverageGap(index([treeSitter]), new Set(files))).toEqual({ files, failed: false });
   });

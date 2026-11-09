@@ -123,9 +123,10 @@ export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProp
     opened.current = view.id;
     if (firstStep && state.selection.length === 0 && !state.cursor) store.select([firstStep]);
   }, [outline, snapshot, layout, view.id, firstStep, state.selection.length, state.cursor, store]);
-  // The steps of one function: its name is said once over the flow (the caption), not under every box.
-  // A still picture and Present have no caption with it, so their boxes keep it.
-  const owner = snapshot || present ? undefined : sharedActor(flow);
+  // The steps of one function: its name is said once with the flow (the caption of the Flow tab, the tour's
+  // picture and the slide), not under every box. Every pane draws the same boxes, so the flow keeps one
+  // shape: a slide whose boxes named the function had larger diamonds, and broke its rows at another step.
+  const owner = sharedActor(flow);
   // (a state names its type nowhere but the caption: under every pill it says nothing the title does not)
   // The line under each step's label: the layout sizes a decision's diamond to hold it.
   const actors = useMemo(

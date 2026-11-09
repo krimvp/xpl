@@ -3,6 +3,7 @@ import {
   deriveGraph,
   expandInPlace,
   OUTSIDE_ROLES,
+  processFlow,
   repr,
   type ElementId,
   type ExplainerModel,
@@ -22,6 +23,7 @@ import {
   layoutFlow,
   layoutFlowFitting,
   NARROW_PANE,
+  sharedActor,
   type FlowLayout,
   type FlowLayoutOptions,
 } from "./layout/flowLayout.js";
@@ -252,6 +254,16 @@ export function workspaceMap(state: ViewerState) {
  * 2026-10-03, senior §5). A flow with two or more outcomes (terminal steps) is a choice between them: it is
  * drawn as a diagram, where the outcomes sit side by side (a narrow outline cut them off).
  */
+/**
+ * The one function a flow's steps are in (`sharedActor`), by its name: said once with the flow (a caption's
+ * "all in Ky.#calculateRetryDelay"), not under every box. Undefined for a map, or steps in several parts.
+ */
+export function flowOwnerName(view: View | undefined, model: ExplainerModel): string | undefined {
+  if (view?.type !== "flow") return undefined;
+  const owner = sharedActor(processFlow(view));
+  return owner ? model.label(owner) : undefined;
+}
+
 export function codeFirstView(view: View | undefined): boolean {
   if (!view || view.type === "graph") return false;
   if (view.layout === "code-first") return true;

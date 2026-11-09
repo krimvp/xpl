@@ -118,19 +118,18 @@ export function PresentMode() {
   // not hand the room back and forth.
   const [room, setRoom] = useState<ReadonlyMap<string, number>>(new Map());
   const stepId = step ? `${tour?.id}/${step.id}` : "";
-  // (a flow has its own split and framing, for the whole tour: a flow step asks for no room)
-  const flowStep = store.view()?.type === "flow";
+  // (a flow step asks too: framed on one choice in a narrow column, its arrows ran off to nowhere)
   const askRoom = useCallback(
     (extra: number) => {
       const column = left.current?.offsetWidth ?? 0;
-      if (column === 0 || !stepId || flowStep) return;
+      if (column === 0 || !stepId) return;
       setRoom((known) => {
         const want = column + extra;
         if ((known.get(stepId) ?? 0) >= want) return known;
         return new Map(known).set(stepId, want);
       });
     },
-    [stepId, flowStep],
+    [stepId],
   );
   const need = room.get(stepId);
 

@@ -442,7 +442,7 @@ test("a Tour step with no related files lists its own code, which opens it; a ph
   await expect(page.locator(".workspace-context")).toBeHidden();
 });
 
-test("a narrow pane header cuts the folder at its start, next to the whole file name", async ({
+test("a narrow pane header cuts the folder at its start, a whole folder at a time, next to the whole file name", async ({
   page,
 }) => {
   await page.goto(`${TS_BUNDLE.href}?perspective=map`);
@@ -450,35 +450,26 @@ test("a narrow pane header cuts the folder at its start, next to the whole file 
   await page.locator(".workspace-location").getByRole("button", { name: "Show code" }).click();
   const file = page.locator(".workspace-source .pane-file").filter({ hasText: "default.yaml" });
   await expect(file).toBeVisible();
-  // room for the name and three letters of "config/"
-  await file.evaluate((el) => {
-    el.style.maxWidth = "15ch";
-    el.style.minWidth = "15ch";
-  });
-  const ends = () =>
-    file.evaluate((el) => {
-      const dir = el.querySelector(".dir")!;
-      const walker = document.createTreeWalker(dir, NodeFilter.SHOW_TEXT);
-      const text = walker.nextNode() as Text;
-      const char = (i: number) => {
-        const range = document.createRange();
-        range.setStart(text, i);
-        range.setEnd(text, i + 1);
-        return range.getBoundingClientRect();
-      };
-      const box = dir.getBoundingClientRect();
+  // what of each folder of the path is in sight: all of it, none of it, or a few letters
+  const parts = (width: string) =>
+    file.evaluate((el, width) => {
+      el.style.maxWidth = width;
+      el.style.minWidth = width;
+      const dir = el.querySelector(".dir")!.getBoundingClientRect();
       const name = el.querySelector("b")!;
       return {
-        text: text.data,
-        // the slash before the name in sight, the first letter cut off
-        lastInSight: char(text.data.length - 1).right <= box.right + 0.5,
-        firstInSight: char(0).left >= box.left - 0.5,
+        parts: [...el.querySelectorAll<HTMLElement>(".dir-part")].map((part) => {
+          const box = part.getBoundingClientRect();
+          const shown = part.checkVisibility() && box.width > 0;
+          const whole = shown && box.left >= dir.left - 0.5 && box.right <= dir.right + 0.5;
+          return `${part.textContent} ${whole ? "whole" : box.right <= dir.left + 0.5 || !shown ? "hidden" : "cut"}`;
+        }),
         nameWhole: name.scrollWidth <= name.clientWidth,
       };
-    });
-  await expect
-    .poll(ends)
-    .toEqual({ text: "config/", lastInSight: true, firstInSight: false, nameWhole: true });
+    }, width);
+  // room for the name and three letters of "config/": the folder goes whole (it read "fig/")
+  await expect.poll(() => parts("15ch")).toEqual({ parts: ["config/ hidden"], nameWhole: true });
+  await expect.poll(() => parts("30ch")).toEqual({ parts: ["config/ whole"], nameWhole: true });
 });
 
 test("beside the code, a map's trail of levels stays one line, its last level whole", async ({
@@ -501,10 +492,25 @@ test("beside the code, a map's trail of levels stays one line, its last level wh
           left:
             Math.round(el.getBoundingClientRect().left) ===
             Math.round(el.parentElement!.getBoundingClientRect().left),
+          // the "›" keeps a space on both sides (it read "…writes› xpl")
+          spaced: [...el.querySelectorAll<HTMLElement>(":scope > span:not(:last-child)")].every(
+            (level) => {
+              const name = level.firstElementChild!.getBoundingClientRect();
+              const text = [...level.querySelectorAll("span")].find((s) =>
+                s.textContent!.includes("›"),
+              )!.firstChild!;
+              const range = document.createRange();
+              range.setStart(text, text.textContent!.indexOf("›"));
+              range.setEnd(text, text.textContent!.indexOf("›") + 1);
+              const glyph = range.getBoundingClientRect();
+              const next = (level.nextElementSibling as HTMLElement).getBoundingClientRect();
+              return glyph.left - name.right >= 3 && next.left - glyph.right >= 3;
+            },
+          ),
         };
       }),
     )
-    .toEqual({ oneLine: true, lastWhole: true, left: true });
+    .toEqual({ oneLine: true, lastWhole: true, left: true, spaced: true });
 });
 
 test("a phone Tour step with a settings file and a test keeps the whole height for the text", async ({
@@ -519,6 +525,12 @@ test("a phone Tour step with a settings file and a test keeps the whole height f
   // the step's card names its code, the settings file included; the side panel would only repeat it
   await expect(page.getByTestId("step-code").last()).toContainText("default.yaml");
   await expect(page.locator(".workspace-context")).toBeHidden();
+  // (the list of related files is drawn, and hidden on a phone: the card says it)
+  await expect
+    .poll(() =>
+      page.locator(".related-files").evaluateAll((els) => els.map((el) => el.checkVisibility())),
+    )
+    .toEqual([false]);
   // the text runs to the bottom of the screen
   await expect
     .poll(() =>

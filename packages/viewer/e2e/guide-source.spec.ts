@@ -266,6 +266,16 @@ test("a change step's excerpt marks the lines the change removes or adds, and le
   await expect(excerpt.locator(".guide-source-caption")).toContainText("before the change");
   await expect.poll(() => marked("is-gone")).toEqual([76, 77]);
   await expect.poll(() => marked("is-add")).toEqual([]);
+  // the 3px bar of a removed line sits left of its number ("76" read "/6"): the number starts 6px in
+  const gap = await excerpt
+    .locator(".guide-source-line.is-gone")
+    .first()
+    .evaluate(
+      (line) =>
+        line.querySelector(".guide-source-number")!.getBoundingClientRect().left -
+        line.getBoundingClientRect().left,
+    );
+  expect(gap).toBe(6);
   // the words the rewrite changed, as in the code pane
   await expect(excerpt.locator(".xpl-word-del").first()).toBeVisible();
   await excerpt.getByRole("button", { name: "Next code link (2 of 2)" }).click();

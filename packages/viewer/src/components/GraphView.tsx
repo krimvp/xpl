@@ -155,6 +155,11 @@ interface Marks {
   matches: ReadonlySet<string>;
   related: ReadonlySet<string>;
   /**
+   * On a data map: the rows the step's code uses (a code link with the role "usage"), marked in the color of
+   * the code pane's "used here" (a green outline beside a purple "used here" read as two things).
+   */
+  used?: ReadonlySet<string>;
+  /**
    * With something selected on the map: the boxes whose arrows stay in front (the selected boxes, the boxes in
    * them, and the ends of a selected arrow). An arrow with no end among them is drawn dim.
    */
@@ -237,6 +242,7 @@ function stateClasses(id: string, marks: Marks): string {
     (marks.selected.has(id) ? " is-selected" : "") +
     (marks.matches.has(id) ? " is-match" : "") +
     (marks.related.has(id) ? " is-related" : "") +
+    (marks.used?.has(id) ? " is-used" : "") +
     (marks.cut?.has(id) ? " is-cut" : "")
   );
 }
@@ -420,12 +426,21 @@ export function GraphView({
       allEdgesOf(layout).some((edge) => !edge.stub && selected.has(edge.id));
     // a row whose field the step's code points at (Queue.ready, "used here" for the Job table) is marked on its
     // own table, as a caret on that line would mark it
-    const rows = dataMap && layout ? anchoredRows(layout, [...stepAnchors(selection)]) : [];
+    const anchors = stepAnchors(selection);
+    const rows = dataMap && layout ? anchoredRows(layout, anchors) : [];
+    const used =
+      dataMap && layout
+        ? anchoredRows(
+            layout,
+            anchors.filter((a) => a.role === "usage"),
+          )
+        : [];
     const held = dataMap && layout ? heldTables(layout, selected) : [];
     return {
       selected,
       matches: new Set(matches),
       related: rows.length + held.length > 0 ? new Set([...related, ...rows, ...held]) : related,
+      ...(used.length > 0 ? { used: new Set(used) } : {}),
       ...(lit ? { lit } : {}),
       ...(arrowPicked ? { arrowPicked } : {}),
     };

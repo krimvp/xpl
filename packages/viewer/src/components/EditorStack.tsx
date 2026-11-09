@@ -8,7 +8,7 @@
  * a file opened on purpose (the tree, "Files in this change") takes the column by itself until the selection
  * changes. A changed file's header steps through its changes (‹ change 2 / 3 ›, or n / p in the code), and a
  * pane scrolled into the middle of a function says which one ("in Runner.dispatch"). Places of one file far
- * apart step the same way (‹ range 1 / 2 ›, RangeStepper); a talk gives each of them a pane of its own.
+ * apart step the same way (‹ 1 / 2 in this file ›, RangeStepper); a talk gives each of them a pane of its own.
  */
 import type { EditorView } from "@codemirror/view";
 import {
@@ -26,6 +26,7 @@ import {
 import {
   memo,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -637,12 +638,7 @@ const EditorPane = memo(function EditorPane({
           title={shown}
           style={{ minWidth: `${Math.min(basename.length, 40)}ch` }}
         >
-          {/* (cut at its start: "…/types/" next to the name, never "s…" that reads as part of it) */}
-          {slash !== -1 && (
-            <span className="dir">
-              <bdi>{shown.slice(0, slash + 1)}</bdi>
-            </span>
-          )}
+          {slash !== -1 && <FolderPath path={shown.slice(0, slash)} />}
           <b>{basename}</b>
         </span>
         {inside && !folded && (
@@ -877,4 +873,43 @@ function changeLabel(file: ChangedFile): { text: string; title: string } {
     case "deleted":
       return { text: "Removed", title: "This change removes the file" };
   }
+}
+
+/**
+ * A pane's folder, cut at its start a whole folder at a time when the header is narrow: "…/types/" next to
+ * the name, never "s/" or "pes/", stray letters that read as part of it. (CSS ellipsis cuts letters.)
+ */
+function FolderPath({ path }: { path: string }) {
+  const box = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const dir = box.current;
+    if (!dir) return;
+    const fit = () => {
+      const parts = [...dir.querySelectorAll<HTMLElement>(".dir-part")];
+      const more = dir.querySelector<HTMLElement>(".dir-more")!;
+      for (const part of parts) part.hidden = false;
+      more.hidden = true;
+      for (const part of parts) {
+        if (dir.scrollWidth <= dir.clientWidth) break;
+        part.hidden = true;
+        more.hidden = false;
+      }
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(dir.parentElement ?? dir);
+    return () => observer.disconnect();
+  }, [path]);
+  return (
+    <span className="dir" ref={box}>
+      <span className="dir-more" hidden>
+        …/
+      </span>
+      {path.split("/").map((part, at) => (
+        <span className="dir-part" key={at}>
+          {part}/
+        </span>
+      ))}
+    </span>
+  );
 }

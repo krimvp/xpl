@@ -954,6 +954,14 @@ test.describe("who calls this, and what the change did to it", () => {
     const callers = page.getByTestId("guide-callers").first();
     await expect(callers).toContainText("Code that calls what changed");
     await expect(callers.getByRole("button").first()).toContainText("src/");
+    // the tests that call it are a group of their own (they were listed among the callers)
+    await expect(callers.locator(".guide-test-file")).toHaveText(["src/main.ts, line 53"]);
+    const tests = page.getByTestId("guide-test-callers").first();
+    await expect(tests.locator("h4")).toHaveText("Tests that call what changed");
+    await expect(tests.locator(".guide-test-file")).toHaveText([
+      "test/retry.test.ts, line 45",
+      "test/retry.test.ts, line 83",
+    ]);
     expect(problems).toEqual([]);
   });
 

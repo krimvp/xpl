@@ -1,5 +1,5 @@
 /**
- * "‹ range 1 / 2 ›" in a pane's header: the places of a file the focus is about, when they are far apart
+ * "‹ 1 / 2 in this file ›" in a pane's header: the places of a file the focus is about, when they are far apart
  * (present/ranges.ts), so that the second one is not missed below the first. Looks and works like the
  * change stepper next to it; n / p in the code step through the places when the file has no changes to
  * step through. In a talk each place has a pane of its own, and the header just says which one it is.
@@ -75,7 +75,7 @@ export function RangeStepper({
         title="The step shows two places in this file: each has a pane of its own"
       >
         <span>
-          range {part[0]} / {part[1]}
+          {part[0]} / {part[1]} in this file
         </span>
       </span>
     );
@@ -98,8 +98,9 @@ export function RangeStepper({
         ‹
       </button>
       <span aria-live="polite" title={`Lines ${places[at]!.from}-${places[at]!.to}`}>
-        {ownRow ? "" : "range "}
+        {/* "in this file": the count beside the selection's (60 calls) is of all its files */}
         {at + 1} / {places.length}
+        {ownRow ? "" : " in this file"}
       </span>
       <button
         type="button"

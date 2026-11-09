@@ -32,7 +32,11 @@ export function ZoomTrail({ viewId }: { viewId: string }) {
                 {step.label}
               </button>
             )}
-            {!current && <span aria-hidden="true"> › </span>}
+            {!current && (
+              <span className="zoom-trail-sep" aria-hidden="true">
+                ›
+              </span>
+            )}
           </span>
         );
       })}

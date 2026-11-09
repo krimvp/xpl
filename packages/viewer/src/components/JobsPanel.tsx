@@ -235,6 +235,9 @@ function JobReview({ job, onClose }: { job: Job; onClose: () => void }) {
     </dialog>
   );
 }
+/** A job's state in words (D10: American spelling; the state id stays "cancelled"). */
+const JOB_STATE_WORDS: Record<string, string> = { cancelled: "Canceled" };
+
 export function JobsPanel() {
   const store = useStore();
   const { jobs, jobError, feedback, connection } = useViewerState();
@@ -318,7 +321,8 @@ export function JobsPanel() {
               <strong>
                 {job.result?.accepted
                   ? "Accepted"
-                  : job.state[0]!.toUpperCase() + job.state.slice(1)}
+                  : (JOB_STATE_WORDS[job.state] ??
+                    job.state[0]!.toUpperCase() + job.state.slice(1))}
               </strong>{" "}
               · attempt {job.attempt}
               <div>

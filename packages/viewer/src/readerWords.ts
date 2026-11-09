@@ -146,6 +146,6 @@ export function pictureWords(
   // (every part by its name, two of one name included, so the count and the list agree; a part lit twice
   // is named once)
   const shows = parts.length ? `Shows ${parts.length} ${word}: ${list(parts)}.` : "";
-  const marked = lit.length ? `Lit: ${list([...new Set(lit)])}.` : "";
+  const marked = lit.length ? `Selected in this step: ${list([...new Set(lit)])}.` : "";
   return [shows, marked].filter(Boolean).join(" ");
 }

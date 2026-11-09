@@ -147,7 +147,10 @@ test.describe("architecture maps", () => {
     const event = connections.getByRole("button", { name: /To Events and metrics.*job.completed/ });
     await event.focus();
     await page.keyboard.press("Enter");
-    await expect(page.getByTestId("breadcrumb-topic")).toHaveText("job.completed");
+    // an arrow is named by its ends, its label after them
+    await expect(page.getByTestId("breadcrumb-topic")).toHaveText(
+      "Workers → metrics.py (job.completed)",
+    );
     await expect(page.locator('[data-element-id="edge:job-completed"]').first()).toHaveClass(
       /is-selected/,
     );
@@ -192,6 +195,11 @@ test.describe("architecture maps", () => {
     await expect(box(page, "grp:settings-file").locator(".box-icon")).toHaveAttribute(
       "data-icon",
       "storage",
+    );
+    // the store's icon keeps its outline (a rule for the letter squares of symbols took it away)
+    await expect(box(page, "grp:settings-file").locator(".box-icon rect")).toHaveCSS(
+      "stroke",
+      /^(?!none)/,
     );
     await expect(box(page, "grp:operator").locator(".box-icon")).toHaveAttribute(
       "data-icon",

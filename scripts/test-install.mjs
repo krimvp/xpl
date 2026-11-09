@@ -251,7 +251,7 @@ try {
     // every draft says so in the header; one with problems left also lists them in a bar
     await expect(page.getByTestId("draft-pill")).toHaveText("Draft");
     if (language === "ts")
-      await expect(page.getByTestId("draft-banner")).toContainText("Draft. 7 problems to fix");
+      await expect(page.getByTestId("draft-banner")).toContainText("Draft: 7 problems to fix");
     await page.close();
     assert.deepEqual(problems, []);
 

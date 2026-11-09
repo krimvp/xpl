@@ -877,6 +877,16 @@
   color: var(--muted);
   overflow-wrap: anywhere;
 }
+/* ... and on a tour card's or a slide's title line, after the title */
+.guide-snapshot-title .caption-owner,
+.diagram-caption .caption-owner {
+  margin: 0 0 0 8px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.guide-snapshot-title .caption-owner::before {
+  content: "· ";
+}
 .workspace-diagram {
   display: flex;
   flex-direction: column;
@@ -1524,7 +1534,8 @@
 /* A long line wraps under itself (after its number), so no code is cut off at the right edge. */
 .guide-source-line {
   display: block;
-  padding-left: 5ch;
+  /* (6px more: the 3px bar of a changed line sits left of the number, not on its first digit) */
+  padding-left: calc(5ch + 6px);
   text-indent: -5ch;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
