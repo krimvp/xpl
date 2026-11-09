@@ -1542,7 +1542,9 @@ Reset may clear selected pins or all pins; a later placement edit conflicts rath
     config and text files), 8-200 characters without spaces, of at least two character kinds, with at least 3
     bits of entropy per character, and not a placeholder (`xxx`, `changeme`, `your`, `example`, `<…>`, `${…}`,
     `{{…}}`, …), an environment lookup, a `$`-prefixed hash, or lower-case words joined by `.`, `_`, `-`, `:` or
-    `/`. One finding per line, the first that applies.
+    `/`. One finding per line, the first that applies. The scan is linear in the line: a name or URL scheme is
+    tried once per run of name characters, from its start (an 80,000-letter line in a generated SVG took 9 s
+    when each letter was a start).
   - `browser-secret` (high): a `NEXT_PUBLIC_`, `VITE_`, `REACT_APP_` or `PUBLIC_` variable assigned a server key
     shape, or named with `SECRET`, `PRIVATE`, `PASSWORD` or `SERVICE_ROLE`. Other values of such variables are
     public by design and are not reported (`AIza…` browser keys, anonymous tokens).
@@ -1554,17 +1556,28 @@ Reset may clear selected pins or all pins; a later placement edit conflicts rath
   - `unused-file` (low, `heuristic: true`): a code file with symbols whose symbols and module scope no other
     file references, and no other file loads as a `resource`. Entry points are left out: file names `main`,
     `index`, `cli`, `server`, `app`, `__main__`, `__init__`, `mod`, `lib`, `build`, `setup`, `manage`, `wsgi`,
-    `asgi`, `middleware`, `page`, `layout`, `route` (any extension), `*.config.*`, `*.d.ts`, dotfiles, files
-    under `scripts/`, `bin/`, `cmd/`, `pages/`, `routes/` or `migrations/`, and test-like files. So is a file
-    whose text declares a program's entry point (`ENTRY_TEXT`): Java's `static void main`, Python's
-    `if __name__ == "__main__":`, Go's `func main()` in `package main`, Rust's `fn main`. A file without
-    symbols (a list of re-exports) is left out too, because imports resolve through it to the symbols it
-    re-exports. Skipped, with a note, when the index has no references or is pruned. A file whose recorded
-    analysis does not follow imports (no `import` result with status `supported` or `partial` lists it) is not
-    reported either: nothing referring to it proves nothing, so a note per language says how many files xpl
-    cannot tell about. A legacy index without `analysis` keeps the old rule. Code loaded by name, by a
-    framework convention not listed, or from outside the repository (a `package.json` `bin`, an HTML page)
-    still reads as unused.
+    `asgi`, `middleware`, `page`, `layout`, `route` (any extension), config files and the variants a tool is
+    pointed at (`*.config.*`, `*.config-*`), `*.d.ts`, dotfiles, files under `scripts/`, `bin/`, `cmd/`,
+    `pages/`, `routes/` or `migrations/`, and test-like files (with `__tests*__/` folders such as
+    `__tests_dts__/`). So is a file whose text declares a program's entry point (`ENTRY_TEXT`): Java's
+    `static void main`, Python's `if __name__ == "__main__":`, Go's `func main()` in `package main`, Rust's
+    `fn main`. A file without symbols (a list of re-exports) is left out too, because imports resolve through
+    it to the symbols it re-exports. A Go file is judged with its package (its folder), which Go compiles as
+    one: when another file references any file of the package, or one is an entry point, none is reported, so
+    an `init` file or a build-tagged variant is not. A file that another file names by path is used too
+    (`namedFiles`): an HTML script tag, a `package.json` `main`, `exports` or script, a worker's
+    `new URL("./w.js", import.meta.url)`, a config's `entry: "/src/entry-server"`. Every non-prose file's text
+    is split into path-like tokens (name characters, `.` and `/`); a token names a file when it resolves to it
+    from the naming file's folder, or, unless it starts with `./` or `../`, from a folder above it (a leading
+    `/` is dropped). A token with a `/` may leave out the extension; a bare word needs it (`seed.js`, not
+    `seed`). `*.md`, `*.mdx`, `*.rst` and `*.txt` do not count. Skipped, with a note, when the index has no
+    references or is pruned. A file whose recorded analysis does not follow imports (no `import` result with
+    status `supported` or `partial` lists it) is not reported either: nothing referring to it proves nothing,
+    so a note per language says how many files xpl cannot tell about. A legacy index without `analysis` keeps
+    the old rule. A file reached through a glob outside TS/JS/Python/Go code, a bundler alias, a template
+    literal (`` import(`./views/${name}.js`) ``) or from outside the repository still reads as unused. On
+    vite, 34 of 2,824 files are reported (209 before these rules), all in its test playground and all
+    reached in one of those ways.
 
   Test-like files (`TEST_FILE_GLOBS`, `fixtures/`, `__fixtures__/`, `testdata/`, `e2e/`, `docs/`, `examples/`,
   `example/`, `*.md`, `*.mdx`, `*.rst`, `*.example`, `*.sample`, `*.template`, `*.dist`) hold fake keys far

@@ -34,7 +34,7 @@ describe("xpl health", () => {
       "",
       "Low (1)",
       "  src/orphan.ts:1  Possibly unused file",
-      "    Why: Nothing else in the project refers to this file, so it may be left over. This is a guess from the index: code loaded by name, by a framework or from outside the project is not seen.",
+      "    Why: Nothing else in the project refers to this file or names its path, so it may be left over. This is a guess from the index: code loaded through an alias, a pattern, a framework or from outside the project is not seen.",
       "    Fix: Check whether anything still uses it, and delete it if nothing does.",
     ]);
   });

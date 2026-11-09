@@ -941,7 +941,7 @@ A quick check of the indexed files for the classic problems of code nobody read 
 - **Secrets in browser variables** (high): a `NEXT_PUBLIC_`, `VITE_`, `REACT_APP_` or `PUBLIC_` variable holding a server key or named with `SECRET`, `PRIVATE`, `PASSWORD` or `SERVICE_ROLE`.
 - **Committed `.env` files** with values: high when one is named like a secret, else medium. `.env.example` and similar are skipped.
 - **Code files over 1,000 lines** (low).
-- **Possibly unused code files** (low, a guess): no other file references the file in the index, and it is not an entry point (`main`, `index`, `cli`, `server`, `app`, …, or a file that declares a program's `main`: Java `static void main`, Python `if __name__ == "__main__":`, Go `func main` in `package main`, Rust `fn main`), a test, a config file or under `scripts/`, `bin/` or `cmd/`. When the index does not follow a language's imports, xpl cannot tell, so it reports no such file and a note says how many it could not judge (`<language>: the index does not follow imports, so xpl cannot tell whether 2 files are unused.`).
+- **Possibly unused code files** (low, a guess): no other file references the file in the index or names it by path (an HTML `<script src>`, a `package.json` `main`, `exports` or script, a worker's `new URL("./worker.js", import.meta.url)`, a config's `entry: "/src/entry-server"`; prose files do not count), and it is not an entry point (`main`, `index`, `cli`, `server`, `app`, …, or a file that declares a program's `main`: Java `static void main`, Python `if __name__ == "__main__":`, Go `func main` in `package main`, Rust `fn main`), a test (`__tests_dts__/` too), a config file (`vite.config.ts`, `vite.config-ssr.js`) or under `scripts/`, `bin/` or `cmd/`. A Go file is judged with its package: when any file of the package is used, none of them is reported. Files reached through a bundler alias, a template-literal import or a glob in HTML still look unused. When the index does not follow a language's imports, xpl cannot tell, so it reports no such file and a note says how many it could not judge (`<language>: the index does not follow imports, so xpl cannot tell whether 2 files are unused.`).
 
 In tests, fixtures, docs and examples, key shapes are reported one severity lower and the other secret checks are skipped: fake values dominate there. **A secret value is never printed**: the hint shows at most its first 4 characters, then `…`. Exit 0 with or without findings (it is a report, not a gate), 1 without an index, 2 on a usage error.
 
@@ -960,7 +960,7 @@ High (2)
 
 Low (1)
   src/orphan.ts:1  Possibly unused file
-    Why: Nothing else in the project refers to this file, so it may be left over. This is a guess from the index: code loaded by name, by a framework or from outside the project is not seen.
+    Why: Nothing else in the project refers to this file or names its path, so it may be left over. This is a guess from the index: code loaded through an alias, a pattern, a framework or from outside the project is not seen.
     Fix: Check whether anything still uses it, and delete it if nothing does.
 ```
 
