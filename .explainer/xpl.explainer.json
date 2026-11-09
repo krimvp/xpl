@@ -3,11 +3,11 @@
   "title": "How xpl works",
   "repo": {
     "name": "xpl",
-    "commit": "9846927"
+    "commit": "e8026e2"
   },
   "index": {
-    "path": ".explainer/index-9846927.json",
-    "commit": "9846927"
+    "path": ".explainer/index-e8026e2.json",
+    "commit": "e8026e2"
   },
   "nodes": [
     {
@@ -30,7 +30,7 @@
           "role": "definition",
           "hash": "sha256-v2:8075367d35e8",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 8,
               "endLine": 8
@@ -47,7 +47,7 @@
           "role": "call-site",
           "hash": "sha256-v2:19daad2cc63d",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 69,
               "endLine": 69
@@ -61,7 +61,7 @@
           "role": "definition",
           "hash": "sha256-v2:1e4184604be4",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 44,
               "endLine": 74
@@ -92,7 +92,7 @@
           "role": "definition",
           "hash": "sha256-v2:53f77127f417",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 3,
               "endLine": 3
@@ -109,7 +109,7 @@
           "role": "definition",
           "hash": "sha256-v2:bfe445199611",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 1,
               "endLine": 5
@@ -123,7 +123,7 @@
           "role": "definition",
           "hash": "sha256-v2:f2f3ae488adc",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 6,
               "endLine": 44
@@ -152,7 +152,7 @@
           "role": "definition",
           "hash": "sha256-v2:1e4184604be4",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 44,
               "endLine": 74
@@ -166,7 +166,7 @@
           "role": "config",
           "hash": "sha256-v2:6321ef5530c9",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 6,
               "endLine": 6
@@ -183,7 +183,7 @@
           "role": "config",
           "hash": "sha256-v2:346156faaecb",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 80,
               "endLine": 80
@@ -200,7 +200,7 @@
           "role": "config",
           "hash": "sha256-v2:1d65edecd229",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 84,
               "endLine": 84
@@ -211,9 +211,9 @@
         {
           "file": "scripts/test-install.mjs",
           "role": "test",
-          "hash": "sha256-v2:3a6c146c6541",
+          "hash": "sha256-v2:31f8e7a02eff",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 1,
               "endLine": 595
@@ -224,7 +224,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-4262e02841"
+        "commit": "e8026e2"
       },
       "detail": "The build writes the npm package `@krimvp/xpl` (MIT) to `packages/cli/dist`: the CLI, the viewer page, the grammars and the skill. Besides that path, the CLI serves a local page (`xpl view`), records requests from that page (`xpl feedback`, `xpl revise`) and prepares guides for pull requests (`xpl stage`, `xpl pr`). `xpl --help` lists every command.",
       "role": "component",
@@ -243,7 +243,7 @@
           "role": "config",
           "hash": "sha256-v2:8869d37515f9",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 6,
               "endLine": 6
@@ -257,7 +257,7 @@
           "role": "definition",
           "hash": "sha256-v2:2ab46f75f837",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 190,
               "endLine": 537
@@ -271,7 +271,7 @@
           "role": "definition",
           "hash": "sha256-v2:12c5a9b045af",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 33,
               "endLine": 41
@@ -288,7 +288,7 @@
           "role": "usage",
           "hash": "sha256-v2:8b8ccdb8cada",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 40,
               "endLine": 40
@@ -319,7 +319,7 @@
           "role": "config",
           "hash": "sha256-v2:f7d5de2c402f",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 6,
               "endLine": 6
@@ -332,7 +332,7 @@
           "role": "definition",
           "hash": "sha256-v2:0848346d51a9",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 1,
               "endLine": 44
@@ -346,7 +346,7 @@
           "role": "definition",
           "hash": "sha256-v2:9e10caea883b",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 344,
               "endLine": 352
@@ -376,7 +376,7 @@
           "role": "config",
           "hash": "sha256-v2:1ed67318bb8a",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 6,
               "endLine": 6
@@ -390,7 +390,7 @@
           "role": "definition",
           "hash": "sha256-v2:80333245a6c0",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 7,
               "endLine": 12
@@ -407,7 +407,7 @@
           "role": "definition",
           "hash": "sha256-v2:aae33ce5b62a",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 17,
               "endLine": 17
@@ -421,7 +421,7 @@
           "role": "definition",
           "hash": "sha256-v2:44a5cd65a716",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 44,
               "endLine": 87
@@ -863,12 +863,12 @@
       "id": "file:packages/viewer/src/editor.ts",
       "kind": "file",
       "label": "editor.ts",
-      "summary": "`createReadOnlyEditor` sets up a CodeMirror pane with syntax colours. `applyFocus` highlights the linked lines, and the pane reports the lines under the cursor.",
+      "summary": "`createReadOnlyEditor` sets up a CodeMirror pane with syntax colors. `applyFocus` highlights the linked lines, and the pane reports the lines under the cursor.",
       "parent": "dir:packages/viewer/src",
       "anchors": [],
       "provenance": {
         "origin": "llm",
-        "commit": "wt-12d0c4277a"
+        "commit": "e8026e2"
       }
     },
     {
@@ -1154,7 +1154,7 @@
           "role": "usage",
           "hash": "sha256-v2:35d1e23781bd",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 5,
               "endLine": 5
@@ -1171,7 +1171,7 @@
           "role": "usage",
           "hash": "sha256-v2:c4d3937340c9",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 24,
               "endLine": 24
@@ -1204,7 +1204,7 @@
           "role": "usage",
           "hash": "sha256-v2:6f42291716bd",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 4,
               "endLine": 4
@@ -1221,7 +1221,7 @@
           "role": "usage",
           "hash": "sha256-v2:8075367d35e8",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 8,
               "endLine": 8
@@ -1254,7 +1254,7 @@
           "role": "usage",
           "hash": "sha256-v2:c8429776451a",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 3,
               "endLine": 3
@@ -1268,7 +1268,7 @@
           "role": "definition",
           "hash": "sha256-v2:8bbd95d35cdd",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 309,
               "endLine": 381
@@ -1301,7 +1301,7 @@
           "role": "call-site",
           "hash": "sha256-v2:670e65feb852",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 24,
               "endLine": 24
@@ -1315,7 +1315,7 @@
           "role": "config",
           "hash": "sha256-v2:6b5e848d5dce",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 583,
               "endLine": 583
@@ -1348,7 +1348,7 @@
           "role": "call-site",
           "hash": "sha256-v2:a76fdcde6d80",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 306,
               "endLine": 306
@@ -1365,7 +1365,7 @@
           "role": "usage",
           "hash": "sha256-v2:aae33ce5b62a",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 17,
               "endLine": 17
@@ -1416,7 +1416,7 @@
           "role": "definition",
           "hash": "sha256-v2:72619fb8f8f4",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 393,
               "endLine": 485
@@ -1430,7 +1430,7 @@
           "role": "definition",
           "hash": "sha256-v2:d014e8bf96e8",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 544,
               "endLine": 585
@@ -1444,7 +1444,7 @@
           "role": "definition",
           "hash": "sha256-v2:310c3c377d46",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 688,
               "endLine": 751
@@ -1477,7 +1477,7 @@
           "role": "usage",
           "hash": "sha256-v2:a1722c6d515e",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 13,
               "endLine": 16
@@ -1494,7 +1494,7 @@
           "role": "call-site",
           "hash": "sha256-v2:4defae4017a8",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 52,
               "endLine": 52
@@ -1511,7 +1511,7 @@
           "role": "definition",
           "hash": "sha256-v2:726c906c4ebd",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 42,
               "endLine": 43
@@ -1528,7 +1528,7 @@
           "role": "definition",
           "hash": "sha256-v2:829726d62d00",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 20,
               "endLine": 20
@@ -1559,7 +1559,7 @@
           "role": "call-site",
           "hash": "sha256-v2:1a8ab853d9f4",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 68,
               "endLine": 68
@@ -1573,7 +1573,7 @@
           "role": "definition",
           "hash": "sha256-v2:66b600b41bca",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 17,
               "endLine": 23
@@ -1591,7 +1591,7 @@
           "role": "call-site",
           "hash": "sha256-v2:77f06732f671",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 210,
               "endLine": 210
@@ -1609,7 +1609,7 @@
           "role": "call-site",
           "hash": "sha256-v2:a76fdcde6d80",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 306,
               "endLine": 306
@@ -1627,7 +1627,7 @@
           "role": "call-site",
           "hash": "sha256-v2:95c67e1448ba",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 59,
               "endLine": 59
@@ -1644,7 +1644,7 @@
           "role": "call-site",
           "hash": "sha256-v2:0e3fb30c9392",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 551,
               "endLine": 551
@@ -1661,7 +1661,7 @@
           "role": "definition",
           "hash": "sha256-v2:73f0829f7294",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 38,
               "endLine": 39
@@ -1693,7 +1693,7 @@
           "role": "usage",
           "hash": "sha256-v2:99b861cba33f",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 348,
               "endLine": 348
@@ -1711,7 +1711,7 @@
           "role": "call-site",
           "hash": "sha256-v2:b54b1701dbbd",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 279,
               "endLine": 279
@@ -1729,7 +1729,7 @@
           "role": "call-site",
           "hash": "sha256-v2:f2fffbefad14",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 336,
               "endLine": 336
@@ -1747,7 +1747,7 @@
           "role": "call-site",
           "hash": "sha256-v2:785d018c36de",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 348,
               "endLine": 348
@@ -1765,7 +1765,7 @@
           "role": "call-site",
           "hash": "sha256-v2:1454207b56b6",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 383,
               "endLine": 383
@@ -1779,7 +1779,7 @@
           "role": "definition",
           "hash": "sha256-v2:a670f1d1eeaf",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 115,
               "endLine": 115
@@ -1797,7 +1797,7 @@
           "role": "call-site",
           "hash": "sha256-v2:db65357712d1",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 301,
               "endLine": 301
@@ -1815,7 +1815,7 @@
           "role": "definition",
           "hash": "sha256-v2:3b03fd5f1350",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 595,
               "endLine": 595
@@ -1833,7 +1833,7 @@
           "role": "definition",
           "hash": "sha256-v2:feb51d7e3294",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 682,
               "endLine": 686
@@ -1851,7 +1851,7 @@
           "role": "definition",
           "hash": "sha256-v2:ed78ce0c0735",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 726,
               "endLine": 726
@@ -1865,7 +1865,7 @@
           "role": "definition",
           "hash": "sha256-v2:a658f76b68a0",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 229,
               "endLine": 240
@@ -1879,7 +1879,7 @@
           "role": "definition",
           "hash": "sha256-v2:f3332ec89e3c",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 242,
               "endLine": 251
@@ -1893,7 +1893,7 @@
           "role": "definition",
           "hash": "sha256-v2:7248aea84a62",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 321,
               "endLine": 329
@@ -1925,7 +1925,7 @@
           "role": "call-site",
           "hash": "sha256-v2:bc43920081db",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 66,
               "endLine": 72
@@ -1943,7 +1943,7 @@
           "role": "call-site",
           "hash": "sha256-v2:96caf0ec8f98",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 86,
               "endLine": 88
@@ -1961,7 +1961,7 @@
           "role": "call-site",
           "hash": "sha256-v2:a76fdcde6d80",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 306,
               "endLine": 306
@@ -1975,7 +1975,7 @@
           "role": "definition",
           "hash": "sha256-v2:99df5f24a2f0",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 70,
               "endLine": 94
@@ -1989,7 +1989,7 @@
           "role": "definition",
           "hash": "sha256-v2:9e10caea883b",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 344,
               "endLine": 352
@@ -2003,7 +2003,7 @@
           "role": "definition",
           "hash": "sha256-v2:67293aec283b",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 114,
               "endLine": 127
@@ -2035,10 +2035,10 @@
           "role": "call-site",
           "hash": "sha256-v2:c6cc5f912353",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
-              "startLine": 179,
-              "endLine": 187
+              "startLine": 178,
+              "endLine": 186
             },
             "status": "ok"
           }
@@ -2053,10 +2053,10 @@
           "role": "call-site",
           "hash": "sha256-v2:4504e1ccefbf",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
-              "startLine": 190,
-              "endLine": 190
+              "startLine": 189,
+              "endLine": 189
             },
             "status": "ok"
           }
@@ -2071,7 +2071,7 @@
           "role": "call-site",
           "hash": "sha256-v2:9ab26b0fd66e",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 76,
               "endLine": 76
@@ -2085,7 +2085,7 @@
           "role": "call-site",
           "hash": "sha256-v2:336b04a7cf0e",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 81,
               "endLine": 100
@@ -2097,12 +2097,12 @@
           "file": "packages/cli/src/repo.ts",
           "symbol": "stalenessOf",
           "role": "usage",
-          "hash": "sha256-v2:410090da1b57",
+          "hash": "sha256-v2:10a3cd1eb22f",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 254,
-              "endLine": 328
+              "endLine": 329
             },
             "status": "ok"
           }
@@ -2113,7 +2113,7 @@
           "role": "definition",
           "hash": "sha256-v2:2ab46f75f837",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 190,
               "endLine": 537
@@ -2127,7 +2127,7 @@
           "role": "definition",
           "hash": "sha256-v2:152f31c89834",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 589,
               "endLine": 627
@@ -2141,7 +2141,7 @@
           "role": "definition",
           "hash": "sha256-v2:8bbd95d35cdd",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 309,
               "endLine": 381
@@ -2152,7 +2152,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "bd8c16c"
+        "commit": "e8026e2"
       }
     },
     {
@@ -2173,7 +2173,7 @@
           "role": "call-site",
           "hash": "sha256-v2:95ba5591f42f",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 205,
               "endLine": 210
@@ -2186,7 +2186,7 @@
           "role": "definition",
           "hash": "sha256-v2:14277c3ddfc5",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 1,
               "endLine": 64
@@ -2200,7 +2200,7 @@
           "role": "call-site",
           "hash": "sha256-v2:a6317f6f6f3c",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 33,
               "endLine": 42
@@ -2218,7 +2218,7 @@
           "role": "call-site",
           "hash": "sha256-v2:ce685400cfb8",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 53,
               "endLine": 53
@@ -2232,7 +2232,7 @@
           "role": "definition",
           "hash": "sha256-v2:d0d66f0c9657",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 37,
               "endLine": 39
@@ -2246,7 +2246,7 @@
           "role": "definition",
           "hash": "sha256-v2:dae3003008ab",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 10,
               "endLine": 12
@@ -2278,7 +2278,7 @@
           "role": "call-site",
           "hash": "sha256-v2:23685aa095bb",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 54,
               "endLine": 54
@@ -2296,7 +2296,7 @@
           "role": "call-site",
           "hash": "sha256-v2:2f102aa712fb",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 152,
               "endLine": 152
@@ -2310,7 +2310,7 @@
           "role": "definition",
           "hash": "sha256-v2:3d9179c2c46c",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 130,
               "endLine": 187
@@ -2324,7 +2324,7 @@
           "role": "definition",
           "hash": "sha256-v2:baef75921623",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 468,
               "endLine": 866
@@ -2356,7 +2356,7 @@
           "role": "usage",
           "hash": "sha256-v2:7e8fabadc0e7",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 213,
               "endLine": 213
@@ -2374,7 +2374,7 @@
           "role": "call-site",
           "hash": "sha256-v2:4bfe745dff38",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 286,
               "endLine": 286
@@ -2388,7 +2388,7 @@
           "role": "usage",
           "hash": "sha256-v2:12c5a9b045af",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 33,
               "endLine": 41
@@ -2402,10 +2402,10 @@
           "role": "definition",
           "hash": "sha256-v2:0f0ff6f361e3",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
-              "startLine": 2218,
-              "endLine": 2220
+              "startLine": 2242,
+              "endLine": 2244
             },
             "status": "ok"
           }
@@ -2434,7 +2434,7 @@
           "role": "call-site",
           "hash": "sha256-v2:04ce5863d6da",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 385,
               "endLine": 385
@@ -2452,10 +2452,10 @@
           "role": "usage",
           "hash": "sha256-v2:397cd8379b14",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
-              "startLine": 2237,
-              "endLine": 2237
+              "startLine": 2261,
+              "endLine": 2261
             },
             "status": "ok"
           }
@@ -2466,10 +2466,10 @@
           "role": "definition",
           "hash": "sha256-v2:3fe8d3a8b4eb",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
-              "startLine": 2141,
-              "endLine": 2155
+              "startLine": 2165,
+              "endLine": 2179
             },
             "status": "ok"
           }
@@ -2498,7 +2498,7 @@
           "role": "call-site",
           "hash": "sha256-v2:a3df7f4b22a3",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 345,
               "endLine": 345
@@ -2516,7 +2516,7 @@
           "role": "usage",
           "hash": "sha256-v2:04888b4dbe36",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 79,
               "endLine": 79
@@ -2530,10 +2530,10 @@
           "role": "definition",
           "hash": "sha256-v2:a10026680af3",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
-              "startLine": 2222,
-              "endLine": 2235
+              "startLine": 2246,
+              "endLine": 2259
             },
             "status": "ok"
           }
@@ -2561,7 +2561,7 @@
           "role": "usage",
           "hash": "sha256-v2:8b8ccdb8cada",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 40,
               "endLine": 40
@@ -2579,7 +2579,7 @@
           "role": "usage",
           "hash": "sha256-v2:dc6d9dd6f23f",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 328,
               "endLine": 328
@@ -2597,7 +2597,7 @@
           "role": "call-site",
           "hash": "sha256-v2:6f159b6619e9",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 371,
               "endLine": 371
@@ -2611,7 +2611,7 @@
           "role": "usage",
           "hash": "sha256-v2:5214ac38a8e3",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 26,
               "endLine": 28
@@ -2628,7 +2628,7 @@
           "role": "usage",
           "hash": "sha256-v2:841efa9ce26e",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 30,
               "endLine": 30
@@ -2642,7 +2642,7 @@
           "role": "definition",
           "hash": "sha256-v2:e76dfcbcd4f9",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 401,
               "endLine": 403
@@ -2674,7 +2674,7 @@
           "role": "usage",
           "hash": "sha256-v2:c3171a254e7f",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 399,
               "endLine": 399
@@ -2692,7 +2692,7 @@
           "role": "call-site",
           "hash": "sha256-v2:13de86e3022f",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 432,
               "endLine": 432
@@ -2706,7 +2706,7 @@
           "role": "usage",
           "hash": "sha256-v2:1e4184604be4",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 44,
               "endLine": 74
@@ -2720,7 +2720,7 @@
           "role": "definition",
           "hash": "sha256-v2:c9293e741cee",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 79,
               "endLine": 167
@@ -2752,7 +2752,7 @@
           "role": "call-site",
           "hash": "sha256-v2:91fb7deb46b0",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 109,
               "endLine": 109
@@ -2766,7 +2766,7 @@
           "role": "usage",
           "hash": "sha256-v2:65e6a08a2b47",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 40,
               "endLine": 51
@@ -2780,7 +2780,7 @@
           "role": "usage",
           "hash": "sha256-v2:ef9635006040",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 478,
               "endLine": 484
@@ -2794,7 +2794,7 @@
           "role": "definition",
           "hash": "sha256-v2:b5c945112665",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 439,
               "endLine": 475
@@ -2826,7 +2826,7 @@
           "role": "call-site",
           "hash": "sha256-v2:96caf0ec8f98",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 86,
               "endLine": 88
@@ -2840,7 +2840,7 @@
           "role": "definition",
           "hash": "sha256-v2:9e10caea883b",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 344,
               "endLine": 352
@@ -2872,7 +2872,7 @@
           "role": "call-site",
           "hash": "sha256-v2:6af28b860623",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 520,
               "endLine": 520
@@ -2886,7 +2886,7 @@
           "role": "definition",
           "hash": "sha256-v2:0f356b1b8d56",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 510,
               "endLine": 515
@@ -2904,7 +2904,7 @@
           "role": "definition",
           "hash": "sha256-v2:218e834e6a03",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 17,
               "endLine": 17
@@ -2935,7 +2935,7 @@
           "role": "call-site",
           "hash": "sha256-v2:5b85a3fe9b2a",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 905,
               "endLine": 905
@@ -2949,7 +2949,7 @@
           "role": "definition",
           "hash": "sha256-v2:c1ba653ec808",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 548,
               "endLine": 548
@@ -2960,16 +2960,16 @@
         {
           "file": "packages/viewer/src/components/EditorStack.tsx",
           "span": {
-            "from": 403,
-            "to": 403
+            "from": 404,
+            "to": 404
           },
           "role": "definition",
           "hash": "sha256-v2:ad2f7e25421e",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
-              "startLine": 404,
-              "endLine": 404
+              "startLine": 405,
+              "endLine": 405
             },
             "status": "ok"
           }
@@ -2998,7 +2998,7 @@
           "role": "call-site",
           "hash": "sha256-v2:c8d8b4bab7e7",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 484,
               "endLine": 484
@@ -3016,7 +3016,7 @@
           "role": "call-site",
           "hash": "sha256-v2:678c127458c2",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 522,
               "endLine": 522
@@ -3034,7 +3034,7 @@
           "role": "call-site",
           "hash": "sha256-v2:21a4ad360ed0",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 497,
               "endLine": 497
@@ -3052,7 +3052,7 @@
           "role": "call-site",
           "hash": "sha256-v2:deb5944115fa",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 198,
               "endLine": 198
@@ -3070,7 +3070,7 @@
           "role": "call-site",
           "hash": "sha256-v2:af9c26192b4b",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 200,
               "endLine": 209
@@ -3084,7 +3084,7 @@
           "role": "definition",
           "hash": "sha256-v2:37a005fa20ae",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 64,
               "endLine": 82
@@ -3098,7 +3098,7 @@
           "role": "definition",
           "hash": "sha256-v2:e3a6c71a38b1",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 362,
               "endLine": 411
@@ -3129,7 +3129,7 @@
           "role": "usage",
           "hash": "sha256-v2:c4d3937340c9",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 24,
               "endLine": 24
@@ -3146,7 +3146,7 @@
           "role": "usage",
           "hash": "sha256-v2:6f42291716bd",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 4,
               "endLine": 4
@@ -3177,7 +3177,7 @@
           "role": "usage",
           "hash": "sha256-v2:8075367d35e8",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 8,
               "endLine": 8
@@ -3194,7 +3194,7 @@
           "role": "call-site",
           "hash": "sha256-v2:6cc5b9a6943c",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 86,
               "endLine": 86
@@ -3219,16 +3219,16 @@
         {
           "file": "packages/cli/src/commands/build-index.ts",
           "span": {
-            "from": 178,
-            "to": 178
+            "from": 177,
+            "to": 177
           },
           "role": "call-site",
           "hash": "sha256-v2:2ce42aee9dbc",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
-              "startLine": 179,
-              "endLine": 179
+              "startLine": 178,
+              "endLine": 178
             },
             "status": "ok"
           }
@@ -3239,7 +3239,7 @@
           "role": "definition",
           "hash": "sha256-v2:8bbd95d35cdd",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 309,
               "endLine": 381
@@ -3256,7 +3256,7 @@
           "role": "usage",
           "hash": "sha256-v2:c8429776451a",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 3,
               "endLine": 3
@@ -3287,7 +3287,7 @@
           "role": "call-site",
           "hash": "sha256-v2:670e65feb852",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 24,
               "endLine": 24
@@ -3301,7 +3301,7 @@
           "role": "config",
           "hash": "sha256-v2:6b5e848d5dce",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 583,
               "endLine": 583
@@ -3318,7 +3318,7 @@
           "role": "call-site",
           "hash": "sha256-v2:d8d692406d7d",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 78,
               "endLine": 78
@@ -3335,7 +3335,7 @@
           "role": "call-site",
           "hash": "sha256-v2:adc4cad0320a",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 100,
               "endLine": 100
@@ -3352,7 +3352,7 @@
           "role": "call-site",
           "hash": "sha256-v2:fb84672592c4",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 667,
               "endLine": 667
@@ -3383,7 +3383,7 @@
           "role": "call-site",
           "hash": "sha256-v2:a76fdcde6d80",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 306,
               "endLine": 306
@@ -3400,7 +3400,7 @@
           "role": "usage",
           "hash": "sha256-v2:aae33ce5b62a",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 17,
               "endLine": 17
@@ -3431,7 +3431,7 @@
           "role": "usage",
           "hash": "sha256-v2:35d1e23781bd",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 5,
               "endLine": 5
@@ -3448,7 +3448,7 @@
           "role": "usage",
           "hash": "sha256-v2:aae33ce5b62a",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 17,
               "endLine": 17
@@ -3476,7 +3476,7 @@
           "role": "call-site",
           "hash": "sha256-v2:4869b5aa3d18",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 104,
               "endLine": 177
@@ -3490,7 +3490,7 @@
           "role": "definition",
           "hash": "sha256-v2:72619fb8f8f4",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 393,
               "endLine": 485
@@ -3503,7 +3503,7 @@
           "role": "call-site",
           "hash": "sha256-v2:27526a86675e",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 1,
               "endLine": 404
@@ -3531,7 +3531,7 @@
           "role": "definition",
           "hash": "sha256-v2:f52eab13c143",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 288,
               "endLine": 316
@@ -3545,7 +3545,7 @@
           "role": "definition",
           "hash": "sha256-v2:683902ac3f59",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 27,
               "endLine": 34
@@ -3559,7 +3559,7 @@
           "role": "definition",
           "hash": "sha256-v2:d0d66f0c9657",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 37,
               "endLine": 39
@@ -3573,7 +3573,7 @@
           "role": "definition",
           "hash": "sha256-v2:3f96f7b50529",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 572,
               "endLine": 742
@@ -3587,7 +3587,7 @@
           "role": "definition",
           "hash": "sha256-v2:919403ac0b45",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 196,
               "endLine": 203
@@ -3605,7 +3605,7 @@
           "role": "definition",
           "hash": "sha256-v2:99bbfaadc6d0",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 224,
               "endLine": 236
@@ -3623,7 +3623,7 @@
           "role": "definition",
           "hash": "sha256-v2:f261a6655864",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 256,
               "endLine": 279
@@ -3641,7 +3641,7 @@
           "role": "definition",
           "hash": "sha256-v2:97033a50727b",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 303,
               "endLine": 324
@@ -3655,7 +3655,7 @@
           "role": "usage",
           "hash": "sha256-v2:e5afbdd189e2",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 45,
               "endLine": 63
@@ -3669,7 +3669,7 @@
           "role": "test",
           "hash": "sha256-v2:c6516d98d17a",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 5,
               "endLine": 11
@@ -3683,7 +3683,7 @@
           "role": "test",
           "hash": "sha256-v2:14800e90b6bd",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 139,
               "endLine": 151
@@ -3700,7 +3700,7 @@
           "role": "usage",
           "hash": "sha256-v2:828539d20161",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 1121,
               "endLine": 1179
@@ -3717,7 +3717,7 @@
           "role": "usage",
           "hash": "sha256-v2:8075367d35e8",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 8,
               "endLine": 8
@@ -3755,7 +3755,7 @@
           "role": "definition",
           "hash": "sha256-v2:46f32a258982",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 86,
               "endLine": 89
@@ -3769,7 +3769,7 @@
           "role": "definition",
           "hash": "sha256-v2:44aee03309e9",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 91,
               "endLine": 97
@@ -3783,10 +3783,10 @@
           "role": "definition",
           "hash": "sha256-v2:585b9e7d9bfc",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
-              "startLine": 1093,
-              "endLine": 1104
+              "startLine": 1098,
+              "endLine": 1109
             },
             "status": "ok"
           }
@@ -3801,10 +3801,10 @@
           "role": "definition",
           "hash": "sha256-v2:61c59701a960",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
-              "startLine": 1132,
-              "endLine": 1135
+              "startLine": 1137,
+              "endLine": 1140
             },
             "status": "ok"
           }
@@ -3819,10 +3819,10 @@
           "role": "definition",
           "hash": "sha256-v2:f638150c90f7",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
-              "startLine": 1176,
-              "endLine": 1179
+              "startLine": 1181,
+              "endLine": 1184
             },
             "status": "ok"
           }
@@ -3837,10 +3837,10 @@
           "role": "definition",
           "hash": "sha256-v2:fc4f5e8e1ce6",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
-              "startLine": 994,
-              "endLine": 1002
+              "startLine": 999,
+              "endLine": 1007
             },
             "status": "ok"
           }
@@ -3855,10 +3855,10 @@
           "role": "definition",
           "hash": "sha256-v2:c62bd175c780",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
-              "startLine": 1036,
-              "endLine": 1043
+              "startLine": 1041,
+              "endLine": 1048
             },
             "status": "ok"
           }
@@ -3873,7 +3873,7 @@
           "role": "usage",
           "hash": "sha256-v2:4dbfd1ab1603",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 96,
               "endLine": 97
@@ -3891,7 +3891,7 @@
           "role": "usage",
           "hash": "sha256-v2:4fa41f697673",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 129,
               "endLine": 137
@@ -3909,7 +3909,7 @@
           "role": "usage",
           "hash": "sha256-v2:e2ee445bcb44",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 737,
               "endLine": 739
@@ -3923,7 +3923,7 @@
           "role": "test",
           "hash": "sha256-v2:fa9cba10bc80",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 806,
               "endLine": 822
@@ -3937,7 +3937,7 @@
           "role": "test",
           "hash": "sha256-v2:2cb983a979f2",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 861,
               "endLine": 889
@@ -3954,7 +3954,7 @@
           "role": "usage",
           "hash": "sha256-v2:df20f6dfcbb8",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 1434,
               "endLine": 1441
@@ -3971,7 +3971,7 @@
           "role": "usage",
           "hash": "sha256-v2:b8e20af74736",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 25,
               "endLine": 25
@@ -3999,7 +3999,7 @@
     {
       "id": "concept:hybrid-refs",
       "label": "Precise and heuristic references",
-      "summary": "A reference from a SCIP tool is `precise`. Where no tool ran, or the tool skipped a file, xpl's own match by name stays, labelled `heuristic`, and the viewer draws those arrows dashed.",
+      "summary": "A reference from a SCIP tool is `precise`. Where no tool ran, or the tool skipped a file, xpl's own match by name stays, labeled `heuristic`, and the viewer draws those arrows dashed.",
       "detail": "In `auto` mode a failed tool prints a warning and the heuristic references stay. In `require` mode the build fails instead. An arrow that holds both kinds gets a dash of its own, and a dependency matrix shows the same labels as stripes.",
       "anchors": [
         {
@@ -4008,7 +4008,7 @@
           "role": "definition",
           "hash": "sha256-v2:11fa3496f864",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 269,
               "endLine": 269
@@ -4026,7 +4026,7 @@
           "role": "call-site",
           "hash": "sha256-v2:5c063f9a6036",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 127,
               "endLine": 127
@@ -4040,7 +4040,7 @@
           "role": "definition",
           "hash": "sha256-v2:0246e0d7f5a2",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 381,
               "endLine": 496
@@ -4058,7 +4058,7 @@
           "role": "definition",
           "hash": "sha256-v2:e1c4dbedf8da",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 345,
               "endLine": 345
@@ -4076,7 +4076,7 @@
           "role": "definition",
           "hash": "sha256-v2:b43d5f279dda",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 773,
               "endLine": 773
@@ -4094,7 +4094,7 @@
           "role": "usage",
           "hash": "sha256-v2:e61a555892bf",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 597,
               "endLine": 597
@@ -4105,16 +4105,16 @@
         {
           "file": "packages/viewer/src/styles.css",
           "span": {
-            "from": 2199,
-            "to": 2204
+            "from": 2235,
+            "to": 2240
           },
           "role": "usage",
           "hash": "sha256-v2:8dda574ba53f",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
-              "startLine": 2200,
-              "endLine": 2205
+              "startLine": 2236,
+              "endLine": 2241
             },
             "status": "ok"
           }
@@ -4122,16 +4122,16 @@
         {
           "file": "packages/viewer/src/styles.css",
           "span": {
-            "from": 2260,
-            "to": 2260
+            "from": 2296,
+            "to": 2296
           },
           "role": "usage",
           "hash": "sha256-v2:1a291af88d02",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
-              "startLine": 2261,
-              "endLine": 2261
+              "startLine": 2297,
+              "endLine": 2297
             },
             "status": "ok"
           }
@@ -4142,7 +4142,7 @@
           "role": "test",
           "hash": "sha256-v2:68cf78bc98b6",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 76,
               "endLine": 110
@@ -4156,7 +4156,7 @@
           "role": "test",
           "hash": "sha256-v2:9c05862851f3",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 250,
               "endLine": 258
@@ -4170,7 +4170,7 @@
           "role": "usage",
           "hash": "sha256-v2:0246e0d7f5a2",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 381,
               "endLine": 496
@@ -4187,7 +4187,7 @@
           "role": "usage",
           "hash": "sha256-v2:b15fc1573e7e",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 27,
               "endLine": 35
@@ -4204,7 +4204,7 @@
           "role": "usage",
           "hash": "sha256-v2:721c392af1a4",
           "resolved": {
-            "commit": "9846927",
+            "commit": "e8026e2",
             "range": {
               "startLine": 52,
               "endLine": 52
@@ -4224,7 +4224,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "e325789"
+        "commit": "e8026e2"
       }
     }
   ],
@@ -4314,7 +4314,7 @@
               "role": "call-site",
               "hash": "sha256-v2:13de86e3022f",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 432,
                   "endLine": 432
@@ -4332,10 +4332,10 @@
               "role": "call-site",
               "hash": "sha256-v2:c6cc5f912353",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 179,
-                  "endLine": 187
+                  "startLine": 178,
+                  "endLine": 186
                 },
                 "status": "ok"
               }
@@ -4350,10 +4350,10 @@
               "role": "call-site",
               "hash": "sha256-v2:4504e1ccefbf",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 190,
-                  "endLine": 190
+                  "startLine": 189,
+                  "endLine": 189
                 },
                 "status": "ok"
               }
@@ -4364,7 +4364,7 @@
               "role": "definition",
               "hash": "sha256-v2:2ab46f75f837",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 190,
                   "endLine": 537
@@ -4378,7 +4378,7 @@
               "role": "definition",
               "hash": "sha256-v2:152f31c89834",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 589,
                   "endLine": 627
@@ -4392,7 +4392,7 @@
               "role": "usage",
               "hash": "sha256-v2:6b5e848d5dce",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 583,
                   "endLine": 583
@@ -4420,7 +4420,7 @@
               "role": "usage",
               "hash": "sha256-v2:58e03254b624",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 46,
                   "endLine": 47
@@ -4438,7 +4438,7 @@
               "role": "usage",
               "hash": "sha256-v2:f29e2130e1c5",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 46,
                   "endLine": 46
@@ -4452,7 +4452,7 @@
               "role": "call-site",
               "hash": "sha256-v2:290f8c175af4",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 36,
                   "endLine": 98
@@ -4466,7 +4466,7 @@
               "role": "definition",
               "hash": "sha256-v2:99df5f24a2f0",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 70,
                   "endLine": 94
@@ -4494,7 +4494,7 @@
               "role": "call-site",
               "hash": "sha256-v2:24fd49181894",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 339,
                   "endLine": 339
@@ -4512,7 +4512,7 @@
               "role": "call-site",
               "hash": "sha256-v2:fe5ba34afff1",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 368,
                   "endLine": 368
@@ -4526,7 +4526,7 @@
               "role": "definition",
               "hash": "sha256-v2:b8741b1d7de6",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 1569,
                   "endLine": 2388
@@ -4551,7 +4551,7 @@
               "role": "definition",
               "hash": "sha256-v2:9e10caea883b",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 344,
                   "endLine": 352
@@ -4569,10 +4569,10 @@
               "role": "usage",
               "hash": "sha256-v2:a52e881d0824",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 1823,
-                  "endLine": 1823
+                  "startLine": 1828,
+                  "endLine": 1828
                 },
                 "status": "ok"
               }
@@ -4583,7 +4583,7 @@
               "role": "usage",
               "hash": "sha256-v2:267d3b70c1fe",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 429,
                   "endLine": 431
@@ -4597,7 +4597,7 @@
               "role": "call-site",
               "hash": "sha256-v2:c9293e741cee",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 79,
                   "endLine": 167
@@ -4615,7 +4615,7 @@
               "role": "call-site",
               "hash": "sha256-v2:fd49b3a83b1e",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 98,
                   "endLine": 99
@@ -4633,7 +4633,7 @@
               "role": "usage",
               "hash": "sha256-v2:6bcfb2e8e6aa",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 121,
                   "endLine": 128
@@ -4658,7 +4658,7 @@
               "role": "call-site",
               "hash": "sha256-v2:192493e3a13e",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 168,
                   "endLine": 381
@@ -4676,7 +4676,7 @@
               "role": "call-site",
               "hash": "sha256-v2:b7af4d1611ff",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 305,
                   "endLine": 307
@@ -4690,7 +4690,7 @@
               "role": "definition",
               "hash": "sha256-v2:67293aec283b",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 114,
                   "endLine": 127
@@ -4704,7 +4704,7 @@
               "role": "usage",
               "hash": "sha256-v2:f8decd6a6c3e",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 88,
                   "endLine": 111
@@ -4718,7 +4718,7 @@
               "role": "usage",
               "hash": "sha256-v2:84ebf0e0053a",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 14,
                   "endLine": 14
@@ -4735,7 +4735,7 @@
               "role": "usage",
               "hash": "sha256-v2:0e3fb30c9392",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 551,
                   "endLine": 551
@@ -4749,7 +4749,7 @@
               "role": "definition",
               "hash": "sha256-v2:1ff42c2f9535",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 7,
                   "endLine": 26
@@ -4758,7 +4758,7 @@
               }
             }
           ],
-          "summary": "`xpl bundle` runs the ready check, then writes one HTML file with the guide, the code it shows and a packed index. A failed check stops the command, and `--draft` writes a labelled preview instead."
+          "summary": "`xpl bundle` runs the ready check, then writes one HTML file with the guide, the code it shows and a packed index. A failed check stops the command, and `--draft` writes a labeled preview instead."
         },
         {
           "id": "overview-flow:5",
@@ -4778,7 +4778,7 @@
               "role": "call-site",
               "hash": "sha256-v2:23685aa095bb",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 54,
                   "endLine": 54
@@ -4792,7 +4792,7 @@
               "role": "usage",
               "hash": "sha256-v2:44a5cd65a716",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 44,
                   "endLine": 87
@@ -4806,7 +4806,7 @@
               "role": "definition",
               "hash": "sha256-v2:3d9179c2c46c",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 130,
                   "endLine": 187
@@ -4820,7 +4820,7 @@
               "role": "usage",
               "hash": "sha256-v2:84ebf0e0053a",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 14,
                   "endLine": 14
@@ -4837,7 +4837,7 @@
               "role": "call-site",
               "hash": "sha256-v2:514edfdfbc4a",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 17,
                   "endLine": 47
@@ -4866,7 +4866,7 @@
               "role": "call-site",
               "hash": "sha256-v2:08da114de5af",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 150,
                   "endLine": 152
@@ -4884,7 +4884,7 @@
               "role": "call-site",
               "hash": "sha256-v2:4de93c7311e1",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 176,
                   "endLine": 176
@@ -4898,7 +4898,7 @@
               "role": "definition",
               "hash": "sha256-v2:baef75921623",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 468,
                   "endLine": 866
@@ -4921,7 +4921,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "716c3db"
+        "commit": "e8026e2"
       }
     },
     {
@@ -4962,10 +4962,10 @@
               "role": "call-site",
               "hash": "sha256-v2:c6cc5f912353",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 179,
-                  "endLine": 187
+                  "startLine": 178,
+                  "endLine": 186
                 },
                 "status": "ok"
               }
@@ -4976,7 +4976,7 @@
               "role": "definition",
               "hash": "sha256-v2:2ab46f75f837",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 190,
                   "endLine": 537
@@ -5004,7 +5004,7 @@
               "role": "call-site",
               "hash": "sha256-v2:96f1c370f85e",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 208,
                   "endLine": 208
@@ -5018,7 +5018,7 @@
               "role": "definition",
               "hash": "sha256-v2:68aad9ed77ff",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 140,
                   "endLine": 155
@@ -5046,7 +5046,7 @@
               "role": "call-site",
               "hash": "sha256-v2:ad336b50e1c3",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 215,
                   "endLine": 215
@@ -5060,7 +5060,7 @@
               "role": "definition",
               "hash": "sha256-v2:8bbd95d35cdd",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 309,
                   "endLine": 381
@@ -5074,7 +5074,7 @@
               "role": "definition",
               "hash": "sha256-v2:11a06c3d5679",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 204,
                   "endLine": 212
@@ -5088,7 +5088,7 @@
               "role": "definition",
               "hash": "sha256-v2:d5d9d18a06c2",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 215,
                   "endLine": 243
@@ -5102,7 +5102,7 @@
               "role": "usage",
               "hash": "sha256-v2:3c57f3791007",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 25,
                   "endLine": 37
@@ -5116,7 +5116,7 @@
               "role": "definition",
               "hash": "sha256-v2:587841fad5a7",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 282,
                   "endLine": 303
@@ -5130,7 +5130,7 @@
               "role": "usage",
               "hash": "sha256-v2:d68fbe09e083",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 20,
                   "endLine": 20
@@ -5144,7 +5144,7 @@
               "role": "usage",
               "hash": "sha256-v2:5393406dbb3c",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 22,
                   "endLine": 22
@@ -5168,7 +5168,7 @@
               "role": "call-site",
               "hash": "sha256-v2:2ab46f75f837",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 190,
                   "endLine": 537
@@ -5182,7 +5182,7 @@
               "role": "definition",
               "hash": "sha256-v2:0fbedabb2f5b",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 192,
                   "endLine": 260
@@ -5211,7 +5211,7 @@
               "role": "call-site",
               "hash": "sha256-v2:0b771df3069d",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 283,
                   "endLine": 283
@@ -5229,7 +5229,7 @@
               "role": "call-site",
               "hash": "sha256-v2:4bfe745dff38",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 286,
                   "endLine": 286
@@ -5243,7 +5243,7 @@
               "role": "definition",
               "hash": "sha256-v2:d9673e65a801",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 55,
                   "endLine": 66
@@ -5257,10 +5257,10 @@
               "role": "definition",
               "hash": "sha256-v2:0f0ff6f361e3",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 2218,
-                  "endLine": 2220
+                  "startLine": 2242,
+                  "endLine": 2244
                 },
                 "status": "ok"
               }
@@ -5271,10 +5271,10 @@
               "role": "definition",
               "hash": "sha256-v2:9367ae8d4bd9",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 949,
-                  "endLine": 966
+                  "startLine": 968,
+                  "endLine": 985
                 },
                 "status": "ok"
               }
@@ -5285,10 +5285,10 @@
               "role": "definition",
               "hash": "sha256-v2:43074dd93541",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 1068,
-                  "endLine": 1156
+                  "startLine": 1087,
+                  "endLine": 1175
                 },
                 "status": "ok"
               }
@@ -5297,12 +5297,12 @@
               "file": "packages/indexer/src/languages/typescript.ts",
               "symbol": "Extractor.scan",
               "role": "definition",
-              "hash": "sha256-v2:81c98a684650",
+              "hash": "sha256-v2:912a9d3b3671",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 1550,
-                  "endLine": 1615
+                  "startLine": 1569,
+                  "endLine": 1639
                 },
                 "status": "ok"
               }
@@ -5313,7 +5313,7 @@
               "role": "usage",
               "hash": "sha256-v2:12c5a9b045af",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 33,
                   "endLine": 41
@@ -5341,7 +5341,7 @@
               "role": "call-site",
               "hash": "sha256-v2:45e8dd93e527",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 115,
                   "endLine": 115
@@ -5359,7 +5359,7 @@
               "role": "call-site",
               "hash": "sha256-v2:0038af88513e",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 284,
                   "endLine": 288
@@ -5373,7 +5373,7 @@
               "role": "definition",
               "hash": "sha256-v2:31ba513e1d04",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 59,
                   "endLine": 123
@@ -5387,7 +5387,7 @@
               "role": "definition",
               "hash": "sha256-v2:b8c316a86969",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 52,
                   "endLine": 57
@@ -5417,7 +5417,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "716c3db"
+        "commit": "e8026e2"
       }
     },
     {
@@ -5458,7 +5458,7 @@
               "role": "call-site",
               "hash": "sha256-v2:5c063f9a6036",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 127,
                   "endLine": 127
@@ -5472,7 +5472,7 @@
               "role": "definition",
               "hash": "sha256-v2:ef3cdf155dc7",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 303,
                   "endLine": 312
@@ -5486,7 +5486,7 @@
               "role": "definition",
               "hash": "sha256-v2:805185fb83a6",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 965,
                   "endLine": 999
@@ -5500,7 +5500,7 @@
               "role": "definition",
               "hash": "sha256-v2:0e663ebcfe72",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 161,
                   "endLine": 189
@@ -5514,7 +5514,7 @@
               "role": "usage",
               "hash": "sha256-v2:0e663ebcfe72",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 161,
                   "endLine": 189
@@ -5531,7 +5531,7 @@
               "role": "usage",
               "hash": "sha256-v2:521dbafc269c",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 1,
                   "endLine": 44
@@ -5560,7 +5560,7 @@
               "role": "call-site",
               "hash": "sha256-v2:04ce5863d6da",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 385,
                   "endLine": 385
@@ -5574,10 +5574,10 @@
               "role": "definition",
               "hash": "sha256-v2:3fe8d3a8b4eb",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 2141,
-                  "endLine": 2155
+                  "startLine": 2165,
+                  "endLine": 2179
                 },
                 "status": "ok"
               }
@@ -5588,7 +5588,7 @@
               "role": "definition",
               "hash": "sha256-v2:3ed21f58fb05",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 46,
                   "endLine": 67
@@ -5617,7 +5617,7 @@
               "role": "usage",
               "hash": "sha256-v2:6f159b6619e9",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 371,
                   "endLine": 371
@@ -5635,7 +5635,7 @@
               "role": "usage",
               "hash": "sha256-v2:964f0ed9638a",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 351,
                   "endLine": 351
@@ -5653,7 +5653,7 @@
               "role": "call-site",
               "hash": "sha256-v2:6f159b6619e9",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 371,
                   "endLine": 371
@@ -5667,7 +5667,7 @@
               "role": "definition",
               "hash": "sha256-v2:2cb98c440ae2",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 153,
                   "endLine": 199
@@ -5695,7 +5695,7 @@
               "role": "definition",
               "hash": "sha256-v2:8af4c4d9aaeb",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 102,
                   "endLine": 102
@@ -5709,7 +5709,7 @@
               "role": "definition",
               "hash": "sha256-v2:960f34ef5b0e",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 92,
                   "endLine": 104
@@ -5727,7 +5727,7 @@
               "role": "call-site",
               "hash": "sha256-v2:6f159b6619e9",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 371,
                   "endLine": 371
@@ -5751,7 +5751,7 @@
               "role": "definition",
               "hash": "sha256-v2:0246e0d7f5a2",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 381,
                   "endLine": 496
@@ -5765,7 +5765,7 @@
               "role": "definition",
               "hash": "sha256-v2:0246e0d7f5a2",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 381,
                   "endLine": 496
@@ -5783,7 +5783,7 @@
               "role": "definition",
               "hash": "sha256-v2:8c94085c917b",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 477,
                   "endLine": 477
@@ -5801,7 +5801,7 @@
               "role": "usage",
               "hash": "sha256-v2:0cd75a02b5b3",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 569,
                   "endLine": 569
@@ -5825,7 +5825,7 @@
               "role": "definition",
               "hash": "sha256-v2:2ab46f75f837",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 190,
                   "endLine": 537
@@ -5843,7 +5843,7 @@
               "role": "definition",
               "hash": "sha256-v2:7ab3f8620bb0",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 443,
                   "endLine": 443
@@ -5871,7 +5871,7 @@
               "role": "call-site",
               "hash": "sha256-v2:33031b46ec84",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 493,
                   "endLine": 499
@@ -5885,7 +5885,7 @@
               "role": "definition",
               "hash": "sha256-v2:f6cbca0e5e30",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 123,
                   "endLine": 132
@@ -5899,7 +5899,7 @@
               "role": "definition",
               "hash": "sha256-v2:2abba1857f32",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 33,
                   "endLine": 38
@@ -5913,7 +5913,7 @@
               "role": "definition",
               "hash": "sha256-v2:11918b7c9154",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 106,
                   "endLine": 109
@@ -5927,7 +5927,7 @@
               "role": "definition",
               "hash": "sha256-v2:72348de84a11",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 41,
                   "endLine": 45
@@ -5951,7 +5951,7 @@
               "role": "definition",
               "hash": "sha256-v2:2ab46f75f837",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 190,
                   "endLine": 537
@@ -5969,10 +5969,10 @@
               "role": "call-site",
               "hash": "sha256-v2:969eed20d327",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 202,
-                  "endLine": 202
+                  "startLine": 201,
+                  "endLine": 201
                 },
                 "status": "ok"
               }
@@ -5997,10 +5997,10 @@
               "role": "call-site",
               "hash": "sha256-v2:4504e1ccefbf",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 190,
-                  "endLine": 190
+                  "startLine": 189,
+                  "endLine": 189
                 },
                 "status": "ok"
               }
@@ -6011,7 +6011,7 @@
               "role": "definition",
               "hash": "sha256-v2:152f31c89834",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 589,
                   "endLine": 627
@@ -6025,10 +6025,10 @@
               "role": "usage",
               "hash": "sha256-v2:198710fb912a",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 80,
-                  "endLine": 86
+                  "startLine": 79,
+                  "endLine": 85
                 },
                 "status": "ok"
               }
@@ -6043,10 +6043,10 @@
               "role": "usage",
               "hash": "sha256-v2:4337bc33ac80",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 204,
-                  "endLine": 204
+                  "startLine": 203,
+                  "endLine": 203
                 },
                 "status": "ok"
               }
@@ -6061,10 +6061,10 @@
               "role": "usage",
               "hash": "sha256-v2:665f1de86f41",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 225,
-                  "endLine": 235
+                  "startLine": 224,
+                  "endLine": 234
                 },
                 "status": "ok"
               }
@@ -6140,7 +6140,7 @@
               "role": "definition",
               "hash": "sha256-v2:9e10caea883b",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 344,
                   "endLine": 352
@@ -6154,7 +6154,7 @@
               "role": "definition",
               "hash": "sha256-v2:9ff76fcbbef9",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 387,
                   "endLine": 394
@@ -6168,7 +6168,7 @@
               "role": "usage",
               "hash": "sha256-v2:988e282a7b60",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 97,
                   "endLine": 111
@@ -6182,7 +6182,7 @@
               "role": "call-site",
               "hash": "sha256-v2:c9293e741cee",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 79,
                   "endLine": 167
@@ -6204,16 +6204,16 @@
               "file": "packages/core/src/apply.ts",
               "symbol": "Applier.run",
               "span": {
-                "from": 59,
-                "to": 63
+                "from": 64,
+                "to": 68
               },
               "role": "call-site",
               "hash": "sha256-v2:2927c2abf4c3",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 562,
-                  "endLine": 566
+                  "startLine": 567,
+                  "endLine": 571
                 },
                 "status": "ok"
               }
@@ -6223,15 +6223,15 @@
               "symbol": "Applier.run",
               "span": {
                 "from": 18,
-                "to": 21
+                "to": 18
               },
               "role": "usage",
-              "hash": "sha256-v2:b7ed89eb47fe",
+              "hash": "sha256-v2:20b139916568",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 521,
-                  "endLine": 524
+                  "endLine": 521
                 },
                 "status": "ok"
               }
@@ -6240,16 +6240,16 @@
               "file": "packages/core/src/apply.ts",
               "symbol": "Applier.run",
               "span": {
-                "from": 74,
-                "to": 86
+                "from": 79,
+                "to": 91
               },
               "role": "usage",
               "hash": "sha256-v2:d149a31eea59",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 577,
-                  "endLine": 589
+                  "startLine": 582,
+                  "endLine": 594
                 },
                 "status": "ok"
               }
@@ -6260,10 +6260,10 @@
               "role": "definition",
               "hash": "sha256-v2:a5dc6e7171c3",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 1050,
-                  "endLine": 1091
+                  "startLine": 1055,
+                  "endLine": 1096
                 },
                 "status": "ok"
               }
@@ -6274,10 +6274,10 @@
               "role": "definition",
               "hash": "sha256-v2:ae971a663110",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 1576,
-                  "endLine": 1649
+                  "startLine": 1581,
+                  "endLine": 1654
                 },
                 "status": "ok"
               }
@@ -6288,10 +6288,10 @@
               "role": "definition",
               "hash": "sha256-v2:ea20745350fc",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 1710,
-                  "endLine": 1774
+                  "startLine": 1715,
+                  "endLine": 1779
                 },
                 "status": "ok"
               }
@@ -6302,10 +6302,10 @@
               "role": "definition",
               "hash": "sha256-v2:585b9e7d9bfc",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 1093,
-                  "endLine": 1104
+                  "startLine": 1098,
+                  "endLine": 1109
                 },
                 "status": "ok"
               }
@@ -6330,10 +6330,10 @@
               "role": "call-site",
               "hash": "sha256-v2:f1cdc1de2a28",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 1076,
-                  "endLine": 1089
+                  "startLine": 1081,
+                  "endLine": 1094
                 },
                 "status": "ok"
               }
@@ -6344,10 +6344,10 @@
               "role": "definition",
               "hash": "sha256-v2:ea3f705f37be",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 1110,
-                  "endLine": 1184
+                  "startLine": 1115,
+                  "endLine": 1189
                 },
                 "status": "ok"
               }
@@ -6358,10 +6358,10 @@
               "role": "definition",
               "hash": "sha256-v2:64b0aec57454",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 978,
-                  "endLine": 1022
+                  "startLine": 983,
+                  "endLine": 1027
                 },
                 "status": "ok"
               }
@@ -6386,10 +6386,10 @@
               "role": "call-site",
               "hash": "sha256-v2:f95f2f3cbcbe",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 777,
-                  "endLine": 777
+                  "startLine": 782,
+                  "endLine": 782
                 },
                 "status": "ok"
               }
@@ -6400,7 +6400,7 @@
               "role": "definition",
               "hash": "sha256-v2:3f96f7b50529",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 572,
                   "endLine": 742
@@ -6414,10 +6414,10 @@
               "role": "usage",
               "hash": "sha256-v2:70f69b0a3bfd",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 758,
-                  "endLine": 763
+                  "startLine": 763,
+                  "endLine": 768
                 },
                 "status": "ok"
               }
@@ -6428,7 +6428,7 @@
               "role": "usage",
               "hash": "sha256-v2:e48ffc251fd7",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 968,
                   "endLine": 990
@@ -6446,10 +6446,10 @@
               "role": "usage",
               "hash": "sha256-v2:cd0f30830403",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 1008,
-                  "endLine": 1008
+                  "startLine": 1013,
+                  "endLine": 1013
                 },
                 "status": "ok"
               }
@@ -6464,10 +6464,10 @@
               "role": "usage",
               "hash": "sha256-v2:412a9235eecc",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 853,
-                  "endLine": 853
+                  "startLine": 858,
+                  "endLine": 858
                 },
                 "status": "ok"
               }
@@ -6482,10 +6482,10 @@
               "role": "usage",
               "hash": "sha256-v2:359663c2d1fa",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 910,
-                  "endLine": 910
+                  "startLine": 915,
+                  "endLine": 915
                 },
                 "status": "ok"
               }
@@ -6500,10 +6500,10 @@
               "role": "usage",
               "hash": "sha256-v2:b7bd3b0e28d4",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 1329,
-                  "endLine": 1329
+                  "startLine": 1334,
+                  "endLine": 1334
                 },
                 "status": "ok"
               }
@@ -6528,7 +6528,7 @@
               "role": "call-site",
               "hash": "sha256-v2:65a2c56131b5",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 673,
                   "endLine": 699
@@ -6542,7 +6542,7 @@
               "role": "definition",
               "hash": "sha256-v2:e19521ee7499",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 862,
                   "endLine": 913
@@ -6570,7 +6570,7 @@
               "role": "usage",
               "hash": "sha256-v2:b3441d8fbc54",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 673,
                   "endLine": 677
@@ -6584,7 +6584,7 @@
               "role": "call-site",
               "hash": "sha256-v2:3f96f7b50529",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 572,
                   "endLine": 742
@@ -6598,7 +6598,7 @@
               "role": "definition",
               "hash": "sha256-v2:683902ac3f59",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 27,
                   "endLine": 34
@@ -6612,7 +6612,7 @@
               "role": "definition",
               "hash": "sha256-v2:f68b788ebf61",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 42,
                   "endLine": 44
@@ -6640,7 +6640,7 @@
               "role": "definition",
               "hash": "sha256-v2:fa8ab26b8b00",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 727,
                   "endLine": 741
@@ -6658,10 +6658,10 @@
               "role": "call-site",
               "hash": "sha256-v2:da0339354902",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 778,
-                  "endLine": 786
+                  "startLine": 783,
+                  "endLine": 791
                 },
                 "status": "ok"
               }
@@ -6686,10 +6686,10 @@
               "role": "call-site",
               "hash": "sha256-v2:fe1ddb8819ea",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 1145,
-                  "endLine": 1149
+                  "startLine": 1150,
+                  "endLine": 1154
                 },
                 "status": "ok"
               }
@@ -6700,10 +6700,10 @@
               "role": "definition",
               "hash": "sha256-v2:fbc305ba2e2e",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 1394,
-                  "endLine": 1433
+                  "startLine": 1399,
+                  "endLine": 1438
                 },
                 "status": "ok"
               }
@@ -6714,10 +6714,10 @@
               "role": "definition",
               "hash": "sha256-v2:2233ebd75021",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 1287,
-                  "endLine": 1338
+                  "startLine": 1292,
+                  "endLine": 1343
                 },
                 "status": "ok"
               }
@@ -6728,10 +6728,10 @@
               "role": "usage",
               "hash": "sha256-v2:8761442c6b23",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 1190,
-                  "endLine": 1248
+                  "startLine": 1195,
+                  "endLine": 1253
                 },
                 "status": "ok"
               }
@@ -6742,7 +6742,7 @@
               "role": "config",
               "hash": "sha256-v2:98b72a40e7d8",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 201,
                   "endLine": 216
@@ -6770,10 +6770,10 @@
               "role": "call-site",
               "hash": "sha256-v2:8d41cee2b05b",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 1779,
-                  "endLine": 1785
+                  "startLine": 1784,
+                  "endLine": 1790
                 },
                 "status": "ok"
               }
@@ -6784,7 +6784,7 @@
               "role": "definition",
               "hash": "sha256-v2:1082e55f02d7",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 128,
                   "endLine": 142
@@ -6798,7 +6798,7 @@
               "role": "definition",
               "hash": "sha256-v2:cc4a9274bac6",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 240,
                   "endLine": 303
@@ -6812,10 +6812,10 @@
               "role": "usage",
               "hash": "sha256-v2:455b6929c41f",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 596,
-                  "endLine": 615
+                  "startLine": 601,
+                  "endLine": 620
                 },
                 "status": "ok"
               }
@@ -6840,7 +6840,7 @@
               "role": "call-site",
               "hash": "sha256-v2:cc8cada508dd",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 652,
                   "endLine": 652
@@ -6854,7 +6854,7 @@
               "role": "definition",
               "hash": "sha256-v2:bc3150f07628",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 209,
                   "endLine": 325
@@ -6868,7 +6868,7 @@
               "role": "usage",
               "hash": "sha256-v2:247b054361d4",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 203,
                   "endLine": 218
@@ -6896,7 +6896,7 @@
               "role": "definition",
               "hash": "sha256-v2:3ef2bf5151f8",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 141,
                   "endLine": 141
@@ -6914,10 +6914,10 @@
               "role": "call-site",
               "hash": "sha256-v2:7e72cce2a1bd",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 1784,
-                  "endLine": 1822
+                  "startLine": 1789,
+                  "endLine": 1827
                 },
                 "status": "ok"
               }
@@ -6938,7 +6938,7 @@
               "role": "definition",
               "hash": "sha256-v2:9e6a2c45db65",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 57,
                   "endLine": 67
@@ -6952,7 +6952,7 @@
               "role": "definition",
               "hash": "sha256-v2:267d3b70c1fe",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 429,
                   "endLine": 431
@@ -6970,10 +6970,10 @@
               "role": "definition",
               "hash": "sha256-v2:f366d33cff10",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 1823,
-                  "endLine": 1824
+                  "startLine": 1828,
+                  "endLine": 1829
                 },
                 "status": "ok"
               }
@@ -6984,7 +6984,7 @@
               "role": "call-site",
               "hash": "sha256-v2:c9293e741cee",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 79,
                   "endLine": 167
@@ -7008,7 +7008,7 @@
               "role": "definition",
               "hash": "sha256-v2:7c8ef965c213",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 11,
                   "endLine": 25
@@ -7022,7 +7022,7 @@
               "role": "definition",
               "hash": "sha256-v2:71d2cbd61861",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 75,
                   "endLine": 77
@@ -7040,7 +7040,7 @@
               "role": "call-site",
               "hash": "sha256-v2:fd49b3a83b1e",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 98,
                   "endLine": 99
@@ -7058,7 +7058,7 @@
               "role": "call-site",
               "hash": "sha256-v2:670e65feb852",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 24,
                   "endLine": 24
@@ -7086,7 +7086,7 @@
               "role": "call-site",
               "hash": "sha256-v2:c8c32430d6b7",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 121,
                   "endLine": 137
@@ -7104,7 +7104,7 @@
               "role": "usage",
               "hash": "sha256-v2:e79e79083777",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 101,
                   "endLine": 118
@@ -7118,10 +7118,10 @@
               "role": "definition",
               "hash": "sha256-v2:76ffc77cb591",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 70,
-                  "endLine": 78
+                  "startLine": 80,
+                  "endLine": 88
                 },
                 "status": "ok"
               }
@@ -7167,7 +7167,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "bd8c16c"
+        "commit": "e8026e2"
       }
     },
     {
@@ -7208,7 +7208,7 @@
               "role": "call-site",
               "hash": "sha256-v2:fd78a24620a2",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 22,
                   "endLine": 22
@@ -7226,7 +7226,7 @@
               "role": "definition",
               "hash": "sha256-v2:b5cee3691ce2",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 649,
                   "endLine": 662
@@ -7240,7 +7240,7 @@
               "role": "definition",
               "hash": "sha256-v2:d5227304a317",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 139,
                   "endLine": 184
@@ -7268,7 +7268,7 @@
               "role": "call-site",
               "hash": "sha256-v2:08da114de5af",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 150,
                   "endLine": 152
@@ -7282,7 +7282,7 @@
               "role": "definition",
               "hash": "sha256-v2:baef75921623",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 468,
                   "endLine": 866
@@ -7304,16 +7304,16 @@
               "file": "packages/viewer/src/components/DiagramPane.tsx",
               "symbol": "DiagramPane",
               "span": {
-                "from": 75,
-                "to": 75
+                "from": 82,
+                "to": 82
               },
               "role": "call-site",
               "hash": "sha256-v2:d9451bee692c",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 95,
-                  "endLine": 95
+                  "startLine": 102,
+                  "endLine": 102
                 },
                 "status": "ok"
               }
@@ -7324,10 +7324,10 @@
               "role": "definition",
               "hash": "sha256-v2:a4f25884b8c1",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 346,
-                  "endLine": 364
+                  "startLine": 352,
+                  "endLine": 370
                 },
                 "status": "ok"
               }
@@ -7338,7 +7338,7 @@
               "role": "definition",
               "hash": "sha256-v2:2ed04b03182a",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 175,
                   "endLine": 395
@@ -7360,16 +7360,16 @@
               "file": "packages/viewer/src/components/GraphView.tsx",
               "symbol": "GraphView",
               "span": {
-                "from": 156,
-                "to": 156
+                "from": 165,
+                "to": 165
               },
               "role": "call-site",
               "hash": "sha256-v2:0236503ff422",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 526,
-                  "endLine": 526
+                  "startLine": 541,
+                  "endLine": 541
                 },
                 "status": "ok"
               }
@@ -7380,7 +7380,7 @@
               "role": "definition",
               "hash": "sha256-v2:a132fe834d55",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 2304,
                   "endLine": 2331
@@ -7404,7 +7404,7 @@
               "role": "definition",
               "hash": "sha256-v2:1cf5d871938e",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 2085,
                   "endLine": 2103
@@ -7418,7 +7418,7 @@
               "role": "definition",
               "hash": "sha256-v2:c82b37e4355c",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 475,
                   "endLine": 614
@@ -7432,7 +7432,7 @@
               "role": "definition",
               "hash": "sha256-v2:2a6b4bf6e704",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 1066,
                   "endLine": 1654
@@ -7446,7 +7446,7 @@
               "role": "definition",
               "hash": "sha256-v2:7c03ca4f89a3",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 677,
                   "endLine": 681
@@ -7460,7 +7460,7 @@
               "role": "definition",
               "hash": "sha256-v2:1baf9a27d77d",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 75,
                   "endLine": 143
@@ -7484,7 +7484,7 @@
               "role": "definition",
               "hash": "sha256-v2:fd6d8a083fd0",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 152,
                   "endLine": 162
@@ -7496,16 +7496,16 @@
               "file": "packages/viewer/src/components/GraphView.tsx",
               "symbol": "GraphView",
               "span": {
-                "from": 174,
-                "to": 174
+                "from": 183,
+                "to": 183
               },
               "role": "call-site",
               "hash": "sha256-v2:bc3146c3a77e",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 544,
-                  "endLine": 544
+                  "startLine": 559,
+                  "endLine": 559
                 },
                 "status": "ok"
               }
@@ -7520,10 +7520,10 @@
               "role": "usage",
               "hash": "sha256-v2:bc907597bc51",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 987,
-                  "endLine": 987
+                  "startLine": 1002,
+                  "endLine": 1002
                 },
                 "status": "ok"
               }
@@ -7538,10 +7538,10 @@
               "role": "usage",
               "hash": "sha256-v2:ef7f939d77f1",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 1791,
-                  "endLine": 1791
+                  "startLine": 1806,
+                  "endLine": 1806
                 },
                 "status": "ok"
               }
@@ -7550,12 +7550,12 @@
               "file": "packages/viewer/src/components/GraphView.tsx",
               "symbol": "stateClasses",
               "role": "usage",
-              "hash": "sha256-v2:8814d84fc735",
+              "hash": "sha256-v2:6e67be8b084f",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 235,
-                  "endLine": 242
+                  "startLine": 240,
+                  "endLine": 248
                 },
                 "status": "ok"
               }
@@ -7574,16 +7574,16 @@
               "file": "packages/viewer/src/components/DiagramPane.tsx",
               "symbol": "DiagramPane",
               "span": {
-                "from": 85,
-                "to": 93
+                "from": 92,
+                "to": 100
               },
               "role": "call-site",
               "hash": "sha256-v2:a0d1386b7c4a",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 105,
-                  "endLine": 113
+                  "startLine": 112,
+                  "endLine": 120
                 },
                 "status": "ok"
               }
@@ -7598,7 +7598,7 @@
               "role": "usage",
               "hash": "sha256-v2:63e33a54520d",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 85,
                   "endLine": 85
@@ -7612,7 +7612,7 @@
               "role": "definition",
               "hash": "sha256-v2:6b7a589e4f21",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 74,
                   "endLine": 155
@@ -7630,7 +7630,7 @@
               "role": "usage",
               "hash": "sha256-v2:645a35adc964",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 565,
                   "endLine": 565
@@ -7648,7 +7648,7 @@
               "role": "usage",
               "hash": "sha256-v2:651763ee13f4",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 224,
                   "endLine": 224
@@ -7665,7 +7665,7 @@
               "role": "usage",
               "hash": "sha256-v2:cb6f5dd0063f",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 27,
                   "endLine": 27
@@ -7700,7 +7700,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "716c3db"
+        "commit": "e8026e2"
       }
     },
     {
@@ -7741,10 +7741,10 @@
               "role": "call-site",
               "hash": "sha256-v2:705574195faf",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 922,
-                  "endLine": 922
+                  "startLine": 937,
+                  "endLine": 937
                 },
                 "status": "ok"
               }
@@ -7759,10 +7759,10 @@
               "role": "call-site",
               "hash": "sha256-v2:a2e93785cd47",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 1785,
-                  "endLine": 1785
+                  "startLine": 1800,
+                  "endLine": 1800
                 },
                 "status": "ok"
               }
@@ -7777,7 +7777,7 @@
               "role": "call-site",
               "hash": "sha256-v2:ef575f68c264",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 542,
                   "endLine": 542
@@ -7795,7 +7795,7 @@
               "role": "call-site",
               "hash": "sha256-v2:f8d3630a2cdd",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 204,
                   "endLine": 204
@@ -7813,7 +7813,7 @@
               "role": "call-site",
               "hash": "sha256-v2:724d9eeeff26",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 48,
                   "endLine": 48
@@ -7827,7 +7827,7 @@
               "role": "definition",
               "hash": "sha256-v2:a881916545fd",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 719,
                   "endLine": 722
@@ -7841,7 +7841,7 @@
               "role": "definition",
               "hash": "sha256-v2:6e176d150a08",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 681,
                   "endLine": 699
@@ -7870,7 +7870,7 @@
               "role": "call-site",
               "hash": "sha256-v2:6af28b860623",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 520,
                   "endLine": 520
@@ -7884,7 +7884,7 @@
               "role": "definition",
               "hash": "sha256-v2:b7626765a55b",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 15,
                   "endLine": 18
@@ -7912,10 +7912,10 @@
               "role": "call-site",
               "hash": "sha256-v2:fd78a24620a2",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 63,
-                  "endLine": 63
+                  "startLine": 64,
+                  "endLine": 64
                 },
                 "status": "ok"
               }
@@ -7930,7 +7930,7 @@
               "role": "call-site",
               "hash": "sha256-v2:518c241e86f3",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 22,
                   "endLine": 22
@@ -7944,7 +7944,7 @@
               "role": "definition",
               "hash": "sha256-v2:80b8223ca268",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 645,
                   "endLine": 736
@@ -7972,7 +7972,7 @@
               "role": "call-site",
               "hash": "sha256-v2:10426f00134c",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 480,
                   "endLine": 480
@@ -7986,7 +7986,7 @@
               "role": "definition",
               "hash": "sha256-v2:27b6fe4afffb",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 226,
                   "endLine": 263
@@ -8014,7 +8014,7 @@
               "role": "call-site",
               "hash": "sha256-v2:c8d8b4bab7e7",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 484,
                   "endLine": 484
@@ -8028,7 +8028,7 @@
               "role": "definition",
               "hash": "sha256-v2:37a005fa20ae",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 64,
                   "endLine": 82
@@ -8042,7 +8042,7 @@
               "role": "definition",
               "hash": "sha256-v2:1406c8416b1c",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 84,
                   "endLine": 119
@@ -8070,7 +8070,7 @@
               "role": "call-site",
               "hash": "sha256-v2:74259b6b0b9a",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 201,
                   "endLine": 201
@@ -8084,7 +8084,7 @@
               "role": "definition",
               "hash": "sha256-v2:6cc1124f1e15",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 121,
                   "endLine": 132
@@ -8098,7 +8098,7 @@
               "role": "definition",
               "hash": "sha256-v2:9f9c4a9c9951",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 159,
                   "endLine": 192
@@ -8126,7 +8126,7 @@
               "role": "call-site",
               "hash": "sha256-v2:e9c4c175faad",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 96,
                   "endLine": 96
@@ -8144,7 +8144,7 @@
               "role": "definition",
               "hash": "sha256-v2:aa0dd56f96b7",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 204,
                   "endLine": 257
@@ -8158,7 +8158,7 @@
               "role": "definition",
               "hash": "sha256-v2:518bd9ab7cec",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 260,
                   "endLine": 285
@@ -8186,7 +8186,7 @@
               "role": "call-site",
               "hash": "sha256-v2:21a4ad360ed0",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 497,
                   "endLine": 497
@@ -8200,7 +8200,7 @@
               "role": "definition",
               "hash": "sha256-v2:0cc2a550da41",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 310,
                   "endLine": 342
@@ -8228,7 +8228,7 @@
               "role": "call-site",
               "hash": "sha256-v2:94ce82c797c0",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 713,
                   "endLine": 723
@@ -8242,7 +8242,7 @@
               "role": "definition",
               "hash": "sha256-v2:ab903b06bf82",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 545,
                   "endLine": 592
@@ -8266,7 +8266,7 @@
               "role": "definition",
               "hash": "sha256-v2:e0fc143e8498",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 101,
                   "endLine": 122
@@ -8284,10 +8284,10 @@
               "role": "call-site",
               "hash": "sha256-v2:ac1590ad638b",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 64,
-                  "endLine": 70
+                  "startLine": 65,
+                  "endLine": 71
                 },
                 "status": "ok"
               }
@@ -8312,10 +8312,10 @@
               "role": "call-site",
               "hash": "sha256-v2:1894c1b90f3e",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 426,
-                  "endLine": 426
+                  "startLine": 427,
+                  "endLine": 427
                 },
                 "status": "ok"
               }
@@ -8326,7 +8326,7 @@
               "role": "definition",
               "hash": "sha256-v2:9170be040dbc",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 962,
                   "endLine": 964
@@ -8340,7 +8340,7 @@
               "role": "definition",
               "hash": "sha256-v2:a61557889581",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 247,
                   "endLine": 297
@@ -8368,10 +8368,10 @@
               "role": "call-site",
               "hash": "sha256-v2:3f71e653a9b2",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 438,
-                  "endLine": 471
+                  "startLine": 439,
+                  "endLine": 472
                 },
                 "status": "ok"
               }
@@ -8382,7 +8382,7 @@
               "role": "definition",
               "hash": "sha256-v2:dbd37c5bbd14",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 972,
                   "endLine": 1012
@@ -8396,7 +8396,7 @@
               "role": "definition",
               "hash": "sha256-v2:b67c03b15485",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 1056,
                   "endLine": 1062
@@ -8491,7 +8491,7 @@
               "role": "call-site",
               "hash": "sha256-v2:5b85a3fe9b2a",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 905,
                   "endLine": 905
@@ -8505,7 +8505,7 @@
               "role": "definition",
               "hash": "sha256-v2:fd77088410e5",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 538,
                   "endLine": 544
@@ -8516,16 +8516,16 @@
             {
               "file": "packages/viewer/src/components/EditorStack.tsx",
               "span": {
-                "from": 403,
-                "to": 403
+                "from": 404,
+                "to": 404
               },
               "role": "definition",
               "hash": "sha256-v2:ad2f7e25421e",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 404,
-                  "endLine": 404
+                  "startLine": 405,
+                  "endLine": 405
                 },
                 "status": "ok"
               }
@@ -8543,16 +8543,16 @@
             {
               "file": "packages/viewer/src/components/EditorStack.tsx",
               "span": {
-                "from": 403,
-                "to": 403
+                "from": 404,
+                "to": 404
               },
               "role": "call-site",
               "hash": "sha256-v2:ad2f7e25421e",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 404,
-                  "endLine": 404
+                  "startLine": 405,
+                  "endLine": 405
                 },
                 "status": "ok"
               }
@@ -8563,7 +8563,7 @@
               "role": "definition",
               "hash": "sha256-v2:0c13b7cd94b4",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 740,
                   "endLine": 770
@@ -8592,7 +8592,7 @@
               "role": "call-site",
               "hash": "sha256-v2:6af28b860623",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 520,
                   "endLine": 520
@@ -8606,7 +8606,7 @@
               "role": "definition",
               "hash": "sha256-v2:b7626765a55b",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 15,
                   "endLine": 18
@@ -8634,7 +8634,7 @@
               "role": "call-site",
               "hash": "sha256-v2:fd78a24620a2",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 22,
                   "endLine": 22
@@ -8648,7 +8648,7 @@
               "role": "definition",
               "hash": "sha256-v2:80b8223ca268",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 645,
                   "endLine": 736
@@ -8662,7 +8662,7 @@
               "role": "test",
               "hash": "sha256-v2:bce51e769208",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 351,
                   "endLine": 362
@@ -8690,7 +8690,7 @@
               "role": "call-site",
               "hash": "sha256-v2:4de93c7311e1",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 176,
                   "endLine": 176
@@ -8704,7 +8704,7 @@
               "role": "definition",
               "hash": "sha256-v2:d85e57552c98",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 417,
                   "endLine": 436
@@ -8722,7 +8722,7 @@
               "role": "call-site",
               "hash": "sha256-v2:deb5944115fa",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 198,
                   "endLine": 198
@@ -8750,7 +8750,7 @@
               "role": "call-site",
               "hash": "sha256-v2:3ba5724104f2",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 197,
                   "endLine": 209
@@ -8768,7 +8768,7 @@
               "role": "definition",
               "hash": "sha256-v2:ac4cbc15cbb4",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 362,
                   "endLine": 392
@@ -8796,7 +8796,7 @@
               "role": "call-site",
               "hash": "sha256-v2:985d6050e3e0",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 375,
                   "endLine": 375
@@ -8810,7 +8810,7 @@
               "role": "definition",
               "hash": "sha256-v2:37a005fa20ae",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 64,
                   "endLine": 82
@@ -8838,7 +8838,7 @@
               "role": "call-site",
               "hash": "sha256-v2:678c127458c2",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 522,
                   "endLine": 522
@@ -8856,7 +8856,7 @@
               "role": "definition",
               "hash": "sha256-v2:6f3c10ca5c3f",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 393,
                   "endLine": 410
@@ -8870,7 +8870,7 @@
               "role": "definition",
               "hash": "sha256-v2:3f2a4d1859a1",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 346,
                   "endLine": 353
@@ -8888,7 +8888,7 @@
               "role": "definition",
               "hash": "sha256-v2:2f93f5945c27",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 210,
                   "endLine": 214
@@ -8912,7 +8912,7 @@
               "role": "definition",
               "hash": "sha256-v2:f94b54d2eac2",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 516,
                   "endLine": 525
@@ -8924,16 +8924,16 @@
               "file": "packages/viewer/src/components/DiagramPane.tsx",
               "symbol": "DiagramPane",
               "span": {
-                "from": 77,
-                "to": 77
+                "from": 84,
+                "to": 84
               },
               "role": "call-site",
               "hash": "sha256-v2:b280da97a910",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 97,
-                  "endLine": 97
+                  "startLine": 104,
+                  "endLine": 104
                 },
                 "status": "ok"
               }
@@ -8942,16 +8942,16 @@
               "file": "packages/viewer/src/components/DiagramPane.tsx",
               "symbol": "DiagramPane",
               "span": {
-                "from": 77,
-                "to": 77
+                "from": 84,
+                "to": 84
               },
               "role": "call-site",
               "hash": "sha256-v2:b280da97a910",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 97,
-                  "endLine": 97
+                  "startLine": 104,
+                  "endLine": 104
                 },
                 "status": "ok"
               }
@@ -8966,10 +8966,10 @@
               "role": "usage",
               "hash": "sha256-v2:63606634e20a",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 238,
-                  "endLine": 238
+                  "startLine": 243,
+                  "endLine": 243
                 },
                 "status": "ok"
               }
@@ -8984,7 +8984,7 @@
               "role": "usage",
               "hash": "sha256-v2:0dab434094c0",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 106,
                   "endLine": 106
@@ -9002,7 +9002,7 @@
               "role": "usage",
               "hash": "sha256-v2:e78859d96fb0",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 40,
                   "endLine": 40
@@ -9073,7 +9073,7 @@
               "role": "call-site",
               "hash": "sha256-v2:315288e91528",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 97,
                   "endLine": 99
@@ -9091,7 +9091,7 @@
               "role": "usage",
               "hash": "sha256-v2:7c931c79413a",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 80,
                   "endLine": 96
@@ -9105,7 +9105,7 @@
               "role": "usage",
               "hash": "sha256-v2:6f2b68d729a7",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 219,
                   "endLine": 243
@@ -9119,7 +9119,7 @@
               "role": "usage",
               "hash": "sha256-v2:bc859beb1f9e",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 113,
                   "endLine": 137
@@ -9133,7 +9133,7 @@
               "role": "definition",
               "hash": "sha256-v2:f32e0667307c",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 1168,
                   "endLine": 1253
@@ -9147,7 +9147,7 @@
               "role": "test",
               "hash": "sha256-v2:d946e9b769cb",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 481,
                   "endLine": 492
@@ -9161,7 +9161,7 @@
               "role": "test",
               "hash": "sha256-v2:2c68cd18356f",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 511,
                   "endLine": 517
@@ -9189,7 +9189,7 @@
               "role": "call-site",
               "hash": "sha256-v2:98f90efa9264",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 1184,
                   "endLine": 1184
@@ -9207,7 +9207,7 @@
               "role": "usage",
               "hash": "sha256-v2:df462cc64203",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 1176,
                   "endLine": 1176
@@ -9221,7 +9221,7 @@
               "role": "definition",
               "hash": "sha256-v2:4ebfa169f607",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 993,
                   "endLine": 1082
@@ -9249,7 +9249,7 @@
               "role": "call-site",
               "hash": "sha256-v2:3df6843b7630",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 1189,
                   "endLine": 1189
@@ -9263,7 +9263,7 @@
               "role": "definition",
               "hash": "sha256-v2:bc3150f07628",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 209,
                   "endLine": 325
@@ -9277,7 +9277,7 @@
               "role": "usage",
               "hash": "sha256-v2:919403ac0b45",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 196,
                   "endLine": 203
@@ -9291,7 +9291,7 @@
               "role": "test",
               "hash": "sha256-v2:7003b3ba2879",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 294,
                   "endLine": 302
@@ -9319,7 +9319,7 @@
               "role": "call-site",
               "hash": "sha256-v2:98b8020546fc",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 234,
                   "endLine": 234
@@ -9337,7 +9337,7 @@
               "role": "usage",
               "hash": "sha256-v2:26ef1eb0597f",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 224,
                   "endLine": 231
@@ -9355,7 +9355,7 @@
               "role": "usage",
               "hash": "sha256-v2:643816cd4065",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 217,
                   "endLine": 222
@@ -9369,7 +9369,7 @@
               "role": "definition",
               "hash": "sha256-v2:c7814e0b92a1",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 216,
                   "endLine": 218
@@ -9397,7 +9397,7 @@
               "role": "call-site",
               "hash": "sha256-v2:cf4ef4e6fb81",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 235,
                   "endLine": 235
@@ -9415,7 +9415,7 @@
               "role": "call-site",
               "hash": "sha256-v2:10ba0fda6bae",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 484,
                   "endLine": 492
@@ -9433,7 +9433,7 @@
               "role": "usage",
               "hash": "sha256-v2:d743fd774904",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 464,
                   "endLine": 483
@@ -9447,7 +9447,7 @@
               "role": "usage",
               "hash": "sha256-v2:68cb425c64a8",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 442,
                   "endLine": 449
@@ -9461,7 +9461,7 @@
               "role": "usage",
               "hash": "sha256-v2:306ebac63791",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 304,
                   "endLine": 312
@@ -9475,7 +9475,7 @@
               "role": "definition",
               "hash": "sha256-v2:53b6029309b6",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 338,
                   "endLine": 412
@@ -9503,7 +9503,7 @@
               "role": "definition",
               "hash": "sha256-v2:643816cd4065",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 217,
                   "endLine": 222
@@ -9521,7 +9521,7 @@
               "role": "call-site",
               "hash": "sha256-v2:5e7fb8218f4c",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 1196,
                   "endLine": 1205
@@ -9539,7 +9539,7 @@
               "role": "usage",
               "hash": "sha256-v2:0f1a8bbb19a8",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 43,
                   "endLine": 51
@@ -9553,7 +9553,7 @@
               "role": "test",
               "hash": "sha256-v2:25652c557ec5",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 465,
                   "endLine": 476
@@ -9581,7 +9581,7 @@
               "role": "call-site",
               "hash": "sha256-v2:f276c4915158",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 303,
                   "endLine": 306
@@ -9599,7 +9599,7 @@
               "role": "usage",
               "hash": "sha256-v2:7089eff2d1e4",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 281,
                   "endLine": 284
@@ -9613,7 +9613,7 @@
               "role": "definition",
               "hash": "sha256-v2:b17b4d6f5eb2",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 502,
                   "endLine": 504
@@ -9627,7 +9627,7 @@
               "role": "definition",
               "hash": "sha256-v2:683902ac3f59",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 27,
                   "endLine": 34
@@ -9641,7 +9641,7 @@
               "role": "definition",
               "hash": "sha256-v2:f68b788ebf61",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 42,
                   "endLine": 44
@@ -9669,7 +9669,7 @@
               "role": "definition",
               "hash": "sha256-v2:f261a6655864",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 256,
                   "endLine": 279
@@ -9687,7 +9687,7 @@
               "role": "definition",
               "hash": "sha256-v2:f276c4915158",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 303,
                   "endLine": 306
@@ -9705,7 +9705,7 @@
               "role": "call-site",
               "hash": "sha256-v2:1798d041dfec",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 1193,
                   "endLine": 1194
@@ -9719,7 +9719,7 @@
               "role": "test",
               "hash": "sha256-v2:e9a487d9572a",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 178,
                   "endLine": 202
@@ -9733,7 +9733,7 @@
               "role": "test",
               "hash": "sha256-v2:bba589f527e2",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 590,
                   "endLine": 617
@@ -9761,7 +9761,7 @@
               "role": "call-site",
               "hash": "sha256-v2:7e6b757cdde0",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 308,
                   "endLine": 308
@@ -9779,7 +9779,7 @@
               "role": "usage",
               "hash": "sha256-v2:d0d22214f442",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 238,
                   "endLine": 239
@@ -9793,7 +9793,7 @@
               "role": "definition",
               "hash": "sha256-v2:b3f59dc243a4",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 524,
                   "endLine": 544
@@ -9807,7 +9807,7 @@
               "role": "usage",
               "hash": "sha256-v2:08bb79c5ae14",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 507,
                   "endLine": 521
@@ -9821,7 +9821,7 @@
               "role": "usage",
               "hash": "sha256-v2:08bb79c5ae14",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 507,
                   "endLine": 521
@@ -9835,7 +9835,7 @@
               "role": "test",
               "hash": "sha256-v2:6da01b4f24d2",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 327,
                   "endLine": 354
@@ -9859,7 +9859,7 @@
               "role": "call-site",
               "hash": "sha256-v2:b3f59dc243a4",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 524,
                   "endLine": 544
@@ -9873,7 +9873,7 @@
               "role": "usage",
               "hash": "sha256-v2:b3f59dc243a4",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 524,
                   "endLine": 544
@@ -9887,7 +9887,7 @@
               "role": "usage",
               "hash": "sha256-v2:b3f59dc243a4",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 524,
                   "endLine": 544
@@ -9901,7 +9901,7 @@
               "role": "definition",
               "hash": "sha256-v2:d0d66f0c9657",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 37,
                   "endLine": 39
@@ -9915,7 +9915,7 @@
               "role": "test",
               "hash": "sha256-v2:c6516d98d17a",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 5,
                   "endLine": 11
@@ -9939,7 +9939,7 @@
               "role": "definition",
               "hash": "sha256-v2:b3f59dc243a4",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 524,
                   "endLine": 544
@@ -9953,7 +9953,7 @@
               "role": "definition",
               "hash": "sha256-v2:b3f59dc243a4",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 524,
                   "endLine": 544
@@ -9967,7 +9967,7 @@
               "role": "usage",
               "hash": "sha256-v2:b3f59dc243a4",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 524,
                   "endLine": 544
@@ -9985,7 +9985,7 @@
               "role": "call-site",
               "hash": "sha256-v2:e446567680de",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 309,
                   "endLine": 316
@@ -10013,7 +10013,7 @@
               "role": "definition",
               "hash": "sha256-v2:e446567680de",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 309,
                   "endLine": 316
@@ -10031,7 +10031,7 @@
               "role": "call-site",
               "hash": "sha256-v2:1798d041dfec",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 1193,
                   "endLine": 1194
@@ -10045,7 +10045,7 @@
               "role": "test",
               "hash": "sha256-v2:f3e72f4a46b4",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 233,
                   "endLine": 266
@@ -10073,7 +10073,7 @@
               "role": "definition",
               "hash": "sha256-v2:f21e5ac3c381",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 317,
                   "endLine": 324
@@ -10091,7 +10091,7 @@
               "role": "usage",
               "hash": "sha256-v2:639c97452b54",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 267,
                   "endLine": 274
@@ -10109,7 +10109,7 @@
               "role": "call-site",
               "hash": "sha256-v2:c57e1a73ca48",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 1206,
                   "endLine": 1225
@@ -10123,7 +10123,7 @@
               "role": "usage",
               "hash": "sha256-v2:6c232221d053",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 1090,
                   "endLine": 1107
@@ -10137,7 +10137,7 @@
               "role": "test",
               "hash": "sha256-v2:aa36822336c1",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 370,
                   "endLine": 380
@@ -10151,7 +10151,7 @@
               "role": "test",
               "hash": "sha256-v2:fb4ac4914042",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 195,
                   "endLine": 227
@@ -10160,7 +10160,7 @@
               }
             }
           ],
-          "summary": "A drifted link stays drifted until Claude or the author reads the code and rebuilds the link. Its old hash stays, so a second resolve cannot accept a change in behaviour."
+          "summary": "A drifted link stays drifted until Claude or the author reads the code and rebuilds the link. Its old hash stays, so a second resolve cannot accept a change in behavior."
         },
         {
           "id": "regen:14",
@@ -10179,7 +10179,7 @@
               "role": "definition",
               "hash": "sha256-v2:6ef575767735",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 1207,
                   "endLine": 1234
@@ -10193,7 +10193,7 @@
               "role": "usage",
               "hash": "sha256-v2:34e86008f02e",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 945,
                   "endLine": 961
@@ -10207,7 +10207,7 @@
               "role": "usage",
               "hash": "sha256-v2:b32a0548cac0",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 1110,
                   "endLine": 1118
@@ -10221,7 +10221,7 @@
               "role": "usage",
               "hash": "sha256-v2:46f32a258982",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 86,
                   "endLine": 89
@@ -10235,7 +10235,7 @@
               "role": "test",
               "hash": "sha256-v2:cedf95d5686c",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 328,
                   "endLine": 358
@@ -10263,7 +10263,7 @@
               "role": "definition",
               "hash": "sha256-v2:505451d452cf",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 1238,
                   "endLine": 1252
@@ -10281,7 +10281,7 @@
               "role": "call-site",
               "hash": "sha256-v2:adc4cad0320a",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 100,
                   "endLine": 100
@@ -10309,7 +10309,7 @@
               "role": "call-site",
               "hash": "sha256-v2:1a2cbfccb335",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 110,
                   "endLine": 118
@@ -10323,7 +10323,7 @@
               "role": "definition",
               "hash": "sha256-v2:0a3178c1235c",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 9,
                   "endLine": 53
@@ -10337,7 +10337,7 @@
               "role": "test",
               "hash": "sha256-v2:486f2a1f0791",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 360,
                   "endLine": 368
@@ -10389,7 +10389,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "5e80a7e"
+        "commit": "e8026e2"
       }
     },
     {
@@ -10430,7 +10430,7 @@
               "role": "call-site",
               "hash": "sha256-v2:c1f203b8d214",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 528,
                   "endLine": 528
@@ -10448,7 +10448,7 @@
               "role": "usage",
               "hash": "sha256-v2:dd86d2ca6d7f",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 496,
                   "endLine": 496
@@ -10462,7 +10462,7 @@
               "role": "usage",
               "hash": "sha256-v2:6f2b68d729a7",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 219,
                   "endLine": 243
@@ -10480,7 +10480,7 @@
               "role": "usage",
               "hash": "sha256-v2:adc4cad0320a",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 100,
                   "endLine": 100
@@ -10494,7 +10494,7 @@
               "role": "definition",
               "hash": "sha256-v2:f32e0667307c",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 1168,
                   "endLine": 1253
@@ -10522,7 +10522,7 @@
               "role": "call-site",
               "hash": "sha256-v2:47d860a392ed",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 534,
                   "endLine": 534
@@ -10536,7 +10536,7 @@
               "role": "definition",
               "hash": "sha256-v2:ac4ecaf84ee3",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 245,
                   "endLine": 252
@@ -10554,7 +10554,7 @@
               "role": "usage",
               "hash": "sha256-v2:a7c9d7cff616",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 588,
                   "endLine": 592
@@ -10568,7 +10568,7 @@
               "role": "test",
               "hash": "sha256-v2:d84ab15ecc37",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 123,
                   "endLine": 160
@@ -10596,7 +10596,7 @@
               "role": "call-site",
               "hash": "sha256-v2:96caf0ec8f98",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 86,
                   "endLine": 88
@@ -10614,7 +10614,7 @@
               "role": "usage",
               "hash": "sha256-v2:c98a598eb5cb",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 80,
                   "endLine": 80
@@ -10628,7 +10628,7 @@
               "role": "definition",
               "hash": "sha256-v2:9e10caea883b",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 344,
                   "endLine": 352
@@ -10640,12 +10640,12 @@
               "file": "packages/core/src/apply.ts",
               "symbol": "Applier.run",
               "role": "definition",
-              "hash": "sha256-v2:1ff8ab672af5",
+              "hash": "sha256-v2:82f9eb1c488d",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 503,
-                  "endLine": 590
+                  "endLine": 595
                 },
                 "status": "ok"
               }
@@ -10670,10 +10670,10 @@
               "role": "call-site",
               "hash": "sha256-v2:8339762b8249",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 1075,
-                  "endLine": 1075
+                  "startLine": 1080,
+                  "endLine": 1080
                 },
                 "status": "ok"
               }
@@ -10684,10 +10684,10 @@
               "role": "definition",
               "hash": "sha256-v2:585b9e7d9bfc",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 1093,
-                  "endLine": 1104
+                  "startLine": 1098,
+                  "endLine": 1109
                 },
                 "status": "ok"
               }
@@ -10702,10 +10702,10 @@
               "role": "usage",
               "hash": "sha256-v2:8339762b8249",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 1624,
-                  "endLine": 1624
+                  "startLine": 1629,
+                  "endLine": 1629
                 },
                 "status": "ok"
               }
@@ -10720,10 +10720,10 @@
               "role": "usage",
               "hash": "sha256-v2:8339762b8249",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 1756,
-                  "endLine": 1756
+                  "startLine": 1761,
+                  "endLine": 1761
                 },
                 "status": "ok"
               }
@@ -10748,10 +10748,10 @@
               "role": "call-site",
               "hash": "sha256-v2:a2c8bda77d9a",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 1136,
-                  "endLine": 1136
+                  "startLine": 1141,
+                  "endLine": 1141
                 },
                 "status": "ok"
               }
@@ -10766,10 +10766,10 @@
               "role": "usage",
               "hash": "sha256-v2:61c59701a960",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 1132,
-                  "endLine": 1135
+                  "startLine": 1137,
+                  "endLine": 1140
                 },
                 "status": "ok"
               }
@@ -10784,10 +10784,10 @@
               "role": "definition",
               "hash": "sha256-v2:fc4f5e8e1ce6",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 994,
-                  "endLine": 1002
+                  "startLine": 999,
+                  "endLine": 1007
                 },
                 "status": "ok"
               }
@@ -10798,7 +10798,7 @@
               "role": "test",
               "hash": "sha256-v2:be1788a05937",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 753,
                   "endLine": 856
@@ -10826,10 +10826,10 @@
               "role": "call-site",
               "hash": "sha256-v2:f95f2f3cbcbe",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 777,
-                  "endLine": 777
+                  "startLine": 782,
+                  "endLine": 782
                 },
                 "status": "ok"
               }
@@ -10844,10 +10844,10 @@
               "role": "usage",
               "hash": "sha256-v2:cd0f30830403",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 1008,
-                  "endLine": 1008
+                  "startLine": 1013,
+                  "endLine": 1013
                 },
                 "status": "ok"
               }
@@ -10858,7 +10858,7 @@
               "role": "definition",
               "hash": "sha256-v2:3f96f7b50529",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 572,
                   "endLine": 742
@@ -10872,7 +10872,7 @@
               "role": "usage",
               "hash": "sha256-v2:f32e0667307c",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 1168,
                   "endLine": 1253
@@ -10886,7 +10886,7 @@
               "role": "test",
               "hash": "sha256-v2:4713960e9058",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 1064,
                   "endLine": 1198
@@ -10908,16 +10908,16 @@
               "file": "packages/core/src/apply.ts",
               "symbol": "Applier.run",
               "span": {
-                "from": 83,
-                "to": 83
+                "from": 88,
+                "to": 88
               },
               "role": "call-site",
               "hash": "sha256-v2:66e7c11f9413",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 586,
-                  "endLine": 586
+                  "startLine": 591,
+                  "endLine": 591
                 },
                 "status": "ok"
               }
@@ -10932,10 +10932,10 @@
               "role": "definition",
               "hash": "sha256-v2:630a83df93c3",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 638,
-                  "endLine": 654
+                  "startLine": 643,
+                  "endLine": 659
                 },
                 "status": "ok"
               }
@@ -10960,10 +10960,10 @@
               "role": "call-site",
               "hash": "sha256-v2:6922ca539e6b",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 1779,
-                  "endLine": 1783
+                  "startLine": 1784,
+                  "endLine": 1788
                 },
                 "status": "ok"
               }
@@ -10978,10 +10978,10 @@
               "role": "usage",
               "hash": "sha256-v2:640777107738",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 1803,
-                  "endLine": 1812
+                  "startLine": 1808,
+                  "endLine": 1817
                 },
                 "status": "ok"
               }
@@ -10996,7 +10996,7 @@
               "role": "definition",
               "hash": "sha256-v2:541dbca6c710",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 652,
                   "endLine": 680
@@ -11010,7 +11010,7 @@
               "role": "definition",
               "hash": "sha256-v2:3d68d6a5bb94",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 1729,
                   "endLine": 1735
@@ -11032,16 +11032,16 @@
               "file": "packages/core/src/apply.ts",
               "symbol": "Applier.run",
               "span": {
-                "from": 83,
-                "to": 86
+                "from": 88,
+                "to": 91
               },
               "role": "definition",
               "hash": "sha256-v2:dcd6f47a6546",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 586,
-                  "endLine": 589
+                  "startLine": 591,
+                  "endLine": 594
                 },
                 "status": "ok"
               }
@@ -11052,7 +11052,7 @@
               "role": "test",
               "hash": "sha256-v2:75f5e6e9dff6",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 63,
                   "endLine": 82
@@ -11066,7 +11066,7 @@
               "role": "call-site",
               "hash": "sha256-v2:c9293e741cee",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 79,
                   "endLine": 167
@@ -11084,7 +11084,7 @@
               "role": "usage",
               "hash": "sha256-v2:c8c32430d6b7",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 121,
                   "endLine": 137
@@ -11102,7 +11102,7 @@
               "role": "usage",
               "hash": "sha256-v2:f0ee0e264f3f",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 158,
                   "endLine": 163
@@ -11149,7 +11149,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "99fd484"
+        "commit": "e8026e2"
       }
     },
     {
@@ -11200,7 +11200,7 @@
               "role": "usage",
               "hash": "sha256-v2:d67a9e7bb19c",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 3,
                   "endLine": 6
@@ -11230,7 +11230,7 @@
               "role": "definition",
               "hash": "sha256-v2:8075367d35e8",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 8,
                   "endLine": 8
@@ -11244,7 +11244,7 @@
               "role": "definition",
               "hash": "sha256-v2:1e4184604be4",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 44,
                   "endLine": 74
@@ -11269,16 +11269,16 @@
             {
               "file": "packages/cli/src/commands/build-index.ts",
               "span": {
-                "from": 178,
-                "to": 178
+                "from": 177,
+                "to": 177
               },
               "role": "call-site",
               "hash": "sha256-v2:2ce42aee9dbc",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 179,
-                  "endLine": 179
+                  "startLine": 178,
+                  "endLine": 178
                 },
                 "status": "ok"
               }
@@ -11289,7 +11289,7 @@
               "role": "definition",
               "hash": "sha256-v2:12c5a9b045af",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 33,
                   "endLine": 41
@@ -11316,7 +11316,7 @@
               "role": "config",
               "hash": "sha256-v2:f7d5de2c402f",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 6,
                   "endLine": 6
@@ -11329,7 +11329,7 @@
               "role": "definition",
               "hash": "sha256-v2:0848346d51a9",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 1,
                   "endLine": 44
@@ -11363,7 +11363,7 @@
               "role": "call-site",
               "hash": "sha256-v2:6cc5b9a6943c",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 86,
                   "endLine": 86
@@ -11377,7 +11377,7 @@
               "role": "definition",
               "hash": "sha256-v2:9e10caea883b",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 344,
                   "endLine": 352
@@ -11405,7 +11405,7 @@
               "role": "definition",
               "hash": "sha256-v2:e19521ee7499",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 862,
                   "endLine": 913
@@ -11423,7 +11423,7 @@
               "role": "definition",
               "hash": "sha256-v2:bdffd7a6cd74",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 725,
                   "endLine": 725
@@ -11453,7 +11453,7 @@
               "role": "call-site",
               "hash": "sha256-v2:2aca58bc5983",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 153,
                   "endLine": 153
@@ -11471,7 +11471,7 @@
               "role": "call-site",
               "hash": "sha256-v2:c8d8b4bab7e7",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 484,
                   "endLine": 484
@@ -11489,7 +11489,7 @@
               "role": "definition",
               "hash": "sha256-v2:40f7e4ce2447",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 201,
                   "endLine": 202
@@ -11521,7 +11521,7 @@
               "role": "definition",
               "hash": "sha256-v2:e1f068377fb4",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 232,
                   "endLine": 236
@@ -11539,7 +11539,7 @@
               "role": "definition",
               "hash": "sha256-v2:de4bc65cfd30",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 307,
                   "endLine": 316
@@ -11557,7 +11557,7 @@
               "role": "definition",
               "hash": "sha256-v2:f21e5ac3c381",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 317,
                   "endLine": 324
@@ -11587,7 +11587,7 @@
               "role": "definition",
               "hash": "sha256-v2:aae33ce5b62a",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 17,
                   "endLine": 17
@@ -11601,7 +11601,7 @@
               "role": "definition",
               "hash": "sha256-v2:80333245a6c0",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 7,
                   "endLine": 12
@@ -11645,7 +11645,7 @@
               "role": "usage",
               "hash": "sha256-v2:5cc1e5392b28",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 2,
                   "endLine": 2
@@ -11662,7 +11662,7 @@
               "role": "usage",
               "hash": "sha256-v2:18bbc6a50dc1",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 13,
                   "endLine": 13
@@ -11679,7 +11679,7 @@
               "role": "usage",
               "hash": "sha256-v2:ff34b0867f3d",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 24,
                   "endLine": 37
@@ -11710,7 +11710,7 @@
               "role": "definition",
               "hash": "sha256-v2:80c2fa8c2912",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 4,
                   "endLine": 7
@@ -11728,7 +11728,7 @@
               "role": "definition",
               "hash": "sha256-v2:2f8d8f033618",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 67,
                   "endLine": 73
@@ -11746,7 +11746,7 @@
               "role": "definition",
               "hash": "sha256-v2:445aad6d5142",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 90,
                   "endLine": 97
@@ -11774,7 +11774,7 @@
               "role": "definition",
               "hash": "sha256-v2:0246e0d7f5a2",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 381,
                   "endLine": 496
@@ -11792,7 +11792,7 @@
               "role": "usage",
               "hash": "sha256-v2:0cd75a02b5b3",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 569,
                   "endLine": 569
@@ -11824,10 +11824,10 @@
               "role": "definition",
               "hash": "sha256-v2:548b965d2780",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 994,
-                  "endLine": 1006
+                  "startLine": 999,
+                  "endLine": 1011
                 },
                 "status": "ok"
               }
@@ -11842,10 +11842,10 @@
               "role": "definition",
               "hash": "sha256-v2:7fc364d43e9d",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 1139,
-                  "endLine": 1144
+                  "startLine": 1144,
+                  "endLine": 1149
                 },
                 "status": "ok"
               }
@@ -11869,7 +11869,7 @@
               "role": "definition",
               "hash": "sha256-v2:267d3b70c1fe",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 429,
                   "endLine": 431
@@ -11887,10 +11887,10 @@
               "role": "definition",
               "hash": "sha256-v2:f366d33cff10",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 1823,
-                  "endLine": 1824
+                  "startLine": 1828,
+                  "endLine": 1829
                 },
                 "status": "ok"
               }
@@ -11905,7 +11905,7 @@
               "role": "call-site",
               "hash": "sha256-v2:6bcfb2e8e6aa",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 121,
                   "endLine": 128
@@ -11936,7 +11936,7 @@
               "role": "definition",
               "hash": "sha256-v2:31002b64d068",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 629,
                   "endLine": 657
@@ -11950,7 +11950,7 @@
               "role": "definition",
               "hash": "sha256-v2:5ae0f26482ad",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 251,
                   "endLine": 264
@@ -11959,7 +11959,7 @@
               }
             }
           ],
-          "note": "### Arrows between boxes are worked out, not stored\n\n`deriveGraph` counts the references between two shown boxes for each kind, and the map draws one arrow per pair with each kind on it. Nobody stores these arrows, so they follow the code. Code the map does not show gets a dashed box outside this map.",
+          "note": "### xpl works out the arrows between boxes; the guide stores none\n\n`deriveGraph` counts the references between two shown boxes for each kind, and the map draws one arrow per pair with each kind on it. Nobody stores these arrows, so they follow the code. Code the map does not show gets a dashed box outside this map.",
           "editor": {
             "primary": "packages/core/src/graph.ts"
           }
@@ -11981,7 +11981,7 @@
               "role": "call-site",
               "hash": "sha256-v2:678c127458c2",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 522,
                   "endLine": 522
@@ -11999,7 +11999,7 @@
               "role": "definition",
               "hash": "sha256-v2:6f3c10ca5c3f",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
                   "startLine": 393,
                   "endLine": 410
@@ -12027,10 +12027,10 @@
               "role": "definition",
               "hash": "sha256-v2:585b9e7d9bfc",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 1093,
-                  "endLine": 1104
+                  "startLine": 1098,
+                  "endLine": 1109
                 },
                 "status": "ok"
               }
@@ -12045,10 +12045,10 @@
               "role": "definition",
               "hash": "sha256-v2:61c59701a960",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 1132,
-                  "endLine": 1135
+                  "startLine": 1137,
+                  "endLine": 1140
                 },
                 "status": "ok"
               }
@@ -12063,10 +12063,10 @@
               "role": "definition",
               "hash": "sha256-v2:fc4f5e8e1ce6",
               "resolved": {
-                "commit": "9846927",
+                "commit": "e8026e2",
                 "range": {
-                  "startLine": 994,
-                  "endLine": 1002
+                  "startLine": 999,
+                  "endLine": 1007
                 },
                 "status": "ok"
               }
@@ -12089,7 +12089,7 @@
       ],
       "provenance": {
         "origin": "llm",
-        "commit": "bd8c16c"
+        "commit": "e8026e2"
       },
       "summary": "The index lists the code, and the patch merge checks each claim against it, so a claim cannot point at code that is not there. The index gets its symbols from language packs, and its references from xpl's own match by name, made precise by SCIP tools where they run. A patch replaces only the fields it sends, and keeps the fields you edited. The page works out its arrows and its cursor matches from the index each time."
     }
