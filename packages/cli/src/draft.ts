@@ -19,7 +19,9 @@
  *   (no program to run) gets a "Your app" box for the code that calls it.
  * - `draftPath`: a sequence of the entry's outgoing calls (depth 1, source order, at most 6 participants), and a tour
  *   with one step per call after a big-picture step. Several entries: one sequence each, one tour. A method a class
- *   inherits starts at the base that defines it, and self calls follow the class's method order.
+ *   inherits starts at the base that defines it, and self calls follow the class's method order. An entry that only
+ *   forwards (`Command.Execute` calls `Command.ExecuteC` and does nothing else) is followed, at most 3 times: its
+ *   forwarding call comes first, then the calls of the function it forwards to.
  *
  * `draftProblems` checks a draft for what `xpl apply` does not: ids named in a text that exist nowhere, and focus ids
  * off their step's view.
@@ -39,6 +41,7 @@ import {
   implementationsOf,
   isTestFile,
   matchesAnyGlob,
+  notAnalyzedReason,
   parseId,
   symbolIdForElementId,
   type AnchorInput,
@@ -63,6 +66,7 @@ import {
   type TextCache,
 } from "@xpl/core";
 import {
+  declaredEntry,
   declaredLibrary,
   findOutsideSystems,
   isLibrary,
@@ -129,7 +133,51 @@ export const NOT_DESIGN: readonly string[] = [
   "**/fixtures/**",
   "**/__fixtures__/**",
   "**/__mocks__/**",
+  "**/playground/**",
+  "**/playgrounds/**",
+  "**/template/**",
+  "**/templates/**",
+  "**/template-*/**",
+  "**/demo/**",
+  "**/demos/**",
+  "**/sandbox/**",
+  "**/sandboxes/**",
 ];
+
+/** What `notProduct` leaves out, in the words of a note. */
+export const NOT_PRODUCT_WORDS =
+  "tests, examples, fixtures, docs, benchmarks, playgrounds, templates, demos and sandboxes";
+
+/**
+ * Code that is not the product, so no map of the project spends a box on it: tests, examples, fixtures, docs,
+ * benchmarks, playgrounds, project templates, demos, sandboxes and dot folders (`NOT_PRODUCT_WORDS`).
+ */
+export function notProduct(path: string): boolean {
+  return (
+    isTestFile(path) ||
+    matchesAnyGlob(path, OVERVIEW_EXCLUDE) ||
+    matchesAnyGlob(path, NOT_DESIGN) ||
+    path.split("/").some((segment) => segment.startsWith("."))
+  );
+}
+
+/**
+ * The code files `notProduct` leaves out, by the outermost folder that is not the product (`playground`,
+ * `packages/create-vite/template-react`), most files first; test files among the product's own files count together.
+ */
+function notProductFolders(files: readonly string[]): string[] {
+  const count = new Map<string, number>();
+  for (const file of files) {
+    const parts = file.split("/");
+    let i = 1;
+    while (i < parts.length && !notProduct(`${parts.slice(0, i).join("/")}/x`)) i++;
+    const key = i < parts.length ? tick(parts.slice(0, i).join("/")) : "test files";
+    count.set(key, (count.get(key) ?? 0) + 1);
+  }
+  return [...count]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([key, n]) => `${key} (${n})`);
+}
 
 /** File and directory names that usually hold the entry point of a project. */
 export const ENTRY_NAMES =
@@ -172,6 +220,8 @@ export interface Draft {
   patch: ExplainerPatch;
   /** What the person running the command should know: what was left out and why. Plain sentences. */
   notes: string[];
+  /** `repo`: where the main path starts when a manifest declares it, and where it is declared. */
+  entry?: { id: string; how: string };
 }
 
 // ─── Text ───────────────────────────────────────────────────────────────────────────────────────
@@ -453,7 +503,9 @@ function baseRuns(file: ChangedFile): Cluster[] {
 /**
  * One anchor in a changed file: its first changed run that holds text (in a symbol when the run lies in one, else as
  * a span of the file), the whole file when no run does (a pure rename), or, for a deleted file or one the index does
- * not hold, the first run of the lines the change removes, in the code before the change.
+ * not hold, the first run of the lines the change removes, in the code before the change. None in a file the index
+ * leaves out on purpose (`ChangedFile.excluded`: an exported page, a lockfile): its old text would go into the page
+ * for nothing a reader can use.
  */
 export function changedFileAnchor(
   model: IndexModel,
@@ -474,7 +526,7 @@ export function changedFileAnchor(
     }
     return { file: file.path, role };
   }
-  if (file.status === "added") return undefined;
+  if (file.status === "added" || file.excluded !== undefined) return undefined;
   for (const run of baseRuns(file)) {
     const anchor = baseLines(texts, change, file, run.start, run.end, role);
     if (anchor) return anchor;
@@ -1060,7 +1112,7 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
     ...filesOf(testAnchors),
   ]);
   const leftovers: { path: string; anchor: AnchorInput }[] = [];
-  const unanchored: string[] = [];
+  const unanchored: ChangedFile[] = [];
   for (const file of analysis.files) {
     if (file.test || covered.has(file.path)) continue;
     const record = changedFile.get(file.path);
@@ -1068,11 +1120,11 @@ export function draftChange(input: DraftInput, change: ChangeRecord): Draft {
     const runs = file.outside.length > 0 ? clusters(file.outside) : hunkRuns(record);
     const anchor = changedFileAnchor(model, texts, change, record, "usage", runs);
     if (anchor) leftovers.push({ path: file.path, anchor });
-    else unanchored.push(file.path);
+    else unanchored.push(record);
   }
   if (unanchored.length > 0) {
     notes.push(
-      `no anchor for ${unanchored.join(", ")} (a changed file the index does not hold, such as a binary file or one under .explainer/)`,
+      `no anchor in the changed files the index does not hold: ${unanchored.map((f) => `${f.path} (${notAnalyzedReason(f)})`).join(", ")}`,
     );
   }
   const otherSteps = Math.min(2, Math.ceil(leftovers.length / L.codeRanges));
@@ -1578,13 +1630,9 @@ export function draftRepo(input: DraftInput): Draft {
   const reuse = (prefix: string, slug: string): string =>
     stored.has(`${prefix}:${slug}`) ? `${prefix}:${slug}` : ids.get(prefix, slug);
 
-  const outside = (path: string) =>
-    isTestFile(path) ||
-    matchesAnyGlob(path, OVERVIEW_EXCLUDE) ||
-    matchesAnyGlob(path, NOT_DESIGN) ||
-    path.split("/").some((segment) => segment.startsWith("."));
-  const isCode = (path: string) =>
-    CODE_LANGUAGES.has(model.file(path)?.language ?? "") && !outside(path);
+  const outside = notProduct;
+  const isCodeFile = (path: string) => CODE_LANGUAGES.has(model.file(path)?.language ?? "");
+  const isCode = (path: string) => isCodeFile(path) && !outside(path);
   const codeUnder = (dir: string) => model.filesUnder(dir).filter(isCode);
 
   const children = (dir: string): Unit[] => {
@@ -1763,7 +1811,7 @@ export function draftRepo(input: DraftInput): Draft {
   for (const inside of insides) {
     if (inside.offMap.length > 0) {
       notes.push(
-        `${inside.offMap.length} files or folders of ${inside.root || repoName} are left off its map (at most ${L.mapBoxes} boxes); its first step asks to group them`,
+        `${plural(inside.offMap.length, "file or folder", "files or folders")} of ${inside.root || repoName} ${inside.offMap.length === 1 ? "is" : "are"} left off its map (at most ${L.mapBoxes} boxes); its first step asks to group them`,
       );
     }
   }
@@ -1794,14 +1842,14 @@ export function draftRepo(input: DraftInput): Draft {
   const outbound = linked.filter((s) => !s.inbound);
   if (systems.length > linked.length) {
     notes.push(
-      `${systems.length - linked.length} outside systems are only imported from files left off the maps: ${plainList(
+      `${plural(systems.length - linked.length, "outside system is", "outside systems are")} only imported from files left off the maps: ${plainList(
         systems.filter((s) => !reach.has(s.slug)).map((s) => s.label),
       )}`,
     );
   }
   if (linked.length > 0) {
     notes.push(
-      `outside systems found from the import lines (hints: check each in the code): ${plainList(
+      `outside systems found from the import lines${linked.some((s) => s.sites.some((site) => site.module.startsWith("`bin`"))) ? " and a package.json `bin`" : ""} (hints: check each in the code): ${plainList(
         linked.map((s) => `${s.label} (${s.tech})`),
         10,
       )}`,
@@ -2276,15 +2324,27 @@ export function draftRepo(input: DraftInput): Draft {
   const room = Math.max(1, L.repoSteps - PATH_ROOM - steps.length - 1);
   const topCallable =
     mainTop && (mainTop.kind === "function" || mainTop.kind === "method") ? mainTop : undefined;
-  // a library's main path is the request its entry makes, not the builder that returns the entry
+  // where the project says it starts (a library's API, not its secondary tools), in the service the tour opens
+  const declared = declaredEntry(
+    model,
+    texts,
+    isCode,
+    library ? ["exports", "main"] : ["bin", "[project.scripts]", "exports", "main"],
+  );
+  const declaredFrom =
+    declared && main.units.some((u) => u.files.includes(declared.symbol.file))
+      ? declared
+      : undefined;
+  // else a guess: a library's main path is the request its entry makes, not the builder that returns the entry
   const pathFrom =
-    library && topCallable ? requestPath(model, isCode, topCallable) : (topCallable ?? entrySym);
+    declaredFrom?.symbol ??
+    (library && topCallable ? requestPath(model, isCode, topCallable) : (topCallable ?? entrySym));
   const blind = noReferences(model, pathFrom?.file ?? mainUnit.files[0]);
   notes.push(
     `room is left for ${PATH_ROOM} more steps (${L.repoSteps} at most), the main path and its risks: ` +
       (blind
         ? `the index has no references for ${blind}, so \`xpl draft path\` cannot draw it; write those steps from \`xpl show\``
-        : `run \`xpl draft path <explainer> ${pathFrom ? `sym:${pathFrom.id}` : "<entry>"}\` and copy the steps you keep`),
+        : `run \`xpl draft path <explainer> ${pathFrom ? `sym:${pathFrom.id}` : "<entry>"}\`${declaredFrom ? ` (where ${declaredFrom.how} starts)` : ""} and copy the steps you keep`),
   );
   // over the room, the parts with the fewest references share the last step
   const parts = order.slice(1);
@@ -2368,6 +2428,12 @@ export function draftRepo(input: DraftInput): Draft {
     ),
   );
 
+  const notProductFiles = model.files.map((f) => f.path).filter((f) => isCodeFile(f) && outside(f));
+  if (notProductFiles.length > 0) {
+    notes.push(
+      `${plural(notProductFiles.length, "code file is", "code files are")} left off the maps as not the product (${NOT_PRODUCT_WORDS}): ${plainList(notProductFolders(notProductFiles))}`,
+    );
+  }
   const patch: ExplainerPatch = {
     nodes,
     ...(edges.length > 0 ? { edges } : {}),
@@ -2384,7 +2450,14 @@ export function draftRepo(input: DraftInput): Draft {
       },
     ],
   };
-  return { kind: "repo", patch, notes };
+  return {
+    kind: "repo",
+    patch,
+    notes,
+    ...(declaredFrom
+      ? { entry: { id: `sym:${declaredFrom.symbol.id}`, how: declaredFrom.how } }
+      : {}),
+  };
 }
 
 // ─── draft path ─────────────────────────────────────────────────────────────────────────────────
@@ -2481,6 +2554,10 @@ export interface PathEntry {
   via?: IndexedSymbol;
   /** The loops and branches in the entry's body (from its syntax tree): the frames of its sequence. */
   blocks?: readonly ControlBlock[];
+  /** The entries that only forward to this one, the one asked for first, each with its forwarding call. */
+  forwardedBy?: readonly { entry: PathEntry; ref: Reference }[];
+  /** Why following stopped at an entry that forwards too: the next one is on the path already, or the bound. */
+  stopped?: { to: IndexedSymbol; cycle: boolean };
 }
 
 /**
@@ -2697,14 +2774,28 @@ function reachOf(model: IndexModel, start: IndexedSymbol, skip: ReadonlySet<stri
 
 /** One sequence of a path draft: the view, its participants and calls, and what was left out. */
 interface PathSequence {
+  /** Where the calls are: the entry, or what it forwards to. */
   entry: PathEntry;
+  /** The entry asked for: `entry`, or the first that forwards to it. */
+  origin: PathEntry;
+  /** The participant id of `origin`. */
   entryId: string;
   view: PatchView & { type: "sequence" };
   participants: string[];
-  /** The calls, each with its sequence step. */
+  /** The calls of `entry`, each with its sequence step (the forwarding calls before them have no tour step). */
   calls: { call: Call; step: PatchSequenceStep }[];
+  /** The ids of the steps of the forwarding calls. */
+  forwardSteps: string[];
+  /** Callees of `entry` that are not drawn (helpers, conversions, guards) or drawn once for several calls. */
+  skipped: number;
   notes: string[];
 }
+
+/** `Serializer.dumps`, or `URLSafeTimedSerializer.dumps` for a method asked on a class that inherits it. */
+const askedName = (entry: PathEntry) =>
+  entry.via
+    ? `${entry.via.path}.${entry.symbol.path.slice(entry.symbol.path.lastIndexOf(".") + 1)}`
+    : entry.symbol.path;
 
 function pathSequence(
   input: DraftInput,
@@ -2716,9 +2807,25 @@ function pathSequence(
   const notes: string[] = [];
   const sym = entry.symbol;
   const entryId = `sym:${sym.id}`;
-  const asked = entry.via
-    ? `${entry.via.path}.${sym.path.slice(sym.path.lastIndexOf(".") + 1)}`
-    : sym.path;
+  const forwards = entry.forwardedBy ?? [];
+  const origin = forwards[0]?.entry ?? entry;
+  const asked = askedName(origin);
+  if (forwards.length > 0) {
+    const [, ...to] = [...forwards.map((f) => askedName(f.entry)), sym.path].map(tick);
+    notes.push(
+      `${tick(asked)} only forwards to ${to.join(", which only forwards to ")}; ` +
+        `the sequence shows the calls of ${tick(sym.path)}`,
+    );
+  }
+  if (entry.stopped) {
+    const to = tick(entry.stopped.to.path);
+    notes.push(
+      entry.stopped.cycle
+        ? `${tick(sym.path)} forwards back to ${to}, already on the path: the sequence stops at ${tick(sym.path)}`
+        : `followed ${FORWARD_HOPS} forwards at most: ${tick(sym.path)} only forwards to ${to} too; ` +
+            `\`xpl draft path <explainer> sym:${entry.stopped.to.id} -o <file>\` draws the calls of ${to}`,
+    );
+  }
 
   // the entry and what it contains (nested functions are part of it)
   const inside = new Set<string>();
@@ -2731,10 +2838,10 @@ function pathSequence(
   // the class the entry runs on: the one it was asked on, else its own
   const runtime = entry.via ?? entryOwner;
   const family = new Set(runtime ? methodOrder(model, runtime).map((c) => c.id) : []);
-  if (entry.via) {
-    notes.push(
-      `${asked} is inherited: it resolves to ${entryId}, the first class in ${entry.via.path}'s method order ` +
-        `that defines it. The path starts there, and its calls to methods of ${entry.via.path} and its bases go ` +
+  if (origin.via) {
+    notes.unshift(
+      `${asked} is inherited: it resolves to sym:${origin.symbol.id}, the first class in ${origin.via.path}'s method order ` +
+        `that defines it. The path starts there, and its calls to methods of ${origin.via.path} and its bases go ` +
         `where that order finds them`,
     );
   }
@@ -2904,7 +3011,7 @@ function pathSequence(
   const lightest = (list: readonly Call[]) =>
     [...list].sort((a, b) => a.score - b.score || list.indexOf(b) - list.indexOf(a))[0]!;
   const dropped: Call[] = [];
-  while (calls.length > L.pathCalls) {
+  while (calls.length > L.pathCalls - forwards.length) {
     const drop = lightest(calls);
     dropped.push(drop);
     calls = calls.filter((c) => c !== drop);
@@ -2916,7 +3023,7 @@ function pathSequence(
   // Over the lifeline cap, the entry's own methods that matter least fold into one lifeline for their class
   // (the first ones keep their own), so their calls stay: the cap folds lifelines before it drops calls.
   const folded: Call[] = [];
-  while (participantsOf().length > L.participants) {
+  while (participantsOf().length > L.participants - forwards.length) {
     const own = calls.filter((c) => c.classLane !== undefined && c.participant !== c.classLane);
     const laneShown = own.some((c) => participantsOf().includes(c.classLane!));
     // folding the one method left into a new class lifeline would not save one
@@ -2938,7 +3045,7 @@ function pathSequence(
           .join(", "),
     );
   }
-  while (participantsOf().length > L.participants) {
+  while (participantsOf().length > L.participants - forwards.length) {
     // the participant whose calls matter least goes
     const weight = new Map<string, number>();
     for (const c of calls) {
@@ -2958,16 +3065,40 @@ function pathSequence(
         `the ones that reach the least code: ${dropped.map((c) => c.callee.path).join(", ")}`,
     );
   }
-  const participants = participantsOf();
+  // the entries that only forward come first, each a lifeline, so the reader sees where the path starts
+  const participants = [
+    ...new Set([...forwards.map((f) => `sym:${f.entry.symbol.id}`), ...participantsOf()]),
+  ];
 
   const viewId = ids.get("view", pathSlug(asked));
   const stepSlug = viewId.slice("view:".length);
-  const steps = calls.map((call, i): { call: Call; step: PatchSequenceStep } => {
-    const name = call.ref.to
-      .slice(call.ref.to.indexOf("#") + 1)
+  /** The name a call site calls (`ExecuteC` of `c.ExecuteC()`). */
+  const calledName = (ref: Reference) =>
+    ref.to
+      .slice(ref.to.indexOf("#") + 1)
       .split(".")
       .at(-1)!
       .replace(/~\d+$/, "");
+  const forwardSteps = forwards.map(({ entry: from, ref }, i): PatchSequenceStep => {
+    const to = forwards[i + 1]?.entry.symbol ?? sym;
+    const { file } = from.symbol;
+    return {
+      id: `${stepSlug}:${i + 1}`,
+      from: `sym:${from.symbol.id}`,
+      to: `sym:${to.id}`,
+      label: callLabel(texts, file, ref.site, calledName(ref)),
+      kind: "call",
+      summary: todo(
+        `why ${tick(from.symbol.path)} hands over to ${tick(to.path)} (it does nothing else), in one sentence.`,
+      ),
+      anchors: [
+        siteAnchor(model, texts, ref.from, file, ref.site.startLine, ref.site.endLine),
+        definition(to),
+      ].filter((a): a is AnchorInput => a !== undefined),
+    };
+  });
+  const steps = calls.map((call, i): { call: Call; step: PatchSequenceStep } => {
+    const name = calledName(call.ref);
     const site = siteAnchor(
       model,
       texts,
@@ -2993,7 +3124,7 @@ function pathSequence(
     return {
       call,
       step: {
-        id: `${stepSlug}:${i + 1}`,
+        id: `${stepSlug}:${forwards.length + i + 1}`,
         from: entryId,
         to: call.participant,
         label: callLabel(texts, sym.file, call.ref.site, name),
@@ -3014,13 +3145,81 @@ function pathSequence(
       root: "repo",
       depth: 2,
       question: todo("the question this path answers"),
-      entryPoints: [sym.id],
+      entryPoints: [origin.symbol.id],
     },
     participants,
-    steps: steps.map((s) => s.step),
+    steps: [...forwardSteps, ...steps.map((s) => s.step)],
     ...(frames.length > 0 ? { frames } : {}),
   };
-  return { entry, entryId, view, participants, calls: steps, notes };
+  return {
+    entry,
+    origin,
+    entryId: `sym:${origin.symbol.id}`,
+    view,
+    participants,
+    calls: steps,
+    forwardSteps: forwardSteps.map((s) => s.id),
+    skipped: repeated.size + built.length + helpers.length + guards.length,
+    notes,
+  };
+}
+
+/** Forwards a path follows at most (`ExecuteContext` -> `Execute` -> `ExecuteC`). */
+export const FORWARD_HOPS = 3;
+/** Lines of code an entry that only forwards has at most (Go's `_, err := c.ExecuteC()` and `return err`). */
+export const FORWARD_LINES = 3;
+
+/**
+ * The call an entry only forwards with: its body has at most `FORWARD_LINES` lines of code, and the one call the
+ * index knows of it is drawn, outside loops and branches (a call in an `if`'s condition counts: Go's `main`
+ * with `if err := run(); err != nil {`). Undefined for anything else, recursion included.
+ */
+function forwardOf(input: DraftInput, entry: PathEntry): Call | undefined {
+  if (bodyLines(input.texts, entry.symbol) > FORWARD_LINES) return undefined;
+  const { symbol, via, blocks } = entry;
+  const seq = pathSequence(input, { symbol, via, blocks }, new FreeIds(input.explainer));
+  if ("error" in seq || seq.calls.length !== 1 || seq.skipped > 0 || seq.view.frames)
+    return undefined;
+  const { call } = seq.calls[0]!;
+  return call.callee.id === symbol.id ? undefined : call;
+}
+
+/**
+ * The entry whose calls a path draws: past the entries that only forward (`Command.Execute`, whose one line calls
+ * `Command.ExecuteC`), at most `FORWARD_HOPS` of them, to the first that does more. A forward back to an entry on
+ * the path stops there, and so does one to a function with no call to draw. `blocksOf` reads the loops and
+ * branches of each function it reaches.
+ */
+export async function followForwards(
+  input: DraftInput,
+  entry: PathEntry,
+  blocksOf: (sym: IndexedSymbol) => Promise<readonly ControlBlock[] | undefined>,
+): Promise<PathEntry> {
+  let current = entry;
+  for (;;) {
+    const call = forwardOf(input, current);
+    if (!call) return current;
+    const target = runsFor(input.model, call.callee);
+    const chain = [...(current.forwardedBy ?? []), { entry: current, ref: call.ref }];
+    if (chain.some((f) => f.entry.symbol.id === target.id))
+      return { ...current, stopped: { to: target, cycle: true } };
+    if (chain.length > FORWARD_HOPS) return { ...current, stopped: { to: target, cycle: false } };
+    // a method of the class the path runs on keeps that class (a subclass's override still wins)
+    const owner = ownerOf(input.model, target);
+    const via =
+      current.via && owner && methodOrder(input.model, current.via).includes(owner)
+        ? current.via
+        : undefined;
+    const blocks = await blocksOf(target);
+    const next: PathEntry = {
+      symbol: target,
+      ...(via ? { via } : {}),
+      ...(blocks ? { blocks } : {}),
+      forwardedBy: chain,
+    };
+    if ("error" in pathSequence(input, next, new FreeIds(input.explainer))) return current;
+    current = next;
+  }
 }
 
 /**
@@ -3063,7 +3262,7 @@ function pathFrames(
     if (block.kind === "loop") {
       inFrame = within(block);
       kind = "loop";
-      label = todo(`what repeats and until when, in a few words (the code: ${code})`);
+      label = todo(`what repeats and until when, in a few words (now: ${code})`);
     } else {
       const withCalls = block.arms
         .map((arm) => ({ arm, calls: within(arm) }))
@@ -3086,7 +3285,7 @@ function pathFrames(
             ? todo(
                 `when the rest of the loop body runs, in a few words (the code: ${code} skips it with \`${guard.leavesWith}\`)`,
               )
-            : todo(`when these calls run, in a few words (the code: ${code})`);
+            : todo(`when these calls run, in a few words (now: ${code})`);
       // each arm runs from its first call to the call before the next arm (a call in an `else if` condition
       // stays with the arm above it): the arms split the frame's steps, as validation wants
       if (kind === "alt") {
@@ -3096,7 +3295,7 @@ function pathFrames(
             ? todo(`otherwise, in a few words (the code after ${code}, which leaves early)`)
             : a.arm.condition === "else"
               ? todo("otherwise, in a few words")
-              : todo(`the condition, in a few words (the code: ${tick(a.arm.condition)})`),
+              : todo(`the condition, in a few words (now: ${tick(a.arm.condition)})`),
           fromStep: a.calls[0]!.step.id,
           toStep:
             n + 1 < withCalls.length
@@ -3208,15 +3407,13 @@ export function draftPath(input: DraftInput, entries: readonly PathEntry[]): Dra
       );
     }
     const quietNames = quiet.map((c) => c.callee.path);
-    const start = seq.entry.via
-      ? `${seq.entry.via.path}.${seq.entry.symbol.path.slice(seq.entry.symbol.path.lastIndexOf(".") + 1)}`
-      : seq.entry.symbol.path;
+    const start = askedName(seq.origin);
     tourSteps.push(
       tourStep(
         model,
         next(),
         seq.view.id,
-        [seq.entryId],
+        [seq.entryId, ...seq.forwardSteps],
         note(
           index === 0
             ? todo("the answer to the question, as a plain statement")
@@ -3242,7 +3439,10 @@ export function draftPath(input: DraftInput, entries: readonly PathEntry[]): Dra
             ? `Calls without a step of their own: ${nameList(quietNames)}. ${todo("say what they do in one sentence, or drop this one.")}`
             : "",
         ),
-        [definition(seq.entry.symbol)],
+        // where the reader asked, then where the calls are when it only forwards
+        [seq.origin, ...(seq.origin === seq.entry ? [] : [seq.entry])].map((e) =>
+          definition(e.symbol),
+        ),
       ),
     );
     for (const group of main) {
@@ -3253,7 +3453,7 @@ export function draftPath(input: DraftInput, entries: readonly PathEntry[]): Dra
       const arm = group.frame?.arms?.find((a) => group.calls.every((c) => holds(a, c.step.id)));
       const armCode =
         group.frame && implicitArms.has(group.frame) && arm
-          ? /the code: (`[^`]+`)/.exec(arm.label)?.[1]
+          ? /now: (`[^`]+`)/.exec(arm.label)?.[1]
           : undefined;
       tourSteps.push(
         tourStep(
@@ -3331,7 +3531,7 @@ export function draftPath(input: DraftInput, entries: readonly PathEntry[]): Dra
             "what each part is for, one short sentence each, in path order. Name a part in plain words (the runner), not by its file.",
           ),
         ),
-        [definition(first.entry.symbol)],
+        [definition(first.origin.symbol)],
       ),
     );
   }

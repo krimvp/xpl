@@ -240,12 +240,15 @@ export async function buildIndex(opts: BuildIndexOptions): Promise<BuildIndexRes
     }
     progress({ phase: "Reading", completed: ++read, total: discovery.files.length });
   }
-  const files: IndexedFile[] = sources.map((s) => ({
-    path: s.path,
-    language: s.language,
-    hash: new FileHasher(splitLines(s.text)).hashFile(),
-    lines: splitLines(s.text).length,
-  }));
+  const files: IndexedFile[] = sources.map((s) => {
+    const lines = splitLines(s.text);
+    return {
+      path: s.path,
+      language: s.language,
+      hash: new FileHasher(lines).hashFile(),
+      lines: lines.length,
+    };
+  });
   const repo = new SourceRepoView(
     root,
     files.map((f) => f.path),
@@ -583,7 +586,8 @@ function summarizeLanguages(
 const GITIGNORE_LINES = ["index-*.json", "cache/", "revisions/"];
 
 /**
- * Write `<root>/.explainer/index-<commit>.json` (pretty-printed) and make sure `.explainer/.gitignore`
+ * Write `<root>/.explainer/index-<commit>.json` (one line of JSON: indentation was 28% of its bytes, paid by
+ * every command that parses it) and make sure `.explainer/.gitignore`
  * ignores `index-*.json`. Returns the absolute path of the index file.
  */
 export async function writeIndex(
@@ -617,7 +621,7 @@ export async function writeIndex(
   const temp = join(dir, `.index-${commit}.json.${randomUUID()}.tmp`);
   try {
     signal?.throwIfAborted();
-    await writeFile(temp, `${JSON.stringify(index, null, 2)}\n`, { signal });
+    await writeFile(temp, `${JSON.stringify(index)}\n`, { signal });
     signal?.throwIfAborted();
     await rename(temp, target);
   } finally {

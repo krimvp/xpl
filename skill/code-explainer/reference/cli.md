@@ -458,7 +458,7 @@ index: built; shop moved to it
 change: 5c1e0a2 since 9f3b7d4, 1 file
 draft: /work/map.json
   1 new box, 1 tour step, 7 TODOs to write
-note: 4 code files on 2 maps; 0 files left off (tests, examples, fixtures, docs and benchmarks)
+note: 4 code files on 2 maps; 0 files left off (tests, examples, fixtures, docs, benchmarks, playgrounds, templates, demos and sandboxes)
 next: write each TODO, then `xpl lint shop --patch /work/map.json` and `xpl apply shop /work/map.json`
 ```
 
@@ -466,7 +466,7 @@ next: write each TODO, then `xpl lint shop --patch /work/map.json` and `xpl appl
 
 ## `xpl start <name> --question <question> --audience <reader> [--entry <symbol>] [--precise auto|off|require]`
 
-Creates a first guide in one command. It runs `index`, `new`, `draft` and `apply`, using the same source anchor checks as manual authoring. Without `--entry`, the draft is a repository map, not the path that answers the question. The output says so, and names a function to start that path at, with the `xpl draft path` command to run. The function is a guess from the question's words, ranked by the words in its name and code. With an indexed function or method such as `src/runner.ts#Runner.dispatch`, it is a call sequence from that entry. The applied guide contains TODO text and can be opened with `xpl view <name>`; complete and check the text before sharing. The patch and all draft notes are saved in a temporary directory outside the repository. The text output shows up to three notes and apply warnings; `--json` includes their full lists. The `xpl draft path` command is named once, in the last note. Existing guides are never overwritten.
+Creates a first guide in one command. It runs `index`, `new`, `draft` and `apply`, using the same source anchor checks as manual authoring. Without `--entry`, the draft is a repository map, not the path that answers the question. The output says so, and names a function to start that path at, with the `xpl draft path` command to run. The function is a guess from the question's words, ranked by the words in its name and code. Common words (`how`, `put`, `get`, `make`, `work`, ...) and the project's own name pick nothing: with no other word, it is where a manifest says the project starts (as for `xpl draft repo`), labeled so, or the output says no entry is guessed. With an indexed function or method such as `src/runner.ts#Runner.dispatch`, it is a call sequence from that entry. The applied guide contains TODO text and can be opened with `xpl view <name>`; complete and check the text before sharing. The patch and all draft notes are saved in a temporary directory outside the repository. The text output shows up to three notes and apply warnings; `--json` includes their full lists. The `xpl draft path` command is named once, in the last note. Existing guides are never overwritten.
 
 ```
 $ xpl start job-retries --question "How does a failed job get retried?" --audience maintainers --precise off
@@ -476,11 +476,12 @@ draft notes: /tmp/xpl-first-guide-…/draft-notes.json
 note: the draft guesses the kind of project, its users and its entry points from the code and its import lines: check each in the README and the code
 note: settings files the code loads (from the index): `config/default.yaml`; check that the code reads each at run time
 note: room is left for 2 more steps (9 at most), the main path and its risks
+note: 1 more in /tmp/xpl-first-guide-…/draft-notes.json
 note: drafted an overview of the whole repository, not the path that answers the question (no --entry). To draft that path, run `xpl draft path job-retries sym:src/runner.ts#Runner.dispatch -o <file>` (a guess from the question's words), or pass --entry next time.
 next: write the TODOs in /tmp/xpl-first-guide-…/draft.patch.json and run `xpl apply job-retries /tmp/xpl-first-guide-…/draft.patch.json`, then `xpl lint job-retries`. `xpl view job-retries` also edits the step notes (Edit > Edit the tour) and box texts (Edit text), not the titles or the tour summary
 ```
 
-`--precise off` uses heuristic references; confirm calls against source before completing the explanation. `--json` returns the guide and draft paths, `drafted` (`repo` or `path`), `suggestedEntry` (without `--entry`, when a function matches), notes file, notes and apply warnings.
+`--precise off` uses heuristic references; confirm calls against source before completing the explanation. `--json` returns the guide and draft paths, `drafted` (`repo` or `path`), `suggestedEntry` (without `--entry`, when a function matches or a manifest declares the entry), notes file, notes and apply warnings.
 
 ## `xpl new <name> [--title <title>] [--repo <name>] [--url <url>]`
 
@@ -941,7 +942,7 @@ A quick check of the indexed files for the classic problems of code nobody read 
 - **Secrets in browser variables** (high): a `NEXT_PUBLIC_`, `VITE_`, `REACT_APP_` or `PUBLIC_` variable holding a server key or named with `SECRET`, `PRIVATE`, `PASSWORD` or `SERVICE_ROLE`.
 - **Committed `.env` files** with values: high when one is named like a secret, else medium. `.env.example` and similar are skipped.
 - **Code files over 1,000 lines** (low).
-- **Possibly unused code files** (low, a guess): no other file references the file in the index, and it is not an entry point (`main`, `index`, `cli`, `server`, `app`, …, or a file that declares a program's `main`: Java `static void main`, Python `if __name__ == "__main__":`, Go `func main` in `package main`, Rust `fn main`), a test, a config file or under `scripts/`, `bin/` or `cmd/`. When the index does not follow a language's imports, xpl cannot tell, so it reports no such file and a note says how many it could not judge (`<language>: the index does not follow imports, so xpl cannot tell whether 2 files are unused.`).
+- **Possibly unused code files** (low, a guess): no other file references the file in the index or names it by path (an HTML `<script src>`, a `package.json` `main`, `exports` or script, a worker's `new URL("./worker.js", import.meta.url)`, a config's `entry: "/src/entry-server"`; prose files do not count), and it is not an entry point (`main`, `index`, `cli`, `server`, `app`, …, or a file that declares a program's `main`: Java `static void main`, Python `if __name__ == "__main__":`, Go `func main` in `package main`, Rust `fn main`), a test (`__tests_dts__/` too), a config file (`vite.config.ts`, `vite.config-ssr.js`) or under `scripts/`, `bin/` or `cmd/`. A Go file is judged with its package: when any file of the package is used, none of them is reported. Files reached through a bundler alias, a template-literal import or a glob in HTML still look unused. When the index does not follow a language's imports, xpl cannot tell, so it reports no such file and a note says how many it could not judge (`<language>: the index does not follow imports, so xpl cannot tell whether 2 files are unused.`).
 
 In tests, fixtures, docs and examples, key shapes are reported one severity lower and the other secret checks are skipped: fake values dominate there. **A secret value is never printed**: the hint shows at most its first 4 characters, then `…`. Exit 0 with or without findings (it is a report, not a gate), 1 without an index, 2 on a usage error.
 
@@ -960,7 +961,7 @@ High (2)
 
 Low (1)
   src/orphan.ts:1  Possibly unused file
-    Why: Nothing else in the project refers to this file, so it may be left over. This is a guess from the index: code loaded by name, by a framework or from outside the project is not seen.
+    Why: Nothing else in the project refers to this file or names its path, so it may be left over. This is a guess from the index: code loaded through an alias, a pattern, a framework or from outside the project is not seen.
     Fix: Check whether anything still uses it, and delete it if nothing does.
 ```
 
@@ -1098,10 +1099,10 @@ same comment back to current.
 Records the change an explainer is about, from git, and prints what it touches. Run it once, at the start of explaining a PR or MR, on a checkout of the head with the index built (`xpl index`). Nothing is written to the repository. With one guide in the repository, leave out its name: `xpl change main..HEAD`. A lone argument is the guide when a guide has that name, else the range.
 
 - `<base>..<head>` takes any git revisions (`main..HEAD`, `2284ff0^..2284ff0`); `<base>...<head>` starts from their merge base; `<base>` alone ends at the commit of the index. The head must be the commit the index was built from, else it stops: `the head HEAD~1 (85c3b74) is not the commit the index was built from (2284ff0). Check out 85c3b74, run xpl index, then run this again`.
-- It stores `change: {base, head, files: [{path, status: added|modified|deleted|renamed, oldPath?, hunks: [{oldStart, oldLines, newStart, newLines}]}]}` in the explainer (full SHAs; hunks as `git diff -U0` prints them). Patches cannot change it.
+- It stores `change: {base, head, files: [{path, status: added|modified|deleted|renamed, oldPath?, hunks: [{oldStart, oldLines, newStart, newLines}], excluded?}]}` in the explainer (full SHAs; hunks as `git diff -U0` prints them). `excluded` says why `xpl index` leaves the file out: `generated`, `dependency`, `lockfile`, `oversized`, `binary`, `non-file` or `unreadable`. Patches cannot change it.
 - It prints the changed files with `+added -removed`, and the **changed symbols**: index symbols that hold an added or edited line (`new` when every line is new; a function nested in a function counts as part of it). For each changed symbol it prints its **direct callers** outside test files, and the indexed tests that reference it (a test function, or a test file for an import). A test also counts in three cases. It calls one of the symbol's direct callers (`through <caller>`: one call between them, as for the call paths). It calls the class of a changed constructor. Or it builds the class of a changed method (`builds its class; a guess`). When none of these finds a test, the output says so. A missing reference does not prove that no test exercises the behavior. Changed test files are listed separately. A method that runs when an instance is called (`__call__`, `handle`) gets `callers via instance`: the code that builds its class. That is a guess, and the output says so. Lines outside any symbol (imports, module-level code) are listed apart.
 - For changed functions and methods, **call paths through one intermediate function** show two indexed call sites with each hop labeled precise or heuristic. They show possible reachability, not guaranteed execution. No runtime callback or middleware wiring is inferred. Tests, cycles and instance guesses are not expanded. Each changed symbol has at most 100 paths and 1000 inspected references; a truncation note means the result is incomplete, including in JSON. Draft maps keep their direct callers.
-- A bounded **Not checked** section lists report-level partial, unavailable or failed analysis with the number of changed paths that report actually analyzed. It also lists changed paths absent from the loaded index and removed files the index cannot inspect. A commit mismatch is called out, so a stale index's limits are not presented as head coverage. No section means no omission was recorded; it does not prove complete semantic coverage. The exported change guide puts the same section below its summary, and `--json` includes `omissions: string[]`.
+- A **Not checked** section says what was not analyzed, in plain words. Changed files the index leaves out get one line per reason with a count, and the files under it (`8 files over the 1 MB size limit were not analyzed.`); removed files get one line. It also lists report-level partial, unavailable or failed analysis with the number of changed paths that report actually analyzed. A commit mismatch is called out first, so a stale index's limits are not presented as head coverage. No section means no omission was recorded; it does not prove complete semantic coverage. The exported change guide puts the same lines below its summary, the files folded under each, and `--json` includes `omissions: string[]` (the lines; `change.files[].excluded` gives each file's reason).
 - `xpl change <explainer>` without a range prints the analysis of the recorded change again.
 
 ```
@@ -1157,7 +1158,7 @@ Needs the change record: run `xpl change <explainer> <base>..<head>` first.
 
 - One map, "What this change touches" (`stubs: none`; arrows for calls, reads, type uses, `extends` and `implements`, so a changed default value or type has its arrows). It holds the changed symbols, their direct callers outside tests, and one group box for the changed tests.
 - Box summaries that start with `New:`, `Changed:` or `Unchanged:`.
-- A code link for every changed file, tests too. A deleted file links to the code before the change (`at: "base"`).
+- A code link for every changed file, tests too. A deleted file links to the code before the change (`at: "base"`). A file the index leaves out (an exported page over 1 MB, a lockfile, a guide file) gets none, so its old text stays out of the page.
 
 A caller is code that calls. A test, or code that only names a changed type, is not a caller.
 
@@ -1170,17 +1171,17 @@ A caller is code that calls. A test, or code that only names a changed type, is 
 **Notes it prints**
 
 - Pieces left off the map (at most 8 boxes) and pieces with no step of their own.
-- Callers that are a guess, and files with no code link.
+- Callers that are a guess, and files with no code link, each with its reason (`site/page.html (over the 1 MB size limit)`).
 
 ### `xpl draft repo`
 
 **Draws** two levels.
 
 - A system map (`view:system`, `stubs: none`): the project as one service box, or one per program under `services/`, `apps/` or `cmd/`.
-- Who reaches it: a web or command-line framework, or a web server start call (`ListenAndServe`). A program with only a `main` gets an `Operator` box there. A library is the `system` box, and a "Your app" box (`role: external`, `tech: your app`) at the README example calls it.
+- Who reaches it: a web or command-line framework, a web server start call (`ListenAndServe`), or a package.json `bin` (a User at the terminal). A program with only a `main` gets an `Operator` box there. A library is the `system` box, and a "Your app" box (`role: external`, `tech: your app`) at the README example calls it.
 - What it relies on (databases, queues, APIs), from its imports, and a `Settings file` box.
 - Each arrow it adds there gets a label TODO and a summary TODO, so `ready` finds no empty text once the TODOs are written.
-- Each service box `opens` a map of its inside: at most 8 parts, and the outside systems each imports.
+- Each service box `opens` a map of its inside: at most 8 parts, and the outside systems each imports. Code that is not the product gets no box: tests, examples, fixtures, docs, benchmarks, playgrounds, project templates (`templates/`, `template-*/`), demos and sandboxes.
 
 **Tour** (at most 7 steps): the system map with the README, what it relies on, the inside, one step per part (at the functions other parts call most), then `### Where to go next`, at the code where the main path starts. Room is left for 2 steps of the main path.
 
@@ -1188,28 +1189,29 @@ A caller is code that calls. A test, or code that only names a changed type, is 
 
 - That the kind of project and its users are a guess.
 - The settings files, and whether the code loads them or only names them.
-- The `xpl draft path` command that fills the room for the main path. For a library it starts where the request goes, past the builder that returns the client (ky: `Ky.create`, not `createInstance`). In Ruby or PHP, which have no references, the note says to write those steps from `xpl show` instead.
-- The outside systems found, and the files left off the inside map.
+- The `xpl draft path` command that fills the room for the main path. It starts where a manifest says the project starts, and says which: a package.json `bin`, `exports` or `main` (a built `dist/` path read back to its source), or a pyproject.toml script. In that file it takes the `main`, or the function its top level calls or re-exports that reaches the most code (`main.ts` calls `run`; vite: `createServer`; express: `createApplication`). With no such entry it guesses; for a library, where the request goes, past the builder that returns the client. In Ruby or PHP, which have no references, the note says to write those steps from `xpl show` instead.
+- The outside systems found, the files left off the inside map, and the code files left off because they are not the product, counted by folder.
 
 ### `xpl draft path <id> [<id> ...]`
 
-**Draws** a sequence of the entry's calls (depth 1, source order; at most 6 participants and 12 calls). In Ruby or PHP the index has no references, so there is no call to draw: the draft says so, and you write the steps from `xpl show`.
+**Draws** a sequence of the entry's calls (depth 1, source order; at most 6 participants and 12 calls), past an entry that only forwards. In Ruby or PHP the index has no references, so there is no call to draw: the draft says so, and you write the steps from `xpl show`.
 
 - Each call links to its call site and to the callee's definition. A method of the entry's own class is a lifeline of its own (`Ky.#run` calls `Ky.#retry`), until the lifelines reach 6: the rest of those methods share one lifeline for the class, and a note names them. A method of another class goes to that class's lifeline; a call through an interface, to its one implementation.
 - A callee called twice is drawn at its first call, and again at its first call on the main path when the first was inside a branch (the `delay` of an early exit and the `delay` after it). A one-line check in a branch's condition is not drawn, also when it calls another one-line check.
 - Frames from the syntax tree: a `loop` around calls in a loop, an `alt` around a branch with calls in two or more arms (`arms`), an `opt` around a branch with calls in one arm. An `if` that ends in `continue`, `return`, `break`, `raise` or `throw` makes the rest of its block the other arm. Each label is a TODO that quotes the condition.
 - When the calls cross files, a map of those files first (`view:<entry>-files`), with a summary TODO per file box.
 - A call's label keeps short arguments; long ones are cut to their names and the names of the calls in them (`requeue(job, backoffDelay(…))`).
+- An entry that only forwards (one call the index knows, outside loops and branches, in at most 3 lines of code, like cobra's `Command.Execute` calling `Command.ExecuteC`) is followed: its call is step 1, then the calls of the function it forwards to. Each entry that forwards is a lifeline at the start. It follows at most 3 forwards and stops on a cycle.
 
 Several entries give one sequence each and one tour.
 
 **Tour** (at most 8 steps): the file map, the big picture, one step per main call or branch, then `### Where to go next` on the map.
 
-**Notes it prints**: calls drawn once, helpers not drawn, calls left out over the caps (those that reach the least code), calls with no step, and where an inherited entry resolves.
+**Notes it prints**: calls drawn once, helpers not drawn, calls left out over the caps (those that reach the least code), calls with no step, where an inherited entry resolves, and which entries only forward (`` `Command.Execute` only forwards to `Command.ExecuteC`; the sequence shows the calls of `Command.ExecuteC` ``), with the command to draft from the next one when it stopped after 3.
 
 ### `xpl draft map`
 
-**Draws** a quick map of every code file outside tests, examples, fixtures, docs and benchmarks.
+**Draws** a quick map of every code file outside tests, examples, fixtures, docs, benchmarks, playgrounds, templates, demos and sandboxes.
 
 - One graph view per folder (`boxText: "summary"`): `view:map` for the top (below `src/` when it holds all the code), `view:map-<path>` below it. A folder box `opens` its folder's map.
 - Every box gets a label and a one-sentence summary to write. A file's TODO holds its header comment, what it defines, and the files it uses and that use it.
@@ -1270,7 +1272,7 @@ next: write each TODO, then `xpl lint jobrunner --patch path.json` and `xpl appl
 $ xpl draft map jobrunner -o map.json
 wrote map.json
 draft map for jobrunner: a map of 7 boxes, 7 summaries, a tour of 2 steps (short is right for a small subject: do not pad it), 2 anchors, 22 TODOs to write
-note: 7 code files on 1 map; 1 file left off (tests, examples, fixtures, docs and benchmarks); 4 files that are not code have no box: `README.md`, `config/default.yaml`, `package.json` and `tsconfig.json`
+note: 7 code files on 1 map; 1 file left off (tests, examples, fixtures, docs, benchmarks, playgrounds, templates, demos and sandboxes); 4 files that are not code have no box: `README.md`, `config/default.yaml`, `package.json` and `tsconfig.json`
 next: write each TODO, then `xpl lint jobrunner --patch map.json` and `xpl apply jobrunner map.json`
 $ xpl draft change jobrunner
 error: .explainer/jobrunner.explainer.json has no change recorded: run `xpl change jobrunner <base>..<head>` first (e.g. main..HEAD), then `xpl draft change jobrunner`
@@ -1285,6 +1287,11 @@ A box of that map, as drafted (the TODO says what the index knows about the file
   "summary": "TODO: one plain sentence: what this file does for the project (defines `Job`, `DeadJob`, `PushOptions` and `Queue`; used by `runner.ts`, `main.ts` and `worker.ts`)."
 }
 ```
+
+In the viewer (`xpl view`, `xpl bundle --draft`) a draft reads by what the index found: on the diagrams and in the
+lists, menus, breadcrumbs and the page title, this box shows as `queue.ts (TODO)`, and a text with no `(now: …)`
+name (an arrow's label, a step title) as `TODO`. The whole instruction shows where you write: the details of the
+selected element, the edit forms and the draft banner's list.
 
 A step of the path sequence and its tour step:
 
@@ -1310,7 +1317,7 @@ A step of the path sequence and its tour step:
 
 What the draft cannot know, you write: every title, summary and note; the groups of a repo map (one box per responsibility); which caller matters and why; "before" claims (read the base with `xpl show --at base`); what the tests check; the risk. The draft names what it left out (`note:` lines). Write the patch outside the repo, then `xpl lint <explainer> --patch <file>`: `todo-left` lists each placeholder still there (an error-level finding: lint exits 1 until every one is written). Without `-o` the patch goes to stdout and the summary to stderr.
 
-`--json`: `{ok, kind, path, out?, counts: {views, maps, boxes, rows, participants, sequenceSteps, overlays, groups, tourSteps, anchors, todos}, notes: [text], applyWarnings?, patch}`. Exit codes: 0 ok, 1 no change recorded, an entry that is not a symbol, or nothing to draft, 2 usage error.
+`--json`: `{ok, kind, path, out?, counts: {views, maps, boxes, rows, participants, sequenceSteps, overlays, groups, tourSteps, anchors, todos}, notes: [text], entry?: {id, how}, applyWarnings?, patch}` (`entry`: `repo`, where a manifest says the main path starts). Exit codes: 0 ok, 1 no change recorded, an entry that is not a symbol, or nothing to draft, 2 usage error.
 
 ## `xpl view [explainer] [--port <port>] [--host <host>] [--no-open]`
 
@@ -1580,7 +1587,7 @@ $ xpl bundle complete -o all.html --files all
 wrote all.html (1.2 MB): .explainer/complete.explainer.json, 12 files embedded (all: 25.1 KB of source), index 92.3 KB as JSON (24.7 KB packed), mode explore
 ```
 
-**With a change recorded** (`xpl change`), every changed file that exists after the change is embedded, whatever `--files` says, and so is the code before the change of every modified, renamed or deleted file (`baseFiles` in the page, read from git). The summary line adds `change 5774f2c..349730f: 1 changed file in, code before the change of 1 file (3.2 KB)`, and names the changed files the selection had left out (`(2 added to the selection: ...)`).
+**With a change recorded** (`xpl change`), every changed file that exists after the change is embedded, whatever `--files` says, and so is the code before the change of every modified, renamed or deleted file the page can show (`baseFiles` in the page, read from git). A file the index leaves out (`excluded`: an exported page over 1 MB, a lockfile) brings no old text unless a base anchor points into it; the page lists it with its counts and the reason it shows no diff. The summary line adds `change 5774f2c..349730f: 1 changed file in, code before the change of 1 file (3.2 KB)`, and names the changed files the selection had left out (`(2 added to the selection: ...)`).
 
 `--json`: `{ok, readiness, exportStatus: "ready"|"draft", path, absolutePath, bytes, mode, tour?, anchors: {total, drifted, missing}, files: {embedded, choice, referenced?, boundary?: {added: [{file, reason: caller|callee|test, refs}], cut: [same], max, symbols}, embeddedBytes, indexed, indexedBytes}, change?: {base, head, changedFiles, addedToSelection: [paths], baseFiles: [paths], baseBytes, baseMissing?}, index: {path, commit, choice: "full"|"pruned", pruned, bytes, fullBytes, packedBytes, symbols: {embedded, indexed}, refs: {embedded, indexed}}}` (`index.bytes` and `fullBytes`: the embedded and the whole index as compact JSON; `packedBytes`: the embedded one as the page holds it).
 

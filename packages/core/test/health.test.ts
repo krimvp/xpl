@@ -233,6 +233,30 @@ describe("healthCheck: secrets written into code", () => {
       },
     ]);
   });
+
+  it("scans a 100,000-character line in linear time and still finds the secret at its end", () => {
+    // Generated and minified files hold such lines (vite's playground has an SVG with an 80,000-letter
+    // run). The name, scheme and value patterns once restarted at every letter of a run: quadratic, seconds
+    // per line. Linear, the whole check takes milliseconds; the bound is generous.
+    const run = 100_000;
+    const files: FileDecl[] = [
+      {
+        path: "assets/big.svg",
+        text: `${"x".repeat(run)} password: ${PASSWORD}`,
+        language: "text",
+      },
+      { path: "src/dotted.ts", text: `${"a.".repeat(run / 2)} token = "${PASSWORD}";` },
+      { path: "src/dashed.ts", text: `${"ab-".repeat(run / 3)} secret = "${PASSWORD}";` },
+    ];
+    const start = performance.now();
+    const report = check(files);
+    expect(performance.now() - start).toBeLessThan(1000);
+    expect(secretFindings(report).map((f) => `${f.at} ${f.title}`)).toEqual([
+      "assets/big.svg:1 Hardcoded secret in password",
+      "src/dashed.ts:1 Hardcoded secret in secret",
+      "src/dotted.ts:1 Hardcoded secret in token",
+    ]);
+  });
 });
 
 describe("healthCheck: .env files and browser variables", () => {
@@ -324,7 +348,9 @@ describe("healthCheck: large and possibly unused files", () => {
       "src/queue.test.ts",
       "scripts/release.ts",
       "vite.config.ts",
+      "vite.config-ssr.js",
       "src/types.d.ts",
+      "src/__tests_dts__/plugin.ts",
     ];
     const report = check(
       [
@@ -389,6 +415,73 @@ describe("healthCheck: large and possibly unused files", () => {
     expect(report.findings.map((f) => `${f.check} ${f.file}`)).toEqual([
       "unused-file lib/plan.go",
       "unused-file src/plan.ts",
+    ]);
+  });
+
+  it("judges a Go file with its package: a file nothing names is used when its package is", () => {
+    const files: FileDecl[] = [
+      { path: "cmd/app/main.go", language: "go", text: "package main\n\nfunc main() {}" },
+      { path: "lib/lib.go", language: "go", text: "package lib\n\nfunc Run() {}" },
+      // a build-tagged variant: its symbols are named by no other file, but it compiles into lib
+      { path: "lib/lib_windows.go", language: "go", text: "package lib\n\nfunc init() {}" },
+      // a package no file refers to: both its files are reported
+      { path: "dead/dead.go", language: "go", text: "package dead\n\nfunc Run() {}" },
+      { path: "dead/extra.go", language: "go", text: "package dead\n\nfunc help() {}" },
+    ];
+    const report = check(
+      files,
+      [{ from: "cmd/app/main.go#run", to: "lib/lib.go#run", kind: "call", line: 3 }],
+      files.map(({ path }) => ({ id: `${path}#run`, start: 2, end: 3 })),
+    );
+    expect(report.findings.map((f) => `${f.check} ${f.file}`)).toEqual([
+      "unused-file dead/dead.go",
+      "unused-file dead/extra.go",
+    ]);
+  });
+
+  it("counts a file that another file names by its path as used: HTML, package.json, a worker URL", () => {
+    const code = (path: string, text = "export function run() {}\n// 2\n// 3"): FileDecl => ({
+      path,
+      text,
+    });
+    const files: FileDecl[] = [
+      {
+        path: "web/index.html",
+        language: "text",
+        text: '<script type="module" src="/src/entry.ts"></script>',
+      },
+      {
+        path: "web/package.json",
+        language: "json",
+        text: '{ "exports": { ".": "./src/api.ts" }, "scripts": { "seed": "node tools/seed.js" } }',
+      },
+      code(
+        "web/src/main.ts",
+        'new Worker(new URL("./worker.ts", import.meta.url));\nconst stale = 1;',
+      ),
+      // a config names an entry without its extension; a test names one from the project's folder
+      code("web/vite.config.ts", 'export default { ssr: { entry: "/src/render" } };'),
+      code("web/test/serve.ts", 'build({ ssr: "src/server-entry.ts" });'),
+      code("web/src/entry.ts"),
+      code("web/src/api.ts"),
+      code("web/tools/seed.js"),
+      code("web/src/worker.ts"),
+      code("web/src/render.ts"),
+      code("web/src/server-entry.ts"),
+      // named in prose, by a bare word, or by a `./` path that leads elsewhere: still unused
+      { path: "web/README.md", language: "text", text: "See `src/stale.ts` and ./src/orphan.ts." },
+      code("web/lib/loader.ts", 'load("./src/orphan.ts");\n// 2\n// 3'),
+      code("web/src/stale.ts"),
+      code("web/src/orphan.ts"),
+    ];
+    const report = check(
+      files,
+      [{ from: "web/src/main.ts#", to: "web/lib/loader.ts#run", kind: "import", line: 1 }],
+      files.map(({ path }) => ({ id: `${path}#run`, start: 2, end: 3 })),
+    );
+    expect(report.findings.map((f) => `${f.check} ${f.file}`)).toEqual([
+      "unused-file web/src/orphan.ts",
+      "unused-file web/src/stale.ts",
     ]);
   });
 

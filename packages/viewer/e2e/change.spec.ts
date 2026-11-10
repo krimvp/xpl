@@ -294,6 +294,44 @@ test.describe("the change in the reading screens", () => {
     expect((await omissions.boundingBox())!.y).toBeGreaterThan(summary.y);
   });
 
+  test("files the index leaves out: one plain line per reason, and each row says why it has no diff", async ({
+    page,
+  }) => {
+    const { html, bundle } = readEmbeddedBundle(CHANGE_BUNDLE);
+    const data = bundle as any;
+    const hunks = [{ oldStart: 1, oldLines: 2, newStart: 1, newLines: 3 }];
+    data.explainer.change.files.push(
+      { path: "site/a.html", status: "modified", hunks, excluded: "oversized" },
+      { path: "site/b.html", status: "modified", hunks, excluded: "oversized" },
+      { path: "yarn.lock", status: "modified", hunks, excluded: "lockfile" },
+    );
+    await page.route("http://xpl.test/**", (route) =>
+      route.fulfill({ contentType: "text/html", body: withBundle(html, data) }),
+    );
+    await page.goto("http://xpl.test/");
+    const omissions = page.getByTestId("change-omissions");
+    await expect(omissions.locator(":scope > ul > li")).toHaveText([
+      /^2 files over the 1 MB size limit were not analyzed\.The files \(2\)/,
+      /^1 file listing pinned dependency versions \(lockfiles\) was not analyzed\.The file/,
+      /^1 removed file was not analyzed: the index holds the code after the change only\.The file/,
+      /What the code analysis reported \(1\)/,
+    ]);
+    const big = omissions.locator(":scope > ul > li").first();
+    await big.getByText("The files (2)").click();
+    await expect(big.locator("details li")).toHaveText(["site/a.html", "site/b.html"]);
+    const row = page.locator('[data-testid="change-file"][data-path="site/a.html"]');
+    await expect(row).toBeDisabled();
+    await expect(row).toContainText("+3 −2");
+    await expect(row.locator(".change-note")).toHaveText("no diff: over the 1 MB size limit");
+    await expect(
+      page.locator('[data-testid="change-file"][data-path="yarn.lock"] .change-note'),
+    ).toHaveText("no diff: a lockfile");
+    // a file the page shows has no note
+    await expect(
+      page.locator('[data-testid="change-file"][data-path="src/runner.ts"] .change-note'),
+    ).toHaveCount(0);
+  });
+
   test("a change with no recorded omission has no Not checked section", async ({ page }) => {
     const { html, bundle } = readEmbeddedBundle(CHANGE_BUNDLE);
     const data = bundle as any;

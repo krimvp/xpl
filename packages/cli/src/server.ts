@@ -293,8 +293,8 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       measure: false,
       stubs: forExport,
     });
-    // the code before the change: only the changed files, so it is small enough to send whole
-    const base = collectBaseFiles(explainer, state.tree.texts);
+    // the code before the change: only of the changed files the page can show (an excluded page can be MBs)
+    const base = collectBaseFiles(explainer, state.model, state.tree.texts);
     const stale = await stalenessOf(env, state.tree, state.index, state.indexFile, state.loaded);
     const bundle: ViewerBundle = {
       guideId: state.loaded.name,

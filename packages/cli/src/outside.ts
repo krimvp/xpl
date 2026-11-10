@@ -7,7 +7,8 @@
  * A match is a hint, not a fact: an import of `requests` says the code makes HTTP calls, not to whom. The draft
  * leaves a TODO for what the code must tell (which database, which API).
  */
-import type { IndexModel, NodeRole, TextCache } from "@xpl/core";
+import { posix } from "node:path";
+import type { IndexModel, IndexedSymbol, NodeRole, TextCache } from "@xpl/core";
 
 export interface OutsideKind {
   /** Slug of the box: `grp:<slug>`. Libraries for the same system share it (pg, psycopg, pgx -> postgres). */
@@ -505,6 +506,7 @@ const SERVER_STARTS: Partial<Record<Family, { modules: readonly string[]; start:
 };
 
 const CLIENTS = CATALOG.find((entry) => entry.slug === "clients")!;
+const USER = CATALOG.find((entry) => entry.slug === "user")!;
 
 /** The first line of `lines` (comments blanked) that starts a standard-library web server, with what it called. */
 function serverStart(
@@ -577,6 +579,29 @@ export function findOutsideSystems(
       const { js: _js, py: _py, go: _go, java: _java, ...kind } = CLIENTS;
       found.set(kind.slug, { ...kind, sites: [{ file, ...start }], files: new Set([file]) });
     }
+  }
+  // A package.json `bin` is a command run at the terminal, whatever parses its arguments (`node:util` `parseArgs` is
+  // no import of a framework); a JS program has no `main` an Operator could start. A library's bin is a secondary tool.
+  const program =
+    found.has(USER.slug) || declaredLibrary(model, texts)
+      ? undefined
+      : declaredEntry(model, texts, isCode, ["bin"]);
+  if (program) {
+    const { js: _js, py: _py, go: _go, java: _java, ...kind } = USER;
+    const module = program.how.replace(/^the /, "");
+    // where the declared file calls the function the program starts at, and that function (the declared file can be
+    // too small to be a part of a map: a `main.ts` that only calls `run`)
+    const call = model
+      .refsFrom(model.moduleScopeId(program.file))
+      .find((r) => r.kind === "call" && r.to === program.symbol.id);
+    const { file, range } = program.symbol;
+    const sites = [
+      ...(call && file !== program.file
+        ? [{ file: program.file, line: call.site.startLine, module }]
+        : []),
+      { file, line: range.startLine, module },
+    ];
+    found.set(kind.slug, { ...kind, sites, files: new Set(sites.map((s) => s.file)) });
   }
   return [...found.values()]
     .sort((a, b) => b.files.size - a.files.size || a.label.localeCompare(b.label))
@@ -774,4 +799,237 @@ export function workspaceParents(texts: TextCache): string[] {
     if (m) parents.add(m[1]!);
   }
   return [...parents].sort();
+}
+
+// ─── Where the project says it starts ───────────────────────────────────────────────────────────
+
+/**
+ * The manifest fields that declare an entry: a program people run (`bin`, Python scripts), or the API of a library
+ * (`exports`, `main`).
+ */
+export type DeclaredKey = "bin" | "[project.scripts]" | "exports" | "main";
+
+/** An entry a manifest declares: the source file it names, the function it names (Python scripts), and where. */
+interface Declared {
+  file: string;
+  name?: string;
+  key: DeclaredKey;
+  /** Where it is declared, for a note: "the `bin` of `packages/cli/package.json`". */
+  how: string;
+}
+
+/** An entry a manifest declares, as the indexed function or method a path starts at. */
+export interface DeclaredEntry extends Declared {
+  symbol: IndexedSymbol;
+}
+
+/** Folders of build output; their source is in `src/` or `source/`. */
+const BUILT = /^(?:dist|build|out|lib|esm|cjs|distribution)$/;
+const SOURCE_DIRS = ["src", "source"];
+const SOURCE_EXT = [".ts", ".tsx", ".mts", ".cts", ".js", ".mjs", ".cjs", ".jsx"];
+
+/**
+ * The indexed code file a manifest path names: the file itself, or, for build output (`dist/node/index.js`), the
+ * source it is built from (`src/node/index.ts`), else the package's `src/main`, `src/cli` or `src/index` (a bundle,
+ * `dist/xpl.mjs`, built from `src/main.ts`).
+ */
+function sourceOf(
+  model: IndexModel,
+  isCode: (path: string) => boolean,
+  dir: string,
+  path: string,
+): string | undefined {
+  const inDir = (rel: string) => (dir === "" ? rel : `${dir}/${rel}`);
+  const rel = posix.normalize(path).replace(/^\.\//, "");
+  if (model.hasFile(inDir(rel))) return isCode(inDir(rel)) ? inDir(rel) : undefined;
+  const parts = rel.split("/");
+  const at = parts.findIndex((part) => BUILT.test(part));
+  if (at === -1) return undefined;
+  const candidates: string[] = [];
+  for (const src of SOURCE_DIRS) {
+    const base = [...parts.slice(0, at), src, ...parts.slice(at + 1)]
+      .join("/")
+      .replace(/\.[cm]?jsx?$/, "");
+    for (const ext of SOURCE_EXT) candidates.push(base + ext, `${base}/index${ext}`);
+  }
+  for (const src of SOURCE_DIRS)
+    for (const name of ["main", "cli", "index"])
+      for (const ext of SOURCE_EXT) candidates.push(`${src}/${name}${ext}`);
+  return candidates.map(inDir).find((file) => model.hasFile(file) && isCode(file));
+}
+
+/** The path of the package itself in an `exports` value: a string, `"."`, or the first condition but `types`. */
+function exportPath(value: unknown): string | undefined {
+  if (typeof value === "string") return value;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const entries = Object.entries(value as Record<string, unknown>);
+  const own = entries.find(([key]) => key === ".");
+  if (own) return exportPath(own[1]);
+  for (const [key, inner] of entries) {
+    if (key.startsWith(".") || key === "types") continue;
+    const found = exportPath(inner);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+const PY_SCRIPTS = /^\s*\[(?:project\.scripts|tool\.poetry\.scripts)\]\s*\n((?:(?!\s*\[).*\n?)*)/m;
+
+/**
+ * The entries the manifests declare, as indexed code files (`isCode`), package by package, the package with the
+ * most code first: a package.json's `bin`, then `exports["."]`, then `main` (`index.js` by default); a
+ * pyproject.toml's `[project.scripts]` (`flask = "flask.cli:main"`).
+ */
+function declaredFiles(
+  model: IndexModel,
+  texts: TextCache,
+  isCode: (path: string) => boolean,
+): Declared[] {
+  const packages: { size: number; entries: Declared[] }[] = [];
+  for (const manifest of model.files.map((f) => f.path)) {
+    if (!/(?:^|\/)(?:package\.json|pyproject\.toml)$/.test(manifest)) continue;
+    const text = texts.text(manifest);
+    if (text === undefined) continue;
+    const dir = manifest.includes("/") ? manifest.slice(0, manifest.lastIndexOf("/")) : "";
+    const entries: Declared[] = [];
+    const add = (path: unknown, key: DeclaredKey, name?: string) => {
+      const file = typeof path === "string" ? sourceOf(model, isCode, dir, path) : undefined;
+      if (file && !entries.some((e) => e.file === file && e.name === name))
+        entries.push({
+          file,
+          key,
+          how: `the \`${key}\` of \`${manifest}\``,
+          ...(name ? { name } : {}),
+        });
+    };
+    if (manifest.endsWith("package.json")) {
+      let json: { bin?: unknown; exports?: unknown; main?: unknown };
+      try {
+        json = JSON.parse(text) as typeof json;
+      } catch {
+        continue;
+      }
+      const bins =
+        json.bin && typeof json.bin === "object"
+          ? Object.values(json.bin as Record<string, unknown>)
+          : [json.bin];
+      for (const bin of bins) add(bin, "bin");
+      add(exportPath(json.exports), "exports");
+      add(json.main ?? "index.js", "main");
+    } else {
+      const table = PY_SCRIPTS.exec(text)?.[1] ?? "";
+      for (const m of table.matchAll(/^\s*[\w.-]+\s*=\s*["']([\w.]+):([\w.]+)["']/gm)) {
+        const module = m[1]!.replace(/\./g, "/");
+        for (const file of [`${module}.py`, `${module}/__init__.py`]) {
+          add(file, "[project.scripts]", m[2]);
+          add(`src/${file}`, "[project.scripts]", m[2]);
+        }
+      }
+    }
+    if (entries.length > 0)
+      packages.push({ size: model.filesUnder(dir).filter(isCode).length, entries });
+  }
+  return packages.sort((a, b) => b.size - a.size).flatMap((p) => p.entries);
+}
+
+/** The calls between functions and methods of code files; a closure's calls are its enclosing function's. */
+function callGraph(model: IndexModel, isCode: (path: string) => boolean): Map<string, Set<string>> {
+  const owner = (id: string): string => {
+    let sym = model.symbol(id);
+    while (sym && sym.kind === "function" && model.parentSymbol(sym.id)?.kind === "function")
+      sym = model.parentSymbol(sym.id);
+    return sym?.id ?? id;
+  };
+  const graph = new Map<string, Set<string>>();
+  for (const ref of model.refs) {
+    if (ref.kind !== "call") continue;
+    const to = model.symbol(ref.to);
+    const fromFile = model.fileOfSymbolId(ref.from);
+    if (!to || !fromFile || !isCode(fromFile) || !isCode(to.file)) continue;
+    const from = owner(ref.from);
+    if (from === to.id) continue;
+    let set = graph.get(from);
+    if (!set) graph.set(from, (set = new Set()));
+    set.add(to.id);
+  }
+  return graph;
+}
+
+/** How many functions `id` reaches through calls. */
+function reach(graph: ReadonlyMap<string, ReadonlySet<string>>, id: string): number {
+  const seen = new Set([id]);
+  const queue = [id];
+  while (queue.length > 0)
+    for (const next of graph.get(queue.pop()!) ?? [])
+      if (!seen.has(next)) (seen.add(next), queue.push(next));
+  return seen.size - 1;
+}
+
+const callable = (sym: IndexedSymbol | undefined): sym is IndexedSymbol =>
+  sym !== undefined && (sym.kind === "function" || sym.kind === "method");
+
+/**
+ * The function a declared file starts at: the one the manifest names, else the file's `main`, else, of the functions
+ * its module scope calls or re-exports and its own top-level functions, the one that reaches the most code. A file
+ * with none of those that loads another file (`module.exports = require('./lib/express')`) starts in that file.
+ */
+function startOf(
+  model: IndexModel,
+  isCode: (path: string) => boolean,
+  graph: ReadonlyMap<string, ReadonlySet<string>>,
+  file: string,
+  name: string | undefined,
+  depth = 0,
+): IndexedSymbol | undefined {
+  if (name !== undefined) {
+    const named = model.symbolAt(file, name);
+    return callable(named) ? named : undefined;
+  }
+  const own = model.topLevelSymbols(file).filter(callable);
+  const main = own.find((s) => s.kind === "function" && s.path === "main");
+  if (main) return main;
+  const scope = model.refsFrom(model.moduleScopeId(file));
+  const used = (kind: string) =>
+    scope
+      .filter((r) => r.kind === kind)
+      .map((r) => model.symbol(r.to))
+      .filter((s): s is IndexedSymbol => callable(s) && isCode(s.file));
+  let best: { sym: IndexedSymbol; reach: number } | undefined;
+  for (const sym of new Set([...used("call"), ...used("import"), ...own])) {
+    const n = reach(graph, sym.id);
+    if (!best || n > best.reach) best = { sym, reach: n };
+  }
+  if (best || depth >= 3) return best?.sym;
+  for (const ref of scope) {
+    const next = ref.kind === "import" ? model.fileOfSymbolId(ref.to) : undefined;
+    if (!next || !model.isModuleScope(ref.to) || !isCode(next)) continue;
+    const found = startOf(model, isCode, graph, next, undefined, depth + 1);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+/**
+ * Where the project says it starts, as a function: of the entries its manifests declare (`declaredFiles`), the first
+ * whose function reaches other code, else the first with a function. Only entries of the given `keys` count (a
+ * library's `bin` is a secondary tool). Undefined when no manifest declares an indexed entry.
+ */
+export function declaredEntry(
+  model: IndexModel,
+  texts: TextCache,
+  isCode: (path: string) => boolean,
+  keys: readonly DeclaredKey[],
+): DeclaredEntry | undefined {
+  const entries = declaredFiles(model, texts, isCode).filter((e) => keys.includes(e.key));
+  if (entries.length === 0) return undefined;
+  const graph = callGraph(model, isCode);
+  let first: DeclaredEntry | undefined;
+  for (const entry of entries) {
+    const symbol = startOf(model, isCode, graph, entry.file, entry.name);
+    if (!symbol) continue;
+    const found = { ...entry, symbol };
+    if (reach(graph, symbol.id) > 0) return found;
+    first ??= found;
+  }
+  return first;
 }

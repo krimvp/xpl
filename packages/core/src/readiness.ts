@@ -11,7 +11,7 @@ import { deriveGraph } from "./graph.js";
 import { lintExplainer } from "./lint.js";
 import { ExplainerModel } from "./model.js";
 import type { Explainer, SymbolIndex } from "./schema.js";
-import { referencedFiles } from "./source-files.js";
+import { baseSourceFiles, referencedFiles } from "./source-files.js";
 import { hashText } from "./text.js";
 import { checkReview } from "./review.js";
 import { validateExplainer } from "./validate.js";
@@ -269,9 +269,8 @@ export function checkReadiness(
         });
     }
     if (explainer.change)
-      for (const file of explainer.change.files) {
+      for (const file of baseSourceFiles(explainer, model.index)) {
         if (
-          ["modified", "deleted", "renamed"].includes(file.status) &&
           texts.textAt(explainer.change.base, basePathOf(file)) === undefined &&
           !findings.some(
             (f) => f.code === "source-unavailable" && f.message.startsWith(`${file.path}@base`),

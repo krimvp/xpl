@@ -585,6 +585,36 @@ const HEADING = /^ {0,3}#{1,6}[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$/;
 /** `TODO` as a word (not `TODOs` in a name such as `TODO_LIST`, not inside code spans: those are masked first). */
 const TODO_WORD = /(?<![\p{L}\p{N}_])TODO(?![\p{L}\p{N}_])/gu;
 
+/** Where a text holds a draft's placeholder (`todo-left`): the index of its first `TODO`, or -1. */
+function todoAt(masked: Masked): number {
+  return masked.text.search(TODO_WORD);
+}
+
+/**
+ * What a compact place (a box, an arrow, a chip, a list row, a breadcrumb, a menu, the page title) shows of
+ * `text`. A written text shows as it is. A draft's placeholder is an instruction to the author, kept whole
+ * where the author writes (the details panel, the edit forms, the draft banner, `xpl lint`); here it shows
+ * what is known, marked: the name it holds, `TODO: 1-3 plain words for this part (now: worker)` as
+ * `worker (TODO)`; words written before it, `Where to go next: TODO: …` as `Where to go next: TODO`; else
+ * `TODO` alone.
+ */
+export function shortText(text: string): string {
+  if (!text.includes("TODO")) return text;
+  const masked = mask(text);
+  const at = todoAt(masked);
+  if (at < 0) return text;
+  const before = unmask(masked.text.slice(0, at), masked.spans).trim();
+  if (before !== "") return `${before} TODO`;
+  const now = /\(now: ([^)]+)\)/.exec(masked.text.slice(at));
+  // (a code span in it shows as plain text, as everywhere a label is drawn)
+  const name =
+    now &&
+    unmask(now[1]!, masked.spans)
+      .replace(/(`+)(.*?)\1/g, "$2")
+      .trim();
+  return name ? `${name} (TODO)` : "TODO";
+}
+
 /** Abbreviations whose period does not end a sentence. */
 const ABBREVIATIONS = new Set(["e.g", "i.e", "etc", "vs", "cf", "approx", "incl", "esp", "resp"]);
 
@@ -1618,7 +1648,7 @@ class Linter {
         "keep a title near 8 words that state one fact; put the rest in the text below",
       );
     }
-    if (masked.text.search(TODO_WORD) >= 0) return;
+    if (todoAt(masked) >= 0) return;
     this.words(where, masked, evidence);
     // a title or heading is the sentence a reader keeps: one passive in its main clause hides who acts.
     // A label names a thing ("Jobs that are retried"), and a question title ("How a failed job is retried",
@@ -1729,7 +1759,7 @@ class Linter {
     this.checked++;
     const masked = mask(value);
     // a draft's text (todo-left reports it) is judged once it is written
-    if (masked.text.search(TODO_WORD) >= 0) return masked;
+    if (todoAt(masked) >= 0) return masked;
     const list = sentences(masked.text);
     const counts = list.map((s) => words(s).length);
     let dashed = false;

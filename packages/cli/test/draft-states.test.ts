@@ -33,8 +33,8 @@ const flow = (patch: ExplainerPatch) => patch.views?.[0] as SequenceView;
 /** Each step as `id name -> next ids`: the name of its state (`Queued`) or transition (`Queued>Running`). */
 const graph = (patch: ExplainerPatch) =>
   (flow(patch).steps as PatchSequenceStep[]).map((s) => {
-    const move = /from (\S+) to (\S+)$/.exec(s.label);
-    const name = move ? `${move[1]}>${move[2]}` : /the state (\S+) /.exec(s.label)?.[1];
+    const move = /\(now: (\S+) to (\S+)\)$/.exec(s.label);
+    const name = move ? `${move[1]}>${move[2]}` : /\(now: (\S+)\)$/.exec(s.label)?.[1];
     return `${s.id} ${name} -> ${(s.next ?? []).map((l) => l.step).join(", ")}`;
   });
 const step = (patch: ExplainerPatch, id: string) =>

@@ -17,6 +17,8 @@ export type { BuildIndexOptions, BuildIndexResult } from "./build.js";
 
 export {
   discoverFiles,
+  fileExclusion,
+  textExclusion,
   detectGit,
   isLockfile,
   languageForPath,

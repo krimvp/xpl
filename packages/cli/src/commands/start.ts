@@ -14,10 +14,20 @@ import { loadExplainer, openWorkspace } from "../repo.js";
 
 const PRECISE = ["auto", "off", "require"] as const;
 
+/**
+ * Words of a question that name nothing in the code: question words and common verbs (`put`, `get`, `make`, `run`,
+ * `work`), stemmed as `stem` leaves them. Flask's `Scaffold.put` is no answer to "How is Flask put together?".
+ */
 const STOP_WORDS = new Set(
-  "how the and for get got does what when where which while done with from into that this then than there their have will would could should about after before code work works happen happens".split(
-    " ",
-  ),
+  (
+    "how why who what when where which while whose the and but for nor not are was were been being has have had " +
+    "does did doing done get got gets getting set sets put puts make makes made making take took give gave " +
+    "run runs ran running use uses used using work works worked working happen happens happened go goes went " +
+    "come came see saw look show tell know need want can could will would shall should may might must " +
+    "with from into onto over under about after before then than there their them they this that these those " +
+    "its all any each some every other one two first last new old together whole overall part parts piece " +
+    "thing things way ways step steps code project repo repository"
+  ).split(" "),
 );
 
 /** `retried` -> `retry`, `jobs` -> `job`, `failing` -> `fail`: a rough stem, the same for the question and names. */
@@ -37,13 +47,17 @@ function suggestEntry(
   model: IndexModel,
   texts: TextCache,
   question: string,
+  project: string | undefined,
 ): IndexedSymbol | undefined {
+  // the project's own name is in every question about it, and in much of its code
+  const own = new Set((project ?? "").match(/[A-Za-z]{3,}/g)?.map(stem) ?? []);
+  const common = (w: string) => STOP_WORDS.has(w) || own.has(w);
   const words = [
     ...new Set(
       (question.match(/[A-Za-z]{3,}/g) ?? [])
-        .filter((w) => !STOP_WORDS.has(w.toLowerCase()))
+        .filter((w) => !common(w.toLowerCase()))
         .map(stem)
-        .filter((w) => w.length >= 3 && !STOP_WORDS.has(w)),
+        .filter((w) => w.length >= 3 && !common(w)),
     ),
   ];
   let best: { sym: IndexedSymbol; score: number; calls: number } | undefined;
@@ -78,8 +92,8 @@ export const startCommand: CommandSpec = {
   details: [
     "Indexes the repository, creates a new guide, drafts a repository map and applies the draft.",
     "--entry starts a call sequence at one indexed function or method instead of a repository map: the path",
-    "that answers the question. Without it, the output says so and names a function to start at, guessed from",
-    "the words of the question.",
+    "that answers the question. Without it, the output names where a path could start: a function the question's",
+    "words name (not common words or the project's name), else the entry a package.json or pyproject.toml declares.",
     "The draft patch and all draft notes are saved outside the repository. Up to three notes and apply",
     "warnings print here; --json returns the full lists. Review the TODO text and notes before sharing.",
     "With no reference tool installed, use --precise off. It never overwrites a guide.",
@@ -125,6 +139,7 @@ export const startCommand: CommandSpec = {
     let notesFile: string;
     let notes: string[] = [];
     let applyWarnings: string[] = [];
+    let declared: { id: string; how: string } | undefined;
     try {
       const dir = await mkdtemp(join(tmpdir(), "xpl-first-guide-"));
       patchPath = join(dir, "draft.patch.json");
@@ -136,6 +151,7 @@ export const startCommand: CommandSpec = {
           emit: (data) => {
             notes = Array.isArray(data.notes) ? data.notes : [];
             applyWarnings = Array.isArray(data.applyWarnings) ? data.applyWarnings : [];
+            declared = data.entry as typeof declared;
           },
         },
         new Args(
@@ -154,12 +170,19 @@ export const startCommand: CommandSpec = {
       throw error;
     }
 
-    // without --entry the draft is a map of the whole repository: say so, and where a path could start
-    let suggested: string | undefined;
+    // without --entry the draft is a map of the whole repository: say so, and where a path could start: a function
+    // the question names, else where the project says it starts (the draft's declared entry)
+    let suggested: { id: string; why: string } | undefined;
     if (!entry) {
-      const ws = await openWorkspace(quiet, { explainer: loadExplainer(quiet, name) });
-      const sym = suggestEntry(ws.model, ws.texts, question);
-      if (sym) suggested = `sym:${sym.id}`;
+      const loaded = loadExplainer(quiet, name);
+      const ws = await openWorkspace(quiet, { explainer: loaded });
+      const sym = suggestEntry(ws.model, ws.texts, question, loaded.explainer.repo?.name);
+      if (sym) suggested = { id: `sym:${sym.id}`, why: "a guess from the question's words" };
+      else if (declared)
+        suggested = {
+          id: declared.id,
+          why: `where ${declared.how} starts; no word of the question names a function`,
+        };
     }
     // the path hint below names the command once: the draft's own note on room for the path keeps only the room
     if (!entry) {
@@ -172,14 +195,14 @@ export const startCommand: CommandSpec = {
       ? undefined
       : `drafted an overview of the whole repository, not the path that answers the question (no --entry). ` +
         (suggested
-          ? `To draft that path, run \`xpl draft path ${name} ${suggested} -o <file>\` (a guess from the question's words), or pass --entry next time.`
-          : `To draft that path, find the function it starts at with \`xpl search <word>\`, then run \`xpl draft path ${name} <entry> -o <file>\`.`);
+          ? `To draft that path, run \`xpl draft path ${name} ${suggested.id} -o <file>\` (${suggested.why}), or pass --entry next time.`
+          : `No word of the question names a function, and no manifest names where the main path starts, so no entry is guessed: find the function the path starts at with \`xpl search <word>\`, then run \`xpl draft path ${name} <entry> -o <file>\`.`);
     if (ctx.json) {
       ctx.emit({
         name,
         path: `.explainer/${name}.explainer.json`,
         drafted: entry ? "path" : "repo",
-        ...(suggested ? { suggestedEntry: suggested } : {}),
+        ...(suggested ? { suggestedEntry: suggested.id } : {}),
         draft: patchPath,
         notesFile,
         notes,

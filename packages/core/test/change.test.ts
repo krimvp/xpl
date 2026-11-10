@@ -154,7 +154,7 @@ describe("change record", () => {
     ]);
   });
 
-  it("checks the shape: full SHAs, statuses, oldPath only for renames, whole-number hunks", () => {
+  it("checks the shape: full SHAs, statuses, oldPath only for renames, whole-number hunks, known exclusions", () => {
     expect(changeShapeIssues(CHANGE)).toEqual([]);
     const bad = changeShapeIssues({
       base: "abc",
@@ -163,6 +163,8 @@ describe("change record", () => {
         { path: "a", status: "moved", hunks: [] },
         { path: "a", status: "renamed", hunks: [{ oldStart: 1 }] },
         { path: "b", status: "added", oldPath: "c", hunks: "x" },
+        { path: "d.html", status: "modified", hunks: [], excluded: "oversized" },
+        { path: "e", status: "modified", hunks: [], excluded: "huge" },
       ],
     });
     expect(bad.map((i) => i.path)).toEqual([
@@ -173,6 +175,7 @@ describe("change record", () => {
       "change.files[1].hunks[0]",
       "change.files[2].oldPath",
       "change.files[2].hunks",
+      "change.files[4].excluded",
     ]);
     expect(changeShapeIssues("x")[0]!.message).toContain("xpl change");
   });

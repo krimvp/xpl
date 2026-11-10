@@ -7,13 +7,14 @@ import {
   resolveWith,
   shortSha,
   type ChangeAnalysis,
+  type ChangeOmission,
   type ChangeRecord,
   type ChangedSymbol,
   type CallerEntry,
   type Explainer,
   type TestEntry,
 } from "@xpl/core";
-import { isWorkTreeClean } from "@xpl/indexer";
+import { fileExclusion, isWorkTreeClean, textExclusion } from "@xpl/indexer";
 import type { CommandSpec } from "../command.js";
 import type { Ctx } from "../context.js";
 import { CliError, UsageError } from "../errors.js";
@@ -148,7 +149,10 @@ function symbolBlock(sym: ChangedSymbol): string[] {
 }
 
 /** The text report of an analysis (what `xpl change` prints after the header). */
-export function renderAnalysis(analysis: ChangeAnalysis, omissions: string[] = []): string[] {
+export function renderAnalysis(
+  analysis: ChangeAnalysis,
+  omissions: readonly ChangeOmission[] = [],
+): string[] {
   const out: string[] = [];
   const width = Math.max(
     0,
@@ -212,8 +216,31 @@ export function renderAnalysis(analysis: ChangeAnalysis, omissions: string[] = [
   out.push(
     "Direct callers and two-edge call paths come from the index; unindexed dynamic wiring is not inferred. Tests count when they reference the symbol, call one of its callers or build its class; check what they assert.",
   );
-  if (omissions.length > 0) out.push("", "Not checked:", ...omissions.map((item) => `  ${item}`));
+  if (omissions.length > 0) {
+    out.push("", "Not checked:");
+    for (const item of omissions)
+      out.push(`  ${item.text}`, ...item.files.map((file) => `    ${file}`));
+  }
   return out;
+}
+
+/**
+ * The record with `excluded` on each changed file the index leaves out, saying why (the rules of `xpl index`): a
+ * file at head that the index lacks, read from the working tree (the head is the index commit); a deleted file,
+ * from its text at base.
+ */
+async function markExcluded(ctx: Ctx, change: ChangeRecord, ws: Workspace): Promise<ChangeRecord> {
+  const files = await Promise.all(
+    change.files.map(async (file) => {
+      let excluded;
+      if (file.status === "deleted") {
+        const text = ws.texts.textAt(change.base, file.path);
+        excluded = text === undefined ? undefined : textExclusion(file.path, text);
+      } else if (!ws.model.hasFile(file.path)) excluded = await fileExclusion(ctx.root, file.path);
+      return excluded === undefined ? file : { ...file, excluded };
+    }),
+  );
+  return { ...change, files };
 }
 
 /** How many base anchors of the explainer do not resolve (ok or moved) against this change record. */
@@ -318,7 +345,13 @@ export const changeCommand: CommandSpec = {
       const analysis = analyzeChange(change, ws.model, (file) => ws.texts.text(file));
       const omissions = changeOmissions(change, ws.index);
       if (ctx.json) {
-        ctx.emit({ path: loaded.rel, written: false, change, analysis, omissions });
+        ctx.emit({
+          path: loaded.rel,
+          written: false,
+          change,
+          analysis,
+          omissions: omissions.map((item) => item.text),
+        });
         return 0;
       }
       ctx.out(
@@ -376,9 +409,9 @@ export const changeCommand: CommandSpec = {
         `the base and the head are the same commit (${shortSha(head)}): there is no change. Give the commit before it, e.g. ${shortSha(head)}^..${shortSha(head)}`,
       );
     }
-    const change = await computeChange(ctx.root, base, head);
-
     const ws = wsFirst;
+    const change = await markExcluded(ctx, await computeChange(ctx.root, base, head), ws);
+
     return withFileLock(path, async () => {
       // the latest file: another writer may have changed it since it was read above
       const loaded = loadExplainer(ctx, name);
@@ -396,7 +429,13 @@ export const changeCommand: CommandSpec = {
       const analysis = analyzeChange(change, ws.model, (file) => ws.texts.text(file));
       const omissions = changeOmissions(change, ws.index);
       if (ctx.json) {
-        ctx.emit({ path: loaded.rel, written: !same, change, analysis, omissions });
+        ctx.emit({
+          path: loaded.rel,
+          written: !same,
+          change,
+          analysis,
+          omissions: omissions.map((item) => item.text),
+        });
         return 0;
       }
       ctx.out(

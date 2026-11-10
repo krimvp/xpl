@@ -79,6 +79,24 @@ describe("xpl draft repo: one service and what it relies on", () => {
     ]);
   });
 
+  it("says in a singular sentence that one outside system is only imported off the map", async () => {
+    const project = makeTempDir("xpl-off-map-system-");
+    for (const name of ["a", "b", "c", "d", "e", "f", "g", "h"])
+      writeFile(project, `${name}.py`, `def ${name}():\n    return 1\n`);
+    writeFile(
+      project,
+      "z.py",
+      "import argparse\n\ndef main():\n    return argparse.ArgumentParser().parse_args()\n",
+    );
+    const { notes } = await drafted(project);
+    expect(notes).toContain(
+      "1 outside system is only imported from files left off the maps: User at the terminal",
+    );
+    expect(notes).toContainEqual(
+      expect.stringMatching(/^1 file or folder of \S+ is left off its map/),
+    );
+  });
+
   it("asks whether an imported integration is on the default path in the saved patch", async () => {
     const project = makeTempDir("xpl-optional-integration-");
     writeFile(project, "README.md", "# worker\n\nProcesses jobs.\n");
@@ -661,6 +679,88 @@ describe("importsOf", () => {
   });
 });
 
+describe("xpl draft repo: where the project says it starts", () => {
+  it("a bin built to dist/ starts at its source, and its user is at the terminal", async () => {
+    const dir = makeTempDir("xpl-arch-bin-");
+    writeFile(dir, "package.json", '{ "name": "tool-mono", "private": true }\n');
+    writeFile(dir, "pnpm-workspace.yaml", "packages:\n  - 'packages/*'\n");
+    writeFile(
+      dir,
+      "packages/cli/package.json",
+      '{ "name": "@tool/cli", "bin": { "tool": "dist/tool.mjs" } }\n',
+    );
+    writeFile(
+      dir,
+      "packages/cli/src/main.ts",
+      'import { setup } from "./setup.js";\nimport { run } from "./cli.js";\n\nsetup();\nprocess.exitCode = await run(process.argv.slice(2));\n',
+    );
+    writeFile(dir, "packages/cli/src/setup.ts", "export function setup(): void {}\n");
+    writeFile(
+      dir,
+      "packages/cli/src/cli.ts",
+      'import type { Options } from "./types.js";\nimport { parse } from "./parse.js";\nimport { build } from "@tool/core";\n\nexport async function run(argv: string[]): Promise<number> {\n  const options: Options = parse(argv);\n  return build(options);\n}\n',
+    );
+    writeFile(
+      dir,
+      "packages/cli/src/parse.ts",
+      'import type { Options } from "./types.js";\n\nexport function parse(argv: string[]): Options {\n  return { argv };\n}\n',
+    );
+    writeFile(
+      dir,
+      "packages/cli/src/types.ts",
+      "export interface Options {\n  argv: string[];\n}\n",
+    );
+    writeFile(
+      dir,
+      "packages/core/package.json",
+      '{ "name": "@tool/core", "exports": { ".": "./src/index.ts" } }\n',
+    );
+    writeFile(
+      dir,
+      "packages/core/src/index.ts",
+      'import type { Options } from "../../cli/src/types.js";\n\nexport function build(options: Options): number {\n  return options.argv.length;\n}\n',
+    );
+    const { patch, notes } = await drafted(dir);
+    expect(graph(patch, "view:system")?.include).toEqual(["grp:user", "grp:tool-mono"]);
+    expect(patch.nodes!.find((n) => n.id === "grp:user")).toMatchObject({
+      label: "User at the terminal",
+      anchors: [{ file: "packages/cli/src/cli.ts", span: { from: 4, to: 4 }, role: "usage" }],
+    });
+    expect(notes).toContain(
+      "room is left for 2 more steps (9 at most), the main path and its risks: run `xpl draft path shop sym:packages/cli/src/cli.ts#run` (where the `bin` of `packages/cli/package.json` starts) and copy the steps you keep",
+    );
+    expect(notes).toContain(
+      "outside systems found from the import lines and a package.json `bin` (hints: check each in the code): User at the terminal (command line)",
+    );
+  });
+
+  it("a package's main file that hands on to another file starts at that file's function, not a helper", async () => {
+    const dir = makeTempDir("xpl-arch-main-");
+    writeFile(dir, "README.md", "# webby\n\nA minimalist web framework.\n");
+    writeFile(dir, "package.json", '{ "name": "webby" }\n');
+    writeFile(dir, "index.js", "'use strict';\n\nmodule.exports = require('./lib/webby');\n");
+    writeFile(
+      dir,
+      "lib/webby.js",
+      "var application = require('./application');\n\nexports = module.exports = createApplication;\n\nfunction createApplication() {\n  var app = {};\n  application.init(app);\n  return app;\n}\n",
+    );
+    writeFile(
+      dir,
+      "lib/application.js",
+      "exports.init = function init(app) {\n  app.settings = {};\n};\n\nfunction tryRender(view) {\n  return view;\n}\nexports.tryRender = tryRender;\n",
+    );
+    writeFile(
+      dir,
+      "lib/response.js",
+      "var application = require('./application');\n\nexports.render = function render(view) {\n  return application.tryRender(view);\n};\nexports.send = function send(view) {\n  return application.tryRender(view);\n};\n",
+    );
+    const { notes } = await drafted(dir);
+    expect(notes).toContain(
+      "room is left for 2 more steps (9 at most), the main path and its risks: run `xpl draft path shop sym:lib/webby.js#createApplication` (where the `main` of `package.json` starts) and copy the steps you keep",
+    );
+  });
+});
+
 describe("xpl draft repo: a library with its programs in cmd/", () => {
   it("is one project whose parts include the programs, when they hold less than half of the code", async () => {
     const dir = makeTempDir("xpl-arch-lib-");
@@ -724,6 +824,36 @@ describe("xpl draft repo: monorepos and one big package", () => {
     );
     expect(include.join(" ")).not.toMatch(/bench|fixtures|grp:postgres/);
     expect(notes.join("\n")).not.toContain("PostgreSQL");
+  });
+
+  it("playgrounds, project templates, demos and sandboxes take no box, and a note says so", async () => {
+    const dir = makeTempDir("xpl-arch-playground-");
+    writeFile(dir, "package.json", '{ "name": "bundler-monorepo", "private": true }\n');
+    writeFile(dir, "pnpm-workspace.yaml", "packages:\n  - 'packages/*'\n  - 'playground/**'\n");
+    for (const pkg of ["bundler", "create-bundler", "plugin-legacy"]) {
+      writeFile(dir, `packages/${pkg}/package.json`, `{ "name": "${pkg}" }\n`);
+      writeFile(
+        dir,
+        `packages/${pkg}/src/index.ts`,
+        `export function ${pkg.replace(/-/g, "")}() {}\n`,
+      );
+    }
+    writeFile(
+      dir,
+      "packages/create-bundler/template-react/src/App.tsx",
+      "export function App() { return null; }\n",
+    );
+    for (const place of ["playground/css", "playground/hmr", "demo/site", "sandbox/try"])
+      writeFile(dir, `${place}/main.ts`, "export function main() {}\n");
+    const { patch, notes } = await drafted(dir);
+    expect(graph(patch, "view:overview")?.include).toEqual([
+      "dir:packages/bundler/src",
+      "dir:packages/create-bundler/src",
+      "dir:packages/plugin-legacy/src",
+    ]);
+    expect(notes).toContain(
+      "5 code files are left off the maps as not the product (tests, examples, fixtures, docs, benchmarks, playgrounds, templates, demos and sandboxes): `playground` (2), `demo` (1), `packages/create-bundler/template-react` (1) and `sandbox` (1)",
+    );
   });
 
   it("a folder with most of the code is opened, whatever is around it", async () => {

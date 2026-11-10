@@ -762,7 +762,16 @@ export interface ChangedFile {
   oldPath?: FilePath;
   /** `git diff -U0` hunks: 1-based lines as git prints them (`@@ -oldStart,oldLines +newStart,newLines @@`). */
   hunks: ChangeHunk[];
+  /**
+   * Why `xpl index` leaves the file out, when it does: at head, or for a deleted file at base. Written by
+   * `xpl change`; absent in records made before it was written, and for a file the index has.
+   */
+  excluded?: ExclusionReason;
 }
+
+/** Why file discovery leaves a file out of the index (`@xpl/indexer` `discoverFiles`). */
+export type ExclusionReason =
+  "generated" | "dependency" | "lockfile" | "oversized" | "binary" | "non-file" | "unreadable";
 
 /**
  * One hunk of a diff without context lines. `oldLines` lines starting at `oldStart` in the base were replaced by

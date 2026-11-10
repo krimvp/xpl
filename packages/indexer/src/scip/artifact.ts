@@ -393,7 +393,7 @@ export function scipArtifactProvider(options: ScipArtifactOptions): IndexProvide
       const relationships: ProviderRelationship[] = [];
       const blind: NonNullable<ProviderOutput["blind"]>[number][] = [];
       const covered = new Map<AnalysisCapability, Set<string>>();
-      for (const [file, { doc, text, lines, encoding }] of documents) {
+      for (const [file, { doc, lines, encoding }] of documents) {
         const fileDefs = [...definitions.values()].filter((d) => d.fact.file === file);
         const lookup = new SpanIndex(fileDefs.map((d) => ({ span: d.span, value: d })));
         for (const occ of doc.occurrences) {
@@ -442,7 +442,7 @@ export function scipArtifactProvider(options: ScipArtifactOptions): IndexProvide
               to: target.identity,
               file,
               kind,
-              evidence: providerRange(site, text),
+              evidence: providerRange(site, lines),
               resolution: "precise",
             });
           }

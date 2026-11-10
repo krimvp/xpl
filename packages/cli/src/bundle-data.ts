@@ -10,7 +10,7 @@ import { join } from "node:path";
 import {
   BUNDLE_SCHEMA,
   referencedFiles,
-  baseVersionFiles,
+  baseSourceFiles,
   basePathOf,
   headPathsOf,
   collectAnchors,
@@ -350,12 +350,14 @@ export function embedIndex(opts: {
 }
 
 /**
- * The code before the change (`ViewerBundle.baseFiles`): the base text of every changed file of `explainer.change`
- * that is modified, renamed or deleted, keyed by its `ChangedFile.path`. `missing` lists the files whose base text
- * could not be read (no git, a binary file). Undefined without a change record.
+ * The code before the change (`ViewerBundle.baseFiles`): the base text of the changed files a page can show
+ * (`baseSourceFiles`: modified, renamed or deleted, and not left out by the index unless a base anchor points into
+ * it), keyed by its `ChangedFile.path`. `missing` lists the files whose base text could not be read (no git).
+ * Undefined without a change record.
  */
 export function collectBaseFiles(
   explainer: Explainer,
+  index: IndexModel,
   texts: TextCache,
 ): { files: Record<string, string>; bytes: number; missing: string[] } | undefined {
   const change = explainer.change;
@@ -363,7 +365,7 @@ export function collectBaseFiles(
   const files: Record<string, string> = {};
   const missing: string[] = [];
   let bytes = 0;
-  for (const file of baseVersionFiles(change)) {
+  for (const file of baseSourceFiles(explainer, index)) {
     const text = texts.textAt(change.base, basePathOf(file));
     if (text === undefined) {
       missing.push(file.path);

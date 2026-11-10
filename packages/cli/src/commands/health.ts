@@ -18,7 +18,7 @@ export const healthCommand: CommandSpec = {
   details: [
     "Lists common problems, each with its file and line, a severity, why it matters and a fix.",
     "It finds keys and passwords in the code (masked), secrets sent to the browser and committed .env files.",
-    `It also finds code files over ${HEALTH_LARGE_FILE_LINES.toLocaleString("en")} lines and code files nothing else uses (a guess from the index).`,
+    `It also finds code files over ${HEALTH_LARGE_FILE_LINES.toLocaleString("en")} lines and code files nothing else uses: a guess from the index's references and the file paths other files name (an HTML script tag, package.json); a Go file counts with its package.`,
     "Run `xpl index` first. Tests, fixtures, docs and examples get a lower severity for key shapes.",
     "It is a quick check, not a security audit. Exit codes: 0 a report, 1 no index, 2 usage error.",
   ],

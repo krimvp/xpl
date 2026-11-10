@@ -234,6 +234,24 @@ test.describe("one header in every mode", () => {
   });
 });
 
+/**
+ * The width of Present's diagram pane once the split has stopped moving. The split changes over 0.2 s
+ * (`.present` in styles.css), so one read right after a step change lands mid-way: two polls (100 ms or more
+ * apart) must read the same.
+ */
+async function settledPaneWidth(page: Page): Promise<number> {
+  let last = -1;
+  await expect
+    .poll(async () => {
+      const now = (await page.locator(".present-left").boundingBox())!.width;
+      const settled = now === last;
+      last = now;
+      return settled;
+    })
+    .toBe(true);
+  return last;
+}
+
 test.describe("Present: a flow step", () => {
   for (const size of [
     { width: 1280, height: 720 },
@@ -248,7 +266,7 @@ test.describe("Present: a flow step", () => {
       // a tour with a flow step gives the diagram more of the width, and a flow too big to read whole asks
       // for more (up to 65%), as a map does
       await expect(page.getByTestId("present")).toHaveAttribute("data-room", "wide");
-      const flowPane = (await page.locator(".present-left").boundingBox())!.width;
+      const flowPane = await settledPaneWidth(page);
       expect(flowPane).toBeGreaterThan(size.width * 0.5);
       // read from the back of the room: the flow starts with its text at 16px
       expect(await smallestDiagramText(page)).toBeGreaterThanOrEqual(15.9);
@@ -279,7 +297,7 @@ test.describe("Present: a flow step", () => {
       await page.keyboard.press("ArrowLeft");
       await expect(byId(page, "grp:scheduling")).toHaveClass(/is-selected/);
       await expect(page.getByTestId("present")).not.toHaveAttribute("data-room");
-      const mapPane = (await page.locator(".present-left").boundingBox())!.width;
+      const mapPane = await settledPaneWidth(page);
       expect(mapPane).toBeGreaterThanOrEqual(340);
       expect(mapPane).toBeLessThan(flowPane);
       expect(problems).toEqual([]);

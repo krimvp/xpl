@@ -318,7 +318,9 @@ describe("xpl change", () => {
     expect(r.out).toContain(
       "dynamic callbacks, runtime middleware wiring and instance guesses are not followed",
     );
-    expect(r.out).toContain("Not checked:\n  old.py: removed from the head");
+    expect(r.out).toContain(
+      "Not checked:\n  1 removed file was not analyzed: the index holds the code after the change only.\n    old.py",
+    );
   });
 
   it("--json gives the record and the analysis: callers, tests, callers via instance", async () => {
@@ -331,7 +333,9 @@ describe("xpl change", () => {
     }>(dir, "change", "demo", `${base}..${head}`);
     expect(code).toBe(0);
     expect(json.written).toBe(true);
-    expect(json.omissions).toContainEqual(expect.stringContaining("old.py: removed from the head"));
+    expect(json.omissions).toContain(
+      "1 removed file was not analyzed: the index holds the code after the change only.",
+    );
     const helper = json.analysis.symbols.find((s) => s.id === "sym:app.py#helper");
     expect(helper.callers.map((c: any) => c.id)).toEqual(["sym:app.py#App.handle"]);
     expect(helper.callers[0].changed).toBe("changed");
@@ -367,8 +371,8 @@ describe("xpl change", () => {
     expect(shown.out).toContain("recorded in .explainer/demo.explainer.json");
     expect(shown.out).toContain("sym:app.py#helper");
     const shownJson = await xplJson<{ omissions: string[] }>(dir, "change", "demo");
-    expect(shownJson.json.omissions).toContainEqual(
-      expect.stringContaining("old.py: removed from the head"),
+    expect(shownJson.json.omissions).toContain(
+      "1 removed file was not analyzed: the index holds the code after the change only.",
     );
   });
 
@@ -400,8 +404,9 @@ describe("xpl change", () => {
     writeFile(dir, file, JSON.stringify(ex));
     const shown = await xplJson<{ omissions: string[] }>(dir, "change", "demo");
     expect(shown.code).toBe(0);
-    expect(shown.json.omissions[0]).toContain("Loaded index");
-    expect(shown.json.omissions[0]).toContain("differs from change head");
+    expect(shown.json.omissions[0]).toBe(
+      `The index is of commit ${head.slice(0, 7)}, not of the change's last commit ${base.slice(0, 7)}: what it says about the changed code may be out of date.`,
+    );
   });
 
   it("refuses a head that is not the index commit, unknown revisions, and empty ranges", async () => {
@@ -664,4 +669,104 @@ describe("bundle and server with a change", () => {
       await server.close();
     }
   });
+});
+
+describe("changed files the index leaves out", () => {
+  // over the 1 MB limit of `xpl index`, as the showcase pages of xpl's own site are
+  const BIG_V1 = "<p>one</p>\n".repeat(100_000);
+  const BIG_V2 = "<p>two</p>\n".repeat(100_000);
+  let dir: string;
+  let env: { XPL_VIEWER_HTML: string };
+  beforeAll(async () => {
+    dir = makeTempDir("xpl-change-excluded-");
+    writeFile(dir, "app.py", APP_V1);
+    writeFile(dir, "site/page.html", BIG_V1);
+    writeFile(dir, "site/old.html", BIG_V1);
+    writeFile(dir, "yarn.lock", "a@1\n");
+    writeFile(dir, "gone.py", "def gone():\n    return 1\n");
+    git(dir, "init", "-q", "-b", "main");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "base");
+    writeFile(dir, "app.py", APP_V2);
+    writeFile(dir, "site/page.html", BIG_V2);
+    writeFile(dir, "yarn.lock", "a@2\n");
+    rmSync(join(dir, "site/old.html"));
+    rmSync(join(dir, "gone.py"));
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "head");
+    for (const argv of [
+      ["index", "--precise", "off"],
+      ["new", "demo"],
+      ["change", "demo", "HEAD~1..HEAD"],
+    ]) {
+      const r = await xpl(dir, ...argv);
+      if (r.code !== 0) throw new Error(r.err);
+    }
+    env = { XPL_VIEWER_HTML: writeViewerStub() };
+  }, 60_000);
+
+  it("xpl change records why, and says it per reason with the files", async () => {
+    const ex = readJson<Explainer>(dir, ".explainer/demo.explainer.json");
+    expect(ex.change!.files.map((f) => [f.path, f.status, f.excluded])).toEqual([
+      ["app.py", "modified", undefined],
+      ["gone.py", "deleted", undefined],
+      ["site/old.html", "deleted", "oversized"],
+      ["site/page.html", "modified", "oversized"],
+      ["yarn.lock", "modified", "lockfile"],
+    ]);
+    const r = await xpl(dir, "change", "demo");
+    expect(r.out.slice(r.out.indexOf("Not checked:"))).toBe(
+      [
+        "Not checked:",
+        "  1 file listing pinned dependency versions (lockfiles) was not analyzed.",
+        "    yarn.lock",
+        "  1 file over the 1 MB size limit was not analyzed.",
+        "    site/page.html",
+        "  2 removed files were not analyzed: the index holds the code after the change only.",
+        "    gone.py",
+        "    site/old.html",
+        "  python report: calls, imports, inheritance, type references, reads, writes partial; 1 of 1 changed paths in its scope analyzed. Reported limit: References matched by name are hints; some can be missing.",
+        "  python report: implementations unsupported; 0 of 1 changed paths in its scope analyzed. Reported limit: No references are found in these files.",
+      ].join("\n"),
+    );
+    const json = await xplJson<{ omissions: string[] }>(dir, "change", "demo");
+    expect(json.json.omissions.slice(0, 3)).toEqual([
+      "1 file listing pinned dependency versions (lockfiles) was not analyzed.",
+      "1 file over the 1 MB size limit was not analyzed.",
+      "2 removed files were not analyzed: the index holds the code after the change only.",
+    ]);
+  });
+
+  it("a drafted guide, its bundle and xpl view carry the code before the change only of the files a page can show", async () => {
+    // the draft anchors no old lines of a file the index leaves out, and says why per file
+    const draft = await xpl(dir, "draft", "change", "demo", "-o", "../excluded-draft.json");
+    expect(draft.code, draft.err).toBe(0);
+    expect(draft.out + draft.err).toContain(
+      "note: no anchor in the changed files the index does not hold: site/old.html (over the 1 MB size limit), site/page.html (over the 1 MB size limit), yarn.lock (a lockfile)",
+    );
+    expect((await xpl(dir, "apply", "demo", "../excluded-draft.json")).code).toBe(0);
+    const r = await invoke(["bundle", "--draft", "demo", "-o", "b.html", "--json"], {
+      cwd: dir,
+      env,
+    });
+    expect(r.code, r.err).toBe(0);
+    const json = JSON.parse(r.out) as { change: { baseFiles: string[]; baseBytes: number } };
+    expect(json.change.baseFiles).toEqual(["app.py", "gone.py"]);
+    expect(json.change.baseBytes).toBe(APP_V1.length + "def gone():\n    return 1\n".length);
+    const server = await startViewServer({
+      env: { root: dir, cwd: dir, env: {}, indexOption: undefined, warn: () => undefined },
+      explainerPath: join(dir, ".explainer", "demo.explainer.json"),
+      host: "127.0.0.1",
+      port: 0,
+      viewerHtml: () => STUB_VIEWER_HTML,
+    });
+    try {
+      const bundle = (await (await fetch(`${server.url}api/bundle`)).json()) as {
+        baseFiles: Record<string, string>;
+      };
+      expect(Object.keys(bundle.baseFiles)).toEqual(["app.py", "gone.py"]);
+    } finally {
+      await server.close();
+    }
+  }, 60_000);
 });

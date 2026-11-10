@@ -11,6 +11,7 @@ import { DiagramText } from "./DiagramText.js";
  * transparent hit area covering its label and arrow, so clicking anywhere on the row selects it.
  */
 import type { ExplainerModel, SequenceView as SequenceViewData } from "@xpl/core";
+import { shortFlow } from "../shortLabels.js";
 import { useMemo, useSyncExternalStore, type KeyboardEvent, type MouseEvent } from "react";
 import {
   ARM_TOP,
@@ -82,7 +83,7 @@ export function SequenceView({
 }: SequenceViewProps) {
   const store = useStore();
   const phone = usePhoneWidth();
-  const layout = useMemo(() => layoutSequence(view, model), [view, model]);
+  const layout = useMemo(() => layoutSequence(shortFlow(view), model), [view, model]);
   const selected = useMemo(() => new Set(selection), [selection]);
   const matched = useMemo(() => new Set(matches), [matches]);
   // What a diagram too big to show whole starts on: the selected arrows and participants (a tour step's

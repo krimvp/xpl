@@ -1,6 +1,6 @@
 import { setImmediate } from "node:timers/promises";
 import { performance } from "node:perf_hooks";
-import { hashText, splitLines } from "@xpl/core";
+import { splitLines } from "@xpl/core";
 import type { FileLanguage, FilePath, IndexedFile, Reference } from "@xpl/core";
 import pkg from "../package.json" with { type: "json" };
 import { nodeSpan } from "./ast.js";
@@ -22,7 +22,7 @@ import {
   STRUCTURE_SUPPORT,
   type ExtractionOutcome,
 } from "./analysis.js";
-import { normalizeProvider, providerRange } from "./providers.js";
+import { normalizeProvider, providerRange, sourceLines } from "./providers.js";
 import type {
   IndexProvider,
   ProviderInput,
@@ -61,34 +61,49 @@ export class TreeSitterProvider implements IndexProvider {
     const identities = new Map<string, string>();
     const pool = new ParserPool();
     input.onProgress?.({ phase: "Extracting", completed: 0, total: input.sources.length });
+    // A few files at a time: a cache hit mostly waits for the disk, and the waits overlap.
+    const BATCH = 16;
     try {
-      for (const discovered of input.sources) {
+      for (let at = 0; at < input.sources.length; at += BATCH) {
         if (input.signal) await setImmediate(undefined, { signal: input.signal });
         input.signal?.throwIfAborted();
-        const indexed = await indexFile(
-          discovered,
-          pool,
-          declarations,
-          resolverFiles,
-          syntaxErrors,
-          warnings,
-          resourceSites,
-          httpSites,
-          input.extractionCache,
-          this.experiment ? (path, identity) => identities.set(path, identity) : undefined,
+        // allSettled: the pool is freed below only once no file of the batch still parses
+        const settled = await Promise.allSettled(
+          input.sources
+            .slice(at, at + BATCH)
+            .map((discovered) =>
+              indexFile(
+                discovered,
+                pool,
+                input.extractionCache,
+                this.experiment ? (path, identity) => identities.set(path, identity) : undefined,
+              ),
+            ),
         );
-        files.push(indexed.file);
-        input.onProgress?.({
-          phase: "Extracting",
-          completed: files.length,
-          total: input.sources.length,
-        });
-        extractionOutcomes.set(indexed.file.path, indexed.outcome);
-        if (indexed.pack) {
-          const key = `${indexed.pack.id}\0${indexed.file.language}`;
-          if (!usedPackKeys.has(key)) {
-            usedPackKeys.add(key);
-            usedPacks.push({ pack: indexed.pack, language: indexed.file.language });
+        for (const result of settled) if (result.status === "rejected") throw result.reason;
+        for (const { value: indexed } of settled as PromiseFulfilledResult<IndexedSource>[]) {
+          const outcome = addFile(
+            indexed,
+            declarations,
+            resolverFiles,
+            syntaxErrors,
+            warnings,
+            resourceSites,
+            httpSites,
+          );
+          files.push(indexed.file);
+          input.onProgress?.({
+            phase: "Extracting",
+            completed: files.length,
+            total: input.sources.length,
+          });
+          extractionOutcomes.set(indexed.file.path, outcome);
+          if (indexed.pack) {
+            const key = `${indexed.pack.id}\0${indexed.file.language}`;
+            if (!usedPackKeys.has(key)) {
+              usedPackKeys.add(key);
+              usedPacks.push({ pack: indexed.pack, language: indexed.file.language });
+            }
           }
         }
       }
@@ -107,17 +122,19 @@ export class TreeSitterProvider implements IndexProvider {
       version: pkg.dependencies["web-tree-sitter"],
       configuration: "builtin-packs",
       tool: `web-tree-sitter@${pkg.dependencies["web-tree-sitter"]}`,
-      sourceHashes: Object.fromEntries(input.sources.map((s) => [s.path, hashText(s.text)])),
+      // indexFile hashed the same text: `hashText(source.text)`
+      sourceHashes: Object.fromEntries(files.map((f) => [f.path, f.hash])),
       declarations,
       relationships: [],
       analysis,
     };
     const { entries } = normalizeProvider(input, output);
     const lookup = new SymbolLookup(entries);
+    const texts = new Map(input.sources.map((s) => [s.path, s.text]));
     const repo = new SourceRepoView(
       input.root,
       files.map((f) => f.path),
-      (path) => input.sources.find((s) => s.path === path)?.text ?? input.readText(path),
+      (path) => texts.get(path) ?? input.readText(path),
     );
     const heuristicFiles = resolverFiles.filter((f) => f.pack.refs === "heuristic");
     const resolutionStarted = performance.now();
@@ -132,15 +149,13 @@ export class TreeSitterProvider implements IndexProvider {
     this.resourceSites = resourceSites;
     this.httpSites = httpSites;
     this.warnings = warnings;
+    const linesOf = sourceLines(input.sources);
     output.relationships = refs.map((ref) => ({
       from: ref.from,
       to: ref.to,
       kind: ref.kind,
       file: ref.from.slice(0, ref.from.indexOf("#")),
-      evidence: providerRange(
-        ref.site,
-        input.sources.find((s) => s.path === ref.from.slice(0, ref.from.indexOf("#")))!.text,
-      ),
+      evidence: providerRange(ref.site, linesOf(ref.from.slice(0, ref.from.indexOf("#")))),
       resolution: ref.resolution,
     }));
     return output;
@@ -188,19 +203,22 @@ function inferPackRefs(
   return out;
 }
 
-/** Hash, parse and extract one captured source file. */
+/** What `indexFile` found in one file, before `addFile` adds it to the build. */
+interface IndexedSource {
+  discovered: ProviderSource;
+  file: IndexedFile;
+  lines: readonly string[];
+  pack: LanguagePack | undefined;
+  extracted?: FileExtraction;
+}
+
+/** Hash, parse and extract one captured source file. Touches nothing shared: several run at once. */
 async function indexFile(
   discovered: ProviderSource,
   pool: ParserPool,
-  declarations: ProviderDeclaration[],
-  resolverFiles: ResolverFile[],
-  syntaxErrors: SyntaxErrorFile[],
-  warnings: string[],
-  resourceSites: ResourceSite[],
-  httpSites: HttpSites[],
   cache: ExtractionCache | undefined,
   onIdentity?: (path: string, identity: string) => void,
-): Promise<{ file: IndexedFile; pack: LanguagePack | undefined; outcome: ExtractionOutcome }> {
+): Promise<IndexedSource> {
   const text = discovered.text;
   const lines = splitLines(text);
   const hasher = new FileHasher(lines);
@@ -211,7 +229,7 @@ async function indexFile(
     lines: lines.length,
   };
   const pack = packForFile(discovered.path, discovered.language);
-  if (!pack) return { file, pack, outcome: { status: "supported", limitations: [] } };
+  if (!pack) return { discovered, file, lines, pack };
   const extract = () => extractFile(discovered, pool, pack);
   const extracted = cache
     ? await cache.extract(
@@ -227,12 +245,26 @@ async function indexFile(
         onIdentity ? (identity) => onIdentity(discovered.path, identity) : undefined,
       )
     : await extract();
+  return { discovered, file, lines, pack, extracted };
+}
+
+/** Add the facts of one file to the build, in source order (it decides declaration identities). */
+function addFile(
+  { discovered, lines, pack, extracted }: IndexedSource,
+  declarations: ProviderDeclaration[],
+  resolverFiles: ResolverFile[],
+  syntaxErrors: SyntaxErrorFile[],
+  warnings: string[],
+  resourceSites: ResourceSite[],
+  httpSites: HttpSites[],
+): ExtractionOutcome {
+  if (!pack || !extracted) return { status: "supported", limitations: [] };
   const { facts, outcome } = extracted;
   resourceSites.push(...extracted.resourceSites);
   if (extracted.httpSites) httpSites.push(extracted.httpSites);
   if (extracted.syntaxErrors) syntaxErrors.push(extracted.syntaxErrors);
   warnings.push(...extracted.warnings);
-  if (!facts) return { file, pack, outcome };
+  if (!facts) return outcome;
   facts.symbols.forEach((draft, i) =>
     declarations.push({
       identity: `${discovered.path}:${String(i).padStart(8, "0")}`,
@@ -240,8 +272,8 @@ async function indexFile(
       name: draft.path.split(".").at(-1)!,
       path: draft.path,
       kind: draft.kind,
-      declaration: providerRange(draft.range, text),
-      ...(draft.identifier ? { identifier: providerRange(draft.identifier, text) } : {}),
+      declaration: providerRange(draft.range, lines),
+      ...(draft.identifier ? { identifier: providerRange(draft.identifier, lines) } : {}),
       parentPath: draft.parentPath,
       anchorOnly: draft.anchorOnly,
     }),
@@ -256,7 +288,7 @@ async function indexFile(
     exports: facts.exports ?? [],
     ...(facts.data !== undefined ? { data: facts.data } : {}),
   });
-  return { file, pack, outcome };
+  return outcome;
 }
 
 interface FileExtraction {

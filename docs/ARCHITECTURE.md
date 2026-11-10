@@ -219,7 +219,11 @@ Conventions (all packages):
       status: "added" | "modified" | "deleted" | "renamed";
       oldPath?: FilePath; // renamed files only: the path at base
       hunks: ChangeHunk[]; // as `git diff -U0` prints them
+      excluded?: ExclusionReason; // why `xpl index` leaves it out (at head; a deleted file at base)
     }
+    // why file discovery (§3) leaves a file out
+    type ExclusionReason =
+      "generated" | "dependency" | "lockfile" | "oversized" | "binary" | "non-file" | "unreadable";
     interface ChangeHunk {
       oldStart: number;
       oldLines: number;
@@ -230,7 +234,10 @@ Conventions (all packages):
 
     Lines are 1-based, as in git. A hunk replaces `oldLines` base lines from `oldStart` with `newLines` head
     lines from `newStart`. A count of 0 is a pure insertion or deletion, and the start is then the line after
-    which it happened (0: at the top). Files come in git's order (sorted by path).
+    which it happened (0: at the top). Files come in git's order (sorted by path). `xpl change` sets
+    `excluded` with the rules of `xpl index`: for a file at head the index lacks, from the working tree; for a
+    deleted file, from its text at base (size, a NUL byte, the mark of an exported page, the path rules). A
+    record written before the field existed has none; such a file reads as "missing from the index".
 16. `Anchor` adds `at?: "base"`: a **base anchor** points at the code before the change, the base commit of
     `Explainer.change`. It has `file` and an optional `span` counted from line 1 of the base file; never a
     `symbol`, because the base is not indexed. `file` is always `ChangedFile.path` (a patch may name a renamed
@@ -412,7 +419,11 @@ writeIndex(root: string, index: SymbolIndex, signal?: AbortSignal): Promise<stri
 // atomic write of <root>/.explainer/index-<commit>.json; ignores indexes and cache/ in .explainer/.gitignore
 ```
 
-Pipeline: discover files → per file: read, hash, reuse extraction or parse/`pack.extract`/free the tree → assemble symbols
+The index file is one line of JSON, without indentation: on xpl that is 20.9 MB instead of 28.9 MB, and every
+command parses it. Pipe it through `jq .` to read it.
+
+Pipeline: discover and read files (one read each) → per file, 16 at a time, facts added in file order: hash, reuse
+extraction or parse/`pack.extract`/free the tree → assemble symbols
 (ids, `~N` suffixes, whole-line ranges, hashes, parents) → heuristic resolution of every site, plus the packs'
 `inferRefs` → providers normalize and merge declarations and references by capability and file → commit id → `SymbolIndex`. `tool` =
 `xpl-indexer@<v> web-tree-sitter@<v> <grammar>@<v> …`. A file with syntax errors is indexed anyway: one
@@ -961,12 +972,17 @@ its provider id, so a file-only fallback's limits do not describe a separate art
 `readerCoverage` gives readers a summary and one plain line per language in the diagrams' words ("names in
 part", "arrows matched by name, so some can be missing", "no inherits or type uses"), with data files as
 "keys only" and text as "the whole file only".
-`changeOmissions` intersects the change's paths with the loaded index's observed reports. It names report-level
-partial, unsupported or failed outcomes with the count of changed paths actually analyzed, without assigning a
-report-level limit to each file. It also names paths absent from the loaded index and removed files whose old
-code it cannot inspect. A commit mismatch is called out: those results describe the loaded index, not the
-change head. The list is capped at five items with a remaining count; no result or missing legacy report is
-treated as proof of complete analysis. Pruned and packed bundles retain the original reports.
+`changeOmissions` intersects the change's paths with the loaded index's observed reports and returns
+`{ text, files }[]`, written for a reader. Changed files the index lacks get one line per reason, with a count
+and the files (`ChangedFile.excluded`: "8 files over the 1 MB size limit were not analyzed."; no reason
+recorded: "missing from the index"); the reason with the most files comes first. Removed files get one line
+(the index holds the head only). Every changed file the index lacks is in exactly one line, so grouping hides
+none. It names report-level partial, unsupported or failed outcomes with the count of changed paths actually
+analyzed, without assigning a report-level limit to each file. A commit mismatch is called out first: those
+results describe the loaded index, not the change head. The list is not capped: grouping keeps it short, and
+no result or missing legacy report is treated as proof of complete analysis. `notAnalyzedReason` gives one
+file's reason in a few words ("over the 1 MB size limit"). Pruned and packed bundles retain the original
+reports.
 Tool commands and diagnostic details remain author-facing.
 
 | Language | Symbols (kind) | Path rules |
@@ -1542,7 +1558,9 @@ Reset may clear selected pins or all pins; a later placement edit conflicts rath
     config and text files), 8-200 characters without spaces, of at least two character kinds, with at least 3
     bits of entropy per character, and not a placeholder (`xxx`, `changeme`, `your`, `example`, `<…>`, `${…}`,
     `{{…}}`, …), an environment lookup, a `$`-prefixed hash, or lower-case words joined by `.`, `_`, `-`, `:` or
-    `/`. One finding per line, the first that applies.
+    `/`. One finding per line, the first that applies. The scan is linear in the line: a name or URL scheme is
+    tried once per run of name characters, from its start (an 80,000-letter line in a generated SVG took 9 s
+    when each letter was a start).
   - `browser-secret` (high): a `NEXT_PUBLIC_`, `VITE_`, `REACT_APP_` or `PUBLIC_` variable assigned a server key
     shape, or named with `SECRET`, `PRIVATE`, `PASSWORD` or `SERVICE_ROLE`. Other values of such variables are
     public by design and are not reported (`AIza…` browser keys, anonymous tokens).
@@ -1554,17 +1572,28 @@ Reset may clear selected pins or all pins; a later placement edit conflicts rath
   - `unused-file` (low, `heuristic: true`): a code file with symbols whose symbols and module scope no other
     file references, and no other file loads as a `resource`. Entry points are left out: file names `main`,
     `index`, `cli`, `server`, `app`, `__main__`, `__init__`, `mod`, `lib`, `build`, `setup`, `manage`, `wsgi`,
-    `asgi`, `middleware`, `page`, `layout`, `route` (any extension), `*.config.*`, `*.d.ts`, dotfiles, files
-    under `scripts/`, `bin/`, `cmd/`, `pages/`, `routes/` or `migrations/`, and test-like files. So is a file
-    whose text declares a program's entry point (`ENTRY_TEXT`): Java's `static void main`, Python's
-    `if __name__ == "__main__":`, Go's `func main()` in `package main`, Rust's `fn main`. A file without
-    symbols (a list of re-exports) is left out too, because imports resolve through it to the symbols it
-    re-exports. Skipped, with a note, when the index has no references or is pruned. A file whose recorded
-    analysis does not follow imports (no `import` result with status `supported` or `partial` lists it) is not
-    reported either: nothing referring to it proves nothing, so a note per language says how many files xpl
-    cannot tell about. A legacy index without `analysis` keeps the old rule. Code loaded by name, by a
-    framework convention not listed, or from outside the repository (a `package.json` `bin`, an HTML page)
-    still reads as unused.
+    `asgi`, `middleware`, `page`, `layout`, `route` (any extension), config files and the variants a tool is
+    pointed at (`*.config.*`, `*.config-*`), `*.d.ts`, dotfiles, files under `scripts/`, `bin/`, `cmd/`,
+    `pages/`, `routes/` or `migrations/`, and test-like files (with `__tests*__/` folders such as
+    `__tests_dts__/`). So is a file whose text declares a program's entry point (`ENTRY_TEXT`): Java's
+    `static void main`, Python's `if __name__ == "__main__":`, Go's `func main()` in `package main`, Rust's
+    `fn main`. A file without symbols (a list of re-exports) is left out too, because imports resolve through
+    it to the symbols it re-exports. A Go file is judged with its package (its folder), which Go compiles as
+    one: when another file references any file of the package, or one is an entry point, none is reported, so
+    an `init` file or a build-tagged variant is not. A file that another file names by path is used too
+    (`namedFiles`): an HTML script tag, a `package.json` `main`, `exports` or script, a worker's
+    `new URL("./w.js", import.meta.url)`, a config's `entry: "/src/entry-server"`. Every non-prose file's text
+    is split into path-like tokens (name characters, `.` and `/`); a token names a file when it resolves to it
+    from the naming file's folder, or, unless it starts with `./` or `../`, from a folder above it (a leading
+    `/` is dropped). A token with a `/` may leave out the extension; a bare word needs it (`seed.js`, not
+    `seed`). `*.md`, `*.mdx`, `*.rst` and `*.txt` do not count. Skipped, with a note, when the index has no
+    references or is pruned. A file whose recorded analysis does not follow imports (no `import` result with
+    status `supported` or `partial` lists it) is not reported either: nothing referring to it proves nothing,
+    so a note per language says how many files xpl cannot tell about. A legacy index without `analysis` keeps
+    the old rule. A file reached through a glob outside TS/JS/Python/Go code, a bundler alias, a template
+    literal (`` import(`./views/${name}.js`) ``) or from outside the repository still reads as unused. On
+    vite, 34 of 2,824 files are reported (209 before these rules), all in its test playground and all
+    reached in one of those ways.
 
   Test-like files (`TEST_FILE_GLOBS`, `fixtures/`, `__fixtures__/`, `testdata/`, `e2e/`, `docs/`, `examples/`,
   `example/`, `*.md`, `*.mdx`, `*.rst`, `*.example`, `*.sample`, `*.template`, `*.dist`) hold fake keys far
@@ -1654,7 +1683,7 @@ fatal errors (`error: …`) and warnings (`warning: …`) go to stderr.
 | `xpl search <pattern> [--regex] [-i] [--limit n] [--under <dir\|glob>] [--code]` | text hits over the working tree with enclosing symbol id and offset; code files first, then config, then docs (`--code`: code only); `--under` keeps the search in a dir, file, symbol or glob |
 | `xpl guides` | local guide metadata by title, recorded view questions, audience and source/index snapshot; no index or service required; unreadable/invalid/escaping guides are separate errors, exit 1; no guides is exit 0 |
 | `xpl update <explainer> [--since <rev>] [-o file] [--precise auto\|off\|require]` | after work on the code, for a map guide: runs `index`, `resolve --write`, `change <rev>..HEAD` (with `--since`) and `draft map` in-process (`commands/update.ts`); stops at the first failing step with its message; applies nothing and prints where the draft is |
-| `xpl start <name> --question q --audience a [--entry symbol] [--precise auto\|off\|require]` | first-guide path: runs `index`, `new`, `draft repo` (or `draft path` with `--entry`) and `apply`; saves the checked patch and all draft notes outside the repository, prints up to three notes and apply warnings (full lists in `--json` and the notes file), then names `view` and `lint` as next steps; refuses an existing guide |
+| `xpl start <name> --question q --audience a [--entry symbol] [--precise auto\|off\|require]` | first-guide path: runs `index`, `new`, `draft repo` (or `draft path` with `--entry`) and `apply`; saves the checked patch and all draft notes outside the repository, prints up to three notes and apply warnings (full lists in `--json` and the notes file); without `--entry`, names where a path could start: the function whose name and code hold the most words of the question (common words such as `how`, `put`, `get`, `work` and the project's own name do not count), else the draft's declared `entry`, each labeled, else says none is guessed; then names `view` and `lint` as next steps; refuses an existing guide |
 | `xpl new <name> [--title t] [--repo r] [--url u]` | create `.explainer/<name>.explainer.json` bound to the index; never overwrites; repo name from `--repo`, else `package.json`, `go.mod`, `pyproject.toml`, git remote, directory name |
 | `xpl apply <explainer> <patch.json\|-> [--actor llm\|user] [--dry-run]` | §4.7; prints every issue of a rejected patch at once; atomic; `--help` says how a patch merges and points to `patch-format.md` |
 | `xpl validate [explainer] [--lenient]` | §4.6 |
@@ -1748,8 +1777,9 @@ explainer commands, the explainer's own `index.path` when that file exists (`xpl
 exists to move an explainer to a newer index); otherwise among `.explainer/index-*.json`: the only one, else
 the one named for the current commit id, else the newest. None → an error that says to run `xpl index`.
 
-**Stale index.** Whatever was chosen is compared with the working tree (the commit id it would get now, then
-per-file hashes). If they differ, commands warn, naming the changed, new and deleted files: `index X … does
+**Stale index.** Whatever was chosen is compared with the working tree, file by file (the hashes; the commit id
+the tree would get now is computed only for the warning). If they differ, commands warn, naming the changed,
+new and deleted files: `index X … does
 not match the working tree (Y): 2 changed (src/queue.ts, src/runner.ts). Line numbers and offsets may be off;
 run xpl index`. `XPL_SKIP_STALE_CHECK=1` skips advisory comparisons (about a second per 5000 files). Strict
 validation and HTML export always check freshness and fail on a stale index; `--allow-drift`
@@ -1884,7 +1914,9 @@ it to a file; `--json` adds the counts and what was left out.
   that use the changed code). Box summaries start with `New:`, `Changed:` or `Unchanged:`. The tour follows
   the review order, at most 12 steps: what changes for users, where it enters, one step per changed piece in
   call order ("Before/Now" TODOs), other changed files, who else is affected, tests and gaps, risks. Anchors
-  come from the hunks; every changed file gets one, a deleted file in the base (`at: "base"`). A changed
+  come from the hunks; every changed file gets one, a deleted file or one the index does not hold in the base
+  (`at: "base"`), except a file the index leaves out on purpose (`ChangedFile.excluded`): its old text would
+  only make the page heavier, and the note names each such file with its reason. A changed
   piece's step shows the old lines of its first hunk that removed text (a base anchor) before the new ones.
   "Who else is affected" is always a step: with no caller beyond the entry it says so and asks for the
   readers of a changed result, the public entry points and the siblings (explain-change.md §5). A caller is
@@ -1892,6 +1924,11 @@ it to a file; `--json` adds the counts and what was left out.
   type (`import type`, an annotation) is not one. The change enters at a caller; with none outside tests, at
   the changed public function closest to callers. The tests step names the symbols no test reaches and shows
   the changed test files apart. Step ids are `t10`, `t20`, ... so an inserted step fits between two.
+- `repo`, `map` and `data` leave code that is not the product off their maps (`notProduct` in `draft.ts`):
+  tests, examples, fixtures, docs, benchmarks, scripts, playgrounds (`playground/`), project templates
+  (`templates/`, `template-*/`: create-vite's `template-react-ts`), demos, sandboxes and dot folders. A
+  `repo` note counts the code files it left off by their outermost such folder (vite: `playground` (1119),
+  `packages/vite/src/node/__tests__` (152), ...), so the reader knows the boxes are the product.
 - `repo`: two levels. A system map (`view:system`): the project as one service group (`role: service`, members
   = the parts), or one `dir:` box per program when `services/`, `apps/` or `cmd/` (at the root or under `src`)
   hold two or more; who reaches it (web and CLI frameworks, `role: person`) and what it relies on (database
@@ -1899,22 +1936,35 @@ it to a file; `--json` adds the counts and what was left out.
   files (`outside.ts`: a catalog per language family, including Java imports and Maven group IDs) and drawn as
   groups with a role, a `tech` and no members, anchored at one import line per part that imports them. Each
   service box `opens` the map of its inside: 4-8 parts (top-level folders with code, a single root folder
-  opened, tests, docs, examples and dot folders left out; label and summary TODOs) plus the outside systems
+  opened; label and summary TODOs) plus the outside systems
   they use, with an `llm` edge (`kind: custom`, label TODO) from each part to each system it imports, anchored
   at that import. `excludeFiles` for tests and docs on both. The tour: the system map, what it relies on, the
   inside of the biggest service, then one step per part, the main part first, inside the skill's repo budget
   (`DRAFT_LIMITS.repoSteps`, 9 steps with where next) less `PATH_ROOM` (2) for the main path and its risks,
-  which a note says to draft with `xpl draft path` on the main part's top function (a library: `requestPath`
-  walks down from it through the one callee that reaches 90% of what it reaches, past builders and wrappers,
-  until the calls spread out; ky's createInstance -> createRequest -> `Ky.create`), and where next shows
-  that function's code: when the parts do not fit,
+  which a note says to draft with `xpl draft path` where the project says it starts (`declaredEntry` in
+  `outside.ts`), else on the main part's top function (a library: `requestPath` walks down from it through
+  the one callee that reaches 90% of what it reaches, past builders and wrappers, until the calls spread out;
+  a `fetchy` with no manifest entry: create -> `request`), and where next shows that function's code. The
+  declared entries: per package, the one with the most code first, a package.json's `bin`, `exports["."]`,
+  then `main` (`index.js` by default), and a pyproject.toml's `[project.scripts]` (a library's `bin` and
+  scripts are secondary tools and do not count). A built path is read back to its source: `dist/node/index.js`
+  to `src/node/index.ts`, else the package's `src/main`, `src/cli` or `src/index` (xpl's `dist/xpl.mjs` to
+  `src/main.ts`). In that file the path starts at the function the manifest names, else its `main`, else, of
+  the functions its module scope calls or re-exports and its own, the one that reaches the most code
+  (`main.ts` calls `run`; vite's `src/node/index.ts` re-exports `createServer`); a file with none of those
+  starts in the file it loads (express's `index.js` -> `lib/express.js`, `createApplication`). The first
+  entry whose function reaches other code wins, and it must sit in the service the tour opens; the note says
+  where it is declared, and `draft --json` returns it as `entry`. When the parts do not fit,
   the parts with the fewest references share one step. A part's step shows the functions and methods other
   parts call most, then its top symbols. With no `loads` resource, a settings file (yaml, json, toml, ini,
   env; not a manifest) that the code names in a string literal is the Settings box's lead. A new tour's steps
   are numbered after the highest `t<n>` of the guide's tours (`continueStepIds`), so a step copied between
   tours keeps its own id. A file that imports a standard-library web server module and also calls what starts
   it (`ListenAndServe`, `createServer`, `serve_forever`; `outside.ts` `SERVER_STARTS`) adds the inbound
-  Clients at that line, since the import alone (`net/http` is also a client) proves nothing. Only a program
+  Clients at that line, since the import alone (`net/http` is also a client) proves nothing. A package.json
+  `bin` adds the User at the terminal when no CLI framework did and the README does not call the project a
+  library or framework, anchored where the bin's file calls its entry and at the entry (xpl parses its
+  arguments with `node:util` `parseArgs`, which no catalog names). Only a program
   with no inbound system and no library shape gets an Operator (`role: person`) at its `main` (a Java `main`
   method of a top-level class too), with one arrow to each part that holds one. A library (`isLibrary`:
   package metadata and no program to run, or a README that says library or framework) is the `system` box, and
@@ -1927,7 +1977,7 @@ it to a file; `--json` adds the counts and what was left out.
   and imports of the project itself, name no outside system. With several services, code outside them (a
   shared `internal/store`) is a box on the map of each service that uses it. When files are left off an inside
   map, its first step lists them with the box each shares the most references with.
-- `path <entry>`: a sequence of the calls the entry symbol makes (depth 1, source order, at most 6
+- `path <entry>`: a sequence of the calls the entry symbol makes (depth 1 past forwards, source order, at most 6
   participants and 12 calls), and a tour inside the skill's budget for a question (`DRAFT_LIMITS.pathSteps`, 8
   steps with the map, the big picture and where next): the main calls share the steps that are left. Frames
   come from the entry's syntax tree (`control-blocks.ts`, one walk over node types the TS/JS, Python, Go, Java
@@ -1938,7 +1988,8 @@ it to a file; `--json` adds the counts and what was left out.
   there. When only that arm draws calls, a guard that returns, raises or throws (`if err != nil { return }`)
   has no frame; one that leaves with `continue` or `break` (TS `if (!job) { sleep(); continue }`, a library
   call) makes the rest an `opt` whose label says the guard skips it, and the rest's calls stay single tour
-  steps. A frame's label is a TODO for the decision; an `opt`'s quotes the deciding code, and an `alt` gets
+  steps. A frame's label is a TODO for the decision; a `loop`'s and an `opt`'s quote the deciding code (as
+  `(now: <code>)`, which the viewer shows, §6; a guard's `opt` says the guard skips it), and an `alt` gets
   `arms`, one per arm of the branch that has calls, each with a TODO label that quotes its condition
   (`ControlBlock.arms[].condition`; "otherwise" for an `else`). An arm runs from its first call to the call
   before the next arm, so the arms split the frame's steps. An arm starts at the column of its body, so a call
@@ -1962,7 +2013,15 @@ it to a file; `--json` adds the counts and what was left out.
   that override a called method. Several entries (`path <explainer> <id> <id2>`) give one sequence each and
   one tour through them. A method a class inherits starts at the base that defines it (a note says which); its
   calls to methods of the class and its bases go where the class's method order finds them (a mixin's
-  override).
+  override). An entry that only forwards is followed (`followForwards`): its body has at most 3 lines of code
+  (`FORWARD_LINES`) and makes one call the index knows, drawn and outside any frame (a call in an `if`'s
+  condition counts, so Go's `if err := run(); err != nil {` in `main` forwards). Cobra's `Command.Execute`,
+  whose one line calls `Command.ExecuteC`, draws that call as step 1, then the calls of `ExecuteC`, with each
+  entry that forwards as a lifeline ahead of the rest (they count against the caps of 6 participants and 12
+  calls). A note says "`A` only forwards to `B`; the sequence shows the calls of `B`".
+  Following stops after 3 forwards (`FORWARD_HOPS`; a note gives the `draft path` command for the next one),
+  at a forward back to an entry on the path (a cycle), and before a function with no call to draw. The tour's
+  big-picture step focuses the asked entry and the forwarding calls, and links both definitions.
 - `class <entry>` (`draft-class.ts`): the type hierarchy around a class or interface. Up: the targets of the
   entry's `extends` and `implements` references, breadth first, at most 6. Down: the symbols whose `extends` or
   `implements` references point at it, two levels, the map at most 8 boxes. One graph view with `edgeKinds:
@@ -1990,7 +2049,8 @@ it to a file; `--json` adds the counts and what was left out.
   also sets a state, with no transition out, gets a note naming that function. One `flow` view
   (`view:<type>-states`, `layout: "diagram"`): a stage per state (anchored at its declaration, then its first
   sets and tests, at most 4 anchors) whose `next` lists its transitions, and a stage per transition, drawn
-  from the function that makes it and anchored at the test and the set, whose `next` is the new state. At most
+  from the function that makes it and anchored at the test and the set, whose `next` is the new state. Their
+  label TODOs end in `(now: <state>)` and `(now: <state> to <state>)`, which the viewer shows (§6). At most
   16 states and 16 transitions. A flow rather than a graph: TypeScript enum members and literals are not index
   symbols, so they cannot be boxes, and a flow stage takes free text and anchors. The participants are the
   type (its file, for Go constants outside it) and each function with a transition, each with a summary TODO.
@@ -2020,8 +2080,8 @@ it to a file; `--json` adds the counts and what was left out.
   left off. Notes say why each type is left off (the box limit, or a group with no room, with the
   `xpl draft data <explainer> sym:…` that maps it), why a box has no rows (by kind and language) and when
   an arrow is heuristic.
-- `map` (`draft-map.ts`): the quick map, every code file outside tests, examples, fixtures, docs, benchmarks
-  and dot folders, except a file with no symbols that no reference leaves (a docstring-only `__init__.py`;
+- `map` (`draft-map.ts`): the quick map, every code file that is the product (`notProduct`, as for `repo`),
+  except a file with no symbols that no reference leaves (a docstring-only `__init__.py`;
   the note counts them as empty files). One graph view per folder, `view:map` for the top (below folders that hold all the code)
   and `view:map-<path>` below it, with `boxText: "summary"`, `excludeFiles` as for an overview and the
   default stubs (what uses the folder and what it uses). When the index has `request` references, a new
@@ -2157,7 +2217,7 @@ services add process/backend metadata. Offline exports strip `server` and retain
 
 | Route | |
 |---|---|
-| `GET /` | the viewer HTML with the bundle injected (`server: { api: "/api", attachment: { root, guide } }`, `mode: "explore"`, `files` = the files the explainer references; others are fetched lazily; `baseFiles` whole, when the explainer has a change: only the changed files, so it is small) |
+| `GET /` | the viewer HTML with the bundle injected (`server: { api: "/api", attachment: { root, guide } }`, `mode: "explore"`, `files` = the files the explainer references; others are fetched lazily; `baseFiles` whole, when the explainer has a change: only the changed files the page can show, `baseSourceFiles`, so it is small) |
 | `GET /api/bundle` | the same bundle as JSON |
 | `GET /api/export` | current export snapshot with all referenced source (including stubs), base source and a forced workspace freshness check; `exportInfo.report` has shared readiness findings; no HTML is written |
 | `GET /api/explainer` | the explainer with its anchors re-resolved (as in the bundle), with an `ETag` of the file; 304 on a matching `If-None-Match` |
@@ -2647,11 +2707,15 @@ identity, checked source scope, findings and the author's optional decision note
 workspace; offline re-saves record `embedded-snapshot`, never a claim about the current repository. Draft
 pages show a persistent preview banner. Legacy bundles can still open; saving them runs the same checks.
 
-**Base files.** `baseFiles: Record<FilePath, string>` is the code before the change: the base text of every
-modified, renamed and deleted file of `explainer.change`, keyed by `ChangedFile.path` (the new path of a
-renamed file). Added files have none, and it is absent without a change record. `xpl bundle` reads it with `git
-show` and names any file git could not read (that file then shows no "before"); the viewer fetches a missing
-one from `/api/base-file` under `xpl view`.
+**Base files.** `baseFiles: Record<FilePath, string>` is the code before the change, keyed by
+`ChangedFile.path` (the new path of a renamed file): the base text of the changed files a page can show
+(`baseSourceFiles` in core). That is a modified or renamed file the index has (its pane marks the removed
+lines), a deleted file the index would have read (`excluded` unset: the page opens its old code), and any file
+a base anchor points into. A file the index leaves out shows no diff, so its old text stays out: on xpl's own
+change `37ef0e4..a1b2e7b`, the old text of eight showcase pages over 1 MB made the page 31.9 MB, not 6.3 MB.
+Readiness asks for the base text of the same files only. Added files have none, and it is absent without a
+change record. `xpl bundle` reads it with `git show` and names any file git could not read (that file then
+shows no "before"); the viewer fetches a missing one from `/api/base-file` under `xpl view`.
 
 **Boundary.** `--files boundary` embeds the referenced files plus a safe boundary around what the explainer
 anchors, so a reader can check the neighbours of a claim. Around every anchored symbol outside test files (an
@@ -2763,6 +2827,19 @@ details share it. Element and step summaries are rendered as inline markdown (`r
 spans, bold, emphasis); titles and labels are plain text. The page title is "<tour title> · xpl" while a tour
 is open (the Guide, Present), else "<explainer title> · xpl".
 
+**A draft's placeholders.** A text that still holds a `TODO` (core's `shortText`, the same test as the lint
+rule `todo-left`: the word outside code spans) is an instruction to the author. Where room is short it shows
+what is known, marked by the word, not by colour: the `(now: …)` name a draft puts in it, then "(TODO)"
+(`TODO: 1-3 plain words for this part (now: worker)` as "worker (TODO)"), words written before it and "TODO"
+("Where to go next: TODO"), else "TODO" alone, never the instruction or its example. That covers the boxes,
+arrows, ghosts, flow and sequence steps, frames and arms (`shortLabels.ts`: `shortGraph` in `deriveView`,
+the Snapshot and the generated map; `shortFlow` in `FlowDiagram` and `SequenceView`), the parts list, the
+Guide's chips and call cards, the step lists (`stepTitle`), the breadcrumb, the zoom trail, the view tabs and
+menus, the tour menu and the page title. The whole instruction stays where the author writes and reads it
+whole: the details of the selected element (read from the model), the edit forms, the draft banner's list,
+the diagram's own heading, the Guide's tour title, step headings and notes, and the Present caption. A text
+without a `TODO` is returned as it is, so a finished guide draws exactly as before.
+
 **Search and guides** (`components/SearchLibrary.tsx`): one header entry opens an accessible dialog. A
 150 ms debounce sends literal, case-insensitive queries to an inline Web Worker; both index construction
 and scanning run off the UI thread. The worker calls core's pure `query` using supplied text only. Results
@@ -2869,9 +2946,12 @@ words ("TypeScript (8 files): names in full; arrows matched by name, so some can
 analyzer's own report, by capability and provider id, is for authors (`xpl index --verbose`).
 It describes the original indexed repository, including when only some sources are embedded or the index
 is pruned. A legacy index shows coverage unknown. Live refresh and Save as HTML use the current index report.
-In a change guide, a bounded **Not checked** section below the author's summary names observed limits from
-the loaded index: the files' own limits as written, the tools' reports folded under one plain line. It is
-separate from the authored impact text and also appears in `xpl change` text and JSON.
+In a change guide, a **Not checked** section below the author's summary names observed limits from the loaded
+index (`changeOmissions`): one plain line per reason the index left changed files out, with a count and the
+files folded under it, and the tools' reports folded under one plain line. It is separate from the authored
+impact text and also appears in `xpl change` text (each line with its files) and JSON. In "Files in this
+change", a file with no pane (the index leaves it out) is listed with its counts, disabled, and says why:
+"no diff: over the 1 MB size limit".
 If no omissions are recorded, the section is absent; that absence says nothing about unobserved runtime effects.
 
 | Mode    | Moves between                                                              | Action  |
@@ -3128,8 +3208,8 @@ Go's embedded types as "embeds". On a data map a row's type names the table it h
 its arrows at least 16 px apart on a side (`spreadPorts` `roomy`), a selected table lists its rows' arrows
 under "Arrows on this map" ("To Job holds (field job)") and the tables it holds or is held by are marked
 linked (`heldTables`); a selected row lists its own arrow ("To WorkerPool holds") and marks the table it holds
-linked the same way. A draft's "TODO: … (now: anchors.ts)" label shows as "anchors.ts (TODO)", so the rows
-differ where the header cuts them.
+linked the same way. A draft's "TODO: … (now: anchors.ts)" label shows as "anchors.ts (TODO)" (the graph's
+labels are short, see "A draft's placeholders"), so the rows differ where the header cuts them.
 
 The order (`boxOrder`, shared with the parts list and the text view; a table's rows in code order): level by
 level of the container tree, a box comes before
@@ -3983,7 +4063,9 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
   concepts, flows, `llm` edges, base anchors and every sentence are written by the selected authoring agent.
   A draft covers about one view and most of the tour steps of a hand-written explainer, with roughly half
   its anchors. `xpl draft path` is
-  depth 1, so a path whose layers call each other through a variable (`self.app`) is not rebuilt.
+  depth 1 past the entries that only forward, so a path whose layers call each other through a variable
+  (`self.app`) is not rebuilt. A forward is a one-call body of at most 3 lines: a facade that also logs or
+  checks its arguments with an indexed call is not followed.
 - `xpl lint` is mechanical: it catches slogans, absolute words, long sentences, code titles and order
   problems, not wrong claims. `repeats-summary` finds near-verbatim repeats only.
 - Workspace packages are private; build/pack produce a standalone local npm tarball with

@@ -10,8 +10,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   changeOmissions,
+  notAnalyzedReason,
   codeFocus,
   isTestFile,
+  shortText,
   type ExplainerModel,
   type TourStep,
 } from "@xpl/core";
@@ -319,16 +321,17 @@ function ChangeOmissions() {
   if (!change) return null;
   const omissions = changeOmissions(change, state.model.index.index);
   if (omissions.length === 0) return null;
-  // The files' own lines read plainly; the tools' reports ("<provider> report: …") are for whoever checks
-  // the analysis: one plain line, the reports folded under it.
+  // The lines about files read plainly, their files folded under each; the tools' reports ("<provider>
+  // report: …") are for whoever checks the analysis: one plain line, the reports folded under it.
   const index = state.model.index.index;
   // A language a SCIP tool covers: its name-matching report says nothing the reader needs.
   const precise = (language: string | undefined) =>
     !!language && index.languages[language]?.refs === "precise";
-  const reports = omissions.filter(
-    (item) => /^\S+ report: /.test(item) && !precise(item.slice(0, item.indexOf(" "))),
-  );
-  const files = omissions.filter((item) => !/^\S+ report: /.test(item));
+  const isReport = (text: string) => /^\S+ report: /.test(text);
+  const reports = omissions
+    .map((item) => item.text)
+    .filter((text) => isReport(text) && !precise(text.slice(0, text.indexOf(" "))));
+  const files = omissions.filter((item) => !isReport(item.text));
   if (files.length === 0 && reports.length === 0) return null;
   const languageOf = new Map(index.files.map((file) => [file.path, file.language]));
   const allPrecise = change.files
@@ -344,7 +347,21 @@ function ChangeOmissions() {
       <h3>{heading}</h3>
       <ul>
         {files.map((item) => (
-          <li key={item}>{item}</li>
+          <li key={item.text}>
+            {item.text}
+            {item.files.length > 0 && (
+              <details>
+                <summary>
+                  {item.files.length === 1 ? "The file" : `The files (${item.files.length})`}
+                </summary>
+                <ul>
+                  {item.files.map((file) => (
+                    <li key={file}>{file}</li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </li>
         ))}
         {reports.length > 0 && (
           <li>
@@ -441,10 +458,12 @@ function GuideSection({
     store.setPerspective(perspective);
   };
   // The steps inside one part that the section is about (from = to): one "This step" card lists them all.
+  // a box, a step or a chip names its element as the map does: a draft's TODO short (`shortText`)
+  const name = (id: string) => shortText(state.model.label(id));
   const selfSteps = step.focus.flatMap((id) => {
     const element = state.model.element(id);
     return element?.type === "step" && element.step.from === element.step.to
-      ? [{ id, from: element.step.from, label: element.step.label }]
+      ? [{ id, from: element.step.from, label: shortText(element.step.label) }]
       : [];
   });
   // Calls between the same two parts share one card (two "This call" cards in a row read as a repeat).
@@ -453,7 +472,10 @@ function GuideSection({
     const element = state.model.element(id);
     if (element?.type !== "step" || element.step.from === element.step.to) continue;
     const key = `${element.step.from}\u0000${element.step.to}`;
-    callGroups.set(key, [...(callGroups.get(key) ?? []), { id, label: element.step.label }]);
+    callGroups.set(key, [
+      ...(callGroups.get(key) ?? []),
+      { id, label: shortText(element.step.label) },
+    ]);
   }
   // The two ends of each call the section shows: the "In the code" card does not list them a second time.
   const callEnds = new Set(
@@ -493,7 +515,7 @@ function GuideSection({
               const summary = summaryOf(id, state.model);
               return summary ? (
                 <p key={id} data-testid="focus-summary">
-                  <strong>{state.model.label(id)}</strong> —{" "}
+                  <strong>{name(id)}</strong> —{" "}
                   <span dangerouslySetInnerHTML={{ __html: renderInline(summary) }} />
                 </p>
               ) : null;
@@ -544,9 +566,7 @@ function GuideSection({
                       data-testid="guide-mini-self"
                       onClick={() => store.select([self.from])}
                     >
-                      <span className="guide-mini-name">
-                        inside {state.model.label(self.from)}:
-                      </span>{" "}
+                      <span className="guide-mini-name">inside {name(self.from)}:</span>{" "}
                       <span className="guide-mini-what">{self.label}</span>
                     </button>
                   </div>
@@ -554,7 +574,7 @@ function GuideSection({
               </figure>
             );
           }
-          const group = callGroups.get(`${from}\u0000${to}`) ?? [{ id, label }];
+          const group = callGroups.get(`${from}\u0000${to}`) ?? [{ id, label: shortText(label) }];
           if (group[0]!.id !== id) return null;
           const labels = group.map((call) => call.label);
           return (
@@ -566,7 +586,7 @@ function GuideSection({
               <figcaption>{labels.length > 1 ? "These calls" : "This call"}</figcaption>
               <div className="guide-mini-row">
                 <button className="guide-mini-node" onClick={() => store.select([from])}>
-                  {state.model.label(from)}
+                  {name(from)}
                 </button>
                 <button
                   className="guide-mini-link"
@@ -576,7 +596,7 @@ function GuideSection({
                   <span aria-hidden="true">→</span>
                 </button>
                 <button className="guide-mini-node" onClick={() => store.select([to])}>
-                  {state.model.label(to)}
+                  {name(to)}
                 </button>
               </div>
             </figure>
@@ -587,23 +607,21 @@ function GuideSection({
         const fresh = members.filter((member) => {
           if (callEnds.has(member)) return false;
           const at = codeFocus([member], state.model)[0];
-          const key = `${state.model.label(member)}\0${at ? `${at.file}:${at.range.startLine}-${at.range.endLine}` : member}`;
+          const key = `${name(member)}\0${at ? `${at.file}:${at.range.startLine}-${at.range.endLine}` : member}`;
           if (seen.has(key)) return false;
           seen.add(key);
           return true;
         });
         // a name that is still there twice (steps of two diagrams): each says which diagram it is in
         const twice = new Set(
-          fresh
-            .map((member) => state.model.label(member))
-            .filter((label, i, all) => all.indexOf(label) !== i),
+          fresh.map((member) => name(member)).filter((label, i, all) => all.indexOf(label) !== i),
         );
         const chipName = (member: string) => {
           const element = state.model.element(member);
-          const label = state.model.label(member);
+          const label = name(member);
           return twice.has(label) && element?.type === "step" ? (
             <>
-              {label} <span className="guide-mini-where">· {element.view.title}</span>
+              {label} <span className="guide-mini-where">· {shortText(element.view.title)}</span>
             </>
           ) : (
             label
@@ -756,6 +774,7 @@ function ChangeFiles() {
   const state = useViewerState();
   const change = changeOf(state.explainer);
   const rows = useMemo(() => (change ? changeFiles(change) : []), [change]);
+  const indexModel = state.model.index;
   if (!change || rows.length === 0) return null;
   const added = rows.reduce((sum, row) => sum + row.added, 0);
   const deleted = rows.reduce((sum, row) => sum + row.deleted, 0);
@@ -770,10 +789,14 @@ function ChangeFiles() {
       </h3>
       <ul>
         {rows.map((row) => {
+          // a file the index leaves out has no pane: its row says why instead of opening
+          const left =
+            row.status === "deleted" ? row.excluded !== undefined : !indexModel.hasFile(row.path);
           const openable =
             row.status === "deleted"
-              ? true
-              : state.serverMode || Object.hasOwn(state.files, row.path);
+              ? Object.hasOwn(state.baseFiles, row.path) || (state.serverMode && !left)
+              : Object.hasOwn(state.files, row.path) || (state.serverMode && !left);
+          const note = openable ? undefined : left ? notAnalyzedReason(row) : undefined;
           const slash = row.path.lastIndexOf("/");
           return (
             <li key={row.path}>
@@ -787,7 +810,9 @@ function ChangeFiles() {
                 title={
                   openable
                     ? `Open ${row.path} in the code${row.status === "deleted" ? " (as it was before the change)" : ""}`
-                    : `${row.path} is not included in this page`
+                    : note
+                      ? `${row.path} shows no diff: ${note}, so xpl did not analyze it`
+                      : `${row.path} is not included in this page`
                 }
                 onClick={() => {
                   store.openFile(row.path, row.line);
@@ -799,6 +824,7 @@ function ChangeFiles() {
                   {slash !== -1 && <span className="dir">{row.path.slice(0, slash + 1)}</span>}
                   <b>{row.path.slice(slash + 1)}</b>
                   {row.oldPath && <span className="change-old">from {row.oldPath}</span>}
+                  {note && <span className="change-note">no diff: {note}</span>}
                 </span>
                 {row.test && <span className="change-test">test</span>}
                 <span

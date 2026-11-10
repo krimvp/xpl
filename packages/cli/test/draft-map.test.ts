@@ -128,7 +128,7 @@ describe("xpl draft map", () => {
       "### Where to go next: TODO: where a newcomer starts reading, as a plain statement\n\nTODO: why to start at `src/main.ts`: what runs first and which parts it calls.",
     );
     expect(notes).toEqual([
-      "4 code files on 2 maps; 1 file left off (tests, examples, fixtures, docs and benchmarks); 2 files that are not code have no box: `README.md` and `package.json`",
+      "4 code files on 2 maps; 1 file left off (tests, examples, fixtures, docs, benchmarks, playgrounds, templates, demos and sandboxes); 2 files that are not code have no box: `README.md` and `package.json`",
     ]);
     const lint = await xplJson<{ counts: Record<string, number> }>(dir, "lint", "shop");
     expect(Object.keys(lint.json.counts)).toEqual(["todo-left"]);
@@ -227,7 +227,7 @@ describe("xpl draft map", () => {
       "file:app/routes/users.py",
     ]);
     expect(notes).toEqual([
-      "3 code files on 2 maps; 0 files left off (tests, examples, fixtures, docs and benchmarks); 2 empty files left off (they define and use nothing)",
+      "3 code files on 2 maps; 0 files left off (tests, examples, fixtures, docs, benchmarks, playgrounds, templates, demos and sandboxes); 2 empty files left off (they define and use nothing)",
     ]);
   });
 
@@ -319,7 +319,7 @@ describe("xpl draft map", () => {
       ],
     ]);
     expect(notes).toEqual([
-      "4 code files on 2 maps; 1 file left off (tests, examples, fixtures, docs and benchmarks); 2 files that are not code have no box: `README.md` and `package.json`",
+      "4 code files on 2 maps; 1 file left off (tests, examples, fixtures, docs, benchmarks, playgrounds, templates, demos and sandboxes); 2 files that are not code have no box: `README.md` and `package.json`",
       "1 moved file keeps its text: src/orders/place.ts -> src/orders/checkout.ts",
     ]);
   });
@@ -458,7 +458,7 @@ describe("xpl draft map on a crowded folder", () => {
     // the folder's map shows the groups, not their files
     expect(view(patch, "view:map")?.include).toEqual(groups.map((g) => g.id));
     expect(notes).toEqual([
-      "32 code files on 5 maps; 0 files left off (tests, examples, fixtures, docs and benchmarks); 1 file that is not code has no box: `package.json`",
+      "32 code files on 5 maps; 0 files left off (tests, examples, fixtures, docs, benchmarks, playgrounds, templates, demos and sandboxes); 1 file that is not code has no box: `package.json`",
       "no entry file found (no `main` function and no file with an entry name such as main, index, app or cli): the start tour has no step on where to start reading; add one if the project has a clear first file",
       "crowded maps get groups of files that use each other (the top: 4 groups of 32 files): name each group, or remove the ones that are not one job",
     ]);

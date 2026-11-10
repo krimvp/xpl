@@ -1,5 +1,13 @@
-import type { AnalysisCapability, ChangeRecord, SymbolIndex } from "./schema.js";
+import { EXCLUSION_REASONS } from "./constants.js";
 import { CODE_LANGUAGE_NAMES } from "./languages.js";
+import type {
+  AnalysisCapability,
+  ChangedFile,
+  ChangeRecord,
+  ExclusionReason,
+  FilePath,
+  SymbolIndex,
+} from "./schema.js";
 
 export const RELATIONSHIP_CAPABILITIES = [
   "call",
@@ -28,28 +36,87 @@ const labels: Record<AnalysisCapability, string> = {
   request: "web requests",
 };
 
-/** Known omissions for this change, based only on the loaded index's recorded coverage. */
-export function changeOmissions(change: ChangeRecord, index: SymbolIndex): string[] {
-  const limit = 5;
+/** One line of what a change guide did not check, and the changed files it is about (none for a tool's report). */
+export interface ChangeOmission {
+  text: string;
+  files: FilePath[];
+}
+
+/** Why files were left out, as the middle of "N files … were not analyzed." ("1 MB": `MAX_FILE_BYTES` of the indexer.) */
+const EXCLUDED_FILES: Record<ExclusionReason | "unknown", string> = {
+  oversized: "over the 1 MB size limit",
+  generated: "made by xpl itself (guides, patches, exported pages)",
+  lockfile: "listing pinned dependency versions (lockfiles)",
+  binary: "in a binary format, not text",
+  dependency: "of installed dependencies",
+  "non-file": "stored as links or submodules, not plain files",
+  unreadable: "that xpl could not read",
+  unknown: "missing from the index",
+};
+
+/** Why one file was left out, in a few words ("no diff: over the 1 MB size limit"). */
+const EXCLUDED_FILE: Record<ExclusionReason | "unknown", string> = {
+  oversized: "over the 1 MB size limit",
+  generated: "made by xpl itself",
+  lockfile: "a lockfile",
+  binary: "not a text file",
+  dependency: "an installed dependency",
+  "non-file": "not a plain file",
+  unreadable: "xpl could not read it",
+  unknown: "not in the index",
+};
+
+/** Why the index has no analysis of a changed file, in a few words: its `excluded` reason, else "not in the index". */
+export function notAnalyzedReason(file: Pick<ChangedFile, "excluded">): string {
+  return EXCLUDED_FILE[file.excluded ?? "unknown"];
+}
+
+const files = (n: number) => `${n} ${n === 1 ? "file" : "files"}`;
+const were = (n: number) => (n === 1 ? "was" : "were");
+
+/**
+ * What a change guide did not check, from the change record and the loaded index's recorded coverage, for a reader:
+ * one line per reason the index left changed files out (`ChangedFile.excluded`), with those files; one for the
+ * removed files (the index holds the head only); one per partial, unsupported or failed report of a tool. Every
+ * changed file the index lacks is in exactly one line's `files`.
+ */
+export function changeOmissions(change: ChangeRecord, index: SymbolIndex): ChangeOmission[] {
   const headPaths = new Set(change.files.filter((f) => f.status !== "deleted").map((f) => f.path));
   const indexed = new Set(index.files.map((f) => f.path));
-  const omissions =
+  const omissions: ChangeOmission[] =
     /^[0-9a-f]{7,}$/i.test(index.commit) && !change.head.startsWith(index.commit)
       ? [
-          `Loaded index ${index.commit.slice(0, 7)} differs from change head ${change.head.slice(0, 7)}; head analysis coverage is unknown here.`,
+          {
+            text: `The index is of commit ${index.commit.slice(0, 7)}, not of the change's last commit ${change.head.slice(0, 7)}: what it says about the changed code may be out of date.`,
+            files: [],
+          },
         ]
       : [];
-  omissions.push(
-    ...change.files.flatMap((file) => {
-      if (file.status === "deleted")
-        return [
-          `${file.path}: removed from the head; the loaded index cannot inspect its old code.`,
-        ];
-      return indexed.has(file.path)
-        ? []
-        : [`${file.path}: absent from the loaded index; source analysis is not recorded there.`];
-    }),
-  );
+  const left = new Map<ExclusionReason | "unknown", FilePath[]>();
+  const removed: FilePath[] = [];
+  for (const file of change.files) {
+    if (file.status === "deleted") removed.push(file.path);
+    else if (!indexed.has(file.path)) {
+      const reason = file.excluded ?? "unknown";
+      left.set(reason, [...(left.get(reason) ?? []), file.path]);
+    }
+  }
+  // the reason with the most files first (a stable sort: ties in `EXCLUSION_REASONS` order)
+  const reasons = ([...EXCLUSION_REASONS, "unknown"] as const)
+    .filter((reason) => left.has(reason))
+    .sort((a, b) => left.get(b)!.length - left.get(a)!.length);
+  for (const reason of reasons) {
+    const paths = left.get(reason)!;
+    omissions.push({
+      text: `${files(paths.length)} ${EXCLUDED_FILES[reason]} ${were(paths.length)} not analyzed.`,
+      files: paths,
+    });
+  }
+  if (removed.length > 0)
+    omissions.push({
+      text: `${removed.length} removed ${removed.length === 1 ? "file" : "files"} ${were(removed.length)} not analyzed: the index holds the code after the change only.`,
+      files: removed,
+    });
   const languageOf = new Map(index.files.map((f) => [f.path, f.language]));
   for (const report of index.analysis ?? []) {
     const changed = report.files.filter((path) => headPaths.has(path));
@@ -65,17 +132,13 @@ export function changeOmissions(change: ChangeRecord, index: SymbolIndex): strin
       const analyzed = changed.filter((path) => result.analyzedFiles.includes(path)).length;
       const names = result.capabilities.map((capability) => labels[capability]).join(", ");
       const detail = result.limitations[0] ? ` Reported limit: ${result.limitations[0]}` : "";
-      omissions.push(
-        `${report.provider} report: ${names} ${result.status}; ${analyzed} of ${changed.length} changed paths in its scope analyzed.${detail}`,
-      );
+      omissions.push({
+        text: `${report.provider} report: ${names} ${result.status}; ${analyzed} of ${changed.length} changed paths in its scope analyzed.${detail}`,
+        files: [],
+      });
     }
   }
-  return omissions.length > limit
-    ? [
-        ...omissions.slice(0, limit),
-        `${omissions.length - limit} more recorded ${omissions.length - limit === 1 ? "limit" : "limits"}.`,
-      ]
-    : omissions;
+  return omissions;
 }
 
 /** Describes the original analysis run, even when a bundle has pruned symbols and references. */

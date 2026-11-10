@@ -1,7 +1,18 @@
-import type { Edge, NodeRole } from "./schema.js";
+import type { Edge, ExclusionReason, NodeRole } from "./schema.js";
 
 /** Value of `SymbolIndex.schema`. */
 export const INDEX_SCHEMA = "code-explainer/index@0" as const;
+
+/** Every `ExclusionReason`, in the order reports list them. */
+export const EXCLUSION_REASONS: readonly ExclusionReason[] = [
+  "generated",
+  "dependency",
+  "lockfile",
+  "oversized",
+  "binary",
+  "non-file",
+  "unreadable",
+];
 
 /** Value of `Explainer.schema`. */
 export const EXPLAINER_SCHEMA = "code-explainer@0" as const;

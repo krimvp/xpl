@@ -79,7 +79,7 @@ export function buildMatrix(graph: DerivedGraph, include: readonly string[] = []
   const boxes = ids.map((id): MatrixBox => {
     const parent = byId.get(id)!.parent;
     const group = parent === undefined ? undefined : labels.get(parent);
-    return { id, label: shortTodo(labels.get(id)!), ...(group !== undefined ? { group } : {}) };
+    return { id, label: labels.get(id)!, ...(group !== undefined ? { group } : {}) };
   });
 
   const at = new Map(ids.map((id, i) => [id, i]));
@@ -145,15 +145,6 @@ export function buildMatrix(graph: DerivedGraph, include: readonly string[] = []
     sum.text = `${sum.kinds.join(" & ")} ×${sum.count}`;
   }
   return { boxes, cells, out, in: into };
-}
-
-/**
- * A draft's label "TODO: 2-5 plain words for this file (now: anchors.ts)" as "anchors.ts (TODO)": the rows of a
- * draft would all read the same where the header cuts them.
- */
-function shortTodo(label: string): string {
-  const now = /^TODO\b.*\(now: ([^)]+)\)\s*$/.exec(label);
-  return now ? `${now[1]} (TODO)` : label;
 }
 
 /** Trust labels of arrows the author added: the cell shows a mark, not a count of references. */

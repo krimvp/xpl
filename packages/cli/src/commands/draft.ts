@@ -15,6 +15,8 @@ import {
   draftChange,
   draftPath,
   draftProblems,
+  followForwards,
+  FORWARD_LINES,
   inheritedEntry,
   type PathEntry,
   draftRepo,
@@ -180,6 +182,7 @@ export const draftCommand: CommandSpec = {
     `${row("states [explainer] <entry>")}the states of a status type on one flow, with where the code sets and tests each`,
     `${row("data [explainer] [<scope>]")}the types the code keeps and how they link, on one data map (at most ${DATA_LIMITS.boxes} boxes)`,
     "[path] Several path entries make one tour.",
+    `[path] An entry that only forwards (one call, at most ${FORWARD_LINES} lines) draws the calls of the one it forwards to.`,
     "Ids in the guide are not reused. New tour steps follow the guide's own.",
     "Prints the patch, or writes it with -o. Then: `xpl lint <explainer> --patch <file>`, `xpl apply`.",
     "[all] Exit codes: 0 ok, 1 no change recorded, an unknown entry or scope, or nothing to draft, 2 usage error.",
@@ -266,23 +269,29 @@ export const draftCommand: CommandSpec = {
     }
     const entries: PathEntry[] = [];
     if (kind === "path") {
-      for (const arg of entryArgs) entries.push(pathEntry(ws.model, arg));
-      // the loops and branches of each entry, from its syntax tree: the frames of its sequence
+      // the loops and branches of each function the path draws, from its syntax tree: the frames of its sequence
       const pool = new ParserPool();
+      const blocksOf = async ({ file, range }: IndexedSymbol) => {
+        const language = ws.model.file(file)?.language;
+        const lines = ws.texts.lines(file);
+        if (!language || !lines) return undefined;
+        try {
+          return await controlBlocksOf(pool, file, language, lines.join("\n"), {
+            start: range.startLine,
+            end: range.endLine,
+          });
+        } catch {
+          return undefined; // no grammar to read the file with: a sequence without frames
+        }
+      };
+      const input = { explainer: loaded.explainer, model: ws.model, texts: ws.texts };
       try {
-        for (const entry of entries) {
-          const { file, range } = entry.symbol;
-          const language = ws.model.file(file)?.language;
-          const lines = ws.texts.lines(file);
-          if (!language || !lines) continue;
-          try {
-            entry.blocks = await controlBlocksOf(pool, file, language, lines.join("\n"), {
-              start: range.startLine,
-              end: range.endLine,
-            });
-          } catch {
-            // no grammar to read the file with: a sequence without frames
-          }
+        for (const arg of entryArgs) {
+          const entry = pathEntry(ws.model, arg);
+          const blocks = await blocksOf(entry.symbol);
+          entries.push(
+            await followForwards(input, { ...entry, ...(blocks ? { blocks } : {}) }, blocksOf),
+          );
         }
       } finally {
         await pool.dispose();
@@ -416,6 +425,7 @@ export const draftCommand: CommandSpec = {
         ...(outPath ? { out: displayPath(ctx.cwd, outPath) } : {}),
         counts,
         notes: draft.notes.map((n) => n.replaceAll("<explainer>", loaded.name)),
+        ...(draft.entry ? { entry: draft.entry } : {}),
         ...(warnings.length > 0 ? { applyWarnings: warnings } : {}),
         patch: draft.patch,
       });

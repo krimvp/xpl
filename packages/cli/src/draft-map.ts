@@ -16,15 +16,14 @@
  *
  * Run again on a map, it changes only what the code changed: boxes for new files and folders (`includeAdd`), boxes of
  * files that are gone are removed (`remove`, `includeRemove`), and the names and summaries already written stay.
- * Tests, examples, fixtures, docs and benchmarks stay off the map.
+ * Code that is not the product (`notProduct`: tests, examples, fixtures, docs, benchmarks, playgrounds, templates,
+ * demos, sandboxes) stays off the map.
  */
 import {
   CODE_LANGUAGES,
   DEFAULT_EDGE_KINDS,
   analyzeChange,
   baseName,
-  isTestFile,
-  matchesAnyGlob,
   type AnchorInput,
   type ExplainerPatch,
   type PatchNode,
@@ -34,7 +33,8 @@ import {
 import {
   ENTRY_NAMES,
   isMainSymbol,
-  NOT_DESIGN,
+  notProduct,
+  NOT_PRODUCT_WORDS,
   aboutAnchor,
   OVERVIEW_EXCLUDE,
   changedFileAnchor,
@@ -149,11 +149,7 @@ export function draftMap(input: DraftInput): Draft {
   const stored = storedNodeIds(explainer);
   const notes: string[] = [];
 
-  const offMap = (path: string) =>
-    isTestFile(path) ||
-    matchesAnyGlob(path, OVERVIEW_EXCLUDE) ||
-    matchesAnyGlob(path, NOT_DESIGN) ||
-    path.split("/").some((segment) => segment.startsWith("."));
+  const offMap = notProduct;
   const isCodeFile = (path: string) => CODE_LANGUAGES.has(model.file(path)?.language ?? "");
   // A file that defines nothing and uses nothing (a package's docstring-only `__init__.py`) has nothing to box.
   const using = new Set(model.refs.map((ref) => model.fileOfSymbolId(ref.from)));
@@ -737,7 +733,7 @@ export function draftMap(input: DraftInput): Draft {
     .map((f) => f.path)
     .filter((path) => !isCodeFile(path) && !offMap(path));
   notes.unshift(
-    `${plural(allMapped.length, "code file")} on ${plural(computed.size, "map")}; ${plural(left, "file")} left off (tests, examples, fixtures, docs and benchmarks)` +
+    `${plural(allMapped.length, "code file")} on ${plural(computed.size, "map")}; ${plural(left, "file")} left off (${NOT_PRODUCT_WORDS})` +
       (empty > 0 ? `; ${plural(empty, "empty file")} left off (they define and use nothing)` : "") +
       (notCode.length > 0
         ? `; ${notCode.length === 1 ? "1 file that is not code has" : `${notCode.length} files that are not code have`} no box: ${nameList(notCode, MAP_LIMITS.hints)}`

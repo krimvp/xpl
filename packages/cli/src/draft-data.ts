@@ -16,7 +16,6 @@
 import {
   baseName,
   isTestFile,
-  matchesAnyGlob,
   type AnchorInput,
   type ExplainerPatch,
   type IndexModel,
@@ -28,8 +27,7 @@ import {
 import { kebab } from "./draft-class.js";
 import {
   FreeIds,
-  NOT_DESIGN,
-  OVERVIEW_EXCLUDE,
+  notProduct,
   nameList,
   note,
   storedNodeIds,
@@ -133,11 +131,7 @@ export function draftData(input: DraftInput, scope: Target): Draft {
     );
   }
   const scopePath = scope.type === "dir" || scope.type === "file" ? scope.path : "";
-  const offMap = (path: string) =>
-    isTestFile(path) ||
-    matchesAnyGlob(path, OVERVIEW_EXCLUDE) ||
-    matchesAnyGlob(path, NOT_DESIGN) ||
-    path.split("/").some((segment) => segment.startsWith("."));
+  const offMap = notProduct;
   // what the scope names itself stays in, even in a folder the map leaves out elsewhere (fixtures/)
   const asked = scopePath !== "" && offMap(scopePath);
   const inScope = (path: string) =>

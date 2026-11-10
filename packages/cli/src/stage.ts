@@ -235,7 +235,7 @@ export async function stagePreview(ctx: Ctx, name: string, options: StageOptions
       files: files.paths,
       choice: defaultIndexChoice(files.choice),
     }).index;
-    const base = collectBaseFiles(explainer, ws.texts);
+    const base = collectBaseFiles(explainer, ws.model, ws.texts);
     bundle = makeBundle({
       explainer,
       index,

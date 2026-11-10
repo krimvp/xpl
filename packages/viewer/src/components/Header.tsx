@@ -15,7 +15,7 @@
  * state shows beside Edit only when there is something to say ("Unsaved", "Saving…", "Not saved").
  */
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
-import { DEFAULT_EDGE_KINDS, resolveStubPolicy } from "@xpl/core";
+import { DEFAULT_EDGE_KINDS, resolveStubPolicy, shortText } from "@xpl/core";
 import { explainerFileName } from "../edits.js";
 import { useStore, useViewerState } from "../hooks.js";
 import { stepNumber } from "../modes.js";
@@ -616,7 +616,7 @@ export function TourPicker({ testId = "tour-picker" }: { testId?: string }) {
       >
         {tours.map((tour) => (
           <option key={tour.id} value={tour.id}>
-            {tour.title}
+            {shortText(tour.title)}
           </option>
         ))}
       </select>

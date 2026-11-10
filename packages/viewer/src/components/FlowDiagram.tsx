@@ -7,6 +7,7 @@ import {
   type ProcessFlow,
   type SequenceView,
 } from "@xpl/core";
+import { shortFlow } from "../shortLabels.js";
 import { changeOf, rangesChange } from "../diff.js";
 import { ChangePill, changePillWidth } from "./GraphView.js";
 import { viewReverseIndex } from "../derive.js";
@@ -71,7 +72,8 @@ export interface FlowDiagramProps {
 export function FlowDiagram({ view, snapshot, outline = false }: FlowDiagramProps) {
   const store = useStore();
   const state = useViewerState();
-  const flow = useMemo(() => processFlow(view), [view]);
+  // (a draft's TODO labels show short, as on a map: the selected step's details keep them whole)
+  const flow = useMemo(() => processFlow(shortFlow(view)), [view]);
   // a flow of states and the moves between them: states are pills, each move a labelled arrow between two
   // of them (no numbers: a state machine has no order), the arrow still the move's link to its code
   const roles = useMemo(() => stateRoles(view), [view]);

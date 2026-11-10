@@ -681,3 +681,178 @@ it("code changed after `xpl index`: says to index and resolve, not that the draf
     "error: the draft cannot be built: the code changed after `xpl index` (src/a.ts). Run `xpl index`, then `xpl resolve d --write`, and draft again.",
   );
 });
+
+describe("xpl draft path: an entry that only forwards", () => {
+  const command = [
+    "package cli",
+    "",
+    "type Command struct {",
+    "\tname string",
+    "\targs []string",
+    "}",
+    "",
+    "func (c *Command) ExecuteContext(name string) error {",
+    "\tc.name = name",
+    "\treturn c.Execute()",
+    "}",
+    "",
+    "func (c *Command) Execute() error {",
+    "\t_, err := c.ExecuteC()",
+    "\treturn err",
+    "}",
+    "",
+    "func (c *Command) ExecuteC() (*Command, error) {",
+    "\tcmd := c.find(c.args)",
+    "\tif err := cmd.run(); err != nil {",
+    "\t\treturn cmd, err",
+    "\t}",
+    "\treport(cmd)",
+    "\treturn cmd, nil",
+    "}",
+    "",
+    "func (c *Command) find(args []string) *Command {",
+    "\tif len(args) == 0 {",
+    "\t\treturn c",
+    "\t}",
+    "\treturn &Command{name: args[0]}",
+    "}",
+    "",
+    "func (c *Command) run() error {",
+    "\tc.args = nil",
+    "\treport(c)",
+    "\treturn nil",
+    "}",
+    "",
+  ].join("\n");
+  const report = [
+    "package cli",
+    "",
+    "func report(c *Command) {",
+    '\tif c.name == "" {',
+    "\t\treturn",
+    "\t}",
+    "\tprintln(c.name)",
+    "}",
+    "",
+  ].join("\n");
+  const files = {
+    "go.mod": "module example.com/cli\n\ngo 1.22\n",
+    "command.go": command,
+    "report.go": report,
+  };
+  const calls = (view: SequenceView) => view.steps!.map((s) => `${s.from} -> ${s.to} ${s.label}`);
+
+  it("draws the calls of the function it forwards to, after the forwarding call", async () => {
+    const dir = await repo(files);
+    // the function it forwards to, drafted itself: no forward, and the calls the entry's draft must show
+    const target = await drafted(dir, "sym:command.go#Command.ExecuteC");
+    expect(calls(sequence(target.patch))).toEqual([
+      "sym:command.go#Command.ExecuteC -> sym:command.go#Command.find find(c.args)",
+      "sym:command.go#Command.ExecuteC -> sym:command.go#Command.run run()",
+      "sym:command.go#Command.ExecuteC -> sym:report.go#report report(cmd)",
+    ]);
+    expect(target.notes.join("\n")).not.toContain("forwards");
+
+    const { patch, notes } = await drafted(dir, "sym:command.go#Command.Execute");
+    const view = sequence(patch);
+    expect(view.id).toBe("view:command-execute");
+    expect(view.participants).toEqual([
+      "sym:command.go#Command.Execute",
+      "sym:command.go#Command.ExecuteC",
+      "sym:command.go#Command.find",
+      "sym:command.go#Command.run",
+      "sym:report.go#report",
+    ]);
+    expect(calls(view)).toEqual([
+      "sym:command.go#Command.Execute -> sym:command.go#Command.ExecuteC ExecuteC()",
+      "sym:command.go#Command.ExecuteC -> sym:command.go#Command.find find(c.args)",
+      "sym:command.go#Command.ExecuteC -> sym:command.go#Command.run run()",
+      "sym:command.go#Command.ExecuteC -> sym:report.go#report report(cmd)",
+    ]);
+    // the forwarding call links to its site in the entry and to the definition it goes to
+    expect(view.steps![0]!.anchors).toEqual([
+      {
+        file: "command.go",
+        symbol: "Command.Execute",
+        span: { from: 1, to: 1 },
+        role: "call-site",
+      },
+      { file: "command.go", symbol: "Command.ExecuteC", role: "definition" },
+    ]);
+    expect(notes).toContain(
+      "`Command.Execute` only forwards to `Command.ExecuteC`; the sequence shows the calls of `Command.ExecuteC`",
+    );
+    // the big picture starts where the reader asked
+    const first = patch.tours![0]!.steps!.find((s) => s.view === view.id)!;
+    expect(first.focus).toEqual(["sym:command.go#Command.Execute", view.steps![0]!.id]);
+    expect(first.code!.map((a) => a.symbol)).toEqual(["Command.Execute", "Command.ExecuteC"]);
+  });
+
+  it("follows a chain of forwards", async () => {
+    const dir = await repo(files);
+    const { patch, notes } = await drafted(dir, "sym:command.go#Command.ExecuteContext");
+    expect(calls(sequence(patch)).slice(0, 3)).toEqual([
+      "sym:command.go#Command.ExecuteContext -> sym:command.go#Command.Execute Execute()",
+      "sym:command.go#Command.Execute -> sym:command.go#Command.ExecuteC ExecuteC()",
+      "sym:command.go#Command.ExecuteC -> sym:command.go#Command.find find(c.args)",
+    ]);
+    expect(notes).toContain(
+      "`Command.ExecuteContext` only forwards to `Command.Execute`, which only forwards to `Command.ExecuteC`; the sequence shows the calls of `Command.ExecuteC`",
+    );
+  });
+
+  it("stops after three forwards, and says where to draft from", async () => {
+    const fn = (name: string, body: string) =>
+      `package chain\n\nfunc ${name}() int {\n${body}\n}\n`;
+    const dir = await repo({
+      "go.mod": "module example.com/chain\n\ngo 1.22\n",
+      "a.go": fn("A", "\treturn B()"),
+      "b.go": fn("B", "\treturn C()"),
+      "c.go": fn("C", "\treturn D()"),
+      "d.go": fn("D", "\treturn E()"),
+      "e.go": fn("E", "\tn := Load()\n\tSave(n)\n\treturn n"),
+      "store.go": [
+        "package chain",
+        "",
+        "func Load() int {",
+        "\tn := 1",
+        "\treturn n",
+        "}",
+        "",
+        "func Save(n int) {",
+        "\tn++",
+        "\tprintln(n)",
+        "}",
+        "",
+      ].join("\n"),
+    });
+    const { patch, notes } = await drafted(dir, "sym:a.go#A");
+    expect(calls(sequence(patch))).toEqual([
+      "sym:a.go#A -> sym:b.go#B B()",
+      "sym:b.go#B -> sym:c.go#C C()",
+      "sym:c.go#C -> sym:d.go#D D()",
+      "sym:d.go#D -> sym:e.go#E E()",
+    ]);
+    expect(notes).toContain(
+      "followed 3 forwards at most: `D` only forwards to `E` too; `xpl draft path d sym:e.go#E -o <file>` draws the calls of `E`",
+    );
+  });
+
+  it("stops on a cycle of forwards", async () => {
+    const dir = await repo({
+      "go.mod": "module example.com/loop\n\ngo 1.22\n",
+      "ping.go": "package loop\n\nfunc Ping(n int) int {\n\treturn Pong(n)\n}\n",
+      "pong.go": "package loop\n\nfunc Pong(n int) int {\n\treturn Ping(n)\n}\n",
+    });
+    const { patch, notes } = await drafted(dir, "sym:ping.go#Ping");
+    const view = sequence(patch);
+    expect(view.participants).toEqual(["sym:ping.go#Ping", "sym:pong.go#Pong"]);
+    expect(calls(view)).toEqual([
+      "sym:ping.go#Ping -> sym:pong.go#Pong Pong(n)",
+      "sym:pong.go#Pong -> sym:ping.go#Ping Ping(n)",
+    ]);
+    expect(notes).toContain(
+      "`Pong` forwards back to `Ping`, already on the path: the sequence stops at `Pong`",
+    );
+  });
+});

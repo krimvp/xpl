@@ -12,12 +12,12 @@
  *   are left alone there.
  * - `env-file`: an indexed `.env` or `.env.<name>` file with values (example and template files excepted).
  * - `large-file`: a code file over `HEALTH_LARGE_FILE_LINES` lines.
- * - `unused-file`: a code file with symbols that no other file references (by the index) and that is not an
- *   entry point (`ENTRY_STEMS`, `ENTRY_DIRS`, or a `main` its text declares: `ENTRY_TEXT`), a test, a config
- *   file or a type declaration file. Marked `heuristic`; skipped when the index has no references or is
- *   pruned. A file without symbols (a list of re-exports, say) is never reported: imports through it resolve
- *   to the symbols it re-exports. Nor is a file whose language's analysis does not follow imports: a note says
- *   how many files xpl cannot tell about.
+ * - `unused-file`: a code file with symbols that no other file references (by the index) or names by path
+ *   (`namedFiles`), and that is not an entry point (`ENTRY_STEMS`, `ENTRY_DIRS`, or a `main` its text declares:
+ *   `ENTRY_TEXT`), a test, a config file or a type declaration file. A Go file is judged with its package.
+ *   Marked `heuristic`; skipped when the index has no references or is pruned. A file without symbols (a list
+ *   of re-exports, say) is never reported: imports through it resolve to the symbols it re-exports. Nor is a
+ *   file whose language's analysis does not follow imports: a note says how many files xpl cannot tell about.
  *
  * Tests, fixtures, docs and examples (`SAMPLE_GLOBS`) hold fake secrets far more often than real ones: there,
  * key shapes are reported one severity lower and the guessing checks (assignments, tokens, URLs, `.env`, browser
@@ -26,7 +26,7 @@
 import { toTextCache, type GetText, type TextCache } from "./anchors.js";
 import { TEST_FILE_GLOBS } from "./constants.js";
 import { matchesAnyGlob } from "./glob.js";
-import { asIndexModel, baseName, type IndexModel } from "./index-model.js";
+import { asIndexModel, baseName, dirOf, type IndexModel } from "./index-model.js";
 import { CODE_LANGUAGES } from "./languages.js";
 import type { FilePath, IndexedFile, SymbolIndex } from "./schema.js";
 import { cmp } from "./util.js";
@@ -69,6 +69,7 @@ const SEVERITIES: readonly HealthSeverity[] = ["high", "medium", "low"];
 /** Test code, fixtures, docs and examples: fake secrets dominate there. */
 const SAMPLE_GLOBS: readonly string[] = [
   ...TEST_FILE_GLOBS,
+  "**/__tests*__/**", // `__tests_dts__`: type tests
   "**/fixtures/**",
   "**/__fixtures__/**",
   "**/testdata/**",
@@ -124,7 +125,7 @@ const LARGE = {
 };
 const UNUSED = {
   explanation:
-    "Nothing else in the project refers to this file, so it may be left over. This is a guess from the index: code loaded by name, by a framework or from outside the project is not seen.",
+    "Nothing else in the project refers to this file or names its path, so it may be left over. This is a guess from the index: code loaded through an alias, a pattern, a framework or from outside the project is not seen.",
   fix: "Check whether anything still uses it, and delete it if nothing does.",
 };
 
@@ -181,14 +182,21 @@ const KEY_SHAPES: readonly KeyShape[] = [
 
 const JWT =
   /(?:[:=]|=>)\s*["'`]?(eyJ[0-9A-Za-z_-]{10,}\.eyJ[0-9A-Za-z_-]{10,}\.[0-9A-Za-z_-]{10,})/;
+/*
+ * The name and scheme patterns below are linear in the line. Each starts only where a run of name (or scheme)
+ * characters starts (the lookbehind), skips the run's leading digits, dots and dashes, and takes the rest of
+ * the run whole (`(?=(…))\N`, an atomic group), so a match is tried once per run. Without that, a run of
+ * 80,000 letters in a generated file was tried at each letter and scanned to its end each time: seconds per line.
+ */
 /** `scheme://user:password@host`. */
-const URL_PASSWORD = /\b[a-z][a-z0-9+.-]*:\/\/([^\s:@/"'`]*):([^\s@/"'`]+)@[^\s"'`]/i;
+const URL_PASSWORD =
+  /(?<![\w+.-])[+.-]*[a-z](?=([a-z0-9+.-]*))\1:\/\/([^\s:@/"'`]*):([^\s@/"'`]+)@[^\s"'`]/i;
 /** `name = "value"`, `name: 'value'`, `"name": "value"`, `name := "value"`, `'name' => 'value'`. */
 const QUOTED_ASSIGNMENT =
-  /(["']?)([A-Za-z_$][\w$.-]*)\1\s*(?::=|=>|(?<![=!<>])=(?![=>])|:)\s*(["'`])([^"'`\n]*)\3/g;
+  /(?:(["'])|(?<![\w$.-])[\d.-]*)(?=([A-Za-z_$][\w$.-]*))\2\1\s*(?::=|=>|(?<![=!<>])=(?![=>])|:)\s*(["'`])([^"'`\n]*)\3/g;
 /** The same in config files, where a value may be unquoted. */
 const BARE_ASSIGNMENT =
-  /(["']?)([A-Za-z_$][\w$.-]*)\1\s*(?::=|(?<![=!<>])=(?![=>])|:)[ \t]*["'`]?([^\s"'`#,;]+)/g;
+  /(?:(["'])|(?<![\w$.-])[\d.-]*)(?=([A-Za-z_$][\w$.-]*))\2\1\s*(?::=|(?<![=!<>])=(?![=>])|:)[ \t]*["'`]?([^\s"'`#,;]+)/g;
 /** Name endings that say "this holds a secret" (lower case, `_` and `-` removed). */
 const SECRET_NAME_ENDINGS = [
   "password",
@@ -367,7 +375,7 @@ function lineSecret(
   }
   const url = URL_PASSWORD.exec(line);
   if (url) {
-    const [, user, password] = url as unknown as [string, string, string];
+    const [, , user, password] = url as unknown as [string, string, string, string];
     if (password !== user && password.length >= 6 && !isPlaceholder(password)) {
       return {
         check: "secret",
@@ -462,7 +470,8 @@ const ENTRY_DIRS = new Set(["scripts", "bin", "cmd", "pages", "routes", "migrati
 
 function isEntryPoint(path: FilePath): boolean {
   const base = baseName(path);
-  if (base.startsWith(".") || base.includes(".config.") || base.endsWith(".d.ts")) return true;
+  // `vite.config.ts`, and the variants a tool is pointed at by name (`vite --config vite.config-ssr.js`)
+  if (base.startsWith(".") || /\.config[.-]/.test(base) || base.endsWith(".d.ts")) return true;
   if (ENTRY_STEMS.has(base.slice(0, base.indexOf(".") === -1 ? undefined : base.indexOf("."))))
     return true;
   return path
@@ -537,13 +546,123 @@ function unusedCandidate(model: IndexModel, file: IndexedFile, texts: TextCache)
   );
 }
 
-function fileFindings(
+/**
+ * Folders of the Go packages that are used: another file references one of the package's files, or one is
+ * an entry point. Go compiles every file of a folder into its package, so all of them are used then, including
+ * one whose symbols no other file names (an `init`, a build-tagged variant).
+ */
+function usedGoPackages(model: IndexModel, used: Set<FilePath>, texts: TextCache): Set<string> {
+  const packages = new Set<string>();
+  for (const file of model.files)
+    if (
+      file.language === "go" &&
+      !matchesAnyGlob(file.path, SAMPLE_GLOBS) &&
+      (used.has(file.path) || isEntryPoint(file.path) || declaresEntry(file, texts))
+    )
+      packages.add(dirOf(file.path));
+  return packages;
+}
+
+/** Prose mentions a file without loading it. */
+const PROSE_GLOBS: readonly string[] = ["*.md", "*.mdx", "*.rst", "*.txt"];
+/** What separates the paths written in a line: anything but name characters, `/` and `.`. */
+const NOT_PATH = /[^\w$@+~./-]+/;
+
+/** `rel` from folder `dir` (repo-relative), or undefined when it leaves the repository. */
+function joinPath(dir: string, rel: string): FilePath | undefined {
+  const parts = dir === "" ? [] : dir.split("/");
+  for (const segment of rel.split("/")) {
+    if (segment === "" || segment === ".") continue;
+    if (segment !== "..") parts.push(segment);
+    else if (parts.pop() === undefined) return undefined;
+  }
+  return parts.join("/");
+}
+
+/** The path without the extension of its file name (`src/a.test.ts` -> `src/a.test`). */
+function withoutExtension(path: FilePath): string {
+  const dot = path.lastIndexOf(".");
+  return dot > path.lastIndexOf("/") + 1 ? path.slice(0, dot) : path;
+}
+
+/**
+ * Those of `paths` that another file names by path, the way tools load files by convention: an HTML script
+ * tag, a `package.json` `main`, `exports` or script (`vite --config vite.config-dev.js`), a worker's
+ * `new URL("./worker.js", import.meta.url)`, an SSR entry in a config (`entry: "/src/entry-server"`). A name
+ * is read from the naming file's folder and from each folder above it (a leading `/` is dropped: an HTML
+ * page's root, a project root); a name with a `/` may leave out the extension. Prose does not count.
+ */
+function namedFiles(
   model: IndexModel,
-  file: IndexedFile,
-  used: Set<FilePath> | undefined,
-  blind: Set<FilePath> | undefined,
   texts: TextCache,
-): HealthFinding[] {
+  paths: readonly FilePath[],
+): Set<FilePath> {
+  const wanted = new Set(paths);
+  const fileNames = new Set(paths.map(baseName));
+  const names = new Set(fileNames); // file names with and without their extension
+  const stems = new Map<string, FilePath[]>(); // the path without its extension -> the paths
+  for (const path of paths) {
+    const stem = withoutExtension(path);
+    stems.set(stem, [...(stems.get(stem) ?? []), path]);
+    names.add(baseName(stem));
+  }
+  const named = new Set<FilePath>();
+  for (const file of model.files) {
+    if (matchesAnyGlob(file.path, PROSE_GLOBS)) continue;
+    const folders: string[] = []; // the file's own folder first, then each one above it, then the root
+    for (let dir = dirOf(file.path); dir !== ""; dir = dirOf(dir)) folders.push(dir);
+    folders.push("");
+    for (const line of texts.lines(file.path) ?? [])
+      for (const token of line.split(NOT_PATH)) {
+        const bare = !token.includes("/");
+        // A bare word names a file only with its extension (`seed.js`, not `seed`).
+        if (!(bare ? fileNames : names).has(baseName(token))) continue;
+        // `./x` and `../x` are relative to the naming file; other names may be relative to a project root.
+        const from = /^\.\.?\//.test(token) ? folders.slice(0, 1) : folders;
+        for (const folder of from) {
+          const path = joinPath(folder, token);
+          if (path === undefined || path === file.path) continue;
+          if (wanted.has(path)) named.add(path);
+          else if (!bare) for (const target of stems.get(path) ?? []) named.add(target);
+        }
+      }
+  }
+  return named;
+}
+
+/**
+ * The files to report as possibly unused, and per language the number of files xpl cannot tell about because
+ * the index does not follow that language's imports.
+ */
+function unusedFiles(
+  model: IndexModel,
+  used: Set<FilePath>,
+  texts: TextCache,
+): { unused: Set<FilePath>; unknown: Map<string, number> } {
+  const packages = usedGoPackages(model, used, texts);
+  const candidates = model.files.filter(
+    (file) =>
+      !used.has(file.path) &&
+      !(file.language === "go" && packages.has(dirOf(file.path))) &&
+      unusedCandidate(model, file, texts),
+  );
+  const named = namedFiles(
+    model,
+    texts,
+    candidates.map((file) => file.path),
+  );
+  const blind = importBlindFiles(model);
+  const unused = new Set<FilePath>();
+  const unknown = new Map<string, number>();
+  for (const file of candidates) {
+    if (named.has(file.path)) continue;
+    if (blind?.has(file.path)) unknown.set(file.language, (unknown.get(file.language) ?? 0) + 1);
+    else unused.add(file.path);
+  }
+  return { unused, unknown };
+}
+
+function fileFindings(file: IndexedFile, unused: Set<FilePath> | undefined): HealthFinding[] {
   if (!CODE_LANGUAGES.has(file.language)) return [];
   const out: HealthFinding[] = [];
   const at = { file: file.path, line: 1 };
@@ -556,12 +675,7 @@ function fileFindings(
       ...LARGE,
     });
   }
-  if (
-    used &&
-    !used.has(file.path) &&
-    !blind?.has(file.path) &&
-    unusedCandidate(model, file, texts)
-  ) {
+  if (unused?.has(file.path)) {
     out.push({
       check: "unused-file",
       severity: "low",
@@ -584,7 +698,7 @@ export function healthCheck(
   const model = asIndexModel(index);
   const texts = toTextCache(text);
   const notes: string[] = [];
-  let used: Set<FilePath> | undefined;
+  let unused: Set<FilePath> | undefined;
   if (model.index.pruned) {
     notes.push(
       "The index is cut down to what a guide shows, so the check for possibly unused files was skipped.",
@@ -592,15 +706,9 @@ export function healthCheck(
   } else if (model.refs.length === 0) {
     notes.push("the index has no references, so xpl did not check for unused files");
   } else {
-    used = referencedFiles(model);
-  }
-  const blind = used && importBlindFiles(model);
-  if (used && blind) {
-    const unknown = new Map<string, number>();
-    for (const file of model.files)
-      if (blind.has(file.path) && !used.has(file.path) && unusedCandidate(model, file, texts))
-        unknown.set(file.language, (unknown.get(file.language) ?? 0) + 1);
-    for (const [language, count] of [...unknown].sort(([a], [b]) => cmp(a, b)))
+    const result = unusedFiles(model, referencedFiles(model), texts);
+    unused = result.unused;
+    for (const [language, count] of [...result.unknown].sort(([a], [b]) => cmp(a, b)))
       notes.push(
         `${language}: the index does not follow imports, so xpl cannot tell whether ${count} ${count === 1 ? "file is" : "files are"} unused.`,
       );
@@ -609,7 +717,7 @@ export function healthCheck(
   const findings: HealthFinding[] = [];
   let files = 0;
   for (const file of model.files) {
-    findings.push(...fileFindings(model, file, used, blind, texts));
+    findings.push(...fileFindings(file, unused));
     const lines = texts.lines(file.path);
     if (lines === undefined) continue;
     files++;
