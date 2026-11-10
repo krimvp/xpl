@@ -62,6 +62,8 @@ only the text;
    (`git show <base>:<path>`): for base anchors, `xpl show --at base`, and the "before" side of the viewer.
    So base anchors take `find` or file spans, never symbols (§4.2). A second index would double the cost
    and the ids; the hunks and the base text are enough to check "before" claims and to draw the diff.
+   A change to the working tree (`xpl change <base> --worktree`) is the same with the working
+   tree as its head: the index of the working tree is the one index, and its commit id names the head.
 9. **Drafts without an LLM.** Most of an explainer is structure: boxes, steps, anchors, tour order.
    `xpl draft` builds that from the index and the change record, with `TODO:` in every text a person writes.
    Claude then writes and checks only the text. `xpl lint` reports each `TODO` left as an error.
@@ -211,7 +213,8 @@ Conventions (all packages):
     // base and head are full SHAs; head is the commit the index was built from
     interface ChangeRecord {
       base: string;
-      head: string;
+      head: string; // with `worktree`: the index commit id (`wt-35af5f4417`), not a SHA
+      worktree?: true; // the head is the working tree the index was built from
       files: ChangedFile[];
     }
     interface ChangedFile {
@@ -238,6 +241,12 @@ Conventions (all packages):
     `excluded` with the rules of `xpl index`: for a file at head the index lacks, from the working tree; for a
     deleted file, from its text at base (size, a NUL byte, the mark of an exported page, the path rules). A
     record written before the field existed has none; such a file reads as "missing from the index".
+
+    A working-tree record (`worktree: true`) has the same files and hunks: `git diff -M <base>` against the
+    working tree, plus every untracked file the index holds as `added` with one hunk of all its lines. Its
+    `base` stays a full SHA, so base anchors, `xpl show --at base` and `baseFiles` work unchanged; its
+    `head` is the commit id of the index it was recorded against, and it matches an index only when they are
+    equal (`changeMatchesIndex`). A clean tree at a commit gets an ordinary record of two commits instead.
 16. `Anchor` adds `at?: "base"`: a **base anchor** points at the code before the change, the base commit of
     `Explainer.change`. It has `file` and an optional `span` counted from line 1 of the base file; never a
     `symbol`, because the base is not indexed. `file` is always `ChangedFile.path` (a patch may name a renamed
@@ -1622,8 +1631,11 @@ Reset may clear selected pins or all pins; a later placement edit conflicts rath
   `TEST_FILE_GLOBS`, `NODE_ROLES`, `OUTSIDE_ROLES`, schema names).
 - `change.ts`: lookups on the change record (`changedFile`, which also finds a renamed file by its old path;
   `baseFileOf`, `basePathOf`, `hasBaseVersion`, `baseVersionFiles`, `headPathsOf`, `describeChange` →
-  `85c3b74..2284ff0`), its shape check (`changeShapeIssues`), and the **change analysis** that `xpl change`
-  prints. Pure: the CLI runs git and hands the record in.
+  `85c3b74..2284ff0` or `85c3b74..working tree`), whether it ends at the code of an index
+  (`changeMatchesIndex`: a working-tree head equals the index commit id; a commit head starts with a SHA index
+  commit; any other index id matches) and how to name its head in a message (`changeHeadText`), its shape check
+  (`changeShapeIssues`), and the **change analysis** that `xpl change` prints. Pure: the CLI runs git and
+  hands the record in.
 
   `analyzeChange(change, indexModel, getText?) → ChangeAnalysis`, against the index of the head:
   - **Files** with their added and removed line counts, whether they are tests (`isTestFile`) and indexed, and
@@ -1695,7 +1707,7 @@ fatal errors (`error: …`) and warnings (`warning: …`) go to stderr.
 | `xpl ready [explainer] [--note reason] [--require-review]` | shared readiness report before export; `--json` adds `ok` to the report above; 0 ready (warnings allowed), 1 blockers/failure, 2 usage; writes nothing; a note records intentional warning/omission decisions |
 | `xpl lint [explainer] [--patch <file\|->] [--warn-only]` | checks the text a reader sees (the index, when there is one, counts the boxes and arrows of maps): rules below; `--patch` lints the explainer as it would be after `xpl apply` of that patch (merged in memory as actor `llm`, nothing written; a patch apply would reject prints the rejection and exits 1); exit 1 with any finding (so `lint --patch && apply` stops on one), 0 with `--warn-only` unless a `todo-left` error |
 | `xpl health` | a quick check of the indexed files (below): committed secrets, secrets in browser variables, `.env` files, code files over 1,000 lines, possibly unused code files; each finding with file, line, severity, why and fix; secret values masked; always exits 0 (a report, not a gate) |
-| `xpl change [explainer] [<base>..<head>]` | records the change from git in the explainer and prints its analysis (§4.8; below); without a range, prints the analysis of the change already recorded; with one guide, a lone argument that names no guide is the range |
+| `xpl change [explainer] [<base>..<head> \| <base> --worktree]` | records the change from git in the explainer and prints its analysis (§4.8; below); `--worktree` ends it at the working tree; without a range, prints the analysis of the change already recorded; with one guide, a lone argument that names no guide is the range |
 | `xpl pr prepare <url\|owner/repo#number\|owner/repo> [number] [--cache-dir dir] [--precise off\|auto\|require]` | resolves GitHub base/head through existing `gh`, fetches an isolated detached head, indexes head only and publishes an immutable input manifest; no agent or ready result |
 | `xpl pr cleanup <input-directory> [--cache-dir dir]` | removes only a marked owned PR input directly under the selected cache; refuses symlinks and developer-tree paths |
 | `xpl pr link <staged-dir> --url <base-url> --visibility team\|public` / `xpl pr check-link <PR>` | points one PR comment at the staged current version after a GitHub base/head check; a PR workflow marks it outdated when base/head move (below) |
@@ -1802,6 +1814,16 @@ and tests (marked `through <caller>` or `builds its class; a guess` when not dir
 outside any symbol, the test files the change touches with their new and changed tests, and the symbols with
 no test. Without a range it re-prints the analysis of the stored record. `--json`: `{ ok, path, written,
 change, analysis, omissions }`.
+
+`xpl change <explainer> <base> --worktree` ends the change at the working tree (`worktreeChange`, `git.ts`
+`worktreeFiles`): `git diff -M --name-status -z <base>` and `git diff -U0 <base>`, both limited to
+`-- . :(exclude).explainer`, then `git ls-files --others --exclude-standard -z` for the untracked files, of
+which those the index holds become `added` with one hunk of all their lines (`gitLineCount`). Git is only
+read (no `git add -N`, no temporary git index), so a file moved without `git mv` is a deletion and an
+addition. It uses the index of the current tree, not the guide's own, and refuses (exit 1) when that index
+does not match the working tree. The record gets `worktree: true` and the index commit id as `head`, unless
+the index is of a clean commit: then `head` is that commit's SHA. No difference is exit 1 (`there is no
+change`). A range with a head and `--worktree` together are a usage error.
 
 `xpl search` delegates matching, source ordering, line counts and symbol attribution to core `query`.
 CLI `--under` still resolves targets and globs with suggestions; CLI text comes from the working tree.
@@ -2096,7 +2118,8 @@ it to a file; `--json` adds the counts and what was left out.
   mapped file with a top-level `main` function (at `main`), else with an entry name (`ENTRY_NAMES`: main,
   index, app, cli, server, ...), focused in its folder's view. With no such file the tour has no last step and
   a note says so. The first note also names the files that are not code (settings, manifests, text), which
-  have no box. With a change record, `tour:changes-<head7>`: one step
+  have no box. With a change record, `tour:changes-<head7>` (`tour:changes-worktree` for a working-tree
+  record, whose head moves at every edit): one step
   per changed file on the map (at most 12), focus on its box in its folder's view, code from
   `changedFileAnchor`, notes that ask how the change serves the request. Run again, it is a refresh: existing
   map views get `includeAdd` / `includeRemove`, overlays only for undescribed files, `remove` for the
@@ -2104,15 +2127,16 @@ it to a file; `--json` adds the counts and what was left out.
   kept, with a note), and no second start tour or change tour for the same head. A file that moved keeps its
   text: a gone `file:` box whose file, read at its `provenance.commit` (the command expands the short id to
   the full SHA, `DraftInput.commits`), has the same text as exactly one new file gives that file its label
-  and summary. The map's own tours (`tour:map`, `tour:changes-*`, when the user did not edit them) are resent
-  without the focus and code of what is gone; a start-tour folder step gets its folder's code again, and a
-  step with no focus left is dropped (a tour with no step, removed). A new folder map of more than 30 boxes
-  groups the folder's files that use each other (`groupFiles`: pairs by reference count, union-find, at most
-  8 files a group, kept from 3): each group is a `grp:map-<path>-<n>` box that `opens` `view:map-<path>-<n>`
-  with its files, and the folder map shows the group, not its files; a refresh keeps the files of an earlier
-  group on the group's map (`includeRemove` and `members` for the ones gone). A new folder map of more than
-  12 boxes gets `render: "matrix"` (`MAP_LIMITS.matrixBoxes`). Notes count the files on and off the map, name
-  the moved files, the groups, the maps still over 30 boxes and the maps that open as a matrix.
+  and summary. The map's own tours (`tour:map`, `tour:changes-*`, when the
+  user did not edit them) are resent without the focus and code of what is gone; a start-tour folder step
+  gets its folder's code again, and a step with no focus left is dropped (a tour with no step, removed). A
+  new folder map of more than 30 boxes groups the folder's files that use each other (`groupFiles`: pairs by
+  reference count, union-find, at most 8 files a group, kept from 3): each group is a `grp:map-<path>-<n>`
+  box that `opens` `view:map-<path>-<n>` with its files, and the folder map shows the group, not its files; a
+  refresh keeps the files of an earlier group on the group's map (`includeRemove` and `members` for the ones
+  gone). A new folder map of more than 12 boxes gets `render: "matrix"` (`MAP_LIMITS.matrixBoxes`). Notes
+  count the files on and off the map, name the moved files, the groups, the maps still over 30 boxes and the
+  maps that open as a matrix.
 
 A draft gives structure, not understanding: the concepts, flows, `llm` edges and base anchors that explain
 why the code is as it is are left to Claude.
@@ -4053,8 +4077,10 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
   by shared text within a hunk, leaving unmatched insertions and deletions as whole-line marks. Large hunks
   (over 80 lines on either side) keep only the whole-line marks. It does not align moved lines. The details
   panel tags a base anchor's row but does not show the base lines next to it.
-- `xpl change` needs the head checked out and indexed (the head must be the index commit); the change of an
-  uncommitted working tree cannot be recorded, since it has no head commit.
+- `xpl change` needs the head checked out and indexed (the head must be the index commit). The change of an
+  uncommitted working tree is recorded with `--worktree` against the index of that tree;
+  git is only read, so a file moved without `git mv` shows as a deletion and an addition, not a rename, and
+  the moved box keeps its text only through `draft map`'s same-text match at a commit it can read.
 - The change analysis adds at most one hop beyond direct callers and is as good as the index: callers through a variable, a callback or a
   framework are not seen, `callers via instance` is a guess, and a missing indexed test reference does not
   prove the behavior has no test. Tests that reference the class count for constructors and instance-call

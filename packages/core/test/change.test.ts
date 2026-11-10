@@ -5,6 +5,7 @@ import {
   baseAnchorFocus,
   baseFileOf,
   changeShapeIssues,
+  describeChange,
   codeFocus,
   ExplainerModel,
   headPathsOf,
@@ -178,6 +179,21 @@ describe("change record", () => {
       "change.files[4].excluded",
     ]);
     expect(changeShapeIssues("x")[0]!.message).toContain("xpl change");
+  });
+
+  it("a working-tree record has the index commit id as its head; its base is still a full SHA", () => {
+    const worktree: ChangeRecord = { ...CHANGE, head: "wt-35af5f4417", worktree: true };
+    expect(changeShapeIssues(worktree)).toEqual([]);
+    expect(describeChange(worktree)).toBe("aaaaaaa..working tree");
+    expect(
+      changeShapeIssues({ ...CHANGE, head: "wt 35af", worktree: true }).map((i) => i.path),
+    ).toEqual(["change.head"]);
+    expect(changeShapeIssues({ ...CHANGE, worktree: "yes" }).map((i) => i.path)).toEqual([
+      "change.worktree",
+    ]);
+    expect(changeShapeIssues({ ...worktree, base: "wt-35af5f4417" }).map((i) => i.path)).toEqual([
+      "change.base",
+    ]);
   });
 });
 
@@ -608,6 +624,19 @@ describe("validate: change", () => {
     ]);
     expect(issues[0]!.message).toContain("run `xpl index`");
     expect(validateExplainer(withChange(), w.index, texts(w))).toEqual([]);
+  });
+
+  it("a working-tree record matches only the index it was recorded against", () => {
+    const at = (head: string) =>
+      withChange({ change: { ...CHANGE, head, worktree: true } as ChangeRecord });
+    expect(validateExplainer(at("bbbbbbb"), w.index, texts(w))).toEqual([]);
+    const issues = validateExplainer(at("wt-35af5f4417"), w.index, texts(w));
+    expect(issues).toEqual([
+      expect.objectContaining({ severity: "warning", code: "change", path: "change.head" }),
+    ]);
+    expect(issues[0]!.message).toBe(
+      "the change ends at the working tree of index wt-35af5f4417, but the guide's index is bbbbbbb: record the change again with `xpl change <name> <base> --worktree` (`xpl live` does it on every edit)",
+    );
   });
 
   it("a malformed record is an error; patches cannot carry one", () => {

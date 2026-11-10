@@ -1,6 +1,8 @@
 import { resolve } from "node:path";
 import {
   applyPatch,
+  changeHeadText,
+  changeMatchesIndex,
   shortSha,
   type AnchorInput,
   type ExplainerPatch,
@@ -256,15 +258,12 @@ export const draftCommand: CommandSpec = {
       );
     }
     const ws = await openWorkspace(ctx, { explainer: loaded });
-    if (
-      kind === "change" &&
-      change &&
-      /^[0-9a-f]{7,}$/i.test(ws.index.commit) &&
-      !change.head.startsWith(ws.index.commit)
-    ) {
+    if (kind === "change" && change && !changeMatchesIndex(change, ws.index.commit)) {
       ctx.warn(
-        `the recorded change ends at ${shortSha(change.head)}, but the index is ${ws.index.commit}: the draft uses the symbols of ${ws.index.commit}. ` +
-          `Check out ${shortSha(change.head)} and run \`xpl index\`, or record the change again.`,
+        `the recorded change ends at ${changeHeadText(change)}, but the index is ${ws.index.commit}: the draft uses the symbols of ${ws.index.commit}. ` +
+          (change.worktree
+            ? `Run \`xpl index\` and record the change again (\`xpl change ${loaded.name} <base> --worktree\`).`
+            : `Check out ${shortSha(change.head)} and run \`xpl index\`, or record the change again.`),
       );
     }
     const entries: PathEntry[] = [];

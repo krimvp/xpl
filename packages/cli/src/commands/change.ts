@@ -1,5 +1,7 @@
 import {
   analyzeChange,
+  changeHeadText,
+  changeMatchesIndex,
   changeOmissions,
   collectAnchors,
   describeChange,
@@ -20,7 +22,14 @@ import type { Ctx } from "../context.js";
 import { CliError, UsageError } from "../errors.js";
 import { plural } from "../format.js";
 import { atomicWrite, jsonFile, withFileLock } from "../fsutil.js";
-import { computeChange, isGitWorkTree, mergeBase, resolveCommit } from "../git.js";
+import {
+  computeChange,
+  gitLineCount,
+  isGitWorkTree,
+  mergeBase,
+  resolveCommit,
+  worktreeFiles,
+} from "../git.js";
 import {
   loadExplainer,
   onlyExplainerName,
@@ -229,7 +238,11 @@ export function renderAnalysis(
  * file at head that the index lacks, read from the working tree (the head is the index commit); a deleted file,
  * from its text at base.
  */
-async function markExcluded(ctx: Ctx, change: ChangeRecord, ws: Workspace): Promise<ChangeRecord> {
+async function markExcluded(
+  ctx: Ctx,
+  change: ChangeRecord,
+  ws: Pick<Workspace, "model" | "texts">,
+): Promise<ChangeRecord> {
   const files = await Promise.all(
     change.files.map(async (file) => {
       let excluded;
@@ -241,6 +254,34 @@ async function markExcluded(ctx: Ctx, change: ChangeRecord, ws: Workspace): Prom
     }),
   );
   return { ...change, files };
+}
+
+/**
+ * The change from `base` (a full SHA) to the working tree the index `ws` was built from, or undefined when the tree
+ * is the code of the base. When the index is of a clean commit (its id is a short SHA), it is the change of two
+ * commits; otherwise the head is the index commit id, with `worktree: true`. The texts must be those of the index.
+ */
+export async function worktreeChange(
+  ctx: Ctx,
+  ws: Pick<Workspace, "model" | "texts" | "index">,
+  base: string,
+): Promise<ChangeRecord | undefined> {
+  const files = await worktreeFiles(
+    ctx.root,
+    base,
+    (path) => ws.model.hasFile(path),
+    (path) => {
+      const text = ws.texts.text(path);
+      return text === undefined ? undefined : gitLineCount(text);
+    },
+  );
+  if (files.length === 0) return undefined;
+  const commit = ws.index.commit;
+  const head = /^[0-9a-f]{7,}$/i.test(commit) ? await resolveCommit(ctx.root, commit) : undefined;
+  const record: ChangeRecord = head
+    ? { base, head, files }
+    : { base, head: commit, worktree: true, files };
+  return markExcluded(ctx, record, ws);
 }
 
 /** How many base anchors of the explainer do not resolve (ok or moved) against this change record. */
@@ -302,7 +343,7 @@ function namesExplainer(ctx: Ctx, arg: string): boolean {
 
 export const changeCommand: CommandSpec = {
   name: "change",
-  usage: "xpl change [explainer] [<base>..<head>]",
+  usage: "xpl change [explainer] [<base>..<head> | <base> --worktree]",
   summary: "Record the change a guide is about (from git) and print its analysis",
   details: [
     "Records the change between two commits in the guide (from `git diff -M`), then prints what it touches.",
@@ -310,10 +351,16 @@ export const changeCommand: CommandSpec = {
     "A missing test reference does not mean the behavior has no test.",
     "<base>..<head> takes git revisions (main..HEAD); <base>...<head> starts at their merge base.",
     "The head must be the commit of the index: check it out and run `xpl index` first.",
+    "<base> --worktree ends at the working tree, untracked files the index holds included: index it first.",
     "Without a range, it prints the change already recorded. One argument is a range when no guide has its name.",
     "Exit codes: 0 ok; 1 no git, an unknown revision, a head that is not the index commit, or no change; 2 usage.",
   ],
-  options: {},
+  options: {
+    worktree: {
+      type: "boolean",
+      desc: "End the change at the working tree the index was built from, not at a commit",
+    },
+  },
   positionals: [
     { name: "explainer", required: false },
     { name: "base..head", required: false },
@@ -336,10 +383,12 @@ export const changeCommand: CommandSpec = {
         );
       }
       const ws = await openWorkspace(ctx, { explainer: loaded });
-      if (/^[0-9a-f]{7,}$/i.test(ws.index.commit) && !change.head.startsWith(ws.index.commit)) {
+      if (!changeMatchesIndex(change, ws.index.commit)) {
         ctx.warn(
-          `the recorded change ends at ${shortSha(change.head)}, but the index is ${ws.index.commit}: the symbols, callers and tests below are those of ${ws.index.commit}. ` +
-            `Check out ${shortSha(change.head)} and run \`xpl index\`, or record the change again.`,
+          `the recorded change ends at ${changeHeadText(change)}, but the index is ${ws.index.commit}: the symbols, callers and tests below are those of ${ws.index.commit}. ` +
+            (change.worktree
+              ? `Run \`xpl index\` and record the change again (\`xpl change ${loaded.name} <base> --worktree\`).`
+              : `Check out ${shortSha(change.head)} and run \`xpl index\`, or record the change again.`),
         );
       }
       const analysis = analyzeChange(change, ws.model, (file) => ws.texts.text(file));
@@ -365,6 +414,12 @@ export const changeCommand: CommandSpec = {
       return 0;
     }
 
+    const worktree = args.flag("worktree");
+    if (worktree && (range.head !== undefined || range.mergeBase)) {
+      throw new UsageError(
+        `--worktree ends the change at the working tree: give the base alone (e.g. \`xpl change ${name} main --worktree\`), not ${rangeText}`,
+      );
+    }
     if (!(await isGitWorkTree(ctx.root))) {
       throw new CliError(
         `xpl change needs git: ${ctx.root} is not inside a git work tree, so there is no history to compare.`,
@@ -377,6 +432,26 @@ export const changeCommand: CommandSpec = {
       );
     }
     const loadedFirst = loadExplainer(ctx, name);
+    if (worktree) {
+      // the index of the working tree as it is now, not the guide's own (that is the index it was last moved to)
+      const ws = await openWorkspace(ctx, {
+        explainer: loadedFirst,
+        skipExplainerIndex: true,
+        deferStaleWarning: true,
+      });
+      if (ws.stale) {
+        throw new CliError(
+          `${ws.stale.head}. A working-tree change ends at the code of the index: run \`xpl index\`, then run this again.`,
+        );
+      }
+      const change = await worktreeChange(ctx, ws, base);
+      if (!change) {
+        throw new CliError(
+          `the working tree is the code of ${shortSha(base)}: there is no change. Give an earlier base, e.g. ${shortSha(base)}^`,
+        );
+      }
+      return record(change, ws);
+    }
     const wsFirst = await openWorkspace(ctx, { explainer: loadedFirst });
     const indexSha = await indexCommitSha(ctx, wsFirst);
     let head = indexSha;
@@ -409,47 +484,52 @@ export const changeCommand: CommandSpec = {
         `the base and the head are the same commit (${shortSha(head)}): there is no change. Give the commit before it, e.g. ${shortSha(head)}^..${shortSha(head)}`,
       );
     }
-    const ws = wsFirst;
-    const change = await markExcluded(ctx, await computeChange(ctx.root, base, head), ws);
+    return record(
+      await markExcluded(ctx, await computeChange(ctx.root, base, head), wsFirst),
+      wsFirst,
+    );
 
-    return withFileLock(path, async () => {
-      // the latest file: another writer may have changed it since it was read above
-      const loaded = loadExplainer(ctx, name);
-      const same = JSON.stringify(loaded.explainer.change) === JSON.stringify(change);
-      if (!same) {
-        const next: Explainer = { ...loaded.explainer, change };
-        await atomicWrite(loaded.abs, jsonFile(orderKeys(next)));
-      }
-      const broken = brokenBaseAnchors(loaded.explainer, change, ws);
-      if (broken > 0) {
-        ctx.warn(
-          `${plural(broken, "base anchor")} of ${loaded.rel} do not match the code before this change: run \`xpl validate ${loaded.name}\` to see them`,
+    /** Writes the record into the guide (under its lock, when it differs) and prints its analysis. */
+    function record(change: ChangeRecord, ws: Workspace): Promise<number> {
+      return withFileLock(path, async () => {
+        // the latest file: another writer may have changed it since it was read above
+        const loaded = loadExplainer(ctx, name);
+        const same = JSON.stringify(loaded.explainer.change) === JSON.stringify(change);
+        if (!same) {
+          const next: Explainer = { ...loaded.explainer, change };
+          await atomicWrite(loaded.abs, jsonFile(orderKeys(next)));
+        }
+        const broken = brokenBaseAnchors(loaded.explainer, change, ws);
+        if (broken > 0) {
+          ctx.warn(
+            `${plural(broken, "base anchor")} of ${loaded.rel} do not match the code before this change: run \`xpl validate ${loaded.name}\` to see them`,
+          );
+        }
+        const analysis = analyzeChange(change, ws.model, (file) => ws.texts.text(file));
+        const omissions = changeOmissions(change, ws.index);
+        if (ctx.json) {
+          ctx.emit({
+            path: loaded.rel,
+            written: !same,
+            change,
+            analysis,
+            omissions: omissions.map((item) => item.text),
+          });
+          return 0;
+        }
+        ctx.out(
+          [
+            header(loaded, change, analysis, ws),
+            same
+              ? `unchanged: ${loaded.rel} already records this change`
+              : `written to ${loaded.rel}`,
+            "",
+            ...renderAnalysis(analysis, omissions),
+          ].join("\n"),
         );
-      }
-      const analysis = analyzeChange(change, ws.model, (file) => ws.texts.text(file));
-      const omissions = changeOmissions(change, ws.index);
-      if (ctx.json) {
-        ctx.emit({
-          path: loaded.rel,
-          written: !same,
-          change,
-          analysis,
-          omissions: omissions.map((item) => item.text),
-        });
         return 0;
-      }
-      ctx.out(
-        [
-          header(loaded, change, analysis, ws),
-          same
-            ? `unchanged: ${loaded.rel} already records this change`
-            : `written to ${loaded.rel}`,
-          "",
-          ...renderAnalysis(analysis, omissions),
-        ].join("\n"),
-      );
-      return 0;
-    });
+      });
+    }
   },
 };
 

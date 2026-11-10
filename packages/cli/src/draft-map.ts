@@ -656,7 +656,9 @@ export function draftMap(input: DraftInput): Draft {
   }
 
   const change = explainer.change;
-  if (change && !tourIds.has(`tour:changes-${change.head.slice(0, 7)}`)) {
+  // a working tree has a new index commit id at every edit: its change tour keeps one id
+  const changeTourId = `tour:changes-${change?.worktree ? "worktree" : change?.head.slice(0, 7)}`;
+  if (change && !tourIds.has(changeTourId)) {
     const analysis = analyzeChange(change, model);
     const changed = change.files.filter(
       (f) => f.status !== "deleted" && model.hasFile(f.path) && viewOfFile.has(f.path),
@@ -712,7 +714,7 @@ export function draftMap(input: DraftInput): Draft {
     }
     if (steps.length > 0) {
       tours.push({
-        id: `tour:changes-${change.head.slice(0, 7)}`,
+        id: changeTourId,
         title: todo("2-5 plain words: what was worked on"),
         summary:
           `${todo("what was asked for, in the words of whoever asked.")} ${todo("what was done and where it stands; name anything deleted.")}` +

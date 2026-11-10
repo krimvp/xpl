@@ -1,3 +1,4 @@
+import { changeMatchesIndex } from "./change.js";
 import { EXCLUSION_REASONS } from "./constants.js";
 import { CODE_LANGUAGE_NAMES } from "./languages.js";
 import type {
@@ -83,15 +84,16 @@ const were = (n: number) => (n === 1 ? "was" : "were");
 export function changeOmissions(change: ChangeRecord, index: SymbolIndex): ChangeOmission[] {
   const headPaths = new Set(change.files.filter((f) => f.status !== "deleted").map((f) => f.path));
   const indexed = new Set(index.files.map((f) => f.path));
-  const omissions: ChangeOmission[] =
-    /^[0-9a-f]{7,}$/i.test(index.commit) && !change.head.startsWith(index.commit)
-      ? [
-          {
-            text: `The index is of commit ${index.commit.slice(0, 7)}, not of the change's last commit ${change.head.slice(0, 7)}: what it says about the changed code may be out of date.`,
-            files: [],
-          },
-        ]
-      : [];
+  const omissions: ChangeOmission[] = !changeMatchesIndex(change, index.commit)
+    ? [
+        {
+          text: change.worktree
+            ? `The index is ${index.commit}, not the working tree the change was recorded at (${change.head}): what it says about the changed code may be out of date.`
+            : `The index is of commit ${index.commit.slice(0, 7)}, not of the change's last commit ${change.head.slice(0, 7)}: what it says about the changed code may be out of date.`,
+          files: [],
+        },
+      ]
+    : [];
   const left = new Map<ExclusionReason | "unknown", FilePath[]>();
   const removed: FilePath[] = [];
   for (const file of change.files) {

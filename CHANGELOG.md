@@ -12,6 +12,8 @@ New commands and drafts:
   that use each other. (#231, #235)
 - `xpl update <guide> --since <rev>` brings a map up to date in one run: it indexes, re-resolves the code
   links, records the change and drafts the map again. (#235)
+- `xpl change <guide> <base> --worktree` records the change from a commit to the working tree, untracked
+  files the index holds included.
 - `xpl draft class <guide> <type>` maps what a class or interface extends and implements, and what extends or
   implements it. (#233)
 - `xpl draft states <guide> <type>` drafts a flow of the states of a status type (a TypeScript enum or union

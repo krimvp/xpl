@@ -454,6 +454,85 @@ describe("xpl change", () => {
   });
 });
 
+describe("xpl change --worktree", () => {
+  it("records the change from a commit to the working tree: edits, deletions, and untracked files the index holds", async () => {
+    const dir = cloneDir(repo);
+    writeFile(
+      dir,
+      "server.py",
+      SERVER.replace("    return app({})\n", "    return app({'a': 1})\n"),
+    );
+    rmSync(join(dir, "new.py"));
+    writeFile(dir, "extra.py", "def more():\n    return 4\n\n\ndef most():\n    return 5\n");
+    writeFile(dir, "notes.bin", "\0\0\0"); // untracked, but not in the index
+    expect((await xpl(dir, "index", "--precise", "off")).code).toBe(0);
+    const indexCommit = readJson<Explainer>(dir, ".explainer/demo.explainer.json").index.commit;
+    const r = await xplJson<{ change: ChangeRecord }>(dir, "change", "demo", "HEAD", "--worktree");
+    expect(r.err).toBe("");
+    expect(r.code).toBe(0);
+    const change = readJson<Explainer>(dir, ".explainer/demo.explainer.json").change!;
+    expect(change).toEqual(r.json.change);
+    expect(change.base).toBe(head);
+    expect(change.worktree).toBe(true);
+    expect(change.head).toMatch(/^wt-[0-9a-f]{10}$/);
+    expect(change.head).not.toBe(indexCommit); // the guide was on the index of the clean tree
+    expect(change.files).toEqual([
+      {
+        path: "extra.py",
+        status: "added",
+        hunks: [{ oldStart: 0, oldLines: 0, newStart: 1, newLines: 6 }],
+      },
+      {
+        path: "new.py",
+        status: "deleted",
+        hunks: [{ oldStart: 1, oldLines: 2, newStart: 0, newLines: 0 }],
+      },
+      {
+        path: "server.py",
+        status: "modified",
+        hunks: [{ oldStart: 6, oldLines: 1, newStart: 6, newLines: 1 }],
+      },
+    ]);
+    expect((await xpl(dir, "resolve", "demo", "--write")).code).toBe(0);
+    const shown = await xpl(dir, "change", "demo");
+    expect(shown.out.split("\n")[0]).toBe(
+      `change demo: ${head.slice(0, 7)}..working tree (3 files, +7 -3), index ${change.head}`,
+    );
+    expect(shown.err).toBe("");
+  });
+
+  it("a clean tree at a later commit records two commits; no difference at all is no change", async () => {
+    const dir = cloneDir(repo);
+    const r = await xplJson<{ change: ChangeRecord }>(
+      dir,
+      "change",
+      "demo",
+      "HEAD~1",
+      "--worktree",
+    );
+    expect(r.code).toBe(0);
+    expect(r.json.change.head).toBe(head);
+    expect(r.json.change.worktree).toBeUndefined();
+    const none = await xpl(dir, "change", "demo", "HEAD", "--worktree");
+    expect(none.code).toBe(1);
+    expect(none.err).toContain(
+      `the working tree is the code of ${head.slice(0, 7)}: there is no change`,
+    );
+  });
+
+  it("refuses an index that does not match the working tree, and a range with a head", async () => {
+    const dir = cloneDir(repo);
+    writeFile(dir, "extra.py", "def more():\n    return 4\n");
+    const stale = await xpl(dir, "change", "demo", "HEAD", "--worktree");
+    expect(stale.code).toBe(1);
+    expect(stale.err).toContain("does not match the working tree");
+    expect(stale.err).toContain("run `xpl index`");
+    const range = await xpl(dir, "change", "demo", "HEAD~1..HEAD", "--worktree");
+    expect(range.code).toBe(2);
+    expect(readJson<Explainer>(dir, ".explainer/demo.explainer.json").change).toBeUndefined();
+  });
+});
+
 describe("base anchors through the CLI", () => {
   let dir: string;
   beforeAll(async () => {
