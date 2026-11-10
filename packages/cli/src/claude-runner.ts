@@ -78,13 +78,6 @@ function runner(ctx: Ctx, options: { skillDir?: string; timeoutMs?: number } = {
               resolve(root, ".explainer/revisions", job.input.revisionRunId, "run.json"),
             ),
       );
-      const settings = {
-        disableAllHooks: true,
-        permissions: {
-          allow: [`Edit(/${literal(output)})`],
-          deny: [`Edit(/${literal(root)}/**)`, `Edit(/${literal(skillDir)}/**)`],
-        },
-      };
       const prompt = [
         `Output: ${JSON.stringify(output)}`,
         ...(answering
@@ -110,163 +103,18 @@ function runner(ctx: Ctx, options: { skillDir?: string; timeoutMs?: number } = {
           ? "Starting configured Claude Code with frozen question source."
           : "Starting configured Claude Code; source is read-only and output awaits review.",
       );
-      signal.throwIfAborted();
-      const child = spawn(
-        process.execPath,
-        [
-          "-e",
-          launcher,
-          "--",
-          "--print",
-          "--output-format",
-          "json",
-          "--no-session-persistence",
-          "--restricted",
-          "--permission-mode",
-          "dontAsk",
-          "--permission-prompts",
-          "none",
-          "--tools",
-          "Read,Glob,Grep,Write",
-          "--settings",
-          JSON.stringify(settings),
-          "--strict-mcp-config",
-          "--mcp-config",
-          '{"mcpServers":{}}',
-          "--disallowedTools",
-          "mcp__*",
-          "--add-dir",
-          root,
-          skillDir,
-        ],
-        {
-          cwd: directory,
-          env: ctx.env,
-          detached: process.platform !== "win32",
-          stdio: ["pipe", "pipe", "pipe", "pipe"],
-        },
-      );
-      let identity: JobProcess | undefined;
-      let tearingDown = false;
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      let abort = () => {};
-      let stdout = "",
-        stderr = "";
-      const life = child.stdio[3] as Duplex;
-      // All post-spawn setup and failures share this finally, including identity reads.
-      try {
-        const spawned = new Promise<void>((resolve, reject) => {
-          child.once("spawn", resolve);
-          child.once("error", reject);
-        });
-        const ended = new Promise<number | null>((resolve, reject) => {
-          abort = () =>
-            reject(new CliError("the Claude run was canceled: xpl kept none of its output"));
-          signal.addEventListener("abort", abort, { once: true });
-          timer = setTimeout(
-            () =>
-              reject(
-                new CliError(
-                  `Claude timed out after ${timeoutMs / 1000} s. Check that Claude Code and its tools can run, or start the service with a longer \`xpl service start --job-timeout <seconds>\`, then retry.`,
-                ),
-              ),
-            timeoutMs,
-          );
-          child.stdout!.on("data", (data: Buffer) => {
-            stdout += data.toString();
-            if (stdout.length > 1_000_000)
-              reject(new CliError("Claude diagnostic output exceeded 1 MB; output discarded."));
-          });
-          child.stderr!.on("data", (data: Buffer) => {
-            stderr = (stderr + data.toString()).slice(-8000);
-          });
-          child.stdin!.on("error", () => {});
-          child.on("error", (error: Error) => reject(new CliError(failure(error.message))));
-          child.on("exit", resolve);
-          let status = "";
-          life.on("data", (data: Buffer) => {
-            status += data.toString();
-            if (status.includes("\n")) {
-              try {
-                resolve((JSON.parse(status) as { code: number }).code);
-              } catch {
-                reject(new CliError("Claude launcher returned invalid exit status."));
-              }
-            }
-          });
-          life.on("error", () => {});
-          if (signal.aborted) abort();
-        });
-        // Race setup too: a stopped service never waits on a stalled identity read or lock.
-        const setup = (async () => {
-          await spawned;
-          identity = await readJobProcess(child.pid!);
-          if (tearingDown) throw new CliError("Claude startup ended; output discarded.");
-          if (!identity)
-            throw new CliError("Claude launcher exited before ownership was recorded.");
-          await started(identity);
-          signal.throwIfAborted();
-          if (tearingDown) throw new CliError("Claude startup ended; output discarded.");
-          life.write("start");
-          child.stdin!.end(prompt);
-          return ended;
-        })();
-        const code = await Promise.race([setup, ended]);
-        if (code !== 0)
-          throw new CliError(
-            failure(stderr + "\n" + stdout) + ` (Claude exit code ${code ?? "unavailable"}.)`,
-          );
-      } finally {
-        tearingDown = true;
-        clearTimeout(timer);
-        signal.removeEventListener("abort", abort);
-        await terminateJobProcess(identity ?? {}, child);
-      }
-      const text = stdout;
-      signal.throwIfAborted();
-      let data: unknown;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        throw new CliError(failure(text));
-      }
-      if (!data || typeof data !== "object" || Array.isArray(data))
-        throw new CliError(
-          "Claude returned invalid JSON diagnostics. Check the installed CLI, then retry.",
-        );
-      const result = data as { is_error?: boolean; result?: string; errors?: string[] };
-      if (
-        (result.result !== undefined && typeof result.result !== "string") ||
-        (result.errors !== undefined &&
-          (!Array.isArray(result.errors) || result.errors.some((e) => typeof e !== "string")))
-      )
-        throw new CliError(
-          "Claude returned invalid JSON diagnostics. Check the installed CLI, then retry.",
-        );
-      if (result.is_error)
-        throw new CliError(failure(result.result ?? result.errors?.join("\n") ?? text));
-      const info = await lstat(output).catch(() => {
-        throw new CliError(
-          "Claude produced no proposal file. Inspect tool permission failures and retry; stdout is not a proposal.",
-        );
+      const { data: proposals, result } = await runClaude(ctx, {
+        root,
+        skillDir,
+        directory,
+        output,
+        prompt,
+        signal,
+        timeoutMs,
+        started,
+        timeoutAdvice:
+          "start the service with a longer `xpl service start --job-timeout <seconds>`, then retry",
       });
-      if (
-        !info.isFile() ||
-        info.nlink !== 1 ||
-        info.size > 5_000_000 ||
-        (await realpath(output)) !== output
-      )
-        throw new CliError(
-          "Claude proposal must be a regular owned file of at most 5 MB; output discarded.",
-        );
-      let proposals: unknown;
-      try {
-        proposals = JSON.parse(await readFile(output, "utf8"));
-      } catch {
-        throw new CliError(
-          "Claude proposal contains invalid JSON. Retry the job; no proposal was published.",
-        );
-      }
       if (
         !answering &&
         (!Array.isArray(proposals) ||
@@ -281,7 +129,7 @@ function runner(ctx: Ctx, options: { skillDir?: string; timeoutMs?: number } = {
         );
       signal.throwIfAborted();
       await progress(
-        `Claude finished: ${(result.result ?? "proposal written").slice(0, 1500)}. Validating for review.`,
+        `Claude finished: ${(result ?? "proposal written").slice(0, 1500)}. Validating for review.`,
       );
       return "request" in job.input
         ? proposals
@@ -290,6 +138,194 @@ function runner(ctx: Ctx, options: { skillDir?: string; timeoutMs?: number } = {
       await rm(directory, { recursive: true, force: true });
     }
   };
+}
+
+/**
+ * Runs the installed `claude` CLI once in print mode, in `directory`, on `prompt`: it may read `root` and `skillDir`
+ * and write `output` only (no shell, no MCP, no hooks). Returns the JSON in `output` and Claude's last message.
+ * Throws a `CliError` with a plain cause (not installed, not logged in, rate limited, timed out, no or bad output).
+ */
+async function runClaude(
+  ctx: Ctx,
+  options: {
+    root: string;
+    skillDir: string;
+    directory: string;
+    output: string;
+    prompt: string;
+    signal: AbortSignal;
+    timeoutMs: number;
+    /** Called once the process is running and its identity is known (the job ledger records it). */
+    started(identity: JobProcess): Promise<void>;
+    /** What to do after a timeout, after "Check that Claude Code and its tools can run, or". */
+    timeoutAdvice: string;
+  },
+): Promise<{ data: unknown; result: string | undefined }> {
+  const { root, skillDir, directory, output, prompt, signal, timeoutMs, started } = options;
+  const settings = {
+    disableAllHooks: true,
+    permissions: {
+      allow: [`Edit(/${literal(output)})`],
+      deny: [`Edit(/${literal(root)}/**)`, `Edit(/${literal(skillDir)}/**)`],
+    },
+  };
+  signal.throwIfAborted();
+  const child = spawn(
+    process.execPath,
+    [
+      "-e",
+      launcher,
+      "--",
+      "--print",
+      "--output-format",
+      "json",
+      "--no-session-persistence",
+      "--restricted",
+      "--permission-mode",
+      "dontAsk",
+      "--permission-prompts",
+      "none",
+      "--tools",
+      "Read,Glob,Grep,Write",
+      "--settings",
+      JSON.stringify(settings),
+      "--strict-mcp-config",
+      "--mcp-config",
+      '{"mcpServers":{}}',
+      "--disallowedTools",
+      "mcp__*",
+      "--add-dir",
+      root,
+      skillDir,
+    ],
+    {
+      cwd: directory,
+      env: ctx.env,
+      detached: process.platform !== "win32",
+      stdio: ["pipe", "pipe", "pipe", "pipe"],
+    },
+  );
+  let identity: JobProcess | undefined;
+  let tearingDown = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let abort = () => {};
+  let stdout = "",
+    stderr = "";
+  const life = child.stdio[3] as Duplex;
+  // All post-spawn setup and failures share this finally, including identity reads.
+  try {
+    const spawned = new Promise<void>((resolve, reject) => {
+      child.once("spawn", resolve);
+      child.once("error", reject);
+    });
+    const ended = new Promise<number | null>((resolve, reject) => {
+      abort = () =>
+        reject(new CliError("the Claude run was canceled: xpl kept none of its output"));
+      signal.addEventListener("abort", abort, { once: true });
+      timer = setTimeout(
+        () =>
+          reject(
+            new CliError(
+              `Claude timed out after ${timeoutMs / 1000} s. Check that Claude Code and its tools can run, or ${options.timeoutAdvice}.`,
+            ),
+          ),
+        timeoutMs,
+      );
+      child.stdout!.on("data", (data: Buffer) => {
+        stdout += data.toString();
+        if (stdout.length > 1_000_000)
+          reject(new CliError("Claude diagnostic output exceeded 1 MB; output discarded."));
+      });
+      child.stderr!.on("data", (data: Buffer) => {
+        stderr = (stderr + data.toString()).slice(-8000);
+      });
+      child.stdin!.on("error", () => {});
+      child.on("error", (error: Error) => reject(new CliError(failure(error.message))));
+      child.on("exit", resolve);
+      let status = "";
+      life.on("data", (data: Buffer) => {
+        status += data.toString();
+        if (status.includes("\n")) {
+          try {
+            resolve((JSON.parse(status) as { code: number }).code);
+          } catch {
+            reject(new CliError("Claude launcher returned invalid exit status."));
+          }
+        }
+      });
+      life.on("error", () => {});
+      if (signal.aborted) abort();
+    });
+    // Race setup too: a stopped service never waits on a stalled identity read or lock.
+    const setup = (async () => {
+      await spawned;
+      identity = await readJobProcess(child.pid!);
+      if (tearingDown) throw new CliError("Claude startup ended; output discarded.");
+      if (!identity) throw new CliError("Claude launcher exited before ownership was recorded.");
+      await started(identity);
+      signal.throwIfAborted();
+      if (tearingDown) throw new CliError("Claude startup ended; output discarded.");
+      life.write("start");
+      child.stdin!.end(prompt);
+      return ended;
+    })();
+    const code = await Promise.race([setup, ended]);
+    if (code !== 0)
+      throw new CliError(
+        failure(stderr + "\n" + stdout) + ` (Claude exit code ${code ?? "unavailable"}.)`,
+      );
+  } finally {
+    tearingDown = true;
+    clearTimeout(timer);
+    signal.removeEventListener("abort", abort);
+    await terminateJobProcess(identity ?? {}, child);
+  }
+  const text = stdout;
+  signal.throwIfAborted();
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new CliError(failure(text));
+  }
+  if (!data || typeof data !== "object" || Array.isArray(data))
+    throw new CliError(
+      "Claude returned invalid JSON diagnostics. Check the installed CLI, then retry.",
+    );
+  const result = data as { is_error?: boolean; result?: string; errors?: string[] };
+  if (
+    (result.result !== undefined && typeof result.result !== "string") ||
+    (result.errors !== undefined &&
+      (!Array.isArray(result.errors) || result.errors.some((e) => typeof e !== "string")))
+  )
+    throw new CliError(
+      "Claude returned invalid JSON diagnostics. Check the installed CLI, then retry.",
+    );
+  if (result.is_error)
+    throw new CliError(failure(result.result ?? result.errors?.join("\n") ?? text));
+  const info = await lstat(output).catch(() => {
+    throw new CliError(
+      "Claude produced no proposal file. Inspect tool permission failures and retry; stdout is not a proposal.",
+    );
+  });
+  if (
+    !info.isFile() ||
+    info.nlink !== 1 ||
+    info.size > 5_000_000 ||
+    (await realpath(output)) !== output
+  )
+    throw new CliError(
+      "Claude proposal must be a regular owned file of at most 5 MB; output discarded.",
+    );
+  let proposals: unknown;
+  try {
+    proposals = JSON.parse(await readFile(output, "utf8"));
+  } catch {
+    throw new CliError(
+      "Claude proposal contains invalid JSON. Retry the job; no proposal was published.",
+    );
+  }
+  return { data: proposals, result: result.result };
 }
 
 export function claudeRunner(
