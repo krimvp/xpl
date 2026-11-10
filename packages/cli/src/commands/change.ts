@@ -534,7 +534,7 @@ export const changeCommand: CommandSpec = {
 };
 
 /** Puts `change` right after `index`, where a reader of the file expects it. */
-function orderKeys(explainer: Explainer): Explainer {
+export function orderKeys(explainer: Explainer): Explainer {
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(explainer)) {
     if (key === "change") continue;

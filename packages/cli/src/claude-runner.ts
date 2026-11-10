@@ -1,13 +1,14 @@
 /** One installed Claude Code process writes owned output; the scheduler validates a proposal or answer. */
 import type { Duplex } from "node:stream";
 import { spawn } from "node:child_process";
-import { lstat, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { Ctx } from "./context.js";
 import { CliError, errorMessage } from "./errors.js";
 import { readJobProcess, terminateJobProcess, type JobProcess } from "./job-process.js";
 import type { JobRunner, AnswerRunner, AnswerJob, Job } from "./jobs.js";
+import type { LiveAgent } from "./live.js";
 import { defaultSkillDir, verifySkill } from "./setup.js";
 
 // The launcher retains group identity and reports Claude's exit on fd 3.
@@ -144,6 +145,7 @@ function runner(ctx: Ctx, options: { skillDir?: string; timeoutMs?: number } = {
  * Runs the installed `claude` CLI once in print mode, in `directory`, on `prompt`: it may read `root` and `skillDir`
  * and write `output` only (no shell, no MCP, no hooks). Returns the JSON in `output` and Claude's last message.
  * Throws a `CliError` with a plain cause (not installed, not logged in, rate limited, timed out, no or bad output).
+ * Shared by the service's jobs and `xpl live`'s agent.
  */
 async function runClaude(
   ctx: Ctx,
@@ -341,4 +343,68 @@ export function claudeAnswerRunner(
   options: { skillDir?: string; timeoutMs?: number } = {},
 ): AnswerRunner {
   return runner(ctx, options);
+}
+
+/**
+ * The background agent of `xpl live --backend claude`: one Claude run that reads the guide, the code and the code
+ * before the change (written to `before/` in its own folder, since it cannot run git), and writes one patch, which
+ * `xpl live` lints and applies. It follows `reference/live.md` of the installed skill.
+ */
+export function claudeLiveAgent(
+  ctx: Ctx,
+  options: { skillDir?: string; timeoutMs?: number } = {},
+): LiveAgent {
+  return async (run, signal) => {
+    let skillDir: string;
+    try {
+      skillDir = await realpath(options.skillDir ?? defaultSkillDir(ctx.env));
+      verifySkill(skillDir);
+    } catch (error) {
+      throw new CliError(
+        `the installed code-explainer skill is missing: ${errorMessage(error)}. Run \`xpl skill install\`, or pass \`xpl live --skill-dir <folder>\`.`,
+      );
+    }
+    const root = await realpath(run.root);
+    const directory = await mkdtemp(join(tmpdir(), "xpl-live-"));
+    const output = join(directory, "patch.json");
+    try {
+      for (const [path, text] of Object.entries(run.before)) {
+        if (path.split("/").some((part) => part === ".." || part === "")) continue;
+        const abs = join(directory, "before", ...path.split("/"));
+        await mkdir(dirname(abs), { recursive: true });
+        await writeFile(abs, text);
+      }
+      const prompt = [
+        `Output: ${JSON.stringify(output)}`,
+        `Use the installed code-explainer skill at ${skillDir}/SKILL.md and follow reference/live.md, "A background run".`,
+        `The guide: ${JSON.stringify(run.guidePath)}. Repository: ${root}.`,
+        run.change
+          ? `Its \`change\` is the change from commit ${run.change.base} to the working tree. The code before the change of each changed file is in ${join(directory, "before")}, by its path.`
+          : "It records no change: write the TODO texts only, and no tour.",
+        "Write exactly one xpl patch (a JSON object) to Output. xpl lints it and applies it as actor llm after you exit.",
+        ...(run.findings.length > 0
+          ? [
+              "Your previous patch was not applied. Fix these findings in a new, complete patch:",
+              ...run.findings.map((finding) => `- ${finding}`),
+            ]
+          : []),
+        "Only the output file is writable. Do not run commands or change source, the guide or the index.",
+        "If tooling or authentication prevents completion, report that failure instead of inventing output. Keep this task small and do not delegate.",
+      ].join("\n");
+      const { data } = await runClaude(ctx, {
+        root,
+        skillDir,
+        directory,
+        output,
+        prompt,
+        signal,
+        timeoutMs: options.timeoutMs ?? 300_000,
+        started: async () => {},
+        timeoutAdvice: "make the next edit, and `xpl live` tries again",
+      });
+      return data;
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  };
 }

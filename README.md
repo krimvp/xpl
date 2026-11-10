@@ -80,6 +80,9 @@ xpl index && xpl view jobrunner
   [GitHub pull requests](https://krimvp.github.io/xpl/docs/workflows/pull-requests/).
 - **Every file**, in plain words: `xpl draft map` drafts one map per folder, with one sentence per file, for
   code you did not write line by line. `xpl update` brings it up to date after the code changes.
+- **What you are changing, while you change it**: `xpl live` runs next to your editor or AI assistant. After
+  every edit it redraws the maps from the system down to the files and marks what changed since the base. Ask
+  your assistant to explain the change after each task (`reference/live.md`), or let `--backend claude` do it.
 - **An idea or a plan** before the code exists: sketch boxes, drawn dotted and linked to no code.
 - **A type**: `xpl draft class` maps what a class extends and implements; `xpl draft states` maps the states
   of a status type and the functions that change them.

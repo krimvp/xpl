@@ -532,13 +532,14 @@ export function draftMap(input: DraftInput): Draft {
     const first = main ? definitions(main)[0] : undefined;
     return main && first ? { file: main, symbol: first, role: "definition" as const } : undefined;
   };
-  // The map's own tours (start here, changes) follow the code: steps lose the boxes and code that are gone, a
-  // folder step of the start tour gets its folder's code again, and a step with nothing left to show goes.
+  // The map's own tours (start here, changes, and `tour:live` of `xpl live`) follow the code: steps lose the boxes
+  // and code that are gone, a folder step of the start tour gets its folder's code again, and a step with nothing
+  // left to show goes.
   const goneId = (id: string) =>
     (id.startsWith("file:") && !model.hasFile(id.slice(5))) ||
     (id.startsWith("dir:") && !model.hasDirectory(id.slice(4)));
   for (const tour of Array.isArray(explainer.tours) ? explainer.tours : []) {
-    if (!/^tour:(?:map$|changes-)/.test(tour.id) || !owned(tour.provenance)) continue;
+    if (!/^tour:(?:map$|changes-|live$)/.test(tour.id) || !owned(tour.provenance)) continue;
     let changed = false;
     const steps: PatchTourStep[] = [];
     for (const step of tour.steps) {

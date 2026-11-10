@@ -16,7 +16,7 @@
  * reading perspective and tour position; a Present bundle also writes `mode=explore`, so reloading
  * keeps the reader out of the talk. Other parameters are left alone.
  */
-import { hashText } from "@xpl/core";
+import { hashText, type ViewerBundle } from "@xpl/core";
 import { readLaunchParams } from "./data.js";
 import { stepNumber } from "./modes.js";
 import type { ViewerState, ViewerStore } from "./store.js";
@@ -37,7 +37,7 @@ export function searchFor(
   state: Pick<ViewerState, "mode" | "tour"> &
     Partial<Pick<ViewerState, "perspective" | "viewId" | "selection" | "cursor" | "applied">>,
   search: string,
-  bundleMode: "explore" | "present" | undefined,
+  bundleMode: ViewerBundle["mode"],
 ): string {
   const params = new URLSearchParams(search);
   if (state.mode === "present" && state.tour) {
@@ -102,7 +102,7 @@ export function searchFor(
  */
 export function watchUrl(
   store: ViewerStore,
-  bundleMode: "explore" | "present" | undefined,
+  bundleMode: ViewerBundle["mode"],
   win: Window = window,
 ): () => void {
   // Bind bookmarks and reloads to the guide as loaded, even if another service later owns the port.
