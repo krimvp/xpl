@@ -96,6 +96,7 @@ Length budgets (the other files and the drafts follow this table):
 | class, data      | 5-8                                    | 25-40 words     | 2-4 sentences | 1 map, 1 flow if items move    | 3-6, 8 with a note     | 0-2      |
 | repo             | 6-9                                    | 25-40 words     | 3-5 sentences | system map, inside map, 1 path | 3-7 system, 4-8 inside | 0-3      |
 | change           | 6-12                                   | 25-45 words     | 3-5 sentences | the change map, 1-2 flows      | 4-8                    | 0-2      |
+| live (design)    | 4 + one per changed box, ≤ 12          | 25-45 words     | 3-5 sentences | system, design, parts          | 3-7 on the design map  | 0-2      |
 | map              | 1 + top folders + where to start, ≤ 12 | 15-30 words     | 2-3 sentences | the folder maps                | one box per entry      | 0        |
 | presentation     | 5-9                                    | ≤ 280 chars     | 2-3 sentences | existing views                 | ≤ 8                    | 0-1      |
 
@@ -158,7 +159,7 @@ The viewer shows each claim next to its code, so a wrong claim looks checked. Ch
 
 ## explain live: the architecture while the code changes
 
-`xpl live` keeps the guide `live` in step with the working tree: the maps from the system down to the files, and the change since the base. Follow `reference/live.md`: after each task, write the `TODO` box texts and the tour `tour:live`, which says part by part what the change does to the architecture. With `--backend claude` a background run does it.
+`xpl live` keeps the guide `live` in step with the working tree: the maps from the system down to the files, and the change since the base. Follow `reference/live.md`: after each task, write the `TODO` box texts and the tour `tour:live`, which says part by part what the change does to the architecture. When the change spans two or more parts, write its design level first: `grp:design-<slug>` boxes on `view:design` for the design concepts it touches, read before any folder or file. With `--backend claude` a background run does it.
 
 ## expand <node>
 

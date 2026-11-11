@@ -116,6 +116,8 @@ Required for a new group: `label`, `members` (a group with a `role` may leave `m
 
 In a graph view, include the group **and** its members to draw it as a container around them; include only the group to draw one box that stands for all of them.
 
+On a live guide (`xpl live`), a group's base anchors on files the change deleted count as code the group held before the change: its mark says "1 removed", and a group whose only code is such anchors is "Removed". The design level uses this for code that moved without `git mv` or is gone (`reference/live.md`, "The design level").
+
 ### 3.2 Overlay on a structural node (label, summary, detail)
 
 `dir:`, `file:` and `sym:` nodes exist already. Store an overlay only to attach text: `id` plus the fields you set (default label = basename or last symbol segment; `anchors` default to `[]`, and the viewer falls back to the symbol's range, the file, or the directory's files). `detail` is markdown and optional.

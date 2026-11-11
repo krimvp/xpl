@@ -1648,6 +1648,19 @@ Reset may clear selected pins or all pins; a later placement edit conflicts rath
   map that draws each file, the note of its `tour:live` step `part-<pathSlug>`, and the files no part holds).
   `pathSlug` is the slug of `view:map-<path>` and of those step ids. `lint.ts` `quietText` is `shortText`
   without the mark, for a live page: `bus.ts`, not `bus.ts (TODO)`, and `""` when nothing is known.
+  **The design level** of a live guide (no new schema or patch field): a stored graph view `view:design`
+  (`DESIGN_VIEW_ID`) of agent-written boxes `grp:design-<slug>` (`DESIGN_PREFIX`, `isDesignBox`), each a
+  group whose `members` are the `file:`/`dir:` ids that do one job of the change, from any folder, plus
+  sketches and outside boxes. `designLevel(model)` is `{view, of}`: the view it is a lens of, `view:overview`
+  when `view:system` has one service (`partViews` gives one view), else `view:system` itself; never an
+  `opens` target, so `partViews` and the zoom trail stay as they are. `liveTrail` is `zoomTrail` with
+  `view:design` on the trail of its lens. `designFiles` expands a box's `dir:` members to files;
+  `unassignedFiles` lists the added source files (code languages, no tests, outside the lens's
+  `excludeFiles`) no design box holds. A group's base anchors on files the change deleted count in
+  `heldFiles` (code moved without `git mv` reads "1 removed · 3 new"), and a group without members whose held
+  files are all deleted is `removed`. `liveSummary.design` (`LiveDesignBox[]` of the changed boxes in view
+  order, each with the note of its step `designStepId` = `design-<slug>`, and `outside`, the changed files in
+  no box) is set only with a design level.
 
   `analyzeChange(change, indexModel, getText?) → ChangeAnalysis`, against the index of the head:
   - **Files** with their added and removed line counts, whether they are tests (`isTestFile`) and indexed, and
@@ -2402,15 +2415,22 @@ session. It keeps one guide in step with the working tree and serves it through 
   Commits made during a session stay in the change; `--since HEAD` starts over. No git or no commit: no base
   and no change. A tree that is the code of the base has no change record (`change` absent), not an empty one.
 - **Structure** (`live-draft.ts`), all `llm` patches applied in memory. (1) `draft repo` on an empty copy of
-  the guide, since it makes new ids on a guide that has its own (`view:system-2`), merged by
-  `mergeRepoDraft`: missing nodes, edges and views are added; stored graph views get the drafted ids they
-  lack (`includeAdd`); the service group's `members` follow the parts; boxes and arrows whose summary is
-  still a `TODO` get the drafted anchors again, so unwritten structure never drifts; outside the folder maps,
-  `includeRemove`, group members and `llm` edges drop the `file:`/`dir:` ids the index no longer has. (2)
-  `draft map`, which refreshes itself (above). Its folder boxes are the `dir:` part boxes of (1) where the
-  paths agree, so a part gets `opens: view:map-<folder>`; a part folder with one mapped file has no map and
-  opens nothing. New tours of either draft are dropped; refreshes of tours the guide has are kept. (3) With
-  no change recorded, an `llm` `tour:live` is removed. Ids: `view:system` → service box (`grp:<repo>`, or a
+  the guide, since it makes new ids on a guide that has its own (`view:system-2`), merged by `mergeRepoDraft`:
+  missing nodes, edges and views are added; stored graph views get the drafted ids they lack (`includeAdd`);
+  the service group's `members` follow the parts; boxes and arrows whose summary is still a `TODO` get the
+  drafted anchors again, so unwritten structure never drifts; outside the folder maps, `includeRemove`, group
+  members and `llm` edges drop the `file:`/`dir:` ids the index no longer has. (2) `draft map`, which
+  refreshes itself (above). Its folder boxes are the `dir:` part boxes of (1) where the paths agree, so a part
+  gets `opens: view:map-<folder>`; a part folder with one mapped file has no map and opens nothing. New tours
+  of either draft are dropped; refreshes of tours the guide has are kept, and a step's base anchor goes once
+  its file has no code before the change (a deleted file that came back). (3) `refreshDesign`, the upkeep of
+  the design level (§4.8): for each `llm` design box, a member follows a rename, or a move without `git mv` (a
+  deleted file whose base text one added file has); a deleted member leaves `members` for a whole-file base
+  anchor; a gone member that never was at the base goes; a base anchor whose file the change no longer deletes
+  becomes a member again (else it goes), since it would fail validation as "not changed by" the change.
+  `mergeRepoDraft` leaves `llm` design boxes to it. An `llm` `view:design` without `stubs` gets `stubs: none`.
+  With no change recorded, an `llm` `tour:live` is removed in the same patch as the `llm` design boxes and
+  `view:design` (a user's `tour:live` keeps them all). Ids: `view:system` → service box (`grp:<repo>`, or a
   `dir:` per program) opens `view:overview` (`view:<service>-inside`) → part box (`dir:`/`file:`) opens
   `view:map-<path slug>` (`view:map` is the top folder) → `file:` boxes. A deleted file loses its box and
   stays only in `change.files` (status `deleted`, its base path, its hunks; base text from `baseFiles` or
@@ -2418,14 +2438,15 @@ session. It keeps one guide in step with the working tree and serves it through 
 - **Agent.** `--backend none` (default) spawns nothing; the user's agent follows the skill's
   `reference/live.md` and applies with `xpl lint && xpl apply`. `--backend claude` (`claudeLiveAgent`, on
   `runClaude`, the read-only process adapter of service jobs: Read, Glob, Grep and Write to its own output
-  file) runs once the tree has been quiet for `--agent-quiet` seconds (default 20) after a good cycle, when the
-  explanation is stale or a `TODO` is left, at most once per index commit and one at a time. The run gets
-  the code before the change of each changed file in a `before/` folder, since it cannot run git, and
-  writes one patch. Under the guide's lock it is applied as `llm` against the cycle's index; findings of
-  `lintExplainer` on the elements it changed (except `tour-covers-map` and `change-not-shown`) or a
-  rejection give one second run with the findings, which is applied (its findings printed as a warning)
-  unless it is rejected or leaves a `todo-left`; then the state is `failed`. Edits during a run make the result stale,
-  and the next quiet period runs again.
+  file) runs once the tree has been quiet for `--agent-quiet` seconds (default 20) after a good cycle, when
+  the explanation is stale or a `TODO` is left, at most once per index commit and one at a time. The run gets
+  the code before the change of each changed file in a `before/` folder, since it cannot run git, and writes
+  one patch. Its prompt (`liveAgentPrompt`) asks for the design level when there is a change, and names
+  `LiveRun.unassigned` (`unassignedFiles`), the added files in no design box. Under the guide's lock it is
+  applied as `llm` against the cycle's index; findings of `lintExplainer` on the elements it changed (except
+  `tour-covers-map` and `change-not-shown`) or a rejection give one second run with the findings, which is
+  applied (its findings printed as a warning) unless it is rejected or leaves a `todo-left`; then the state is
+  `failed`. Edits during a run make the result stale, and the next quiet period runs again.
 - **Status** (`LiveStatus`, core `live.ts`, type-only): `{schema: "xpl-live@1", guide, state:
   watching|building|failed, updatedAt, index, base: {rev, sha, how: since|merge-base|start} | null, change:
   {files, added, removed} | null, explanation: {backend, state: off|idle|running|failed, explainedAt, stale,
@@ -3053,9 +3074,20 @@ second window while the code changes, so it is built for a glance:
   them, and their arrows and stubs), draws the removed boxes as plain boxes, marks nothing, shows a changed
   file's code before the change (no focus ranges: they are head lines) and no pane for an added file
   (`beforePanes`), and says under the caption that the arrows are read from the code as it is now (only the
-  head is indexed). Now draws the map as it is, without removed boxes, marks or the code's diff marks
-  (`showChanges` off). In Changes, a picked part shows the panes of its changed files only (`changedPanes`,
-  filtered before the cap of `MAX_PANES`, so the changed file of a big part is never cut off).
+  head is indexed). Now draws the map as it is, without removed boxes, boxes whose status is `removed` (a
+  design box of only deleted code), marks or the code's diff marks (`showChanges` off). In Changes, a picked
+  part shows the panes of its changed files only (`changedPanes`, filtered before the cap of `MAX_PANES`, so
+  the changed file of a big part is never cut off).
+- **Design level** (core `designLevel`, §4.8), only when the guide has `view:design`; a guide without one
+  looks as before. On the level it is a lens of, the caption carries `LevelSwitch` (Design | Folders, radio
+  buttons, after the trail); `LiveState.level` remembers the reader's choice, and `goToLevel` (a zoom into the
+  service, a trail link) shows `view:design` for that level while it is `design` (the default). The page still
+  opens at the top (`liveStartView`): `view:system`, or `view:design` when the design is a lens of
+  `view:system` itself. `ZoomTrail` and `liveViewTitle` use `liveTrail`, so the design map reads "The system ›
+  <service>". Design boxes carry the same marks and counts as parts; a sketch is drawn as a sketch. "What
+  changed" then shows **Design** first (`liveSummary.design`: each changed box with its mark, the note of its
+  step `design-<slug>` and its files folded; then "N changed files are in no design box"), then the folder
+  list folded under "By folder" (`<details>`); a design box goes to `view:design` and picks the box.
 - **Status** (`LiveStatusLine`): polls `GET {api}/live` with the explainer (`refreshLive`, at load and every 2 s
   while the page is visible); "Watching", "Updating…", "Update failed" with the error, "Disconnected" when a poll fails
   (the connection state of the other polls), "· last update 5 s ago" ticking each second. Without a server
@@ -4162,7 +4194,8 @@ heuristic references, SCIP-precise references for TypeScript/JavaScript, Python 
 full CLI (with `change`, `draft` and `lint`), Read, Explore and Present with tours, feedback from the page
 under `xpl view` and its live update, architecture maps (`role`, `opens`), change explainers with
 base anchors and a diff view, the live page of `xpl live` (marks lifted to every level, removed boxes, Before |
-Changes | Now, "What changed"), and example explainers for the original three fixtures. Rust has an
+Changes | Now, "What changed", and the design level of a change that spans parts), and example explainers
+for the original three fixtures. Rust has an
 experimental syntax-tags provider with bounded heuristic calls and a browser-tested structural bundle; it has no committed example explainer.
 Ruby has source-backed declaration tags and a runnable fixture, but no relationship resolver.
 
@@ -4209,6 +4242,10 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
 - The live page's Before is the head's map without what the change added: arrows come from the head index
   (an arrow the change removed is not drawn, one it added between old boxes is), and a box whose text the
   change rewrote shows its new text. A removed box has no arrows.
+- The design level is live only. The planned next step is the same level on `draft change` / `explain
+  change` guides: it would need its own tour (`tour:live` is the live tour) and a field that names the view a
+  design map is a lens of, since a change guide has no `view:system` -> `view:overview` pair to derive it from.
+  A design box's arrows are derived from its members' references, like any group's.
 - `xpl change` needs the head checked out and indexed (the head must be the index commit). The change of an
   uncommitted working tree is recorded with `--worktree` (and by `xpl live`) against the index of that tree;
   git is only read, so a file moved without `git mv` shows as a deletion and an addition, not a rename, and

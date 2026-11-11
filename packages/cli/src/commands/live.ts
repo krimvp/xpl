@@ -23,7 +23,7 @@ export const liveCommand: CommandSpec = {
     "The guide is .explainer/live.explainer.json by default; one that xpl live creates is git-ignored.",
     "The base: --since, else the merge base with the default branch, else HEAD at the first start.",
     "Maps go top-down: the system, its parts, the files of a part, the code. Written text is never overwritten.",
-    "--backend claude runs Claude Code once the code is quiet: it writes the TODOs and the tour tour:live.",
+    "--backend claude runs Claude Code once the code is quiet: it writes the TODOs, the tour tour:live and, for a change across parts, its design level.",
     "With none (the default), ask your own agent to follow the skill's reference/live.md after each task.",
     "--once runs one cycle (and one agent run with claude) and exits without serving. Stop with Ctrl+C.",
   ],
