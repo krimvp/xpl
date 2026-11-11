@@ -2,7 +2,7 @@
  * `xpl live`: one cycle (`--once`) on a small git repository, the base it measures from, the loop behind the
  * server (`/api/live`, `/api/bundle`), and the background agent through a fake (`openLive` with `agent`).
  */
-import { rmSync } from "node:fs";
+import { renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Explainer, LiveStatus, ViewerBundle } from "@xpl/core";
@@ -191,6 +191,117 @@ describe("xpl live --once", () => {
   });
 });
 
+/** A design level as the agent writes it (reference/live.md, "The design level"), on the change of `work`. */
+const DESIGN = {
+  nodes: [
+    {
+      id: "grp:design-store",
+      label: "Job storage",
+      summary: "Keeps the jobs and hands them out.",
+      members: ["dir:src/store", "file:src/extra.ts", "file:src/queue.ts"],
+    },
+    {
+      id: "grp:design-work",
+      label: "Work loop",
+      summary: "Takes jobs and runs them.",
+      members: ["file:src/runner.ts"],
+      anchors: [{ file: "src/worker.ts", at: "base", role: "definition" }],
+    },
+  ],
+  views: [
+    {
+      id: "view:design",
+      type: "graph",
+      title: "The design",
+      include: ["grp:design-store", "grp:design-work"],
+    },
+  ],
+  tours: [
+    {
+      id: "tour:live",
+      title: "The runner works alone",
+      summary: "The runner takes over the work loop. Risk: jobs in flight.",
+      steps: [
+        {
+          id: "design",
+          view: "view:design",
+          focus: ["grp:design-work"],
+          note: "### The runner runs jobs itself\n\nBefore: a worker. Now: the runner.\n\nRisk: jobs in flight.",
+          code: [{ file: "src/worker.ts", at: "base", role: "definition" }],
+        },
+      ],
+    },
+  ],
+};
+
+const applyLive = (dir: string, patch: unknown) =>
+  invoke(["apply", "live", "-"], { cwd: dir, stdin: JSON.stringify(patch) });
+
+describe("xpl live keeps the design level", () => {
+  const node = (dir: string, id: string) => guide(dir).nodes.find((n) => n.id === id);
+  const baseFiles = (dir: string, id: string) =>
+    (node(dir, id)?.anchors ?? []).filter((a) => a.at === "base").map((a) => a.file);
+
+  it("makes a box's deleted file a member again when the change no longer deletes it", async () => {
+    const dir = repo();
+    expect((await once(dir)).code).toBe(0);
+    work(dir);
+    expect((await once(dir)).code).toBe(0);
+    expect((await applyLive(dir, DESIGN)).code).toBe(0);
+    expect((await xpl(dir, "validate", "live")).code).toBe(0);
+
+    // the deleted file comes back: it is no longer code before the change only
+    git(dir, "checkout", "--", "src/worker.ts");
+    expect((await once(dir)).code).toBe(0);
+    const validate = await xpl(dir, "validate", "live");
+    expect(validate.out + validate.err).toContain("no errors");
+    expect(node(dir, "grp:design-work")?.members).toEqual([
+      "file:src/runner.ts",
+      "file:src/worker.ts",
+    ]);
+    expect(baseFiles(dir, "grp:design-work")).toEqual([]);
+    const step = guide(dir).tours.find((t) => t.id === "tour:live")?.steps[0];
+    expect(step?.code ?? []).toEqual([]);
+  });
+
+  it("follows moved members, keeps deleted ones as code before the change, and goes with the change", async () => {
+    const dir = repo();
+    expect((await once(dir)).code).toBe(0);
+    work(dir);
+    expect((await once(dir)).code).toBe(0);
+    expect((await applyLive(dir, DESIGN)).code).toBe(0);
+
+    // moved without git mv; a member that existed at the base deleted; a member new in the change deleted
+    git(dir, "mv", "src/runner.ts", "src/loop.ts");
+    renameSync(join(dir, "src/queue.ts"), join(dir, "src/jobs.ts"));
+    rmSync(join(dir, "src/store/disk.ts"));
+    rmSync(join(dir, "src/extra.ts"));
+    rmSync(join(dir, "src/store/memory.ts"));
+    expect((await once(dir)).code).toBe(0);
+    expect(node(dir, "grp:design-store")?.members).toEqual(["file:src/jobs.ts"]);
+    expect(baseFiles(dir, "grp:design-store")).toEqual([
+      "src/store/disk.ts",
+      "src/store/memory.ts",
+    ]);
+    expect(node(dir, "grp:design-work")?.members).toEqual(["file:src/loop.ts"]);
+    expect(node(dir, "grp:design-store")?.label).toBe("Job storage");
+    expect((await xpl(dir, "validate", "live")).code).toBe(0);
+
+    // back to the code of the base: no change, so no explanation of one
+    git(dir, "reset", "-q", "--hard");
+    git(dir, "clean", "-qfd", "src");
+    const last = await once(dir);
+    expect(last.err).toBe("");
+    expect(last.code).toBe(0);
+    const ex = guide(dir);
+    expect(ex.change).toBeUndefined();
+    expect(ex.nodes.filter((n) => n.id.startsWith("grp:design-"))).toEqual([]);
+    expect(ex.views.map((v) => v.id)).not.toContain("view:design");
+    expect(ex.tours).toEqual([]);
+    expect((await xpl(dir, "validate", "live")).code).toBe(0);
+  });
+});
+
 async function serve(dir: string) {
   const abort = new AbortController();
   let listening!: (s: ViewServer) => void;
@@ -291,9 +402,31 @@ describe("the live agent", () => {
     return { live, runs, out, abort };
   }
 
+  /** The explanation of `work` with its design level (the change spans two parts), clean of lint findings. */
   const explanation = (summary: string) => ({
     nodes: [
       { id: "file:src/extra.ts", label: "Extra number", summary: "Returns the extra number." },
+      {
+        id: "grp:design-extra",
+        label: "Extra number",
+        summary: "Gives the runner one more number to read.",
+        members: ["file:src/extra.ts"],
+      },
+      {
+        id: "grp:design-store",
+        label: "Job storage",
+        summary: "Keeps the jobs until a worker takes them.",
+        members: ["dir:src/store"],
+        anchors: [{ file: "src/worker.ts", at: "base", role: "definition" }],
+      },
+    ],
+    views: [
+      {
+        id: "view:design",
+        type: "graph",
+        title: "What the change does",
+        include: ["grp:design-extra", "grp:design-store"],
+      },
     ],
     tours: [
       {
@@ -306,6 +439,24 @@ describe("the live agent", () => {
             view: "view:overview",
             focus: ["file:src/extra.ts"],
             note: "### A new part\n\nThe new file returns the extra number for the runner.",
+          },
+          {
+            id: "design",
+            view: "view:design",
+            focus: ["grp:design-extra", "grp:design-store"],
+            note: "### Storage loses its worker\n\nBefore: a worker took the jobs. Now: nothing takes them.\n\nRisk: jobs wait for ever.",
+          },
+          {
+            id: "design-extra",
+            view: "view:design",
+            focus: ["grp:design-extra"],
+            note: "### One more number\n\nBefore: none. Now: a function returns one.",
+          },
+          {
+            id: "design-store",
+            view: "view:design",
+            focus: ["grp:design-store"],
+            note: "### The worker is gone\n\nBefore: a worker loop. Now: the store trims each job.",
           },
         ],
       },
@@ -401,6 +552,27 @@ describe("the live agent", () => {
     expect(live.status().explanation).toMatchObject({ state: "idle", stale: false });
     expect(guide(dir).tours.find((t) => t.id === "tour:live")?.summary).toBe(long);
     expect(out.join("\n")).toContain("applied the agent's patch with 1 lint finding");
+  });
+
+  it("gives the first try back when a change across parts has no design level", async () => {
+    const dir = repo();
+    work(dir);
+    const plain = explanation("The change adds a file that returns a number. Risk: none yet.");
+    const { live, runs } = await session(dir, (_, n) =>
+      n === 1
+        ? {
+            nodes: plain.nodes.slice(0, 1),
+            tours: [{ ...plain.tours[0]!, steps: plain.tours[0]!.steps.slice(0, 1) }],
+          }
+        : plain,
+    );
+    await live.cycle();
+    await live.explain();
+    expect(runs).toHaveLength(2);
+    expect(runs[1]!.findings.join("\n")).toContain(
+      "tour:live steps (design-level): the change touches 3 parts but the guide has no design level",
+    );
+    expect(guide(dir).views.map((v) => v.id)).toContain("view:design");
   });
 
   it("gives a patch with lint findings back once, then reports the failure and applies nothing", async () => {

@@ -24,7 +24,9 @@ import {
   ExplainerModel,
   reresolveExplainer,
   shortSha,
+  unassignedFiles,
   type ChangeRecord,
+  type FilePath,
   type Explainer,
   type ExplainerPatch,
   type IndexModel,
@@ -60,6 +62,8 @@ export interface LiveRun {
   before: Record<string, string>;
   /** `xpl lint` findings of the patch of the first try, for the second; empty on a first try. */
   findings: string[];
+  /** The source files the change added that no design box holds (`unassignedFiles`); empty without a design level. */
+  unassigned: FilePath[];
 }
 
 /** The background agent: returns one patch (anything; xpl checks it). Tests pass a fake. */
@@ -427,10 +431,19 @@ export async function openLive(ctx: Ctx, options: LiveOptions): Promise<Live> {
         const text = current.texts.textAt(change!.base, basePathOf(file));
         if (text !== undefined) before[file.path] = text;
       }
+      const unassigned = unassignedFiles(new ExplainerModel(current.explainer, current.model));
       let findings: string[] = [];
       for (let attempt = 1; ; attempt++) {
         const patch = await agent(
-          { root: ctx.root, guidePath, base: base?.sha ?? null, change, before, findings },
+          {
+            root: ctx.root,
+            guidePath,
+            base: base?.sha ?? null,
+            change,
+            before,
+            findings,
+            unassigned,
+          },
           signal,
         );
         const result = await withFileLock(guidePath, async () => {

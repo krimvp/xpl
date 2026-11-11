@@ -15,14 +15,18 @@
  * Drafted tours are left out: the explanation of a change is `tour:live`, written by an agent (`reference/live.md`).
  */
 import {
+  DESIGN_VIEW_ID,
   LIVE_TOUR_ID,
   applyPatch,
+  isDesignBox,
+  type AnchorInput,
   type Explainer,
   type ExplainerPatch,
   type IndexModel,
   type Issue,
   type PatchNode,
   type PatchView,
+  type TextCache,
 } from "@xpl/core";
 import { draftRepo, type DraftInput } from "./draft.js";
 import { draftMap } from "./draft-map.js";
@@ -78,6 +82,8 @@ function mergeRepoDraft(
   // groups the fresh draft does not know (the user's): without the members that are gone
   for (const stored of guide.nodes) {
     if (freshNodes.has(stored.id) || stored.id.startsWith("grp:map-") || !stored.members) continue;
+    // the design level's own upkeep (`refreshDesign`)
+    if (isDesignBox(stored.id) && llmOwned(stored.provenance)) continue;
     const members = stored.members.filter((m) => !gone(m));
     if (members.length !== stored.members.length) outNodes.push({ id: stored.id, members });
   }
@@ -119,8 +125,91 @@ function mergeRepoDraft(
 }
 
 /**
+ * The design level (`grp:design-*` boxes on `view:design`, written by the agent) kept true to the code. For each
+ * design box nobody edited: a member that was renamed, or moved without `git mv` (an added file has the text it had
+ * at the base), follows its file; a member file or folder the change deleted leaves `members` and stays as code before the change (a
+ * whole-file base anchor per deleted file), so the box counts it as removed; a member that is gone and never was
+ * at the base goes. A base anchor whose file the change no longer deletes becomes a member again when the file
+ * exists, else it goes (it would be "not changed by" the change). Without a change record the design level goes,
+ * with `tour:live`. A new file under a `dir:` member needs nothing: the box holds the folder.
+ */
+function refreshDesign(guide: Explainer, model: IndexModel, texts: TextCache): ExplainerPatch {
+  const boxes = guide.nodes.filter((n) => isDesignBox(n.id) && llmOwned(n.provenance));
+  const change = guide.change;
+  if (!change) {
+    // with nothing to explain, the explanation goes: `tour:live` and the design level it walks, together
+    const tour = guide.tours.find((t) => t.id === LIVE_TOUR_ID);
+    if (tour && !llmOwned(tour.provenance)) return {};
+    const view = guide.views.find((v) => v.id === DESIGN_VIEW_ID);
+    const remove = [
+      ...(tour ? [tour.id] : []),
+      ...boxes.map((n) => n.id),
+      ...(view && llmOwned(view.provenance) ? [view.id] : []),
+    ];
+    return remove.length > 0 ? { remove } : {};
+  }
+  const deleted = new Set(change.files.filter((f) => f.status === "deleted").map((f) => f.path));
+  // where a file went: a rename, or a move without `git mv` (a deleted file whose text an added file has)
+  const followed = new Map<string, string>();
+  for (const f of change.files)
+    if (f.status === "renamed" && f.oldPath) followed.set(f.oldPath, f.path);
+  const added = change.files.filter((f) => f.status === "added").map((f) => f.path);
+  const movedTo = (path: string): string | undefined => {
+    const old = texts.textAt(change.base, path);
+    const same = old === undefined ? [] : added.filter((f) => texts.text(f) === old);
+    return same.length === 1 ? same[0] : undefined;
+  };
+  const nodes: PatchNode[] = [];
+  for (const box of boxes) {
+    if (box.sketch === true) continue;
+    const members: string[] = [];
+    const removed: string[] = [];
+    for (const member of box.members ?? []) {
+      if (member.startsWith("file:")) {
+        const path = member.slice(5);
+        const to = followed.get(path) ?? (deleted.has(path) ? movedTo(path) : undefined);
+        if (model.hasFile(path)) members.push(member);
+        else if (to !== undefined && model.hasFile(to)) members.push(`file:${to}`);
+        else if (deleted.has(path)) removed.push(path);
+      } else if (member.startsWith("dir:")) {
+        const path = member.slice(4);
+        if (model.hasDirectory(path)) members.push(member);
+        else removed.push(...[...deleted].filter((f) => f.startsWith(`${path}/`)));
+      } else members.push(member);
+    }
+    const anchors: AnchorInput[] = [];
+    for (const a of box.anchors ?? []) {
+      if (a.at === "base" && !deleted.has(a.file)) {
+        if (model.hasFile(a.file)) members.push(`file:${a.file}`);
+        continue;
+      }
+      anchors.push({
+        file: a.file,
+        role: a.role,
+        ...(a.at ? { at: a.at } : {}),
+        ...(a.symbol ? { symbol: a.symbol } : {}),
+        ...(a.span ? { span: a.span } : {}),
+      });
+    }
+    const held = new Set(anchors.filter((a) => a.at === "base").map((a) => a.file));
+    for (const path of removed)
+      if (!held.has(path)) {
+        held.add(path);
+        anchors.push({ file: path, at: "base", role: "definition" });
+      }
+    const unique = [...new Set(members)];
+    const same =
+      unique.join("\0") === (box.members ?? []).join("\0") &&
+      anchors.length === (box.anchors ?? []).length;
+    if (!same) nodes.push({ id: box.id, members: unique, anchors });
+  }
+  return nodes.length > 0 ? { nodes } : {};
+}
+
+/**
  * The guide with its structure drafted again against `input.model`: the merged `draft repo`, then `draft map`
- * (without the tours it would start), then, when the guide records no change, without its `tour:live`. Each step
+ * (without the tours it would start), then the upkeep of the design level (`refreshDesign`; when the guide records
+ * no change, `tour:live` goes with it). Each step
  * is applied as actor `llm`. Throws when a step does not apply (a bug in a draft: the index is the snapshot's).
  */
 export function draftLiveStructure(input: DraftInput): { explainer: Explainer; issues: Issue[] } {
@@ -159,10 +248,6 @@ export function draftLiveStructure(input: DraftInput): { explainer: Explainer; i
   if (kept.length > 0) map.tours = kept;
   else delete map.tours;
   apply("map", map);
-
-  const live = explainer.tours.find((t) => t.id === LIVE_TOUR_ID);
-  if (!explainer.change && live && llmOwned(live.provenance)) {
-    apply("live tour", { remove: [LIVE_TOUR_ID] });
-  }
+  apply("design", refreshDesign(explainer, model, texts));
   return { explainer, issues };
 }
