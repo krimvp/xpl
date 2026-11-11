@@ -553,7 +553,7 @@ function derivePanes(
   sel: SelectionDerived,
   { openedFile, openedBase, openedLine, primary, dimOthers }: PaneOptions,
   hasFile: (file: FilePath) => boolean,
-): { panes: PaneSpec[]; overflow: FilePath[] } {
+): { panes: PaneSpec[]; overflow: FilePath[]; all: PaneSpec[] } {
   const paneFor = (file: FilePath, opened: boolean, base: boolean): PaneSpec => {
     const own = (base ? sel.baseFiles : sel.files).find((f) => f.file === file);
     const focusLead = (base ? sel.base : sel.focus).find((range) => range.file === file)?.range
@@ -592,11 +592,14 @@ function derivePanes(
   for (const entry of sel.order) add(entry.file, false, false, entry.base);
   for (const focus of sel.files) add(focus.file, false, false);
   for (const focus of sel.baseFiles) add(focus.file, false, false, true);
-  return {
-    panes: all.slice(0, MAX_PANES),
-    overflow: all.slice(MAX_PANES).map((p) => p.file),
-  };
+  return capped(all);
 }
+
+const capped = (all: PaneSpec[]) => ({
+  panes: all.slice(0, MAX_PANES),
+  overflow: all.slice(MAX_PANES).map((p) => p.file),
+  all,
+});
 
 // ─── Memoised entry point ───────────────────────────────────────────────────────────────────────
 
@@ -654,16 +657,20 @@ function sameDrawing(a: ExplainerModel, b: ExplainerModel): boolean {
  * The code panes of the live page's Before: a file the change edited shows its code before the change (no focus
  * ranges: they are lines of the code as it is now), and a file it added shows nothing. Memoised per input.
  */
-const beforeCache = new WeakMap<readonly PaneSpec[], PaneSpec[]>();
-function beforePanes(panes: readonly PaneSpec[], change: ChangeRecord | undefined): PaneSpec[] {
+const beforeCache = new WeakMap<readonly PaneSpec[], ReturnType<typeof capped>>();
+function beforePanes(
+  panes: readonly PaneSpec[],
+  change: ChangeRecord | undefined,
+): ReturnType<typeof capped> {
   const known = beforeCache.get(panes);
   if (known) return known;
-  const out = panes.flatMap((pane): PaneSpec[] => {
+  const all = panes.flatMap((pane): PaneSpec[] => {
     const file = changeAt(change, pane.file);
     if (pane.side === "base" || !file) return [pane];
     if (file.status === "added") return [];
     return [{ ...pane, side: "base", ranges: [], dim: false, lead: undefined }];
   });
+  const out = capped(all);
   beforeCache.set(panes, out);
   return out;
 }
@@ -672,15 +679,16 @@ function beforePanes(panes: readonly PaneSpec[], change: ChangeRecord | undefine
  * The code panes of the live page's Changes: a part or a service holds many files, and the reader asked what the
  * change did there, so only its changed files show (all of them when none is changed, and a file opened by hand).
  */
-const changedCache = new WeakMap<readonly PaneSpec[], readonly PaneSpec[]>();
+const changedCache = new WeakMap<readonly PaneSpec[], ReturnType<typeof capped>>();
 function changedPanes(
-  panes: readonly PaneSpec[],
+  panes: PaneSpec[],
   change: ChangeRecord | undefined,
-): readonly PaneSpec[] {
+): ReturnType<typeof capped> {
   const known = changedCache.get(panes);
   if (known) return known;
+  // (filtered before the cap: a changed file can be the 40th of a part)
   const touched = panes.filter((pane) => pane.opened || changeAt(change, pane.file));
-  const out = touched.length > 0 && touched.length < panes.length ? touched : panes;
+  const out = capped(touched.length > 0 && touched.length < panes.length ? touched : panes);
   changedCache.set(panes, out);
   return out;
 }
@@ -770,17 +778,18 @@ export function getDerived(state: ViewerState): Derived {
     };
   }
 
+  const panes =
+    state.live?.lens === "before"
+      ? beforePanes(lastPanes.value.all, changeOf(state.explainer))
+      : state.live?.lens === "changes"
+        ? changedPanes(lastPanes.value.all, changeOf(state.explainer))
+        : lastPanes.value;
   const derived: Derived = {
     view,
     selection,
     matches: lastMatches.value,
-    panes:
-      state.live?.lens === "before"
-        ? beforePanes(lastPanes.value.panes, changeOf(state.explainer))
-        : state.live?.lens === "changes"
-          ? changedPanes(lastPanes.value.panes, changeOf(state.explainer))
-          : lastPanes.value.panes,
-    overflow: lastPanes.value.overflow,
+    panes: panes.panes,
+    overflow: panes.overflow,
   };
   byState.set(state, derived);
   return derived;

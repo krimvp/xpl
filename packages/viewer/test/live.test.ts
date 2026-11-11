@@ -142,6 +142,38 @@ describe("a live page", () => {
     store.markSeen();
     expect(fresh()).toEqual([]);
   });
+
+  it("shows the changed code of a big part in Changes, even past the first panes", () => {
+    const bundle = liveBundle({
+      ...CHANGE,
+      files: [
+        {
+          path: "src/many/f12.ts",
+          status: "modified",
+          hunks: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1 }],
+        },
+      ],
+    });
+    // a folder of twelve files, the last one changed: more than a part's code shows at once
+    const many = Array.from(
+      { length: 12 },
+      (_, i) => `src/many/f${String(i + 1).padStart(2, "0")}.ts`,
+    );
+    const index = {
+      ...bundle.index,
+      files: [
+        ...bundle.index.files,
+        ...many.map((path) => ({ path, language: "typescript" as const, hash: "h", lines: 1 })),
+      ],
+    };
+    const files = { ...bundle.files, ...Object.fromEntries(many.map((p) => [p, "x\n"])) };
+    const store = new ViewerStore({ ...bundle, index, files });
+    store.select(["dir:src/many"]);
+    const panes = () => getDerived(store.getState()).panes.map((p) => p.file);
+    expect(panes()).toEqual(["src/many/f12.ts"]);
+    store.setLens("now");
+    expect(panes()).toHaveLength(10);
+  });
 });
 
 describe("the status words", () => {

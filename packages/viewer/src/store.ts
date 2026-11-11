@@ -2226,6 +2226,8 @@ export class ViewerStore {
       await poll();
     };
     const timer = setInterval(() => void poll(), intervalMs);
+    // a live page says at once whether `xpl live` is watching, not "Connecting" for the first interval
+    if (this.state.live) void poll();
     const stop = () => {
       stopped = true;
       clearInterval(timer);

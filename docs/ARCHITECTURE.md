@@ -3033,9 +3033,9 @@ second window while the code changes, so it is built for a glance:
   for a base chosen at the first start), where the explanation stands (`explanationWords`: writing, failed,
   "from before your latest edits" when `stale`, or "Not explained yet" with the skill's "explain live" and
   `xpl live --backend claude`), the title and summary of `tour:live`, then core's `liveSummary`: one entry per
-  changed part (name, path when it differs, the part's words, its +/−), its step note when there is one, and
-  its files (status word, name, +/− that opens the diff, up to 3 touched symbols). A part that is one file is
-  that file's row. Files no part holds fold under "Elsewhere". A name goes to the level of its box and picks it
+  changed part (name, its path when two boxes of its map share the name, the part's words, its +/−), its
+  step note when there is one, and its files (status word, name, +/− that opens the diff, up to 3 touched
+  symbols). A part that is one file is that file's row. Files no part holds fold under "Elsewhere". A name goes to the level of its box and picks it
   (`showLiveBox`: one step of history; a removed box opens its code before the change instead); the +/−
   opens the file at its first change. With no change: "No changes since …", or "No commit to compare with
   yet" outside git.
@@ -3054,9 +3054,10 @@ second window while the code changes, so it is built for a glance:
   file's code before the change (no focus ranges: they are head lines) and no pane for an added file
   (`beforePanes`), and says under the caption that the arrows are read from the code as it is now (only the
   head is indexed). Now draws the map as it is, without removed boxes, marks or the code's diff marks
-  (`showChanges` off). In Changes, a picked part shows the panes of its changed files only (`changedPanes`).
-- **Status** (`LiveStatusLine`): polls `GET {api}/live` with the explainer (`refreshLive`, every 2 s while the
-  page is visible); "Watching", "Updating…", "Update failed" with the error, "Disconnected" when a poll fails
+  (`showChanges` off). In Changes, a picked part shows the panes of its changed files only (`changedPanes`,
+  filtered before the cap of `MAX_PANES`, so the changed file of a big part is never cut off).
+- **Status** (`LiveStatusLine`): polls `GET {api}/live` with the explainer (`refreshLive`, at load and every 2 s
+  while the page is visible); "Watching", "Updating…", "Update failed" with the error, "Disconnected" when a poll fails
   (the connection state of the other polls), "· last update 5 s ago" ticking each second. Without a server
   (a saved copy) the page is a still snapshot: "Snapshot · not updating", the same marks and panel.
 - **New activity.** `adoptExplainer` compares each changed file's signature (`fileSignatures`: status and

@@ -215,9 +215,20 @@ function LivePanel() {
   const fresh = useMemo(() => freshFiles(live.seen, change), [live.seen, change]);
   const partName = (part: LivePart) =>
     quietText(part.label) || part.id.replace(/^(dir|file|removed):/, "");
-  const twins = new Set(
-    (summary?.parts ?? []).map(partName).filter((name, i, all) => all.indexOf(name) !== i),
-  );
+  // names two boxes of a part's map share (`src` of two packages), changed or not
+  const twins = useMemo(() => {
+    const names = new Set<string>();
+    const out = new Set<string>();
+    for (const viewId of new Set((summary?.parts ?? []).map((part) => part.view))) {
+      const view = state.model.view(viewId);
+      for (const id of view?.type === "graph" && Array.isArray(view.include) ? view.include : []) {
+        const name = quietText(state.model.label(id));
+        if (names.has(`${viewId} ${name}`)) out.add(name);
+        names.add(`${viewId} ${name}`);
+      }
+    }
+    return out;
+  }, [summary, state.model]);
   const since = baseWords(live.status?.base, change);
   const explanation = explanationWords(live.status, tour !== undefined);
   const noBase = live.status !== undefined && live.status.base === null;
