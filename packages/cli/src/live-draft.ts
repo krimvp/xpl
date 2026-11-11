@@ -131,7 +131,8 @@ function mergeRepoDraft(
  * whole-file base anchor per deleted file), so the box counts it as removed; a member that is gone and never was
  * at the base goes. A base anchor whose file the change no longer deletes becomes a member again when the file
  * exists, else it goes (it would be "not changed by" the change). Without a change record the design level goes,
- * with `tour:live`. A new file under a `dir:` member needs nothing: the box holds the folder.
+ * with `tour:live`. A new file under a `dir:` member needs nothing: the box holds the folder. The design map gets
+ * `stubs: none` unless it says otherwise.
  */
 function refreshDesign(guide: Explainer, model: IndexModel, texts: TextCache): ExplainerPatch {
   const boxes = guide.nodes.filter((n) => isDesignBox(n.id) && llmOwned(n.provenance));
@@ -203,7 +204,16 @@ function refreshDesign(guide: Explainer, model: IndexModel, texts: TextCache): E
       anchors.length === (box.anchors ?? []).length;
     if (!same) nodes.push({ id: box.id, members: unique, anchors });
   }
-  return nodes.length > 0 ? { nodes } : {};
+  // the design map draws its boxes only: the dashed boxes of code outside it would be folders again
+  const view = guide.views.find((v) => v.id === DESIGN_VIEW_ID);
+  const views: PatchView[] =
+    view?.type === "graph" && view.stubs === undefined && llmOwned(view.provenance)
+      ? [{ id: DESIGN_VIEW_ID, type: "graph", stubs: { mode: "none" } }]
+      : [];
+  return {
+    ...(nodes.length > 0 ? { nodes } : {}),
+    ...(views.length > 0 ? { views } : {}),
+  };
 }
 
 /**

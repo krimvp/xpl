@@ -262,6 +262,9 @@ describe("xpl live keeps the design level", () => {
     expect(baseFiles(dir, "grp:design-work")).toEqual([]);
     const step = guide(dir).tours.find((t) => t.id === "tour:live")?.steps[0];
     expect(step?.code ?? []).toEqual([]);
+    // the design map draws its own boxes, not dashed boxes of the folders around them
+    const design = guide(dir).views.find((v) => v.id === "view:design");
+    expect(design?.type === "graph" && design.stubs).toEqual({ mode: "none" });
   });
 
   it("follows moved members, keeps deleted ones as code before the change, and goes with the change", async () => {
