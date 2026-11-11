@@ -44,6 +44,16 @@ import { collectAnchors, isBaseAnchor } from "./anchors.js";
 import { codeFocus } from "./focus.js";
 import { isTestFile } from "./index-model.js";
 import { parseId } from "./ids.js";
+import {
+  DESIGN_VIEW_ID,
+  LIVE_TOUR_ID,
+  designFiles,
+  designStepId,
+  isDesignBox,
+  liftChange,
+  liveSummary,
+  unassignedFiles,
+} from "./live.js";
 import type { Explainer, GraphView } from "./schema.js";
 import type { ExplainerModel } from "./model.js";
 function plural(n: number, one: string, many = `${one}s`): string {
@@ -94,7 +104,10 @@ export type LintRule =
   | "long-flow"
   | "crowded-map"
   | "system-map-no-edges"
-  | "map-box";
+  | "map-box"
+  | "design-level"
+  | "design-words"
+  | "design-unassigned";
 
 /** The rules in the order the count line lists them, with a short name for people. */
 export const LINT_RULES: Record<LintRule, string> = {
@@ -143,6 +156,9 @@ export const LINT_RULES: Record<LintRule, string> = {
   "crowded-map": "map with too many arrows",
   "system-map-no-edges": "system map with no visible arrows",
   "map-box": "box on a map of summaries with a long label or sentence",
+  "design-level": "live guide whose design level is missing or out of shape",
+  "design-words": "design level text that names code",
+  "design-unassigned": "added source file in no design box",
 };
 
 export type LintElementKind =
@@ -260,6 +276,11 @@ export const LINT_LIMITS = {
   sequenceParticipants: 6,
   /** A flow a tour shows has at most this many steps (`long-flow`; SKILL.md "A flow has at most 8 steps"). */
   flowSteps: 8,
+  /** The design map of a live guide holds this many boxes (`design-level`; SKILL.md "3-7", 2 for a small change). */
+  designMinBoxes: 2,
+  designBoxes: 7,
+  /** A change that touches this many parts gets a design level (`design-level`). */
+  designParts: 2,
 };
 
 /**
@@ -2931,6 +2952,203 @@ function mapBoxChecks(lint: Linter, explainer: Explainer): void {
 }
 
 /** The checks of `xpl lint` on one explainer, in document order (see the file comment). */
+/** File extensions that make a word the name of a code file (`design-words`). */
+const CODE_FILE =
+  /\.(?:[cm]?[jt]sx?|py|go|java|kt|rb|rs|php|cs|swift|c|h|cc|cpp|json|ya?ml|toml|sql|sh)$/i;
+
+/**
+ * The first piece of code a text of the design level names, or undefined: a code span (example values aside), a
+ * path (`core/registry/`, `src/retry/policy.ts`), a file name, or a word that looks like an identifier
+ * (`codeLike`: `retryPolicy`, `run_job`, `Queue.push`).
+ */
+function namedCode(text: string): string | undefined {
+  const masked = mask(text);
+  const spans = countedCodeNames(masked);
+  if (spans.length > 0) return spans[0]!.replace(/^`+|`+$/g, "").trim();
+  for (const raw of withoutCode(masked.text).split(/\s+/)) {
+    const word = raw
+      .replace(/^[("'*_[]+/, "")
+      .replace(/[)"'*_,;:!?\]]+$/, "")
+      .replace(/\.$/, "");
+    if (word === "") continue;
+    const path =
+      word.includes("/") &&
+      /^[\w.@-]+(?:\/[\w.@-]*)+$/.test(word) &&
+      (word.endsWith("/") || word.split("/").length > 2 || /[._]/.test(word));
+    if (path || CODE_FILE.test(word) || codeLike(word) !== undefined) return word;
+  }
+  return undefined;
+}
+
+/**
+ * The design level of a live guide (`tour:live` or `view:design` present; other guides are not checked):
+ * `design-level` (a change across parts without one, the size of the design map, what may be on it, members that
+ * are not files or folders, a file in two boxes, the steps `design` and `design-<slug>`, the risk), `design-words`
+ * (code named in its top text) and `design-unassigned` (added source files in no box). The counts that need the
+ * index (parts, folder members, changes) run with a `model`. All are warnings: a one-part change needs no level.
+ */
+function designChecks(lint: Linter, explainer: Explainer, model?: ExplainerModel): void {
+  const tour = list(explainer.tours)
+    .map(record)
+    .find((t) => t.id === LIVE_TOUR_ID);
+  const view = list(explainer.views)
+    .map(record)
+    .find((v) => v.id === DESIGN_VIEW_ID);
+  if (!tour && !view) return;
+  const nodes = new Map(
+    list(explainer.nodes)
+      .map(record)
+      .map((n) => [str(n.id) ?? "", n]),
+  );
+  const steps = list(tour?.steps).map(record);
+  const onTour: Where = { elementId: LIVE_TOUR_ID, kind: "tour", field: "steps" };
+  const change = explainer.change;
+
+  if (!view) {
+    if (!tour || !model || !change) return;
+    const parts = liveSummary(model, change).parts.length;
+    if (parts >= LINT_LIMITS.designParts) {
+      lint.add(
+        onTour,
+        "design-level",
+        excerpt(str(tour.title) ?? LIVE_TOUR_ID),
+        `the change touches ${parts} parts but the guide has no design level`,
+        'add the design level (reference/live.md, "The design level"): grp:design-<slug> boxes with members, view:design, and the steps design and design-<slug>',
+      );
+    }
+    return;
+  }
+
+  // the design map: its boxes and what may be on it
+  const include = list<unknown>(view.include).filter((id): id is string => typeof id === "string");
+  const onView: Where = { elementId: DESIGN_VIEW_ID, kind: "view", field: "include" };
+  if (include.length < LINT_LIMITS.designMinBoxes || include.length > LINT_LIMITS.designBoxes) {
+    lint.add(
+      onView,
+      "design-level",
+      excerpt(include.join(", ")),
+      `view:design has ${plural(include.length, "box", "boxes")} (keep ${LINT_LIMITS.designMinBoxes}-${LINT_LIMITS.designBoxes})`,
+      "one box per design concept the change touches (a capability, a contract, an extension point); merge boxes that serve one job",
+    );
+  }
+  for (const id of include) {
+    const node = nodes.get(id);
+    const outside =
+      id.startsWith("grp:") && node?.role !== undefined && list(node?.members).length === 0;
+    if (isDesignBox(id) || node?.sketch === true || outside) continue;
+    lint.add(
+      onView,
+      "design-level",
+      id,
+      `${id} is on view:design but is not a design box (grp:design-<slug>), a sketch or an outside box`,
+      "put files and folders in a design box's members; the folder maps show them one by one",
+    );
+  }
+  const boxes = [...nodes.keys()].filter((id) => isDesignBox(id) && include.includes(id));
+  const owner = new Map<string, string>();
+  for (const id of boxes) {
+    const where: Where = { elementId: id, kind: "node", field: "members" };
+    for (const member of list<unknown>(nodes.get(id)?.members)) {
+      if (typeof member === "string" && /^(?:file|dir):/.test(member)) continue;
+      lint.add(
+        where,
+        "design-level",
+        String(member),
+        `member ${String(member)} of ${id} is not a file: or dir: id`,
+        "list the files (file:) and folders (dir:) that do the box's job; a folder member holds its new files too",
+      );
+    }
+    if (!model) continue;
+    for (const path of designFiles(model, id)) {
+      const first = owner.get(path);
+      if (first === undefined) {
+        owner.set(path, id);
+        continue;
+      }
+      lint.add(
+        where,
+        "design-level",
+        path,
+        `${path} is in two design boxes (${first}, ${id}): give it to the one whose job it serves`,
+        "a file is in one design box; a shared helper goes to the box that owns it",
+      );
+    }
+  }
+
+  // the tour that walks it
+  if (tour) {
+    const design = steps.find((s) => s.id === "design");
+    if (design?.view !== DESIGN_VIEW_ID) {
+      lint.add(
+        onTour,
+        "design-level",
+        excerpt(str(tour.title) ?? LIVE_TOUR_ID),
+        "tour:live has no step design on view:design",
+        "after big-picture, add the step design on view:design: the design in one line, then Before/Now, then the risk",
+      );
+    } else if (!/(?:^|\n|\.\s+|\*\*)\s*Risk:/.test(str(design.note) ?? "")) {
+      lint.add(
+        { elementId: `${LIVE_TOUR_ID}/design`, kind: "tour-step", field: "note" },
+        "design-level",
+        excerpt(str(design.note) ?? ""),
+        'the design step names no risk: end it with "Risk: …"',
+        'end the note with one sentence that starts "Risk:" and says what could break, or "Risk: low, because …"',
+      );
+    }
+    if (model && change) {
+      const ids = new Set(steps.map((s) => str(s.id)));
+      for (const id of liftChange(model, change, boxes).keys()) {
+        if (ids.has(designStepId(id))) continue;
+        lint.add(
+          onTour,
+          "design-level",
+          id,
+          `design box ${id} changed but tour:live has no step ${designStepId(id)}`,
+          `add the step ${designStepId(id)} on view:design with ${id} in focus: what changed in it, before and now, with at most 2 code ranges`,
+        );
+      }
+    }
+  }
+
+  // its top text names no code: a manager reads it before any folder or file
+  const top: [Where, unknown][] = [
+    [{ elementId: LIVE_TOUR_ID, kind: "tour", field: "title" }, tour?.title],
+    [{ elementId: LIVE_TOUR_ID, kind: "tour", field: "summary" }, tour?.summary],
+    [
+      { elementId: `${LIVE_TOUR_ID}/design`, kind: "tour-step", field: "note" },
+      steps.find((s) => s.id === "design")?.note,
+    ],
+    ...boxes.flatMap((id): [Where, unknown][] => [
+      [{ elementId: id, kind: "node", field: "label" }, nodes.get(id)?.label],
+      [{ elementId: id, kind: "node", field: "summary" }, nodes.get(id)?.summary],
+    ]),
+  ];
+  for (const [where, text] of top) {
+    if (typeof text !== "string" || /\bTODO\b/.test(text)) continue;
+    const code = namedCode(text);
+    if (code === undefined) continue;
+    lint.add(
+      where,
+      "design-words",
+      excerpt(code),
+      `"${excerpt(code)}" names code (a path, a code span or an identifier) in the top text of the design level`,
+      "say what the box is for in plain words; name code in the design-<slug> steps",
+    );
+  }
+
+  if (!model) return;
+  const unassigned = unassignedFiles(model);
+  if (unassigned.length > 0) {
+    lint.add(
+      onView,
+      "design-unassigned",
+      excerpt(unassigned.join(", ")),
+      `${plural(unassigned.length, "added file")} ${unassigned.length === 1 ? "is" : "are"} in no design box: ${unassigned.slice(0, 8).join(", ")}${unassigned.length > 8 ? ", ..." : ""}`,
+      "add each to the box whose job it serves (a dir: member holds future files too), or leave it if it is incidental",
+    );
+  }
+}
+
 export function lintExplainer(explainer: Explainer, model?: ExplainerModel): LintResult {
   // the code's own words: the labels and ids of boxes and concepts, and the boxes and lifelines views show
   const own = [...list(explainer.nodes), ...list(explainer.concepts)].flatMap((item) => [
@@ -3207,6 +3425,7 @@ export function lintExplainer(explainer: Explainer, model?: ExplainerModel): Lin
   mapBoxChecks(lint, explainer);
   mapChecks(lint, explainer, byId, model);
   changeChecks(lint, explainer, byId);
+  designChecks(lint, explainer, model);
   placeholderChecks(lint, explainer);
 
   return { findings: lint.findings, checked: lint.checked };

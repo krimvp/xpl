@@ -8,8 +8,9 @@
 import { analyzeChange, changeStatusOfRange } from "./change.js";
 import { matchesAnyGlob } from "./glob.js";
 import { parseId } from "./ids.js";
-import { baseName, dirOf } from "./index-model.js";
-import { opensView, zoomTrail } from "./levels.js";
+import { baseName, dirOf, isTestFile } from "./index-model.js";
+import { CODE_LANGUAGES } from "./languages.js";
+import { opensView, zoomTrail, type ZoomLevel } from "./levels.js";
 import type { ExplainerModel } from "./model.js";
 import type {
   ChangedFile,
@@ -64,6 +65,17 @@ export interface LiveStatus {
 
 /** The tour the live agent writes and refreshes: what the change does to the architecture, part by part. */
 export const LIVE_TOUR_ID = "tour:live";
+
+/**
+ * The design level of a live guide (ARCHITECTURE §6 "Live"): a stored graph view of the design concepts the change
+ * touches, boxes `grp:design-<slug>` whose `members` are the files and folders that do each job. It is a second
+ * lens on the level under the system map (`designLevel`), never opened by a box.
+ */
+export const DESIGN_VIEW_ID = "view:design";
+export const DESIGN_PREFIX = "grp:design-";
+export const isDesignBox = (id: string): boolean => id.startsWith(DESIGN_PREFIX);
+/** The `tour:live` step of a design box: `grp:design-retry` -> `design-retry`. */
+export const designStepId = (box: ElementId): string => `design-${box.slice(DESIGN_PREFIX.length)}`;
 
 // ─── The change across the levels ──────────────────────────────────────────────────────────────
 
@@ -162,7 +174,13 @@ function heldFiles(
         for (const file of heldFiles(model, all, member, seen)) out.add(file);
       const anchors = model.node(id)?.anchors;
       for (const anchor of Array.isArray(anchors) ? anchors : []) {
-        if (!isRecord(anchor) || anchor.at === "base") continue;
+        if (!isRecord(anchor)) continue;
+        // code the box held before the change that the change deleted (moved without `git mv`, or gone)
+        if (anchor.at === "base") {
+          for (const file of all)
+            if (file.path === anchor.file && file.status === "deleted") out.add(file);
+          continue;
+        }
         const range = anchor.resolved?.range;
         for (const file of all) {
           if (file.path !== anchor.file) continue;
@@ -250,6 +268,13 @@ export function liftChange(
       const sym = model.index.symbol(parsed.symbolId);
       const own = [...held][0]!;
       status = (sym && changeStatusOfRange(own, sym.range)) || "changed";
+    } else if (
+      parsed.type === "group" &&
+      model.members(id).length === 0 &&
+      [...held].every((f) => f.status === "deleted")
+    ) {
+      // a box of only code the change deleted (a design box whose files are gone)
+      status = "removed";
     } else {
       status = whollyNew(model, id, held, added) ? "new" : "inside";
     }
@@ -373,8 +398,21 @@ export interface LivePart {
   files: LiveFile[];
 }
 
+/** A design box of `view:design` that the change touched, in "What changed". */
+export interface LiveDesignBox {
+  id: ElementId;
+  label: string;
+  change: BoxChange;
+  /** The note of its `tour:live` step (`design-<slug>`), when the explanation has one. */
+  note?: string;
+  stepId?: string;
+  files: LiveFile[];
+}
+
 export interface LiveSummary {
   totals: { files: number; added: number; removed: number };
+  /** With a design level: its changed boxes in the order of the view, and the changed files in none of them. */
+  design?: { view: string; boxes: LiveDesignBox[]; outside: LiveFile[] };
   /** The changed parts, in the order of their view. */
   parts: LivePart[];
   /** Changed files no part holds (tests, settings, files outside the maps). */
@@ -389,18 +427,23 @@ export function pathSlug(path: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
+/** The top map of a guide: `view:system`, else the first graph view no box opens (the design level aside). */
+function topView(model: ExplainerModel): GraphView | undefined {
+  const system = model.view("view:system");
+  if (system?.type === "graph") return system;
+  return model.views.find(
+    (view): view is GraphView =>
+      view.type === "graph" && view.id !== DESIGN_VIEW_ID && zoomTrail(model, view.id).length === 0,
+  );
+}
+
 /**
  * The views of the parts: the maps the boxes of the top map open (`view:system` -> `view:overview`). The top map
  * is `view:system`, else the first graph view no box opens. A guide whose top map opens nothing has its parts on
  * the top map itself.
  */
 export function partViews(model: ExplainerModel): GraphView[] {
-  const graphs = model.views.filter((v): v is GraphView => v.type === "graph");
-  const system = model.view("view:system");
-  const top =
-    system?.type === "graph"
-      ? system
-      : graphs.find((view) => zoomTrail(model, view.id).length === 0);
+  const top = topView(model);
   if (!top) return [];
   const out: GraphView[] = [];
   for (const id of Array.isArray(top.include) ? top.include : []) {
@@ -513,7 +556,43 @@ export function liveSummary(
     for (const row of rows) for (const file of row.files) held.add(file.path);
     parts.push(...rows);
   }
+  const level = designLevel(model);
+  let design: LiveSummary["design"];
+  if (level) {
+    const ids = (Array.isArray(level.view.include) ? level.view.include : []).filter(
+      (id): id is string => typeof id === "string" && isDesignBox(id),
+    );
+    const lifted = liftChange(model, change, ids);
+    const steps = Array.isArray(tour?.steps) ? tour.steps : [];
+    const inBox = new Set<FilePath>();
+    const boxes = ids.flatMap((id): LiveDesignBox[] => {
+      const boxChange = lifted.get(id);
+      if (!boxChange) return [];
+      const mine = new Set([
+        ...boxChange.files.changed,
+        ...boxChange.files.added,
+        ...boxChange.files.removed,
+      ]);
+      for (const path of mine) inBox.add(path);
+      const step = steps.find((s) => s.id === designStepId(id));
+      return [
+        {
+          id,
+          label: model.label(id),
+          change: boxChange,
+          ...(step?.note ? { note: step.note, stepId: step.id } : {}),
+          files: all.filter((f) => mine.has(f.path)).map(fileRow),
+        },
+      ];
+    });
+    design = {
+      view: level.view.id,
+      boxes,
+      outside: all.filter((f) => !inBox.has(f.path)).map(fileRow),
+    };
+  }
   return {
+    ...(design ? { design } : {}),
     totals: {
       files: all.length,
       added: all.reduce((n, f) => n + linesOf(f).added, 0),
@@ -522,4 +601,64 @@ export function liveSummary(
     parts,
     elsewhere: all.filter((f) => !held.has(f.path)).map(fileRow),
   };
+}
+
+// ─── The design level ──────────────────────────────────────────────────────────────────────────
+
+/**
+ * The design level of a guide and the view it is a lens of: the map of the parts (`view:overview`) when the system
+ * map has one service, else the system map itself (several programs, or parts drawn on it). Undefined without a
+ * graph view `view:design`.
+ */
+export function designLevel(model: ExplainerModel): { view: GraphView; of: GraphView } | undefined {
+  const view = model.view(DESIGN_VIEW_ID);
+  const top = topView(model);
+  if (view?.type !== "graph" || !top) return undefined;
+  const parts = partViews(model);
+  return { view, of: parts.length === 1 && parts[0] !== view ? parts[0]! : top };
+}
+
+/** `zoomTrail` on a live page: the design level sits on the trail of the view it is a lens of. */
+export function liveTrail(model: ExplainerModel, viewId: string): ZoomLevel[] {
+  if (viewId === DESIGN_VIEW_ID) {
+    const level = designLevel(model);
+    if (level) return zoomTrail(model, level.of.id);
+  }
+  return zoomTrail(model, viewId);
+}
+
+/** The files a design box holds now: its `file:` members and the files under its `dir:` members. */
+export function designFiles(model: ExplainerModel, box: ElementId): Set<FilePath> {
+  const out = new Set<FilePath>();
+  for (const member of model.members(box)) {
+    const parsed = parseId(member);
+    if (parsed.type === "file") out.add(parsed.path);
+    else if (parsed.type === "dir")
+      for (const path of model.index.filesUnder(parsed.path)) out.add(path);
+  }
+  return out;
+}
+
+/**
+ * The source files the change added that no design box holds (not tests, and not what the level the design is a
+ * lens of leaves out with `excludeFiles`): what the agent still has to place. Empty without a design level.
+ */
+export function unassignedFiles(model: ExplainerModel): FilePath[] {
+  const level = designLevel(model);
+  const change = model.explainer.change;
+  if (!level || !change) return [];
+  const held = new Set<FilePath>();
+  for (const node of model.explainer.nodes)
+    if (isDesignBox(node.id)) for (const path of designFiles(model, node.id)) held.add(path);
+  const exclude = Array.isArray(level.of.excludeFiles) ? level.of.excludeFiles : [];
+  return files(change)
+    .filter(
+      (f) =>
+        f.status === "added" &&
+        CODE_LANGUAGES.has(model.index.file(f.path)?.language ?? "") &&
+        !isTestFile(f.path) &&
+        !matchesAnyGlob(f.path, exclude) &&
+        !held.has(f.path),
+    )
+    .map((f) => f.path);
 }

@@ -7,9 +7,9 @@
 import {
   boxChangeWords,
   liftChange,
+  liveTrail,
   quietText,
   removedBoxes,
-  zoomTrail,
   type BoxChange,
   type ChangeRecord,
   type DerivedGraph,
@@ -220,7 +220,7 @@ export function removedFile(change: ChangeRecord | undefined, id: string): FileP
 export function liveViewTitle(model: ExplainerModel, viewId: string): string {
   const title = quietText(model.view(viewId)?.title ?? "");
   if (title) return title.charAt(0).toUpperCase() + title.slice(1);
-  const trail = zoomTrail(model, viewId);
+  const trail = liveTrail(model, viewId);
   const box = trail[trail.length - 1]?.box;
   if (!box) return "The system";
   return `Inside ${quietText(model.label(box)) || "this part"}`;
