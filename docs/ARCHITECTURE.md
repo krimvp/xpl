@@ -4245,7 +4245,9 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
 - The design level is live only. The planned next step is the same level on `draft change` / `explain
   change` guides: it would need its own tour (`tour:live` is the live tour) and a field that names the view a
   design map is a lens of, since a change guide has no `view:system` -> `view:overview` pair to derive it from.
-  A design box's arrows are derived from its members' references, like any group's.
+  A design box's arrows are derived from its members' references, like any group's. A member follows a
+  rename or a move from its base path only: a file the change added and then moved again leaves the box,
+  since the cycle has no text of it to match (the agent adds it back; `design-unassigned` lists it).
 - `xpl change` needs the head checked out and indexed (the head must be the index commit). The change of an
   uncommitted working tree is recorded with `--worktree` (and by `xpl live`) against the index of that tree;
   git is only read, so a file moved without `git mv` shows as a deletion and an addition, not a rename, and

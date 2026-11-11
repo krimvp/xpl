@@ -2975,7 +2975,10 @@ function namedCode(text: string): string | undefined {
       word.includes("/") &&
       /^[\w.@-]+(?:\/[\w.@-]*)+$/.test(word) &&
       (word.endsWith("/") || word.split("/").length > 2 || /[._]/.test(word));
-    if (path || CODE_FILE.test(word) || codeLike(word) !== undefined) return word;
+    // (a code literal alone is a plain word here: "true to the code", "or null")
+    const why = codeLike(word);
+    if (path || CODE_FILE.test(word) || (why !== undefined && why !== "a code literal"))
+      return word;
   }
   return undefined;
 }

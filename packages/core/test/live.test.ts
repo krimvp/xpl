@@ -501,6 +501,8 @@ describe("lint of the design level", () => {
               summary: "Starts over in src/fresh/ with a clean slate.",
             },
             "grp:design-main": { summary: "Calls runJob first." },
+            // plain words that are also code literals in some language pass
+            "grp:design-old": { summary: "Keeps the old path true to the code, or null." },
           }),
           tours: ex.tours.map((t) => ({ ...t, title: "Jobs in disk.ts" })),
         },
