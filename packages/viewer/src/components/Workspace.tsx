@@ -1,10 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
-import {
-  derivedEdgeMap,
-  processFlow,
-  shortText,
-  type SequenceView as SequenceViewData,
-} from "@xpl/core";
+import { derivedEdgeMap, processFlow, type SequenceView as SequenceViewData } from "@xpl/core";
+import { shortText } from "../shortLabels.js";
 import { viewReverseIndex } from "../derive.js";
 import { sharedActor, stateRoles } from "../layout/flowLayout.js";
 import { describeElement } from "../details.js";

@@ -48,8 +48,13 @@ export interface ViewerBundle {
    * (absent); the viewer fetches the base text from `${server.api}/base-file?path=`.
    */
   baseFiles?: Record<FilePath, string>;
-  /** Initial mode; URL params (`?mode=`, `?tour=`, `?step=`) override it. */
-  mode?: "explore" | "present";
+  /**
+   * Initial mode; URL params (`?mode=`, `?tour=`, `?step=`) override it. (amended) `live`: served by `xpl live`,
+   * which keeps the guide in step with the working tree and reports at `${server.api}/live` (`LiveStatus`): the
+   * viewer opens its live page (ARCHITECTURE §6 "Live"), a still snapshot of it without a server; `?mode=explore`
+   * opens Explore instead.
+   */
+  mode?: "explore" | "present" | "live";
   /** Initial tour id for present mode. */
   tour?: string;
   /** Set by `xpl view`: base URL of the local API (e.g. "/api"). Absent in a static bundle. */

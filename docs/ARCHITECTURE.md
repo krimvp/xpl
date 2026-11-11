@@ -62,6 +62,8 @@ only the text;
    (`git show <base>:<path>`): for base anchors, `xpl show --at base`, and the "before" side of the viewer.
    So base anchors take `find` or file spans, never symbols (§4.2). A second index would double the cost
    and the ids; the hunks and the base text are enough to check "before" claims and to draw the diff.
+   A change to the working tree (`xpl change <base> --worktree`, `xpl live`) is the same with the working
+   tree as its head: the index of the working tree is the one index, and its commit id names the head.
 9. **Drafts without an LLM.** Most of an explainer is structure: boxes, steps, anchors, tour order.
    `xpl draft` builds that from the index and the change record, with `TODO:` in every text a person writes.
    Claude then writes and checks only the text. `xpl lint` reports each `TODO` left as an error.
@@ -205,13 +207,15 @@ Conventions (all packages):
     change: what behaves differently, the risk, the tests). Readers see it first, under the tour title. It is a
     user field like `title` (§4.7), and `null` in a patch clears it.
 15. `Explainer` adds `change?: ChangeRecord`: the change the explainer is about (a PR or MR). Only `xpl change`
-    writes it (§5); a patch that carries `change` is rejected. It sits right after `index` in the file.
+    (and `xpl live`, which records it the same way) writes it (§5); a patch that carries `change` is
+    rejected. It sits right after `index` in the file.
 
     ```ts
     // base and head are full SHAs; head is the commit the index was built from
     interface ChangeRecord {
       base: string;
-      head: string;
+      head: string; // with `worktree`: the index commit id (`wt-35af5f4417`), not a SHA
+      worktree?: true; // the head is the working tree the index was built from
       files: ChangedFile[];
     }
     interface ChangedFile {
@@ -238,6 +242,12 @@ Conventions (all packages):
     `excluded` with the rules of `xpl index`: for a file at head the index lacks, from the working tree; for a
     deleted file, from its text at base (size, a NUL byte, the mark of an exported page, the path rules). A
     record written before the field existed has none; such a file reads as "missing from the index".
+
+    A working-tree record (`worktree: true`) has the same files and hunks: `git diff -M <base>` against the
+    working tree, plus every untracked file the index holds as `added` with one hunk of all its lines. Its
+    `base` stays a full SHA, so base anchors, `xpl show --at base` and `baseFiles` work unchanged; its
+    `head` is the commit id of the index it was recorded against, and it matches an index only when they are
+    equal (`changeMatchesIndex`). A clean tree at a commit gets an ordinary record of two commits instead.
 16. `Anchor` adds `at?: "base"`: a **base anchor** points at the code before the change, the base commit of
     `Explainer.change`. It has `file` and an optional `span` counted from line 1 of the base file; never a
     `symbol`, because the base is not indexed. `file` is always `ChangedFile.path` (a patch may name a renamed
@@ -1622,8 +1632,22 @@ Reset may clear selected pins or all pins; a later placement edit conflicts rath
   `TEST_FILE_GLOBS`, `NODE_ROLES`, `OUTSIDE_ROLES`, schema names).
 - `change.ts`: lookups on the change record (`changedFile`, which also finds a renamed file by its old path;
   `baseFileOf`, `basePathOf`, `hasBaseVersion`, `baseVersionFiles`, `headPathsOf`, `describeChange` →
-  `85c3b74..2284ff0`), its shape check (`changeShapeIssues`), and the **change analysis** that `xpl change`
-  prints. Pure: the CLI runs git and hands the record in.
+  `85c3b74..2284ff0` or `85c3b74..working tree`), whether it ends at the code of an index
+  (`changeMatchesIndex`: a working-tree head equals the index commit id; a commit head starts with a SHA index
+  commit; any other index id matches) and how to name its head in a message (`changeHeadText`), its shape check
+  (`changeShapeIssues`), and the **change analysis** that `xpl change` prints. Pure: the CLI runs git and
+  hands the record in. `live.ts` holds the type-only `LiveStatus` of `GET /api/live`, `LIVE_TOUR_ID`, and the
+  reading of a change across the levels of a guide (§6 "Live"): `liftChange(model, change, ids)` (what the
+  change did to each box: `new`, `changed`, `inside` or none, with the changed files it holds; a box holds a
+  file's own code, a symbol's touched lines, a folder's files, a group's members and own anchors, and the boxes
+  and deleted files of the map its `opens` names, recursively), `removedBoxes(model, change, view)` (a deleted
+  file on the map whose file and folder boxes share its folder; a folder of which nothing is left as one box,
+  on its parent's map; `removed:<path>` ids, never elements), `boxChangeWords` ("New", "2 changed · 1 new",
+  "Removed"), `partViews` (the maps the boxes of `view:system` open) and `liveSummary` (the "What changed"
+  list: totals, each changed part of those maps with its files, symbols from `analyzeChange` and the deepest
+  map that draws each file, the note of its `tour:live` step `part-<pathSlug>`, and the files no part holds).
+  `pathSlug` is the slug of `view:map-<path>` and of those step ids. `lint.ts` `quietText` is `shortText`
+  without the mark, for a live page: `bus.ts`, not `bus.ts (TODO)`, and `""` when nothing is known.
 
   `analyzeChange(change, indexModel, getText?) → ChangeAnalysis`, against the index of the head:
   - **Files** with their added and removed line counts, whether they are tests (`isTestFile`) and indexed, and
@@ -1683,6 +1707,7 @@ fatal errors (`error: …`) and warnings (`warning: …`) go to stderr.
 | `xpl search <pattern> [--regex] [-i] [--limit n] [--under <dir\|glob>] [--code]` | text hits over the working tree with enclosing symbol id and offset; code files first, then config, then docs (`--code`: code only); `--under` keeps the search in a dir, file, symbol or glob |
 | `xpl guides` | local guide metadata by title, recorded view questions, audience and source/index snapshot; no index or service required; unreadable/invalid/escaping guides are separate errors, exit 1; no guides is exit 0 |
 | `xpl update <explainer> [--since <rev>] [-o file] [--precise auto\|off\|require]` | after work on the code, for a map guide: runs `index`, `resolve --write`, `change <rev>..HEAD` (with `--since`) and `draft map` in-process (`commands/update.ts`); stops at the first failing step with its message; applies nothing and prints where the draft is |
+| `xpl live [explainer] [--since rev] [--port p] [--no-open] [--backend none\|claude] [--agent-quiet seconds] [--skill-dir folder] [--once] [--precise auto\|off\|require]` | keeps a guide (`live`) of the architecture and the change in progress in step with the working tree and serves it (below, "xpl live") |
 | `xpl start <name> --question q --audience a [--entry symbol] [--precise auto\|off\|require]` | first-guide path: runs `index`, `new`, `draft repo` (or `draft path` with `--entry`) and `apply`; saves the checked patch and all draft notes outside the repository, prints up to three notes and apply warnings (full lists in `--json` and the notes file); without `--entry`, names where a path could start: the function whose name and code hold the most words of the question (common words such as `how`, `put`, `get`, `work` and the project's own name do not count), else the draft's declared `entry`, each labeled, else says none is guessed; then names `view` and `lint` as next steps; refuses an existing guide |
 | `xpl new <name> [--title t] [--repo r] [--url u]` | create `.explainer/<name>.explainer.json` bound to the index; never overwrites; repo name from `--repo`, else `package.json`, `go.mod`, `pyproject.toml`, git remote, directory name |
 | `xpl apply <explainer> <patch.json\|-> [--actor llm\|user] [--dry-run]` | §4.7; prints every issue of a rejected patch at once; atomic; `--help` says how a patch merges and points to `patch-format.md` |
@@ -1695,7 +1720,7 @@ fatal errors (`error: …`) and warnings (`warning: …`) go to stderr.
 | `xpl ready [explainer] [--note reason] [--require-review]` | shared readiness report before export; `--json` adds `ok` to the report above; 0 ready (warnings allowed), 1 blockers/failure, 2 usage; writes nothing; a note records intentional warning/omission decisions |
 | `xpl lint [explainer] [--patch <file\|->] [--warn-only]` | checks the text a reader sees (the index, when there is one, counts the boxes and arrows of maps): rules below; `--patch` lints the explainer as it would be after `xpl apply` of that patch (merged in memory as actor `llm`, nothing written; a patch apply would reject prints the rejection and exits 1); exit 1 with any finding (so `lint --patch && apply` stops on one), 0 with `--warn-only` unless a `todo-left` error |
 | `xpl health` | a quick check of the indexed files (below): committed secrets, secrets in browser variables, `.env` files, code files over 1,000 lines, possibly unused code files; each finding with file, line, severity, why and fix; secret values masked; always exits 0 (a report, not a gate) |
-| `xpl change [explainer] [<base>..<head>]` | records the change from git in the explainer and prints its analysis (§4.8; below); without a range, prints the analysis of the change already recorded; with one guide, a lone argument that names no guide is the range |
+| `xpl change [explainer] [<base>..<head> \| <base> --worktree]` | records the change from git in the explainer and prints its analysis (§4.8; below); `--worktree` ends it at the working tree; without a range, prints the analysis of the change already recorded; with one guide, a lone argument that names no guide is the range |
 | `xpl pr prepare <url\|owner/repo#number\|owner/repo> [number] [--cache-dir dir] [--precise off\|auto\|require]` | resolves GitHub base/head through existing `gh`, fetches an isolated detached head, indexes head only and publishes an immutable input manifest; no agent or ready result |
 | `xpl pr cleanup <input-directory> [--cache-dir dir]` | removes only a marked owned PR input directly under the selected cache; refuses symlinks and developer-tree paths |
 | `xpl pr link <staged-dir> --url <base-url> --visibility team\|public` / `xpl pr check-link <PR>` | points one PR comment at the staged current version after a GitHub base/head check; a PR workflow marks it outdated when base/head move (below) |
@@ -1765,7 +1790,8 @@ record, `xpl lint` with findings; 2 usage error. **Environment:**
 **Files in `.explainer/`:** `index-<commit>.json` (generated, git-ignored by `.explainer/.gitignore`),
 `cache/extraction-v1/` (generated file-local facts, git-ignored), `<name>.explainer.json` (committed),
 `requests.json` (the queue below), `revisions/<uuid>/` (generated, git-ignored revision journal and prior
-artifact). Writes are atomic (temp file + rename).
+artifact), `live/<name>.json` (the base `xpl live` remembers, git-ignored) and a guide `xpl live` created
+(git-ignored by name). Writes are atomic (temp file + rename).
 CLI apply/resolve/revise, creation, viewer edits and request appends also share per-file directory locks
 across processes.
 Read input before locking; read the latest file, merge and check ownership, then write while holding the lock.
@@ -1802,6 +1828,16 @@ and tests (marked `through <caller>` or `builds its class; a guess` when not dir
 outside any symbol, the test files the change touches with their new and changed tests, and the symbols with
 no test. Without a range it re-prints the analysis of the stored record. `--json`: `{ ok, path, written,
 change, analysis, omissions }`.
+
+`xpl change <explainer> <base> --worktree` ends the change at the working tree (`worktreeChange`, `git.ts`
+`worktreeFiles`): `git diff -M --name-status -z <base>` and `git diff -U0 <base>`, both limited to
+`-- . :(exclude).explainer`, then `git ls-files --others --exclude-standard -z` for the untracked files, of
+which those the index holds become `added` with one hunk of all their lines (`gitLineCount`). Git is only
+read (no `git add -N`, no temporary git index), so a file moved without `git mv` is a deletion and an
+addition. It uses the index of the current tree, not the guide's own, and refuses (exit 1) when that index
+does not match the working tree. The record gets `worktree: true` and the index commit id as `head`, unless
+the index is of a clean commit: then `head` is that commit's SHA. No difference is exit 1 (`there is no
+change`). A range with a head and `--worktree` together are a usage error.
 
 `xpl search` delegates matching, source ordering, line counts and symbol attribution to core `query`.
 CLI `--under` still resolves targets and globs with suggestions; CLI text comes from the working tree.
@@ -2096,7 +2132,8 @@ it to a file; `--json` adds the counts and what was left out.
   mapped file with a top-level `main` function (at `main`), else with an entry name (`ENTRY_NAMES`: main,
   index, app, cli, server, ...), focused in its folder's view. With no such file the tour has no last step and
   a note says so. The first note also names the files that are not code (settings, manifests, text), which
-  have no box. With a change record, `tour:changes-<head7>`: one step
+  have no box. With a change record, `tour:changes-<head7>` (`tour:changes-worktree` for a working-tree
+  record, whose head moves at every edit): one step
   per changed file on the map (at most 12), focus on its box in its folder's view, code from
   `changedFileAnchor`, notes that ask how the change serves the request. Run again, it is a refresh: existing
   map views get `includeAdd` / `includeRemove`, overlays only for undescribed files, `remove` for the
@@ -2104,15 +2141,16 @@ it to a file; `--json` adds the counts and what was left out.
   kept, with a note), and no second start tour or change tour for the same head. A file that moved keeps its
   text: a gone `file:` box whose file, read at its `provenance.commit` (the command expands the short id to
   the full SHA, `DraftInput.commits`), has the same text as exactly one new file gives that file its label
-  and summary. The map's own tours (`tour:map`, `tour:changes-*`, when the user did not edit them) are resent
-  without the focus and code of what is gone; a start-tour folder step gets its folder's code again, and a
-  step with no focus left is dropped (a tour with no step, removed). A new folder map of more than 30 boxes
-  groups the folder's files that use each other (`groupFiles`: pairs by reference count, union-find, at most
-  8 files a group, kept from 3): each group is a `grp:map-<path>-<n>` box that `opens` `view:map-<path>-<n>`
-  with its files, and the folder map shows the group, not its files; a refresh keeps the files of an earlier
-  group on the group's map (`includeRemove` and `members` for the ones gone). A new folder map of more than
-  12 boxes gets `render: "matrix"` (`MAP_LIMITS.matrixBoxes`). Notes count the files on and off the map, name
-  the moved files, the groups, the maps still over 30 boxes and the maps that open as a matrix.
+  and summary. The map's own tours (`tour:map`, `tour:changes-*`, and `tour:live` of `xpl live`, when the
+  user did not edit them) are resent without the focus and code of what is gone; a start-tour folder step
+  gets its folder's code again, and a step with no focus left is dropped (a tour with no step, removed). A
+  new folder map of more than 30 boxes groups the folder's files that use each other (`groupFiles`: pairs by
+  reference count, union-find, at most 8 files a group, kept from 3): each group is a `grp:map-<path>-<n>`
+  box that `opens` `view:map-<path>-<n>` with its files, and the folder map shows the group, not its files; a
+  refresh keeps the files of an earlier group on the group's map (`includeRemove` and `members` for the ones
+  gone). A new folder map of more than 12 boxes gets `render: "matrix"` (`MAP_LIMITS.matrixBoxes`). Notes
+  count the files on and off the map, name the moved files, the groups, the maps still over 30 boxes and the
+  maps that open as a matrix.
 
 A draft gives structure, not understanding: the concepts, flows, `llm` edges and base anchors that explain
 why the code is as it is are left to Claude.
@@ -2286,8 +2324,9 @@ independent of the service. The installed-artifact check exercises detached proc
 same-page/bookmark restart, a real crash and explicit recovery, then manual export and blocked-network
 reading of an HTML snapshot saved from a stopped page.
 
-**Opt-in watching** (`watch.ts`): `service start --watch` polls input metadata every 500 ms and
-requires a quiet observation for at least 300 ms before a full rebuild. Recursive filesystem events were
+**Opt-in watching** (`watch.ts`; the loop itself is `settleBuilds`, shared with `xpl live`): `service start
+--watch` polls input metadata every 500 ms and requires a quiet observation for at least 300 ms before a full
+rebuild. Recursive filesystem events were
 not chosen: polling reuses the indexer's discovery rules, observes ignored configuration and works with
 Git worktrees and non-Git directories. Watching defaults to `--precise off`; `auto|require` explicitly
 enables semantic tools. `--scip` reloads and watches a supplied artifact or manifest/artifact pair.
@@ -2339,6 +2378,63 @@ Verified CLI bearer control uses the service handshake instead. A start without 
 and resume; stop still works if the attached guide disappears. Stop acknowledges before closing the server.
 Watch-record metadata participates in managed `/explainer` ETags, so pause/resume refresh stale export state.
 The attention report is informative; existing workspace/core readiness checks remain authoritative.
+
+**`xpl live`** (`commands/live.ts`, `live.ts`, `live-draft.ts`) is one foreground process next to a coding
+session. It keeps one guide in step with the working tree and serves it through `startViewServer` with
+`live: () => LiveStatus`, which sets `ViewerBundle.mode` to `live` and adds `GET /api/live`.
+
+- **Guide.** `[explainer]`, default `live` (`.explainer/live.explainer.json`). One that live creates
+  (`createExplainer`, titled `Live view of <repo>`) is generated state: its name goes into
+  `.explainer/.gitignore`. A guide the user names and that exists is used as it is and never ignored.
+- **Cycle**, on start and from `settleBuilds` (`watch.ts`, the loop `service start --watch` uses: 500 ms
+  polls, 300 ms quiet, one attempt per input revision, a build whose inputs moved is superseded). Build the
+  index from the captured snapshot, publish it under the index and `.gitignore` locks after one more input
+  check, then compute the working-tree change (`worktreeChange`) and check the inputs again (git read the
+  live tree). Under the guide's file lock, in memory: re-resolve against the new index (`resolve --write`),
+  set or delete `change`, draft the structure (`draftLiveStructure`), and write the file only when its text
+  differs. The texts are the snapshot's, so the index, the record and the anchors agree. A failing cycle
+  keeps the last good guide and reports `failed` with the error until a later edit succeeds. Index files
+  this process made and no guide is bound to are removed after each cycle. `.explainer/` is not an index
+  input, so the guide, the indexes and the state never start a cycle.
+- **Base**, chosen once at start: `--since <rev>` (remembered); else the merge base of HEAD with the first of
+  `origin/HEAD`, `origin/main`, `origin/master`, `main`, `master` that exists, when it is not HEAD; else the
+  base remembered in `.explainer/live/<name>.json` while it is an ancestor of HEAD; else HEAD, remembered.
+  Commits made during a session stay in the change; `--since HEAD` starts over. No git or no commit: no base
+  and no change. A tree that is the code of the base has no change record (`change` absent), not an empty one.
+- **Structure** (`live-draft.ts`), all `llm` patches applied in memory. (1) `draft repo` on an empty copy of
+  the guide, since it makes new ids on a guide that has its own (`view:system-2`), merged by
+  `mergeRepoDraft`: missing nodes, edges and views are added; stored graph views get the drafted ids they
+  lack (`includeAdd`); the service group's `members` follow the parts; boxes and arrows whose summary is
+  still a `TODO` get the drafted anchors again, so unwritten structure never drifts; outside the folder maps,
+  `includeRemove`, group members and `llm` edges drop the `file:`/`dir:` ids the index no longer has. (2)
+  `draft map`, which refreshes itself (above). Its folder boxes are the `dir:` part boxes of (1) where the
+  paths agree, so a part gets `opens: view:map-<folder>`; a part folder with one mapped file has no map and
+  opens nothing. New tours of either draft are dropped; refreshes of tours the guide has are kept. (3) With
+  no change recorded, an `llm` `tour:live` is removed. Ids: `view:system` → service box (`grp:<repo>`, or a
+  `dir:` per program) opens `view:overview` (`view:<service>-inside`) → part box (`dir:`/`file:`) opens
+  `view:map-<path slug>` (`view:map` is the top folder) → `file:` boxes. A deleted file loses its box and
+  stays only in `change.files` (status `deleted`, its base path, its hunks; base text from `baseFiles` or
+  `/api/base-file`).
+- **Agent.** `--backend none` (default) spawns nothing; the user's agent follows the skill's
+  `reference/live.md` and applies with `xpl lint && xpl apply`. `--backend claude` (`claudeLiveAgent`, on
+  `runClaude`, the read-only process adapter of service jobs: Read, Glob, Grep and Write to its own output
+  file) runs once the tree has been quiet for `--agent-quiet` seconds (default 20) after a good cycle, when the
+  explanation is stale or a `TODO` is left, at most once per index commit and one at a time. The run gets
+  the code before the change of each changed file in a `before/` folder, since it cannot run git, and
+  writes one patch. Under the guide's lock it is applied as `llm` against the cycle's index; findings of
+  `lintExplainer` on the elements it changed (except `tour-covers-map` and `change-not-shown`) or a
+  rejection give one second run with the findings, which is applied (its findings printed as a warning)
+  unless it is rejected or leaves a `todo-left`; then the state is `failed`. Edits during a run make the result stale,
+  and the next quiet period runs again.
+- **Status** (`LiveStatus`, core `live.ts`, type-only): `{schema: "xpl-live@1", guide, state:
+  watching|building|failed, updatedAt, index, base: {rev, sha, how: since|merge-base|start} | null, change:
+  {files, added, removed} | null, explanation: {backend, state: off|idle|running|failed, explainedAt, stale,
+  error}, error}`. `stale`: there is a change, and neither this process's last applied run nor the
+  `provenance.commit` of `tour:live` is the current index commit. A cycle keeps that commit
+  (`keepExplainedAt`): moving the guide and drafting the structure can touch the tour (a gone file leaves its
+  focus) without explaining anything.
+- `--once` runs one cycle (and with `claude` one agent run) without serving; exit 1 on failure. `--json`
+  prints `{live}` per cycle of the loop. Exit codes: 0 stopped; 1 a failed first cycle; 2 usage.
 
 **Durable jobs, lifecycle contract (39A).** `cli/jobs.ts` owns one atomic ledger at
 `.explainer/service/jobs.json`: `{schema: "xpl-jobs@1", root, jobs}`. Job metadata stays outside the
@@ -2670,7 +2766,8 @@ explanation provenance, source text, readiness or identity. Access control belon
 destination; the PR link is above.
 
 **Bundle payload** (`ViewerBundle`, also `/api/bundle`): `{ schema: "code-explainer/bundle@0", explainer,
-index, files: Record<FilePath, string>, baseFiles?, mode?, tour?, server?, sourceWarning?, exportInfo?,
+index, files: Record<FilePath, string>, baseFiles?, mode?: "explore" | "present" | "live", tour?, server?,
+sourceWarning?, exportInfo?,
 feedback?, guideId?, guides?, readOnlyGuide?, publication?, launch? }`, embedded as `<script
 id="xpl-data" type="application/json">` with `<` escaped as `\u003c` (and U+2028/2029 escaped). Under `xpl
 view` `files` may be partial and the viewer fetches the rest from `/api/file`. `xpl bundle` embeds the files
@@ -2920,6 +3017,61 @@ Using the loaded snapshot offline hides controls and stops these requests.
 feedback placeholder. The reader creates or chooses feedback, runs the command, inspects the proposal,
 and accepts separately. Opening the offer executes nothing: no feedback submission, job, patch acceptance
 or request deletion. Agent-backed job submission and proposal review remain the jobs feature's responsibility.
+
+**Live** (`components/LiveMode.tsx`, `live.ts`, `live.css`; core `live.ts`). A bundle with `mode: "live"`
+(`xpl live`; `xpl bundle` never writes it) opens the live page, unless the address has `?mode=`:
+`?mode=explore` is the full Explore page of the same guide, linked at the foot of the panel. It is read in a
+second window while the code changes, so it is built for a glance:
+
+- **Where it opens.** Always the top map (`view:system`, else the first view), unless the address names a view
+  (`?view=`); the page does not write its address, so a reload starts at the top again. A poll keeps the
+  reader's view, selection and lens.
+- **Header.** The title, the lens (`LensSwitch`: Before | Changes | Now, radio buttons), the theme button and
+  Search. No Present, no Feedback, no Edit menu; no draft pill, draft bar or drift banner.
+- **"What changed"** (`LivePanel`), a column left of the map (on top of it at 900 px and narrower): the status
+  line, the totals ("4 files · +13 −5 · since origin/main"; `baseWords`: `since <rev>`, "since you started"
+  for a base chosen at the first start), where the explanation stands (`explanationWords`: writing, failed,
+  "from before your latest edits" when `stale`, or "Not explained yet" with the skill's "explain live" and
+  `xpl live --backend claude`), the title and summary of `tour:live`, then core's `liveSummary`: one entry per
+  changed part (name, its path when two boxes of its map share the name, the part's words, its +/−), its
+  step note when there is one, and its files (status word, name, +/− that opens the diff, up to 3 touched
+  symbols). A part that is one file is that file's row. Files no part holds fold under "Elsewhere". A name goes to the level of its box and picks it
+  (`showLiveBox`: one step of history; a removed box opens its code before the change instead); the +/−
+  opens the file at its first change. With no change: "No changes since …", or "No commit to compare with
+  yet" outside git.
+- **Marks** (`lensMarks` → `ChangeMarks` of `PillMark`s, so the layout makes room for the words): in Changes
+  every box the change touched, lifted by core's `liftChange`: a new box (`live-new`) filled teal with
+  "New"; a changed file or symbol (`live-changed`) filled orange with "Changed"; a part or service that holds
+  changes (`live-inside`) outlined orange with what it holds ("2 changed · 1 new · 1 removed"); a removed box
+  (`live-removed`) dashed grey with its name struck through and "Removed". Teal, orange and grey read apart in
+  the common colour blindnesses, and each has its own outline and words; light and dark have their own
+  `--live-*` tokens.
+- **Removed boxes** (`lensGraph`): core's `removedBoxes` join the graph of a map as boxes without arrows, ids
+  `removed:<path>`; a click opens the deleted file (or the first file of a deleted folder) in a "Before" pane
+  and marks the box picked.
+- **Lenses.** Changes is the default. Before drops the boxes whose status is `new` (and what is drawn inside
+  them, and their arrows and stubs), draws the removed boxes as plain boxes, marks nothing, shows a changed
+  file's code before the change (no focus ranges: they are head lines) and no pane for an added file
+  (`beforePanes`), and says under the caption that the arrows are read from the code as it is now (only the
+  head is indexed). Now draws the map as it is, without removed boxes, marks or the code's diff marks
+  (`showChanges` off). In Changes, a picked part shows the panes of its changed files only (`changedPanes`,
+  filtered before the cap of `MAX_PANES`, so the changed file of a big part is never cut off).
+- **Status** (`LiveStatusLine`): polls `GET {api}/live` with the explainer (`refreshLive`, at load and every 2 s
+  while the page is visible); "Watching", "Updating…", "Update failed" with the error, "Disconnected" when a poll fails
+  (the connection state of the other polls), "· last update 5 s ago" ticking each second. Without a server
+  (a saved copy) the page is a still snapshot: "Snapshot · not updating", the same marks and panel.
+- **New activity.** `adoptExplainer` compares each changed file's signature (`fileSignatures`: status and
+  hunks) with the record it replaces; files that differ pulse their boxes once (`is-pulse`, 1.4 s, none under
+  `prefers-reduced-motion`). The panel marks entries whose files differ from what the reader last saw
+  ("just changed", `freshFiles` against `live.seen`); a click or a key on the page is a look (`markSeen`).
+  Marks keep their object while their words stay the same, so a poll that changes nothing on a map does not
+  lay it out again.
+- **Quiet drafts** (`shortLabels.ts` `setQuietDrafts`, set once in `main.tsx`): the viewer's `shortText` is
+  core's `quietText` on a live page, so a box shows `bus.ts`, a placeholder summary under a box shows nothing,
+  and a level with no written title is named "The system" or "Inside <box>" (`liveViewTitle`).
+- **Going deeper** is Explore's: double-click or the zoom button opens a box's map, the trail goes back, a
+  picked box shows its code with the diff marks in a code column on the right that comes with the first pick
+  and goes with Close. The map is a reader's map (`reader`: no moving boxes, no author tools).
 
 **Three modes, one header.** **Read** is the default screen, for readers. **Explore** is the author's
 workbench. **Present** plays a tour as slides. The header is one row built the same way in each: the title,
@@ -4009,7 +4161,8 @@ keyboard and small screens (`a11y.spec.ts`). `screenshots.spec.ts` (and screensh
 heuristic references, SCIP-precise references for TypeScript/JavaScript, Python and Go, config keys of YAML, JSON and TOML files, the
 full CLI (with `change`, `draft` and `lint`), Read, Explore and Present with tours, feedback from the page
 under `xpl view` and its live update, architecture maps (`role`, `opens`), change explainers with
-base anchors and a diff view, and example explainers for the original three fixtures. Rust has an
+base anchors and a diff view, the live page of `xpl live` (marks lifted to every level, removed boxes, Before |
+Changes | Now, "What changed"), and example explainers for the original three fixtures. Rust has an
 experimental syntax-tags provider with bounded heuristic calls and a browser-tested structural bundle; it has no committed example explainer.
 Ruby has source-backed declaration tags and a runnable fixture, but no relationship resolver.
 
@@ -4053,8 +4206,13 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
   by shared text within a hunk, leaving unmatched insertions and deletions as whole-line marks. Large hunks
   (over 80 lines on either side) keep only the whole-line marks. It does not align moved lines. The details
   panel tags a base anchor's row but does not show the base lines next to it.
-- `xpl change` needs the head checked out and indexed (the head must be the index commit); the change of an
-  uncommitted working tree cannot be recorded, since it has no head commit.
+- The live page's Before is the head's map without what the change added: arrows come from the head index
+  (an arrow the change removed is not drawn, one it added between old boxes is), and a box whose text the
+  change rewrote shows its new text. A removed box has no arrows.
+- `xpl change` needs the head checked out and indexed (the head must be the index commit). The change of an
+  uncommitted working tree is recorded with `--worktree` (and by `xpl live`) against the index of that tree;
+  git is only read, so a file moved without `git mv` shows as a deletion and an addition, not a rename, and
+  the moved box keeps its text only through `draft map`'s same-text match at a commit it can read.
 - The change analysis adds at most one hop beyond direct callers and is as good as the index: callers through a variable, a callback or a
   framework are not seen, `callers via instance` is a guess, and a missing indexed test reference does not
   prove the behavior has no test. Tests that reference the class count for constructors and instance-call

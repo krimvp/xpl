@@ -49,6 +49,7 @@ export async function listen(
   host: string,
   port: number | undefined,
   control?: Parameters<typeof startViewServer>[0]["control"],
+  live?: Parameters<typeof startViewServer>[0]["live"],
 ) {
   const start = (p: number): Promise<ViewServer> =>
     startViewServer({
@@ -58,6 +59,7 @@ export async function listen(
       port: p,
       viewerHtml: () => readViewerHtml(ctx.env),
       ...(control ? { control } : {}),
+      ...(live ? { live } : {}),
     });
   if (port !== undefined) return start(port);
   try {

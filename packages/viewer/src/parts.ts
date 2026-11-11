@@ -5,13 +5,13 @@
  */
 import {
   processFlow,
-  shortText,
   type DerivedGraph,
   type ElementId,
   type ExplainerModel,
   type GraphView,
   type SequenceView,
 } from "@xpl/core";
+import { shortText } from "./shortLabels.js";
 import { drawnEdges, isHolds, rowTypeText } from "./drawnEdges.js";
 import { stateRoles } from "./layout/flowLayout.js";
 import { ROLE_WORDS } from "./layout/graphLayout.js";

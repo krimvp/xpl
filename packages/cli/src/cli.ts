@@ -31,6 +31,7 @@ import { showCommand } from "./commands/show.js";
 import { statusCommand } from "./commands/status.js";
 import { startCommand } from "./commands/start.js";
 import { updateCommand } from "./commands/update.js";
+import { liveCommand } from "./commands/live.js";
 import { validateCommand } from "./commands/validate.js";
 import { viewCommand } from "./commands/view.js";
 import { serviceCommand } from "./commands/service.js";
@@ -50,6 +51,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   guidesCommand,
   startCommand,
   updateCommand,
+  liveCommand,
   newCommand,
   applyCommand,
   validateCommand,

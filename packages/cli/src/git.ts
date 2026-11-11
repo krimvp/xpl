@@ -274,3 +274,43 @@ export async function computeChange(
   ]);
   return { base, head, files: joinDiff(parseNameStatus(names), parsePatch(patch)) };
 }
+
+/** xpl's own folder: its guides and indexes are not the code a working-tree change is about. */
+const NOT_XPL = ["--", ".", ":(exclude).explainer"];
+
+/**
+ * The files the working tree changed since `base` (a full SHA), outside `.explainer/`: `git diff -M <base>` for what
+ * git tracks, and each
+ * untracked file `isIndexed` keeps (untracked files git does not ignore, `git ls-files --others --exclude-standard`)
+ * as added, with one hunk for all of its lines. Git is only read: no `git add -N`, no temporary index. So a file
+ * moved without `git mv` is a deleted and an added file, not a rename. Sorted by path, as git sorts a diff.
+ */
+export async function worktreeFiles(
+  root: string,
+  base: string,
+  isIndexed: (path: string) => boolean,
+  lineCount: (path: string) => number | undefined,
+): Promise<ChangedFile[]> {
+  const [names, patch, others] = await Promise.all([
+    runGit(root, [...DIFF_OPTIONS, "--name-status", "-z", base, ...NOT_XPL]),
+    runGit(root, [...DIFF_OPTIONS, "-U0", "--src-prefix=a/", "--dst-prefix=b/", base, ...NOT_XPL]),
+    runGit(root, ["-c", "core.quotepath=off", "ls-files", "--others", "--exclude-standard", "-z"]),
+  ]);
+  const files = joinDiff(parseNameStatus(names), parsePatch(patch));
+  for (const path of others.split("\0")) {
+    if (path === "" || !isIndexed(path)) continue;
+    const lines = lineCount(path) ?? 0;
+    files.push({
+      path,
+      status: "added",
+      hunks: lines > 0 ? [{ oldStart: 0, oldLines: 0, newStart: 1, newLines: lines }] : [],
+    });
+  }
+  return files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+}
+
+/** Lines of a text as git counts them in a hunk: a last line without a newline counts; an empty text has none. */
+export function gitLineCount(text: string): number {
+  if (text === "") return 0;
+  return text.split("\n").length - (text.endsWith("\n") ? 1 : 0);
+}

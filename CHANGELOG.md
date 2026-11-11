@@ -12,6 +12,14 @@ New commands and drafts:
   that use each other. (#231, #235)
 - `xpl update <guide> --since <rev>` brings a map up to date in one run: it indexes, re-resolves the code
   links, records the change and drafts the map again. (#235)
+- `xpl live` is one process to leave running next to your coding session. After every edit it indexes the
+  code, records the change since the base (the merge base with the default branch, or HEAD at the first
+  start) and redraws a git-ignored guide: the system map, its parts, and a map of each folder's files. Written
+  text is kept, new files get boxes, deleted files lose theirs. It serves the guide with its status at
+  `/api/live`. Your own agent writes the explanation after each task (`reference/live.md`), or
+  `--backend claude` runs Claude Code once the code is quiet. `--once` runs one cycle for hooks and scripts.
+- `xpl change <guide> <base> --worktree` records the change from a commit to the working tree, untracked
+  files the index holds included.
 - `xpl draft class <guide> <type>` maps what a class or interface extends and implements, and what extends or
   implements it. (#233)
 - `xpl draft states <guide> <type>` drafts a flow of the states of a status type (a TypeScript enum or union
@@ -25,6 +33,18 @@ New commands and drafts:
   and exits 0 with or without findings. (#236)
 
 Guides and the viewer:
+
+- The page of `xpl live` is its own screen, built for a glance from a second window. It always opens at the
+  system map. A change deep in a file marks every level above it: the service says "2 changed · 1 new", the
+  part that holds it the same, the file "Changed", each with its own fill or outline and the words. Deleted
+  files are dashed, struck-through "Removed" boxes on their folder's map that open their old code. "What
+  changed", next to the map, lists the totals since the base, the explanation of `tour:live` and each changed
+  part with its files and functions; what the last edit touched says "just changed" and its boxes pulse once.
+  Before | Changes | Now switches between the architecture before the change, with the change marked, and as
+  it is. The status line says whether it is watching, updating or failed, and when it last updated. A saved
+  copy is a still snapshot of the same page; `?mode=explore` opens the full Explore page.
+- `xpl live` no longer reports an explanation as current after a cycle that only drops a deleted file from
+  `tour:live`.
 
 - Sketch boxes show an idea or a plan before there is code. They are drawn dotted, labeled "sketch" and
   linked to no code. (#233)

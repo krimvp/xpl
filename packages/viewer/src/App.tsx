@@ -17,6 +17,7 @@ import { ConnectionStatus } from "./components/ConnectionStatus.js";
 import { AnalysisCoverage } from "./components/AnalysisCoverage.js";
 import { ErrorBoundary } from "./components/ErrorBoundary.js";
 import { Header } from "./components/Header.js";
+import { LiveLayout } from "./components/LiveMode.js";
 import { Workspace } from "./components/Workspace.js";
 import "./workspace.css";
 import { Splitter } from "./components/Splitter.js";
@@ -25,7 +26,8 @@ import { codeFirstView } from "./workspace.js";
 import { isFormField, ownsKeys, tourKeyAction } from "./present/keys.js";
 import { PresentMode } from "./present/PresentMode.js";
 import type { ViewerStore } from "./store.js";
-import { shortText, type ReadinessReport } from "@xpl/core";
+import { type ReadinessReport } from "@xpl/core";
+import { shortText } from "./shortLabels.js";
 
 export function App({ store }: { store: ViewerStore }) {
   return (
@@ -155,7 +157,9 @@ function Shell() {
         {/* Notes for the author, not the audience: not on a slide. A draft with nothing to fix is a pill in
             the header (Header.tsx), not a bar. */}
         {state.mode !== "present" && <AnalysisCoverage />}
+        {/* (a live page is read while the code changes: no notes for the author there) */}
         {state.mode !== "present" &&
+          !state.live &&
           state.exportInfo?.status === "draft" &&
           state.exportInfo.report.errors + state.exportInfo.report.warnings > 0 && (
             <DraftBar report={state.exportInfo.report} />
@@ -167,10 +171,12 @@ function Shell() {
             </p>
           </div>
         )}
-        {state.mode !== "present" && <DriftBanner explainer={state.explainer} />}
+        {state.mode !== "present" && !state.live && <DriftBanner explainer={state.explainer} />}
       </div>
       {state.mode === "present" ? (
         <PresentMode />
+      ) : state.live ? (
+        <LiveLayout />
       ) : state.perspective !== "explore" ? (
         <Workspace showSource={fromPresent} />
       ) : (

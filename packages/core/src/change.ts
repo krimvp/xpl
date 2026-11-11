@@ -32,9 +32,27 @@ export function shortSha(sha: string): string {
   return sha.slice(0, 7);
 }
 
-/** `85c3b74..2284ff0`. */
-export function describeChange(change: Pick<ChangeRecord, "base" | "head">): string {
-  return `${shortSha(change.base)}..${shortSha(change.head)}`;
+/** `85c3b74..2284ff0`; `85c3b74..working tree` for a working-tree change. */
+export function describeChange(change: Pick<ChangeRecord, "base" | "head" | "worktree">): string {
+  return `${shortSha(change.base)}..${change.worktree ? "working tree" : shortSha(change.head)}`;
+}
+
+/**
+ * Does the change end at the code of this index? A working-tree change: its head is the index commit id. Two
+ * commits: the index commit is a short SHA of the head; an index id that is no SHA (`wt-<hash>` of a root below the
+ * git top level, an explicit `--commit`) has nothing to compare with, so it matches.
+ */
+export function changeMatchesIndex(
+  change: Pick<ChangeRecord, "head" | "worktree">,
+  indexCommit: string,
+): boolean {
+  if (change.worktree) return change.head === indexCommit;
+  return !/^[0-9a-f]{7,}$/i.test(indexCommit) || change.head.startsWith(indexCommit);
+}
+
+/** Where a change ends, for a message: `2284ff0`, or `the working tree of index wt-35af5f4417`. */
+export function changeHeadText(change: Pick<ChangeRecord, "head" | "worktree">): string {
+  return change.worktree ? `the working tree of index ${change.head}` : shortSha(change.head);
 }
 
 /** The changed file named by `file`: its path, else the old path of a renamed file. */
@@ -111,9 +129,20 @@ export function changeShapeIssues(value: unknown): { path: string; message: stri
     add("change", `change must be {base, head, files}${rerun}`);
     return out;
   }
+  if (value.worktree !== undefined && value.worktree !== true) {
+    add("change.worktree", `change.worktree must be true or absent${rerun}`);
+  }
   for (const key of ["base", "head"] as const) {
     const sha = value[key];
-    if (typeof sha !== "string" || !SHA.test(sha)) {
+    if (key === "head" && value.worktree === true) {
+      // the index commit id of the working tree (`wt-35af5f4417`), as `xpl index` names it
+      if (typeof sha !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(sha)) {
+        add(
+          "change.head",
+          `change.head of a working-tree change must be an index commit id${rerun}`,
+        );
+      }
+    } else if (typeof sha !== "string" || !SHA.test(sha)) {
       add(`change.${key}`, `change.${key} must be a full commit SHA (40 hex characters)${rerun}`);
     }
   }

@@ -51,6 +51,7 @@ import {
   type ElementId,
   type Explainer,
   type FilePath,
+  type LiveStatus,
   type GraphView,
   type IndexModel,
   type Stub,
@@ -73,6 +74,14 @@ import {
   type AnswerHistory,
 } from "./data.js";
 import { changeAt, changeOf, hasBase } from "./diff.js";
+import {
+  fileSignatures,
+  freshFiles,
+  removedFile,
+  isRemovedId,
+  topViewId,
+  type Lens,
+} from "./live.js";
 import { identityOf } from "./derive.js";
 import { workspaceView } from "./workspace.js";
 import { serializeExplainer, withViewFields } from "./edits.js";
@@ -244,11 +253,26 @@ export interface ViewerState {
   /** The live source no longer matches its index; reindex before trusting locations and edges. */
   sourceWarning: string | undefined;
   exportInfo: ViewerBundle["exportInfo"];
+  /** The live page (`ViewerBundle.mode: "live"`, opened without `?mode=`): ARCHITECTURE §6 "Live". */
+  live?: LiveState;
   /**
    * Said once when opening a box switched the reading tab (a double-click on the Map that opened a flow):
    * which tab the reader is in now and why. Gone at the next move.
    */
   switchNotice?: string;
+}
+
+/** What the live page keeps besides the usual state. */
+export interface LiveState {
+  lens: Lens;
+  /** The last answer of `GET {api}/live`; undefined offline (a saved page) or before the first answer. */
+  status?: LiveStatus;
+  /** Why the last status poll failed (the page keeps what it has). */
+  statusError?: string;
+  /** Each changed file as the reader last looked at it (`fileSignatures`): what differs is new to them. */
+  seen: ReadonlyMap<FilePath, string>;
+  /** Files a poll just brought (new to the change, or changed again): their boxes pulse once, per `seq`. */
+  pulse: { files: ReadonlySet<FilePath>; seq: number };
 }
 
 /** How often `xpl view` pages look for changes to the explainer on disk. */
@@ -392,6 +416,16 @@ export class ViewerStore {
       feedback: [],
       feedbackOpen: false,
       exportInfo: bundle.exportInfo,
+      // `?mode=explore` opens the same guide on the full Explore page
+      ...(bundle.mode === "live" && launch.mode === undefined
+        ? {
+            live: {
+              lens: "changes" as const,
+              seen: fileSignatures(changeOf(explainer)),
+              pulse: { files: new Set<FilePath>(), seq: 0 },
+            },
+          }
+        : {}),
     };
     const restored = this.restoreState(launch);
     this.state = {
@@ -458,6 +492,22 @@ export class ViewerStore {
         ? this.rangeCursor(params.file, params.range, params.side)
         : undefined;
     const explicitView = model.views.find((view) => view.id === params.view)?.id;
+    // A live page always starts at the top level (the system map), unless its address names a view.
+    if (this.state.live && !present) {
+      return {
+        mode: "explore",
+        perspective: "explore",
+        viewId: explicitView ?? topViewId(model),
+        selection:
+          params.focus !== undefined ? params.focus.filter((id) => model.hasElement(id)) : [],
+        applied: undefined,
+        tour: undefined,
+        cursor,
+        openedFile: cursor?.file,
+        openedBase: cursor?.side === "base",
+        openedLine: cursor?.side === "base" ? cursor.fromLine : undefined,
+      };
+    }
     const restored: Navigation = {
       mode: present ? "present" : "explore",
       perspective:
@@ -717,6 +767,14 @@ export class ViewerStore {
 
   /** A click on any diagram element or concept. */
   click(id: ElementId, additive = false): void {
+    // a removed box (live page) is no element: it opens its code before the change
+    if (isRemovedId(id)) {
+      const file = removedFile(changeOf(this.state.explainer), id);
+      if (!file) return;
+      if (this.state.selection.length > 0) this.set({ selection: [] });
+      this.openFile(file, 1, "base");
+      return;
+    }
     if (additive) this.toggle(id);
     else this.select([id]);
   }
@@ -2097,6 +2155,7 @@ export class ViewerStore {
           }
         }
         await this.refreshJobs();
+        if (this.state.live) await this.refreshLive(api);
         const fresh = await api.getExplainer(etag);
         if (this.api !== api) return;
         if (fresh) {
@@ -2167,12 +2226,71 @@ export class ViewerStore {
       await poll();
     };
     const timer = setInterval(() => void poll(), intervalMs);
+    // a live page says at once whether `xpl live` is watching, not "Connecting" for the first interval
+    if (this.state.live) void poll();
     const stop = () => {
       stopped = true;
       clearInterval(timer);
       this.pollConnection = undefined;
     };
     return stop;
+  }
+
+  // ─── Live page ───────────────────────────────────────────────────────────────────────────────
+
+  /** Before, Changes or Now (live page): the map and the code follow; the code's diff marks show only in Changes. */
+  setLens(lens: Lens): void {
+    const live = this.state.live;
+    if (!live || live.lens === lens) return;
+    this.set({ live: { ...live, lens }, showChanges: lens === "changes" });
+  }
+
+  /**
+   * "What changed" on a live page: the level that draws the box, with the box picked (a removed box: its code
+   * before the change open instead), in one step of history.
+   */
+  showLiveBox(viewId: string, id: string): void {
+    if (!this.state.model.view(viewId)) return;
+    const removed = isRemovedId(id) ? removedFile(changeOf(this.state.explainer), id) : undefined;
+    if (removed) void this.ensureBaseFile(removed);
+    this.navigate({
+      perspective: "explore",
+      mode: "explore",
+      viewId,
+      selection: !isRemovedId(id) && this.state.model.hasElement(id) ? [id] : [],
+      cursor: undefined,
+      openedFile: removed,
+      openedBase: removed !== undefined,
+      openedLine: removed ? 1 : undefined,
+      openSeq: this.state.openSeq + 1,
+      applied: undefined,
+    });
+  }
+
+  /** The reader looked (a click or a key on the page): nothing in the change is new to them any more. */
+  markSeen(): void {
+    const live = this.state.live;
+    if (!live) return;
+    const seen = fileSignatures(changeOf(this.state.explainer));
+    if (
+      freshFiles(live.seen, changeOf(this.state.explainer)).size === 0 &&
+      seen.size === live.seen.size
+    )
+      return;
+    this.set({ live: { ...live, seen } });
+  }
+
+  /** The status of `xpl live` (`GET {api}/live`), polled with the explainer. */
+  private async refreshLive(api: ServerApi): Promise<void> {
+    try {
+      const status = await api.live();
+      if (this.api !== api || !this.state.live) return;
+      this.set({ live: { ...this.state.live, status, statusError: undefined } });
+    } catch (error) {
+      if (this.api !== api || !this.state.live) return;
+      this.set({ live: { ...this.state.live, statusError: messageOf(error) } });
+      throw error;
+    }
   }
 
   /**
@@ -2203,7 +2321,26 @@ export class ViewerStore {
     const { viewId, tour, applied } = this.state;
     const tourNow = tour ? model.tour(tour.tourId) : undefined;
     const selection = this.state.selection.filter((id) => model.hasElement(id));
+    // live: the files this version brought into the change (or changed again) pulse once
+    const live = this.state.live;
+    const brought = live
+      ? freshFiles(fileSignatures(changeOf(this.state.explainer)), changeOf(explainer))
+      : undefined;
+    // (with nothing changed any more, Before and Now are the same picture: back to Changes)
+    const lens = live && !changeOf(explainer) ? "changes" : live?.lens;
     this.set({
+      ...(live && ((brought && brought.size > 0) || lens !== live.lens)
+        ? {
+            live: {
+              ...live,
+              lens: lens!,
+              ...(brought && brought.size > 0
+                ? { pulse: { files: brought, seq: live.pulse.seq + 1 } }
+                : {}),
+            },
+            ...(lens !== live.lens ? { showChanges: true } : {}),
+          }
+        : {}),
       explainer,
       model,
       viewId: viewId !== undefined && model.view(viewId) ? viewId : model.views[0]?.id,

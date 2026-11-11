@@ -29,6 +29,7 @@ import {
   type PatchNode,
   type PatchTourStep,
   type PatchView,
+  pathSlug,
 } from "@xpl/core";
 import {
   ENTRY_NAMES,
@@ -68,11 +69,7 @@ export const MAP_LIMITS = {
 /** The view of a folder: `view:map` for the top, `view:map-<path>` below it. */
 function viewIdOf(root: string, path: string): string {
   if (path === root) return "view:map";
-  const slug = path
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return `view:map-${slug || "root"}`;
+  return `view:map-${pathSlug(path) || "root"}`;
 }
 
 /**
@@ -297,10 +294,7 @@ export function draftMap(input: DraftInput): Draft {
     }
     const clusters = new Map<string, string[]>();
     for (const f of files) clusters.set(find(f), [...(clusters.get(find(f)) ?? []), f]);
-    const slug = path
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "");
+    const slug = pathSlug(path);
     return [...clusters.values()]
       .filter((members) => members.length >= 3)
       .sort((a, b) => b.length - a.length || a[0]!.localeCompare(b[0]!))
@@ -532,13 +526,14 @@ export function draftMap(input: DraftInput): Draft {
     const first = main ? definitions(main)[0] : undefined;
     return main && first ? { file: main, symbol: first, role: "definition" as const } : undefined;
   };
-  // The map's own tours (start here, changes) follow the code: steps lose the boxes and code that are gone, a
-  // folder step of the start tour gets its folder's code again, and a step with nothing left to show goes.
+  // The map's own tours (start here, changes, and `tour:live` of `xpl live`) follow the code: steps lose the boxes
+  // and code that are gone, a folder step of the start tour gets its folder's code again, and a step with nothing
+  // left to show goes.
   const goneId = (id: string) =>
     (id.startsWith("file:") && !model.hasFile(id.slice(5))) ||
     (id.startsWith("dir:") && !model.hasDirectory(id.slice(4)));
   for (const tour of Array.isArray(explainer.tours) ? explainer.tours : []) {
-    if (!/^tour:(?:map$|changes-)/.test(tour.id) || !owned(tour.provenance)) continue;
+    if (!/^tour:(?:map$|changes-|live$)/.test(tour.id) || !owned(tour.provenance)) continue;
     let changed = false;
     const steps: PatchTourStep[] = [];
     for (const step of tour.steps) {
@@ -656,7 +651,9 @@ export function draftMap(input: DraftInput): Draft {
   }
 
   const change = explainer.change;
-  if (change && !tourIds.has(`tour:changes-${change.head.slice(0, 7)}`)) {
+  // a working tree has a new index commit id at every edit: its change tour keeps one id
+  const changeTourId = `tour:changes-${change?.worktree ? "worktree" : change?.head.slice(0, 7)}`;
+  if (change && !tourIds.has(changeTourId)) {
     const analysis = analyzeChange(change, model);
     const changed = change.files.filter(
       (f) => f.status !== "deleted" && model.hasFile(f.path) && viewOfFile.has(f.path),
@@ -712,7 +709,7 @@ export function draftMap(input: DraftInput): Draft {
     }
     if (steps.length > 0) {
       tours.push({
-        id: `tour:changes-${change.head.slice(0, 7)}`,
+        id: changeTourId,
         title: todo("2-5 plain words: what was worked on"),
         summary:
           `${todo("what was asked for, in the words of whoever asked.")} ${todo("what was done and where it stands; name anything deleted.")}` +

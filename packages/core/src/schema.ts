@@ -723,7 +723,8 @@ export interface Explainer {
   review?: ReviewRecord;
   /**
    * The change this explainer is about (a PR or MR), when there is one: written by `xpl change <name>
-   * <base>..<head>`, never by patches. `head` is the commit the index was built from.
+   * <base>..<head>` (or `<base> --worktree`, and `xpl live`), never by patches. `head` is the commit the index was
+   * built from; for a working-tree change, the index commit id itself.
    */
   change?: ChangeRecord;
   nodes: Node[];
@@ -744,12 +745,20 @@ export interface ExplainerScope {
 
 // ─── Change record (Explainer.change) ───────────────────────────────────────────────────────────
 
-/** The change between two commits, as git computes it (`git diff -M`). */
+/**
+ * The change between two commits, as git computes it (`git diff -M`), or (amended) between a commit and the working
+ * tree (`worktree: true`: `git diff -M <base>` plus the untracked files the index holds).
+ */
 export interface ChangeRecord {
   /** Full commit SHA of the code before the change. */
   base: string;
-  /** Full commit SHA of the code after the change: the commit the index was built from. */
+  /**
+   * Full commit SHA of the code after the change: the commit the index was built from. With `worktree`, the commit
+   * id of that index instead (`wt-35af5f4417`): the working tree has no commit.
+   */
   head: string;
+  /** (amended) The head is the working tree the index was built from, not a commit. Absent for two commits. */
+  worktree?: true;
   /** Every changed file, in git's order (sorted by path). */
   files: ChangedFile[];
 }

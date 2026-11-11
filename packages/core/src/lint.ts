@@ -599,20 +599,38 @@ function todoAt(masked: Masked): number {
  * `TODO` alone.
  */
 export function shortText(text: string): string {
-  if (!text.includes("TODO")) return text;
+  const known = draftKnown(text);
+  if (!known) return text;
+  if (known.before) return `${known.before} TODO`;
+  return known.name ? `${known.name} (TODO)` : "TODO";
+}
+
+/**
+ * `shortText` for a page where nobody is writing (`xpl live`): what is known of a draft's placeholder, without
+ * the mark (`worker`, `Where to go next:`), and `""` when nothing is known, for the caller to show nothing or
+ * its own words. A written text shows as it is.
+ */
+export function quietText(text: string): string {
+  const known = draftKnown(text);
+  if (!known) return text;
+  return known.before || known.name;
+}
+
+/** The words before a draft's `TODO`, and the `(now: …)` name after it; undefined for a written text. */
+function draftKnown(text: string): { before: string; name: string } | undefined {
+  if (!text.includes("TODO")) return undefined;
   const masked = mask(text);
   const at = todoAt(masked);
-  if (at < 0) return text;
+  if (at < 0) return undefined;
   const before = unmask(masked.text.slice(0, at), masked.spans).trim();
-  if (before !== "") return `${before} TODO`;
   const now = /\(now: ([^)]+)\)/.exec(masked.text.slice(at));
   // (a code span in it shows as plain text, as everywhere a label is drawn)
-  const name =
-    now &&
-    unmask(now[1]!, masked.spans)
-      .replace(/(`+)(.*?)\1/g, "$2")
-      .trim();
-  return name ? `${name} (TODO)` : "TODO";
+  const name = now
+    ? unmask(now[1]!, masked.spans)
+        .replace(/(`+)(.*?)\1/g, "$2")
+        .trim()
+    : "";
+  return { before, name };
 }
 
 /** Abbreviations whose period does not end a sentence. */

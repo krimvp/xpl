@@ -15,7 +15,7 @@ import {
   type GetText,
   type TextCache,
 } from "./anchors.js";
-import { changeShapeIssues, shortSha } from "./change.js";
+import { changeHeadText, changeMatchesIndex, changeShapeIssues, shortSha } from "./change.js";
 import {
   EDGE_KINDS,
   isSlug,
@@ -319,17 +319,18 @@ class Validator {
     const change = value as ChangeRecord;
     this.change = change;
     const commit = this.index.commit;
-    // an index of a directory below the git top level is named `wt-<hash>`: no commit to compare with
-    if (/^[0-9a-f]{7,}$/i.test(commit) && !change.head.startsWith(commit)) {
-      this.warn(
-        "change.head",
-        `the change ends at ${shortSha(change.head)}, but the guide's index was built from ${commit}: ` +
-          `check out ${shortSha(change.head)}, run \`xpl index\` and \`xpl resolve <explainer> --write\`, ` +
-          `or write the change again with \`xpl change <name> <base>..${commit}\``,
-        undefined,
-        "change",
-      );
-    }
+    if (changeMatchesIndex(change, commit)) return;
+    this.warn(
+      "change.head",
+      change.worktree
+        ? `the change ends at ${changeHeadText(change)}, but the guide's index is ${commit}: ` +
+            "record the change again with `xpl change <name> <base> --worktree` (`xpl live` does it on every edit)"
+        : `the change ends at ${shortSha(change.head)}, but the guide's index was built from ${commit}: ` +
+            `check out ${shortSha(change.head)}, run \`xpl index\` and \`xpl resolve <explainer> --write\`, ` +
+            `or write the change again with \`xpl change <name> <base>..${commit}\``,
+      undefined,
+      "change",
+    );
   }
 
   // ─── Ids ────────────────────────────────────────────────────────────────────────────────────

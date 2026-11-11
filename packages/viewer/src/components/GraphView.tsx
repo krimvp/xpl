@@ -33,6 +33,7 @@ import {
 } from "react";
 import {
   badgeWidth,
+  changeKind,
   changeText,
   CYLINDER_LID,
   CYLINDER_ROLES,
@@ -49,6 +50,7 @@ import {
   ROW_HEIGHT,
   startAnchor,
   startFocus,
+  type BoxMark,
   type ChangeMarks,
   type GraphLayout,
   type LayoutEdge,
@@ -67,6 +69,7 @@ import {
   type Point,
 } from "../svg.js";
 import { changeMarks, changeOf } from "../diff.js";
+import { heldPaths, isRemovedId, lensMarks } from "../live.js";
 import { isHolds } from "../drawnEdges.js";
 import { useStore, useViewerState } from "../hooks.js";
 import { headOf, mapKeyShows } from "../keyMarks.js";
@@ -168,6 +171,8 @@ interface Marks {
   cut?: ReadonlySet<string>;
   /** An arrow of the map (not a line out of it) is selected: only that arrow's lines out are shown. */
   arrowPicked?: boolean;
+  /** On a live page: the boxes whose code the last poll changed, pulsed once. */
+  pulse?: ReadonlySet<string>;
 }
 
 /**
@@ -237,8 +242,18 @@ const additive = (event: MouseEvent | KeyboardEvent) =>
 /** a11y: how far the keyboard focus ring sits outside a box (the gap shows the canvas). */
 const FOCUS_RING_GAP = 5;
 
+/** A live page's box: tinted for what the change did to it (`live-new`, `live-inside`, ...), never by colour alone. */
+function liveClass(node: LayoutNode): string {
+  return node.change !== undefined && typeof node.change !== "string"
+    ? ` live-${node.change.status}`
+    : isRemovedId(node.id)
+      ? " is-removed-before"
+      : "";
+}
+
 function stateClasses(id: string, marks: Marks): string {
   return (
+    (marks.pulse?.has(id) ? " is-pulse" : "") +
     (marks.selected.has(id) ? " is-selected" : "") +
     (marks.matches.has(id) ? " is-match" : "") +
     (marks.related.has(id) ? " is-related" : "") +
@@ -401,6 +416,7 @@ export function GraphView({
     state.model.view(viewId)?.type === "graph";
 
   const changes = useGraphChanges(graph);
+  const pulse = useLivePulse(graph);
   const storedView = state.model.view(viewId);
   const dataMap = storedView?.type === "graph" && storedView.boxText === "members";
   const [layout, setLayout] = useState<GraphLayout | undefined>();
@@ -418,8 +434,17 @@ export function GraphView({
     ...ids.flatMap((id) => state.model.node(id)?.anchors ?? []),
   ];
   // Stable while nothing selected, matched or related changes, so unchanged shapes are not re-rendered.
+  // a removed box of a live page is no element: it reads as picked while its code before the change is open
+  const removedOpen = state.openedBase && state.openedFile ? state.openedFile : undefined;
   const marks = useMemo<Marks>(() => {
     const selected = new Set(selection);
+    if (removedOpen)
+      for (const node of graph.nodes)
+        if (
+          isRemovedId(node.id) &&
+          (node.id === `removed:${removedOpen}` || removedOpen.startsWith(`${node.id.slice(8)}/`))
+        )
+          selected.add(node.id);
     const lit = layout ? litBoxes(layout, selected) : undefined;
     const arrowPicked =
       layout !== undefined &&
@@ -443,8 +468,20 @@ export function GraphView({
       ...(used.length > 0 ? { used: new Set(used) } : {}),
       ...(lit ? { lit } : {}),
       ...(arrowPicked ? { arrowPicked } : {}),
+      ...(pulse ? { pulse } : {}),
     };
-  }, [selection, matches, related, layout, dataMap, state.applied, state.model]);
+  }, [
+    selection,
+    matches,
+    related,
+    layout,
+    dataMap,
+    state.applied,
+    state.model,
+    pulse,
+    removedOpen,
+    graph,
+  ]);
 
   // (a fold keeps the canvas it was drawn on too, so the pane does not move the boxes that stayed)
   const drawnCanvas = useMemo(() => {
@@ -805,18 +842,56 @@ export function useGraphChanges(graph: DerivedGraph): ChangeMarks | undefined {
   const state = useViewerState();
   const change = changeOf(state.explainer);
   const index = state.model.index;
-  return useMemo(
-    () =>
-      change
-        ? changeMarks(
-            graph.nodes.map((node) => node.id),
-            index,
-            change,
-            (id) => codeFocus([id], state.model),
-          )
-        : undefined,
-    [graph, change, index, state.model],
-  );
+  const lens = state.live?.lens;
+  // (a live page keeps the same marks while their words stay the same: a poll that changes nothing on this map
+  // does not lay it out again)
+  const kept = useRef<{ key: string; marks: ChangeMarks | undefined }>(undefined);
+  return useMemo(() => {
+    if (lens) {
+      const marks = lensMarks(graph, state.model, change, lens);
+      const key = JSON.stringify([graph.nodes.map((n) => n.id), [...(marks ?? [])]]);
+      if (kept.current?.key !== key) kept.current = { key, marks };
+      return kept.current.marks;
+    }
+    return change
+      ? changeMarks(
+          graph.nodes.map((node) => node.id),
+          index,
+          change,
+          (id) => codeFocus([id], state.model),
+        )
+      : undefined;
+  }, [graph, change, index, state.model, lens]);
+}
+
+/** How long a box pulses after a poll changed its code (the CSS animation runs once within it). */
+const PULSE_MS = 1800;
+
+/**
+ * Live page: the boxes whose code the last poll brought into the change (or changed again), for `PULSE_MS`; then
+ * none. A box new to the map pulses too. Undefined while nothing pulses.
+ */
+function useLivePulse(graph: DerivedGraph): ReadonlySet<string> | undefined {
+  const state = useViewerState();
+  const pulse = state.live?.pulse;
+  const change = changeOf(state.explainer);
+  const [ids, setIds] = useState<ReadonlySet<string>>();
+  useEffect(() => {
+    if (!pulse || pulse.seq === 0 || !change || state.live?.lens === "now") return;
+    const held = heldPaths(
+      state.model,
+      change,
+      graph.nodes.map((node) => node.id),
+    );
+    const hit = new Set<string>();
+    for (const [id, paths] of held) if (paths.some((path) => pulse.files.has(path))) hit.add(id);
+    if (hit.size === 0) return;
+    setIds(hit);
+    const timer = setTimeout(() => setIds(undefined), PULSE_MS);
+    return () => clearTimeout(timer);
+    // (once per poll that brought something: not again when the reader moves)
+  }, [pulse?.seq]);
+  return ids;
 }
 
 /**
@@ -998,7 +1073,7 @@ function BoxShape({ node, marks }: { node: LayoutNode; marks: Marks }) {
   );
   const shape = (
     <g
-      className={`node kind-${node.kindClass}${role}${node.sketch ? " is-sketch" : ""}${container ? " is-container" : ""}${node.rows ? " is-table" : ""}${zoomable ? " is-zoomable" : ""}${stateClasses(node.id, marks)}`}
+      className={`node kind-${node.kindClass}${role}${node.sketch ? " is-sketch" : ""}${container ? " is-container" : ""}${node.rows ? " is-table" : ""}${zoomable ? " is-zoomable" : ""}${liveClass(node)}${stateClasses(node.id, marks)}`}
       data-element-id={still ? undefined : node.id}
       transform={`translate(${node.x} ${node.y})`}
       // a container holds boxes (buttons): it is a group, and says when it is the one selected
@@ -1486,21 +1561,32 @@ function centerIsCovered(node: LayoutNode): boolean {
 }
 
 /** The width of the "New" / "Changed" pill. */
-export function changePillWidth(change: "new" | "changed"): number {
+export function changePillWidth(change: BoxMark): number {
   return badgeWidth(changeText(change));
 }
 
-/** "New" or "Changed": what the explainer's change did to this box or step, in plain words. */
-export function ChangePill({ x, y, change }: { x: number; y: number; change: "new" | "changed" }) {
+const PILL_TITLE: Record<ReturnType<typeof changeKind>, string> = {
+  new: "Added by this change",
+  changed: "This change edits its code",
+  inside: "The change is inside it: open it to see where",
+  removed: "Removed by this change: open it for its code before the change",
+};
+
+/**
+ * "New" or "Changed": what the explainer's change did to this box or step, in plain words; on a live page also
+ * "Removed" and what a part holds ("2 changed · 1 new").
+ */
+export function ChangePill({ x, y, change }: { x: number; y: number; change: BoxMark }) {
   const text = changeText(change);
   const width = changePillWidth(change);
+  const kind = changeKind(change);
   return (
     <g
-      className={`change-pill is-${change}`}
+      className={`change-pill is-${kind}${typeof change === "string" ? "" : " is-live"}`}
       transform={`translate(${x} ${y})`}
-      data-change={change}
+      data-change={kind}
     >
-      <title>{change === "new" ? "Added by this change" : "This change edits its code"}</title>
+      <title>{PILL_TITLE[kind]}</title>
       <rect width={width} height={16} rx={8} />
       <text x={width / 2} y={12}>
         {text}

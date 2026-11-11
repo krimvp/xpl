@@ -3,6 +3,7 @@
  * stub and edge-kind toggles of a graph view are in the header's Edit menu, with the other author tools.)
  */
 import { useMemo, useState } from "react";
+import { quietText, zoomTrail } from "@xpl/core";
 import { useDerived, useViewerState } from "../hooks.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
 import { GraphView } from "./GraphView.js";
@@ -13,6 +14,8 @@ import { ExpandInPlaceAction } from "./ExpandInPlaceAction.js";
 import { FoldBackAction } from "./FoldBackAction.js";
 import { SequenceView } from "./SequenceView.js";
 import { ZoomTrail } from "./ZoomTrail.js";
+import { LensNote } from "./LiveMode.js";
+import { liveViewTitle } from "../live.js";
 import { codeFirstView, flowOwnerName, startOrder } from "../workspace.js";
 import { renderInline } from "../markdown.js";
 import { plainWords } from "../readerWords.js";
@@ -55,12 +58,15 @@ export function DiagramPane() {
       <div className="diagram-caption">
         <ZoomTrail viewId={view.id} />
         {/* (in Present the question gives way to the "Fit all" cue: the title says it on hover) */}
-        <span
-          className="caption-title"
-          title={present && question ? plainWords(question) : undefined}
-        >
-          {view.title}
-        </span>
+        {/* (a live page: a level's draft title shows quietly; one with none is named by the trail) */}
+        {(!state.live || quietText(view.title) || zoomTrail(state.model, view.id).length === 0) && (
+          <span
+            className="caption-title"
+            title={present && question ? plainWords(question) : undefined}
+          >
+            {state.live ? liveViewTitle(state.model, view.id) : view.title}
+          </span>
+        )}
         {/* the function every step of a flow is in, once here, not under each box */}
         {owner && (
           <span className="caption-owner">
@@ -81,9 +87,10 @@ export function DiagramPane() {
             <FoldBackAction visibleIds={derived.view.graph.nodes.map((node) => node.id)} />
           </>
         )}
-        {view.type === "graph" && <GraphAuthor key={view.id} view={view} />}
+        {view.type === "graph" && !state.live && <GraphAuthor key={view.id} view={view} />}
         {present && <span className="caption-tools" ref={setSlot} />}
       </div>
+      {state.live && <LensNote />}
       <ToolbarSlot.Provider value={present ? slot : undefined}>
         <div className="diagram-body">
           <ErrorBoundary
@@ -105,6 +112,7 @@ export function DiagramPane() {
                 related={derived.selection.related}
                 order={order}
                 present={present}
+                reader={state.live !== undefined}
               />
             ) : view.type === "flow" ? (
               <FlowDiagram view={view} outline={!present && codeFirstView(view)} />

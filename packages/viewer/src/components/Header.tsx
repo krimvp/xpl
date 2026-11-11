@@ -15,7 +15,8 @@
  * state shows beside Edit only when there is something to say ("Unsaved", "Saving…", "Not saved").
  */
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
-import { DEFAULT_EDGE_KINDS, resolveStubPolicy, shortText } from "@xpl/core";
+import { DEFAULT_EDGE_KINDS, resolveStubPolicy } from "@xpl/core";
+import { shortText } from "../shortLabels.js";
 import { explainerFileName } from "../edits.js";
 import { useStore, useViewerState } from "../hooks.js";
 import { stepNumber } from "../modes.js";
@@ -29,6 +30,7 @@ import { EdgeKindToggles } from "./EdgeKinds.js";
 import { StubsControl } from "./StubsControl.js";
 import { TourPanel } from "./TourPanel.js";
 import { ViewTabs } from "./ViewTabs.js";
+import { LensSwitch } from "./LiveMode.js";
 import { SearchLibrary } from "./SearchLibrary.js";
 import { WorkspaceTabs } from "./WorkspaceTabs.js";
 
@@ -52,7 +54,7 @@ export function Header() {
   }, [feedbackOpen]);
   const present = state.mode === "present";
   const reading = !present && state.perspective !== "explore";
-  const mode = present ? "present" : reading ? "read" : "explore";
+  const mode = present ? "present" : state.live ? "live" : reading ? "read" : "explore";
 
   return (
     <header className={`header is-${mode}` + (reading ? " is-reading" : "")} data-mode={mode}>
@@ -68,7 +70,7 @@ export function Header() {
         >
           {state.explainer.title}
         </h1>
-        {state.exportInfo?.status === "draft" && (
+        {state.exportInfo?.status === "draft" && !state.live && (
           <span
             className="draft-pill"
             data-testid="draft-pill"
@@ -79,7 +81,9 @@ export function Header() {
         )}
       </div>
 
-      {present ? (
+      {state.live && !present ? (
+        <LensSwitch />
+      ) : present ? (
         <>
           <TourPicker />
           <StepProgress />
@@ -120,7 +124,7 @@ export function Header() {
           }}
         />
       )}
-      {!present && (
+      {!present && !state.live && (
         <button
           ref={feedbackButton}
           className="btn"
@@ -137,8 +141,11 @@ export function Header() {
           Feedback{state.feedback.length > 0 ? ` (${state.feedback.length})` : ""}
         </button>
       )}
-      {present ? <ExitButton /> : <PresentButton />}
-      <EditMenu toursOpen={toursOpen} onTours={() => setToursOpen((open) => !open)} />
+      {/* a live page is for reading what changes: the author's tools are on the full Explore page */}
+      {state.live && !present ? null : present ? <ExitButton /> : <PresentButton />}
+      {(!state.live || present) && (
+        <EditMenu toursOpen={toursOpen} onTours={() => setToursOpen((open) => !open)} />
+      )}
 
       {feedbackOpen && (
         <FeedbackPanel

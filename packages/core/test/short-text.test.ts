@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { shortText } from "../src/index.js";
+import { quietText, shortText } from "../src/index.js";
 
 describe("shortText: what a box, an arrow, a list or a title shows of a text", () => {
   it.each([
@@ -35,4 +35,14 @@ describe("shortText: what a box, an arrow, a list or a title shows of a text", (
   ])("a written text shows as it is: %s", (text) => {
     expect(shortText(text)).toBe(text);
   });
+});
+
+describe("quietText: the same on a live page, where nobody writes: no mark", () => {
+  it.each([
+    ["TODO: 1-3 plain words for this part (now: bus.ts)", "bus.ts"],
+    ["Where to go next: TODO: where a newcomer starts", "Where to go next:"],
+    // nothing known: nothing shown, for the caller's own words
+    ["TODO: one line: what this part does (3 code files), in plain words.", ""],
+    ["Job queue", "Job queue"],
+  ])("%s", (text, shown) => expect(quietText(text)).toBe(shown));
 });

@@ -432,7 +432,7 @@ export function makeBundle(parts: {
   index: ViewerBundle["index"];
   files: Record<string, string>;
   baseFiles?: Record<string, string>;
-  mode?: "explore" | "present";
+  mode?: ViewerBundle["mode"];
   tour?: string;
   server?: ViewerBundle["server"];
 }): ViewerBundle {

@@ -1,6 +1,6 @@
 ---
 name: code-explainer
-description: Generate an interactive code explainer, meaning a short guided tour with linked diagrams (box-and-arrow map, process flow, sequence diagram) next to a code viewer, where clicking a box, arrow or step highlights the exact code and selecting code lights up the matching diagram elements. Use when the user wants to understand how code works ("how does X work", "how does a failed job get retried"), get an architecture overview of a repo, understand or review a change (a PR, MR, branch or commit range, read locally), explore an unfamiliar codebase, see what every file of a project does (a quick map, for example of code an AI assistant wrote, kept current after each change), or prepare a code walkthrough, demo or presentation. Operations - explain <question> (part of a project), explain repo (architecture), explain map (every file, in plain words), explain change <base>..<head> (a diff), expand (grow a view), feedback (do what the user asked for in the viewer), make tour (a presentation).
+description: Generate an interactive code explainer, meaning a short guided tour with linked diagrams (box-and-arrow map, process flow, sequence diagram) next to a code viewer, where clicking a box, arrow or step highlights the exact code and selecting code lights up the matching diagram elements. Use when the user wants to understand how code works ("how does X work", "how does a failed job get retried"), get an architecture overview of a repo, understand or review a change (a PR, MR, branch or commit range, read locally), explore an unfamiliar codebase, see what every file of a project does (a quick map, for example of code an AI assistant wrote, kept current after each change), or prepare a code walkthrough, demo or presentation. Operations - explain <question> (part of a project), explain repo (architecture), explain map (every file, in plain words), explain change <base>..<head> (a diff), explain live (the architecture and the change in progress, kept current while the code changes, for example while working with an AI assistant), expand (grow a view), feedback (do what the user asked for in the viewer), make tour (a presentation).
 ---
 
 # Code explainer
@@ -51,6 +51,7 @@ Each scope starts its tour on a map and ends on the step in the last column.
 | "explain this repo"            | `explain repo`: `draft repo <name>`                    | the system map: purpose, users, needs    | the parts skipped, and 2-3 expansions        |
 | "map every file"               | `explain map`: `draft map <name>`                      | what the project is                      | where a newcomer starts reading              |
 | a PR, a branch, a commit range | `explain change <base>..<head>`: `draft change <name>` | what changes for users                   | risks and open questions                     |
+| "show me what I am changing"   | `explain live`: `xpl live`, then `reference/live.md`   | the change on the map of the parts       | what to check next                           |
 
 Data map or class map, and states with no enum: `reference/quick.md`, "Choose the diagram for the question".
 
@@ -155,6 +156,10 @@ The viewer shows each claim next to its code, so a wrong claim looks checked. Ch
 - **Code, not folklore:** "stops waiting after the timeout", not "kills the job", when the code only races a timer.
 - **Changes:** "before" claims and test claims follow `reference/explain-change.md` sections 4 and 6.
 
+## explain live: the architecture while the code changes
+
+`xpl live` keeps the guide `live` in step with the working tree: the maps from the system down to the files, and the change since the base. Follow `reference/live.md`: after each task, write the `TODO` box texts and the tour `tour:live`, which says part by part what the change does to the architecture. With `--backend claude` a background run does it.
+
 ## expand <node>
 
 `<node>` is an id, a name, a box outside the map that the user clicked (`ghost:dir:x` means `dir:x`), or a saved request. Read it (`show <id> --refs`, `outline --under <id> --depth 1`), and add it and the children worth showing with `includeAdd`. A view with `origin: "user"` takes no `llm` edit: make a new view. Explain only what `status <name>` names as newly visible. For saved requests, follow "feedback"; never delete the request store.
@@ -176,7 +181,7 @@ Run `xpl index` and `xpl resolve <name> --write`, then work through `xpl status 
 - `reference/quick.md`: patch needs, diagram choice, index gaps, lint.
 - `reference/writing.md`: writing rules and the checklist.
 - `reference/create.md`: install, prompts, PR handoff, recovery.
-- `reference/explain-change.md`, `reference/explain-map.md`: those two scopes.
+- `reference/explain-change.md`, `reference/explain-map.md`, `reference/live.md`: those three scopes.
 - `reference/patch-format.md`: element templates, merge rules, repair.
 - `reference/revise.md`: saved feedback.
 - `reference/cli.md`: every command and option.

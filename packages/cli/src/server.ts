@@ -5,6 +5,7 @@
  *                             `files` = the files the explainer references; others are fetched lazily)
  *   GET  /api/guides          shared local catalog; ?id=<key> returns a bounded read-only snapshot
  *   GET  /api/bundle          the same bundle as JSON
+ *   GET  /api/live            `xpl live` only: its status (`LiveStatus`); 404 otherwise
  *   GET  /api/export          current complete export snapshot with its readiness report
  *   GET  /api/explainer       the explainer alone, with an ETag; 304 when If-None-Match still matches (the
  *                             viewer polls it, so changes made by `xpl apply` show up without a reload)
@@ -59,6 +60,7 @@ import {
   baseVersionFiles,
   injectBundle,
   type ExplainerPatch,
+  type LiveStatus,
   type ViewerBundle,
 } from "@xpl/core";
 import { collectBaseFiles, collectFiles, freshAnchors, makeBundle } from "./bundle-data.js";
@@ -101,6 +103,8 @@ export interface ViewServerOptions {
     watch?: ReturnType<typeof watchControl>;
     stop(): void;
   };
+  /** `xpl live`: its status (`GET /api/live`); the bundle's mode is then `live`. */
+  live?: () => LiveStatus;
 }
 
 export interface ViewServer {
@@ -303,7 +307,7 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
         index: state.index,
         files: collected.files,
         ...(base !== undefined ? { baseFiles: base.files } : {}),
-        mode: "explore",
+        mode: options.live ? "live" : "explore",
         server: { api: API, attachment },
       }),
       ...(stale ? { sourceWarning: stale.message } : {}),
@@ -564,6 +568,12 @@ export async function startViewServer(options: ViewServerOptions): Promise<ViewS
       allow("GET", "HEAD");
       const id = url.searchParams.get("id");
       sendJson(req, res, 200, id === null ? localGuideCatalog(env) : await previewOf(id));
+      return;
+    }
+    if (pathname === `${API}/live`) {
+      if (!options.live) throw new HttpError(404, "live status requires `xpl live`");
+      allow("GET", "HEAD");
+      sendJson(req, res, 200, options.live());
       return;
     }
     if (pathname === `${API}/bundle`) {
