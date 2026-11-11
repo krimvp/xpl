@@ -142,6 +142,9 @@ test.describe.serial("xpl live", () => {
     await expect(pill(page, "file:src/queue.ts")).toHaveText("Changed");
     await expect(byId(page, "file:src/queue.ts")).toHaveClass(/live-changed/);
     await expect(byId(page, "file:src/bus.ts").locator(".change-pill")).toHaveCount(0);
+    // a guide without a design level has no Design | Folders and no Design section
+    await expect(page.getByTestId("level-switch")).toHaveCount(0);
+    await expect(page.getByTestId("live-design")).toHaveCount(0);
     await byId(page, "dir:src/store").dblclick();
 
     // level 3: the files, the removed one drawn as such
@@ -297,6 +300,142 @@ test.describe.serial("xpl live", () => {
     await expect(page.locator(".diagram")).toHaveAttribute("data-view-id", "view:system");
     await expect(pill(page, "grp:ts-jobrunner")).toContainText("changed");
     await expect(page.getByTestId("live-parts")).toBeVisible();
+  });
+});
+
+/** The design level an agent writes for `changeTheStore` (reference/live.md, "The design level"). */
+const DESIGN = {
+  nodes: [
+    {
+      id: "grp:design-disk",
+      label: "Disk storage",
+      summary: "Keeps jobs on disk, so they outlive a restart.",
+      members: ["file:src/store/disk.ts"],
+    },
+    {
+      id: "grp:design-store",
+      label: "Job storage",
+      summary: "Keeps jobs in memory, by id.",
+      members: ["file:src/store/memory.ts", "file:src/store/index.ts"],
+      anchors: [{ file: "src/store/legacy.ts", at: "base", role: "definition" }],
+    },
+    {
+      id: "grp:design-queue",
+      label: "Job queue",
+      summary: "Orders the jobs until a worker takes one.",
+      members: ["file:src/queue.ts"],
+    },
+  ],
+  views: [
+    {
+      id: "view:design",
+      type: "graph",
+      title: "The design of the change",
+      include: ["grp:design-disk", "grp:design-store", "grp:design-queue"],
+    },
+  ],
+  tours: [
+    {
+      id: "tour:live",
+      title: "Jobs can live on disk",
+      summary: "A disk store joins the memory store, and the old store goes. Risk: two stores.",
+      steps: [
+        {
+          id: "design",
+          view: "view:design",
+          focus: ["grp:design-disk", "grp:design-store"],
+          note: "### Storage gets a second home\n\nBefore: memory only. Now: memory or disk.\n\nRisk: two stores.",
+        },
+        {
+          id: "design-disk",
+          view: "view:design",
+          focus: ["grp:design-disk"],
+          note: "### A store on disk\n\nBefore: none. Now: `DiskStore` keeps jobs on disk.",
+        },
+        {
+          id: "design-store",
+          view: "view:design",
+          focus: ["grp:design-store"],
+          note: "### The old store goes\n\nBefore: `legacyStore`. Now: `MemoryStore` can evict.",
+        },
+      ],
+    },
+  ],
+};
+
+test.describe.serial("xpl live with a design level", () => {
+  let live: Live;
+  test.beforeAll(async () => {
+    live = await startLive(changeTheStore);
+    const patch = join(live.root, "..", `live-design-${Date.now()}.json`);
+    writeFileSync(patch, JSON.stringify(DESIGN));
+    expect(await live.cmd("apply", "live", patch)).toBe(0);
+    rmSync(patch);
+  });
+  test.afterAll(async () => {
+    await live?.stop();
+  });
+
+  test("What changed reads Design first, with marks and notes, then the folders folded", async ({
+    page,
+  }) => {
+    await open(page, live.url);
+    const design = page.getByTestId("live-design");
+    await expect(design.locator(".live-part")).toHaveCount(3);
+    const disk = design.locator('[data-part-id="grp:design-disk"]');
+    await expect(disk.locator(".live-mark")).toHaveText("New");
+    await expect(disk.getByTestId("live-note")).toContainText("Now: DiskStore keeps jobs");
+    await expect(design.locator('[data-part-id="grp:design-store"] .live-mark')).toHaveText(
+      "1 changed · 1 removed",
+    );
+    const folders = page.getByTestId("live-by-folder");
+    await expect(folders).not.toHaveAttribute("open", "");
+    // Design is above By folder
+    const top = async (l: typeof design) => (await l.boundingBox())!.y;
+    expect(await top(design)).toBeLessThan(await top(folders));
+    await folders.locator("summary").click();
+    await expect(folders.locator('[data-part-id="dir:src/store"]')).toBeVisible();
+    // a design box goes to the design map and picks the box
+    await disk.locator(".live-part-name").click();
+    await expect(page.locator(".diagram")).toHaveAttribute("data-view-id", "view:design");
+    await expect(byId(page, "grp:design-disk")).toHaveClass(/is-selected/);
+  });
+
+  test("Design | Folders switches the level under the system map, and zooming remembers it", async ({
+    page,
+  }) => {
+    const problems = watchProblems(page);
+    await open(page, live.url);
+    await expect(page.locator(".diagram")).toHaveAttribute("data-view-id", "view:system");
+    await expect(page.getByTestId("level-switch")).toHaveCount(0);
+    await byId(page, "grp:ts-jobrunner").dblclick();
+    await expect(page.locator(".diagram")).toHaveAttribute("data-view-id", "view:design");
+    await expect(pill(page, "grp:design-disk")).toHaveText("New");
+    const trail = page.getByTestId("zoom-trail");
+    await expect(trail).toContainText("The system");
+    const level = page.getByTestId("level-switch");
+    await expect(level.locator('[aria-checked="true"]')).toHaveText("Design");
+
+    await level.locator('[data-level="folders"]').click();
+    await expect(page.locator(".diagram")).toHaveAttribute("data-view-id", "view:overview");
+    await expect(level.locator('[aria-checked="true"]')).toHaveText("Folders");
+    await trail.getByRole("button", { name: "The system" }).click();
+    await expect(page.locator(".diagram")).toHaveAttribute("data-view-id", "view:system");
+    await byId(page, "grp:ts-jobrunner").dblclick();
+    await expect(page.locator(".diagram")).toHaveAttribute("data-view-id", "view:overview");
+    await level.locator('[data-level="design"]').click();
+    await expect(page.locator(".diagram")).toHaveAttribute("data-view-id", "view:design");
+    expect(problems).toEqual([]);
+  });
+
+  test("Before hides a new design box", async ({ page }) => {
+    await open(page, `${live.url}?view=view:design`);
+    await expect(byId(page, "grp:design-disk")).toBeVisible();
+    await page.locator('[data-lens="before"]').click();
+    await expect(byId(page, "grp:design-disk")).toHaveCount(0);
+    await expect(byId(page, "grp:design-store")).toBeVisible();
+    await page.locator('[data-lens="changes"]').click();
+    await expect(pill(page, "grp:design-store")).toHaveText("1 changed · 1 removed");
   });
 });
 

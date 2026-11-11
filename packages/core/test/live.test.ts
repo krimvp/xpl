@@ -11,6 +11,7 @@ import {
   lintExplainer,
   liveSummary,
   removedBoxes,
+  validateExplainer,
   type ChangeRecord,
   type Explainer,
   type TourStep,
@@ -313,6 +314,19 @@ describe("the design level of a live guide", () => {
       "grp:design-old": "Removed",
     });
     expect(lifted.get("grp:design-old")!.status).toBe("removed");
+  });
+
+  it("takes a box of only code the change deleted as pointing at code, not as a box without members", () => {
+    const ex = designModel().explainer;
+    const empty = group("grp:design-empty", [], { label: "Nothing" });
+    const warned = validateExplainer(
+      { ...ex, nodes: [...ex.nodes, empty] },
+      world.index,
+      world.getText,
+    )
+      .filter((i) => i.message.endsWith("has no members"))
+      .map((i) => i.elementId);
+    expect(warned).toEqual(["grp:design-empty"]);
   });
 
   it("is a lens of the parts' level, under the system map on the trail", () => {

@@ -771,8 +771,14 @@ class Validator {
           else this.refNode(member, `${path}.members[${j}]`, id, "member");
         });
         // a box with a role may stand for something outside the repo (a database): its anchors are its code;
-        // a sketch is an idea and points at no code on purpose
-        if (node.members.length === 0 && node.role === undefined && node.sketch !== true)
+        // a sketch is an idea and points at no code on purpose; a box of anchors only (a design box whose code
+        // the change deleted) points at its code
+        if (
+          node.members.length === 0 &&
+          node.role === undefined &&
+          node.sketch !== true &&
+          arrLength(node.anchors) === 0
+        )
           this.warn(`${path}.members`, `group ${id} has no members`, id);
         if (
           node.members.length === 0 &&
