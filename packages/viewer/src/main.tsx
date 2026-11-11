@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App.js";
 import { loadBundle, readLaunchParams } from "./data.js";
 import { rememberPage } from "./saveHtml.js";
+import { setQuietDrafts } from "./shortLabels.js";
 import { ViewerStore } from "./store.js";
 import { installTestHooks } from "./testHooks.js";
 import { installTheme } from "./theme.js";
@@ -25,7 +26,11 @@ if (loaded.ok) {
   } else {
     const store = new ViewerStore(loaded.bundle, readLaunchParams());
     installTestHooks(store);
-    watchUrl(store, loaded.bundle.mode);
+    const live = store.getState().live !== undefined;
+    // A live page shows a draft's placeholders quietly, and its address never moves off the top level: a reload
+    // starts at the system map again.
+    setQuietDrafts(live);
+    if (!live) watchUrl(store, loaded.bundle.mode);
     store.watchExplainer();
     root.render(
       <StrictMode>

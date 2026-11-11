@@ -357,6 +357,37 @@ describe("the live agent", () => {
     }
   }, 60000);
 
+  it("still reads stale after a cycle that only drops a gone file from tour:live", async () => {
+    const dir = repo();
+    work(dir);
+    writeFile(dir, "src/more.ts", "export const more = 1;\n");
+    const { live } = await session(dir, () => ({
+      tours: [
+        {
+          ...explanation("The change adds two small files. The runner does not call them yet.")
+            .tours[0],
+          steps: [
+            {
+              id: "part-src",
+              view: "view:overview",
+              focus: ["file:src/extra.ts", "file:src/more.ts"],
+              note: "### Two new parts\n\nBefore: none. Now: two files that return numbers.",
+            },
+          ],
+        },
+      ],
+    }));
+    await live.cycle();
+    await live.explain(true);
+    expect(live.status().explanation.stale).toBe(false);
+    // the code moves on; the drafted structure drops the gone file from the tour, which is not an explanation
+    rmSync(join(dir, "src/more.ts"));
+    await live.cycle();
+    const tour = guide(dir).tours.find((t) => t.id === "tour:live")!;
+    expect(tour.steps[0]!.focus).toEqual(["file:src/extra.ts"]);
+    expect(live.status().explanation.stale).toBe(true);
+  });
+
   it("gives a patch with lint findings back once, and applies the second try when no TODO is left", async () => {
     const dir = repo();
     work(dir);

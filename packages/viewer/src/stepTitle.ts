@@ -14,7 +14,8 @@
  * in a list, a menu or a breadcrumb (`stepTitle`), a draft's `TODO: …` title shows short (`shortText`:
  * "TODO"); its own section heading and the Present caption (`stepText`) show the whole instruction.
  */
-import { shortText, type ExplainerModel, type TourStep } from "@xpl/core";
+import { type ExplainerModel, type TourStep } from "@xpl/core";
+import { shortText } from "./shortLabels.js";
 
 /** A first sentence longer than this does not make a title. */
 export const MAX_SENTENCE_TITLE = 80;

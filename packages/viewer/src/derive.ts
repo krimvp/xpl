@@ -42,8 +42,11 @@ import {
   type SymbolIndex,
   type TourStep,
   type View,
+  type ChangeRecord,
 } from "@xpl/core";
 import { shortGraph } from "./shortLabels.js";
+import { changeAt, changeOf } from "./diff.js";
+import { lensGraph, type Lens } from "./live.js";
 import { drawnEdges } from "./drawnEdges.js";
 import type { Cursor, ViewerState } from "./store.js";
 
@@ -142,6 +145,7 @@ function deriveView(
   viewId: string | undefined,
   expanded: ReadonlySet<ElementId> = new Set(),
   files?: Readonly<Record<string, string>>,
+  lens?: Lens,
 ): ViewDerived {
   const view = viewId === undefined ? undefined : model.view(viewId);
   let graph: DerivedGraph | undefined;
@@ -151,6 +155,8 @@ function deriveView(
     const drawn = expandInPlace(view, model, expanded);
     // (the text names the type of each row of a data-model view; a draft's TODO shows short, as drawn)
     graph = shortGraph(deriveGraph(drawn, model, files ? { text: (file) => files[file] } : {}));
+    // a live page: the removed boxes, and in Before none of the new ones (live.ts)
+    if (lens) graph = lensGraph(graph, model, changeOf(model.explainer), view, lens);
     include = new Set(
       (Array.isArray(drawn.include) ? drawn.include : []).filter((id) => model.hasNode(id)),
     );
@@ -599,6 +605,7 @@ let lastView:
       model: ExplainerModel;
       viewId: string | undefined;
       expanded: ReadonlySet<ElementId>;
+      lens: Lens | undefined;
       value: ViewDerived;
     }
   | undefined;
@@ -643,6 +650,41 @@ function sameDrawing(a: ExplainerModel, b: ExplainerModel): boolean {
   );
 }
 
+/**
+ * The code panes of the live page's Before: a file the change edited shows its code before the change (no focus
+ * ranges: they are lines of the code as it is now), and a file it added shows nothing. Memoised per input.
+ */
+const beforeCache = new WeakMap<readonly PaneSpec[], PaneSpec[]>();
+function beforePanes(panes: readonly PaneSpec[], change: ChangeRecord | undefined): PaneSpec[] {
+  const known = beforeCache.get(panes);
+  if (known) return known;
+  const out = panes.flatMap((pane): PaneSpec[] => {
+    const file = changeAt(change, pane.file);
+    if (pane.side === "base" || !file) return [pane];
+    if (file.status === "added") return [];
+    return [{ ...pane, side: "base", ranges: [], dim: false, lead: undefined }];
+  });
+  beforeCache.set(panes, out);
+  return out;
+}
+
+/**
+ * The code panes of the live page's Changes: a part or a service holds many files, and the reader asked what the
+ * change did there, so only its changed files show (all of them when none is changed, and a file opened by hand).
+ */
+const changedCache = new WeakMap<readonly PaneSpec[], readonly PaneSpec[]>();
+function changedPanes(
+  panes: readonly PaneSpec[],
+  change: ChangeRecord | undefined,
+): readonly PaneSpec[] {
+  const known = changedCache.get(panes);
+  if (known) return known;
+  const touched = panes.filter((pane) => pane.opened || changeAt(change, pane.file));
+  const out = touched.length > 0 && touched.length < panes.length ? touched : panes;
+  changedCache.set(panes, out);
+  return out;
+}
+
 export function getDerived(state: ViewerState): Derived {
   const known = byState.get(state);
   if (known) return known;
@@ -651,13 +693,16 @@ export function getDerived(state: ViewerState): Derived {
     !lastView ||
     !sameDrawing(lastView.model, state.model) ||
     lastView.viewId !== state.viewId ||
-    lastView.expanded !== state.expanded
+    lastView.expanded !== state.expanded ||
+    lastView.lens !== state.live?.lens ||
+    (state.live && lastView.model.explainer.change !== state.model.explainer.change)
   ) {
     lastView = {
       model: state.model,
       viewId: state.viewId,
       expanded: state.expanded,
-      value: deriveView(state.model, state.viewId, state.expanded, state.files),
+      lens: state.live?.lens,
+      value: deriveView(state.model, state.viewId, state.expanded, state.files, state.live?.lens),
     };
   }
   const view = lastView.value;
@@ -729,7 +774,12 @@ export function getDerived(state: ViewerState): Derived {
     view,
     selection,
     matches: lastMatches.value,
-    panes: lastPanes.value.panes,
+    panes:
+      state.live?.lens === "before"
+        ? beforePanes(lastPanes.value.panes, changeOf(state.explainer))
+        : state.live?.lens === "changes"
+          ? changedPanes(lastPanes.value.panes, changeOf(state.explainer))
+          : lastPanes.value.panes,
     overflow: lastPanes.value.overflow,
   };
   byState.set(state, derived);

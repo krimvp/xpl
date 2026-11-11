@@ -29,6 +29,7 @@ import {
   type PatchNode,
   type PatchTourStep,
   type PatchView,
+  pathSlug,
 } from "@xpl/core";
 import {
   ENTRY_NAMES,
@@ -68,11 +69,7 @@ export const MAP_LIMITS = {
 /** The view of a folder: `view:map` for the top, `view:map-<path>` below it. */
 function viewIdOf(root: string, path: string): string {
   if (path === root) return "view:map";
-  const slug = path
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return `view:map-${slug || "root"}`;
+  return `view:map-${pathSlug(path) || "root"}`;
 }
 
 /**
@@ -297,10 +294,7 @@ export function draftMap(input: DraftInput): Draft {
     }
     const clusters = new Map<string, string[]>();
     for (const f of files) clusters.set(find(f), [...(clusters.get(find(f)) ?? []), f]);
-    const slug = path
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "");
+    const slug = pathSlug(path);
     return [...clusters.values()]
       .filter((members) => members.length >= 3)
       .sort((a, b) => b.length - a.length || a[0]!.localeCompare(b[0]!))

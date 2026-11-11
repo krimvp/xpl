@@ -1,4 +1,4 @@
-import type { WatchAttention, Job, JobReviewAction, RevisionReview } from "@xpl/core";
+import type { LiveStatus, WatchAttention, Job, JobReviewAction, RevisionReview } from "@xpl/core";
 /**
  * Where the viewer's data comes from (ARCHITECTURE.md section 5, "Bundle payload"):
  *
@@ -151,6 +151,14 @@ export class ServerApi {
   }> {
     const response = await this.check(await this.request("/guides", { cache: "no-store" }));
     return response.json();
+  }
+
+  /** `xpl live`'s status; undefined when the server is not `xpl live` (404). */
+  async live(): Promise<LiveStatus | undefined> {
+    const response = await this.request("/live", { cache: "no-store" });
+    if (response.status === 404) return undefined;
+    await this.check(response);
+    return (await response.json()) as LiveStatus;
   }
 
   async attention(): Promise<WatchAttention | undefined> {

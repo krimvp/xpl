@@ -6,7 +6,8 @@
  * new view into sight. Next to the strip, a "Views" menu lists every view under its full title and jumps to
  * the one you pick.
  */
-import { shortText, type View } from "@xpl/core";
+import { type View } from "@xpl/core";
+import { shortText } from "../shortLabels.js";
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { useStore, useViewerState } from "../hooks.js";

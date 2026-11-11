@@ -196,6 +196,23 @@ function patchFindings(
     }));
 }
 
+/**
+ * `tour:live` as the cycle left it, with the commit its text was written at: moving the guide to a new index and
+ * drafting the structure again can touch the tour (a gone file leaves its focus) and stamp it with the new index
+ * commit, which would make an explanation of older code read as current (`LiveStatus.explanation.stale`).
+ */
+function keepExplainedAt(after: Explainer, before: Explainer | undefined): Explainer {
+  const commit = before?.tours.find((t) => t.id === LIVE_TOUR_ID)?.provenance?.commit;
+  const tour = after.tours.find((t) => t.id === LIVE_TOUR_ID);
+  if (!commit || !tour?.provenance || tour.provenance.commit === commit) return after;
+  return {
+    ...after,
+    tours: after.tours.map((t) =>
+      t === tour ? { ...t, provenance: { ...tour.provenance!, commit } } : t,
+    ),
+  };
+}
+
 export interface Live {
   readonly guidePath: string;
   status(): LiveStatus;
@@ -308,6 +325,7 @@ export async function openLive(ctx: Ctx, options: LiveOptions): Promise<Live> {
       if (change) explainer = orderKeys({ ...explainer, change });
       else delete explainer.change;
       explainer = draftLiveStructure({ explainer, model, texts, commits }).explainer;
+      explainer = keepExplainedAt(explainer, before);
       const text = jsonFile(explainer);
       if (!exists || readFileSync(guidePath, "utf8") !== text) await atomicWrite(guidePath, text);
       return explainer;

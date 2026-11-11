@@ -88,6 +88,17 @@
   --diff-del-bg: rgba(207, 34, 46, 0.1);
   --diff-del-bar: #cf222e;
   --diff-del-fg: #82071e;
+  /* A live page's map (live.ts): new, changed (or holding changes) and removed boxes. Teal, orange and grey read
+     apart with every common colour blindness, and each also has its own outline and words. */
+  --live-new: #0f7b6c;
+  --live-new-soft: rgba(15, 123, 108, 0.11);
+  --live-new-fg: #0b6357;
+  --live-changed: #b35400;
+  --live-changed-soft: rgba(214, 110, 0, 0.13);
+  --live-changed-fg: #8a4100;
+  --live-removed: #6b7480;
+  --live-removed-soft: rgba(107, 116, 128, 0.07);
+  --live-removed-fg: #545c66;
 
   --syn-meta: #535d68;
   --syn-keyword: #6d43bb;
@@ -193,6 +204,15 @@
   --diff-del-bg: rgba(248, 81, 73, 0.14);
   --diff-del-bar: #f85149;
   --diff-del-fg: #ffb3ad;
+  --live-new: #3cc7b0;
+  --live-new-soft: rgba(60, 199, 176, 0.15);
+  --live-new-fg: #7fe0cf;
+  --live-changed: #f39b4b;
+  --live-changed-soft: rgba(243, 155, 75, 0.16);
+  --live-changed-fg: #ffc08a;
+  --live-removed: #8b949e;
+  --live-removed-soft: rgba(139, 148, 158, 0.08);
+  --live-removed-fg: #aab3bd;
 
   --syn-meta: #a2acb9;
   --syn-keyword: #c4a1ff;
@@ -2023,6 +2043,100 @@ code {
 
 .change-pill.is-changed text {
   fill: var(--warn);
+}
+
+/* A live page's boxes (GraphView liveClass): a new box is filled teal, a changed one orange, a part or service
+   that only holds changes has an orange outline and says what it holds ("2 changed · 1 new"), a removed one is
+   dashed grey with its name struck through and says "Removed". The pill carries the words. */
+.node.live-new > .box,
+.node.live-new > .node-frame > .box {
+  fill: var(--live-new-soft);
+  stroke: var(--live-new);
+  stroke-width: 2.4;
+}
+
+.node.live-changed > .box,
+.node.live-changed > .node-frame > .box {
+  fill: var(--live-changed-soft);
+  stroke: var(--live-changed);
+  stroke-width: 2.4;
+}
+
+.node.live-inside > .box,
+.node.live-inside > .node-frame > .box {
+  stroke: var(--live-changed);
+  stroke-width: 2;
+}
+
+.node.live-removed > .box,
+.node.live-removed > .node-frame > .box {
+  fill: var(--live-removed-soft);
+  stroke: var(--live-removed);
+  stroke-width: 1.6;
+  stroke-dasharray: 6 4;
+}
+
+.node.live-removed > .label,
+.node.live-removed > .node-frame > .label {
+  fill: var(--live-removed-fg);
+  text-decoration: line-through;
+}
+
+.change-pill.is-live.is-new rect {
+  fill: var(--live-new-soft);
+  stroke: var(--live-new);
+}
+
+.change-pill.is-live.is-new text {
+  fill: var(--live-new-fg);
+}
+
+.change-pill.is-live.is-changed rect,
+.change-pill.is-inside rect {
+  fill: var(--live-changed-soft);
+  stroke: var(--live-changed);
+}
+
+.change-pill.is-live.is-changed text,
+.change-pill.is-inside text {
+  fill: var(--live-changed-fg);
+}
+
+.change-pill.is-removed rect {
+  fill: var(--panel);
+  stroke: var(--live-removed);
+  stroke-dasharray: 3 2;
+}
+
+.change-pill.is-removed text {
+  fill: var(--live-removed-fg);
+}
+
+/* What a poll just changed: one pulse of the outline, then the box rests in its mark. */
+@keyframes live-pulse {
+  0% {
+    stroke-width: 7;
+    stroke-opacity: 0.35;
+  }
+  60% {
+    stroke-width: 3.2;
+    stroke-opacity: 1;
+  }
+  100% {
+    stroke-opacity: 1;
+  }
+}
+
+.node.is-pulse > .box,
+.node.is-pulse > .node-frame > .box {
+  animation: live-pulse 1.4s ease-out 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .node.is-pulse > .box,
+  .node.is-pulse > .node-frame > .box {
+    animation: none;
+  }
 }
 
 .node.is-hover > .box,

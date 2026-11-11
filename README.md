@@ -38,6 +38,25 @@ supported platforms are in [Getting started](https://krimvp.github.io/xpl/docs/g
 writes one HTML file that holds the guide and its code, for offline reading. Each tour step shows a short
 excerpt of its code; "Show code" opens the full range.
 
+### Watch a change while you make it
+
+Run `xpl live` in your repository and keep the page it opens in a second window while you or an AI assistant
+edit the code. After every edit, within a few seconds and without a reload, the page shows:
+
+- **What changed**, on the left: how many files and lines since the base ("since origin/main", or "since you
+  started"), then each changed part of the project with its files, the functions the change added or edited,
+  and the explanation once your assistant wrote one. A part or file the last edit touched says "just changed"
+  until you click the page. Click an entry to see its box; click its `+3 −1` to see its diff.
+- **The map**, always opened at the top: who uses the project, the project, what it relies on. A box that
+  holds a change is outlined and says what it holds ("2 changed · 1 new"); a new box is filled teal, a changed
+  one orange; a deleted file is a dashed, struck-through box that says "Removed" and opens its old code. Open a
+  box to go down a level: its parts, then a folder's files, then the code with the diff.
+- **Before | Changes | Now**, in the header: the architecture before the change (what it added hidden, what it
+  removed back, the code before), with the change marked, or as it is now.
+
+Ask your assistant to "explain live" after each task (`/code-explainer explain live`), or start
+`xpl live --backend claude` to have Claude Code write the explanation once the code has been quiet for a while.
+
 ### Try it without Claude
 
 Open a finished guide in your browser: the [examples](https://krimvp.github.io/xpl/#more-examples) explain

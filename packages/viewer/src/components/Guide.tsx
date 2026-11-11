@@ -13,10 +13,10 @@ import {
   notAnalyzedReason,
   codeFocus,
   isTestFile,
-  shortText,
   type ExplainerModel,
   type TourStep,
 } from "@xpl/core";
+import { shortText } from "../shortLabels.js";
 import { ExplanationInfo, tabsLine } from "./ExplanationInfo.js";
 import { callersOf, changeSummary, type Caller } from "../callers.js";
 import { overrideFocus } from "../derive.js";

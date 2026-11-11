@@ -1636,7 +1636,18 @@ Reset may clear selected pins or all pins; a later placement edit conflicts rath
   (`changeMatchesIndex`: a working-tree head equals the index commit id; a commit head starts with a SHA index
   commit; any other index id matches) and how to name its head in a message (`changeHeadText`), its shape check
   (`changeShapeIssues`), and the **change analysis** that `xpl change` prints. Pure: the CLI runs git and
-  hands the record in. `live.ts` holds the type-only `LiveStatus` of `GET /api/live` and `LIVE_TOUR_ID`.
+  hands the record in. `live.ts` holds the type-only `LiveStatus` of `GET /api/live`, `LIVE_TOUR_ID`, and the
+  reading of a change across the levels of a guide (§6 "Live"): `liftChange(model, change, ids)` (what the
+  change did to each box: `new`, `changed`, `inside` or none, with the changed files it holds; a box holds a
+  file's own code, a symbol's touched lines, a folder's files, a group's members and own anchors, and the boxes
+  and deleted files of the map its `opens` names, recursively), `removedBoxes(model, change, view)` (a deleted
+  file on the map whose file and folder boxes share its folder; a folder of which nothing is left as one box,
+  on its parent's map; `removed:<path>` ids, never elements), `boxChangeWords` ("New", "2 changed · 1 new",
+  "Removed"), `partViews` (the maps the boxes of `view:system` open) and `liveSummary` (the "What changed"
+  list: totals, each changed part of those maps with its files, symbols from `analyzeChange` and the deepest
+  map that draws each file, the note of its `tour:live` step `part-<pathSlug>`, and the files no part holds).
+  `pathSlug` is the slug of `view:map-<path>` and of those step ids. `lint.ts` `quietText` is `shortText`
+  without the mark, for a live page: `bus.ts`, not `bus.ts (TODO)`, and `""` when nothing is known.
 
   `analyzeChange(change, indexModel, getText?) → ChangeAnalysis`, against the index of the head:
   - **Files** with their added and removed line counts, whether they are tests (`isTestFile`) and indexed, and
@@ -2419,8 +2430,9 @@ session. It keeps one guide in step with the working tree and serves it through 
   watching|building|failed, updatedAt, index, base: {rev, sha, how: since|merge-base|start} | null, change:
   {files, added, removed} | null, explanation: {backend, state: off|idle|running|failed, explainedAt, stale,
   error}, error}`. `stale`: there is a change, and neither this process's last applied run nor the
-  `provenance.commit` of `tour:live` is the current index commit. A cycle that only drops gone focus from
-  `tour:live` also moves that commit, so it can read as explained.
+  `provenance.commit` of `tour:live` is the current index commit. A cycle keeps that commit
+  (`keepExplainedAt`): moving the guide and drafting the structure can touch the tour (a gone file leaves its
+  focus) without explaining anything.
 - `--once` runs one cycle (and with `claude` one agent run) without serving; exit 1 on failure. `--json`
   prints `{live}` per cycle of the loop. Exit codes: 0 stopped; 1 a failed first cycle; 2 usage.
 
@@ -3005,6 +3017,60 @@ Using the loaded snapshot offline hides controls and stops these requests.
 feedback placeholder. The reader creates or chooses feedback, runs the command, inspects the proposal,
 and accepts separately. Opening the offer executes nothing: no feedback submission, job, patch acceptance
 or request deletion. Agent-backed job submission and proposal review remain the jobs feature's responsibility.
+
+**Live** (`components/LiveMode.tsx`, `live.ts`, `live.css`; core `live.ts`). A bundle with `mode: "live"`
+(`xpl live`; `xpl bundle` never writes it) opens the live page, unless the address has `?mode=`:
+`?mode=explore` is the full Explore page of the same guide, linked at the foot of the panel. It is read in a
+second window while the code changes, so it is built for a glance:
+
+- **Where it opens.** Always the top map (`view:system`, else the first view), unless the address names a view
+  (`?view=`); the page does not write its address, so a reload starts at the top again. A poll keeps the
+  reader's view, selection and lens.
+- **Header.** The title, the lens (`LensSwitch`: Before | Changes | Now, radio buttons), the theme button and
+  Search. No Present, no Feedback, no Edit menu; no draft pill, draft bar or drift banner.
+- **"What changed"** (`LivePanel`), a column left of the map (on top of it at 900 px and narrower): the status
+  line, the totals ("4 files · +13 −5 · since origin/main"; `baseWords`: `since <rev>`, "since you started"
+  for a base chosen at the first start), where the explanation stands (`explanationWords`: writing, failed,
+  "from before your latest edits" when `stale`, or "Not explained yet" with the skill's "explain live" and
+  `xpl live --backend claude`), the title and summary of `tour:live`, then core's `liveSummary`: one entry per
+  changed part (name, path when it differs, the part's words, its +/−), its step note when there is one, and
+  its files (status word, name, +/− that opens the diff, up to 3 touched symbols). A part that is one file is
+  that file's row. Files no part holds fold under "Elsewhere". A name goes to the level of its box and picks it
+  (`showLiveBox`: one step of history; a removed box opens its code before the change instead); the +/−
+  opens the file at its first change. With no change: "No changes since …", or "No commit to compare with
+  yet" outside git.
+- **Marks** (`lensMarks` → `ChangeMarks` of `PillMark`s, so the layout makes room for the words): in Changes
+  every box the change touched, lifted by core's `liftChange`: a new box (`live-new`) filled teal with
+  "New"; a changed file or symbol (`live-changed`) filled orange with "Changed"; a part or service that holds
+  changes (`live-inside`) outlined orange with what it holds ("2 changed · 1 new · 1 removed"); a removed box
+  (`live-removed`) dashed grey with its name struck through and "Removed". Teal, orange and grey read apart in
+  the common colour blindnesses, and each has its own outline and words; light and dark have their own
+  `--live-*` tokens.
+- **Removed boxes** (`lensGraph`): core's `removedBoxes` join the graph of a map as boxes without arrows, ids
+  `removed:<path>`; a click opens the deleted file (or the first file of a deleted folder) in a "Before" pane
+  and marks the box picked.
+- **Lenses.** Changes is the default. Before drops the boxes whose status is `new` (and what is drawn inside
+  them, and their arrows and stubs), draws the removed boxes as plain boxes, marks nothing, shows a changed
+  file's code before the change (no focus ranges: they are head lines) and no pane for an added file
+  (`beforePanes`), and says under the caption that the arrows are read from the code as it is now (only the
+  head is indexed). Now draws the map as it is, without removed boxes, marks or the code's diff marks
+  (`showChanges` off). In Changes, a picked part shows the panes of its changed files only (`changedPanes`).
+- **Status** (`LiveStatusLine`): polls `GET {api}/live` with the explainer (`refreshLive`, every 2 s while the
+  page is visible); "Watching", "Updating…", "Update failed" with the error, "Disconnected" when a poll fails
+  (the connection state of the other polls), "· last update 5 s ago" ticking each second. Without a server
+  (a saved copy) the page is a still snapshot: "Snapshot · not updating", the same marks and panel.
+- **New activity.** `adoptExplainer` compares each changed file's signature (`fileSignatures`: status and
+  hunks) with the record it replaces; files that differ pulse their boxes once (`is-pulse`, 1.4 s, none under
+  `prefers-reduced-motion`). The panel marks entries whose files differ from what the reader last saw
+  ("just changed", `freshFiles` against `live.seen`); a click or a key on the page is a look (`markSeen`).
+  Marks keep their object while their words stay the same, so a poll that changes nothing on a map does not
+  lay it out again.
+- **Quiet drafts** (`shortLabels.ts` `setQuietDrafts`, set once in `main.tsx`): the viewer's `shortText` is
+  core's `quietText` on a live page, so a box shows `bus.ts`, a placeholder summary under a box shows nothing,
+  and a level with no written title is named "The system" or "Inside <box>" (`liveViewTitle`).
+- **Going deeper** is Explore's: double-click or the zoom button opens a box's map, the trail goes back, a
+  picked box shows its code with the diff marks in a code column on the right that comes with the first pick
+  and goes with Close. The map is a reader's map (`reader`: no moving boxes, no author tools).
 
 **Three modes, one header.** **Read** is the default screen, for readers. **Explore** is the author's
 workbench. **Present** plays a tour as slides. The header is one row built the same way in each: the title,
@@ -4094,7 +4160,8 @@ keyboard and small screens (`a11y.spec.ts`). `screenshots.spec.ts` (and screensh
 heuristic references, SCIP-precise references for TypeScript/JavaScript, Python and Go, config keys of YAML, JSON and TOML files, the
 full CLI (with `change`, `draft` and `lint`), Read, Explore and Present with tours, feedback from the page
 under `xpl view` and its live update, architecture maps (`role`, `opens`), change explainers with
-base anchors and a diff view, and example explainers for the original three fixtures. Rust has an
+base anchors and a diff view, the live page of `xpl live` (marks lifted to every level, removed boxes, Before |
+Changes | Now, "What changed"), and example explainers for the original three fixtures. Rust has an
 experimental syntax-tags provider with bounded heuristic calls and a browser-tested structural bundle; it has no committed example explainer.
 Ruby has source-backed declaration tags and a runnable fixture, but no relationship resolver.
 
@@ -4138,6 +4205,9 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
   by shared text within a hunk, leaving unmatched insertions and deletions as whole-line marks. Large hunks
   (over 80 lines on either side) keep only the whole-line marks. It does not align moved lines. The details
   panel tags a base anchor's row but does not show the base lines next to it.
+- The live page's Before is the head's map without what the change added: arrows come from the head index
+  (an arrow the change removed is not drawn, one it added between old boxes is), and a box whose text the
+  change rewrote shows its new text. A removed box has no arrows.
 - `xpl change` needs the head checked out and indexed (the head must be the index commit). The change of an
   uncommitted working tree is recorded with `--worktree` (and by `xpl live`) against the index of that tree;
   git is only read, so a file moved without `git mv` shows as a deletion and an addition, not a rename, and

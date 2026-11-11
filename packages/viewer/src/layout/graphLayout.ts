@@ -27,6 +27,7 @@ import {
 } from "@xpl/core";
 import { drawnEdges, isHolds, kindCount, rowTypeText } from "../drawnEdges.js";
 import type { ChangeStatus } from "../diff.js";
+import type { PillMark } from "../live.js";
 import { codeWidth, textWidth } from "../measure.js";
 import {
   distanceToSegment,
@@ -81,8 +82,11 @@ export interface LayoutNode {
   detail?: string;
   /** Ghosts: the same with every kind named, for the tooltip. */
   hint?: string;
-  /** What the explainer's change did to it (diff.ts `changeStatus`): a "New" or "Changed" pill. */
-  change?: ChangeStatus;
+  /**
+   * What the explainer's change did to it (diff.ts `changeStatus`): a "New" or "Changed" pill; on a live page what
+   * the change did to it and what it holds (live.ts `PillMark`: "New", "2 changed · 1 new", "Removed").
+   */
+  change?: BoxMark;
   /** What the box is in the architecture (`Node.role`): it picks the shape (a cylinder for a database). */
   role?: NodeRole;
   /** The view that shows what is inside the box (`Node.opens`): the box offers to zoom into it. */
@@ -314,23 +318,32 @@ export const ZOOM_SIZE = 22;
 /** Room for the icon left of a box's label (components/icons.tsx: 16 units and a gap). */
 export const ICON_ROOM = 23;
 
+/** What a box's change pill says: a change explainer's status, or a live page's mark with its own words. */
+export type BoxMark = ChangeStatus | PillMark;
+
 /** The words of the change pill. */
-export function changeText(change: ChangeStatus): string {
+export function changeText(change: BoxMark): string {
+  if (typeof change !== "string") return change.text;
   return change === "new" ? "New" : "Changed";
+}
+
+/** The status a pill is drawn for ("new", "changed", and on a live page "inside" and "removed"). */
+export function changeKind(change: BoxMark): PillMark["status"] {
+  return typeof change === "string" ? change : change.status;
 }
 
 /** The gap between the kind badge and the change pill. */
 export const PILL_GAP = 6;
 
 /** Width of the change pill (with the gap before it), 0 without one. */
-function changeWidth(change: ChangeStatus | undefined): number {
+function changeWidth(change: BoxMark | undefined): number {
   return change ? badgeWidth(changeText(change)) + PILL_GAP : 0;
 }
 
 function leafWidth(
   label: string,
   badge: string,
-  change?: ChangeStatus,
+  change?: BoxMark,
   extra: { role?: NodeRole; opens?: string; expandable?: boolean } = {},
 ): number {
   const content = Math.max(
@@ -351,7 +364,7 @@ function leafHeight(role: NodeRole | undefined): number {
   return LEAF_HEIGHT + 8 + (CYLINDER_ROLES.has(role) ? CYLINDER_LID : 0);
 }
 
-function containerMinWidth(label: string, badge: string, change?: ChangeStatus): number {
+function containerMinWidth(label: string, badge: string, change?: BoxMark): number {
   // label, badge, the change pill and the collapse button in one header row
   return (
     Math.ceil(
@@ -437,7 +450,7 @@ interface ModelNode {
   ghostFold?: LayoutNode["ghostFold"];
   detail?: string;
   hint?: string;
-  change?: ChangeStatus;
+  change?: BoxMark;
   role?: NodeRole;
   /** Its summary, to show under the label (`GraphView.boxText`), and that summary as wrapped by `leafSize`. */
   summary?: string;
@@ -2080,7 +2093,7 @@ function placeAnchors(
 }
 
 /** What the explainer's change did to the nodes of a graph, by node id (only the changed ones). */
-export type ChangeMarks = ReadonlyMap<string, ChangeStatus>;
+export type ChangeMarks = ReadonlyMap<string, BoxMark>;
 
 export async function layoutGraph(
   graph: DerivedGraph,

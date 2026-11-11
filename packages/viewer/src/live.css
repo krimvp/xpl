@@ -1,0 +1,488 @@
+/* The live page (components/LiveMode.tsx): "What changed" on the left, the map, the code of what is picked. */
+
+.live {
+  display: grid;
+  grid-template-columns: var(--live-panel-width, 330px) minmax(0, 1fr);
+  min-height: 0;
+  min-width: 0;
+}
+
+.live.has-code {
+  grid-template-columns: var(--live-panel-width, 330px) minmax(0, 1fr) 8px var(--code-width, 480px);
+}
+
+.live-map {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+  min-width: 0;
+  padding: 8px;
+}
+
+.live-code {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  min-width: 0;
+  padding: 8px 8px 8px 0;
+}
+
+.live-code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 2px 6px;
+}
+
+.live-code-head .panel-title {
+  margin: 0;
+}
+
+.btn.is-small {
+  padding: 2px 9px;
+  font-size: 12px;
+}
+
+/* The map's caption and, under it, what the lens can show. */
+.live .diagram {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.live .diagram:not(:has(> .lens-note)) {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.lens-note {
+  margin: 0;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+/* ── Before | Changes | Now (header) ── */
+
+.lens-switch {
+  display: inline-flex;
+  flex: none;
+  padding: 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+
+.lens-switch button {
+  padding: 3px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.lens-switch button:hover:not(:disabled) {
+  color: var(--fg);
+}
+
+.lens-switch button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.lens-switch button.is-on {
+  background: var(--panel);
+  color: var(--fg);
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+
+.lens-switch button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ── What changed ── */
+
+.live-panel {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 16px 16px;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+}
+
+.live-status-block {
+  margin: 0 0 10px;
+}
+
+.live-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0 4px;
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.live-status-block .live-status {
+  margin: 0;
+}
+
+.live-status strong {
+  color: var(--fg);
+  font-weight: 650;
+}
+
+/* the dot says the state by its shape too: a ring while working, a square when stopped or failed */
+.live-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: var(--live-new);
+}
+
+.live-status[data-state="building"] .live-dot,
+.live-status[data-state="connecting"] .live-dot {
+  background: transparent;
+  border: 2px solid var(--live-changed);
+}
+
+.live-status[data-state="failed"] .live-dot,
+.live-status[data-state="lost"] .live-dot {
+  border-radius: 2px;
+  background: var(--danger);
+}
+
+.live-status[data-state="snapshot"] .live-dot {
+  border-radius: 2px;
+  background: var(--live-removed);
+}
+
+.live-status-error {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  border-left: 3px solid var(--danger);
+  background: var(--danger-soft);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+.live-heading {
+  margin: 0 0 4px;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.live-totals {
+  margin: 0 0 10px;
+  font-size: 13.5px;
+}
+
+.live-plus {
+  color: var(--diff-add-fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.live-minus {
+  color: var(--danger);
+  font-variant-numeric: tabular-nums;
+}
+
+.live-hint,
+.live-foot {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.live-foot {
+  margin: 18px 0 0;
+}
+
+.live-foot a {
+  color: var(--accent);
+}
+
+.live-explanation {
+  margin: 0 0 10px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  background: var(--panel-2);
+  color: var(--muted);
+}
+
+.live-explanation.is-warn {
+  background: var(--warn-soft);
+  color: var(--fg);
+}
+
+.live-explanation.is-busy {
+  border: 1px dashed var(--border-strong);
+}
+
+.live-summary {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--accent);
+  background: var(--panel-2);
+  border-radius: 0 6px 6px 0;
+}
+
+.live-summary-title {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+
+.live-summary .markdown p {
+  margin: 0;
+}
+
+.live-parts,
+.live-files {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.live-part {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--live-changed);
+  border-radius: 6px;
+}
+
+.live-part.is-new {
+  border-left-color: var(--live-new);
+}
+
+.live-part.is-removed {
+  border-left-color: var(--live-removed);
+  border-left-style: dashed;
+}
+
+.live-part.is-fresh,
+.live-file.is-fresh {
+  background: var(--accent-soft);
+}
+
+.live-part-name,
+.live-file-name {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.live-part-name:hover .live-name,
+.live-file-name:hover:not(:disabled) .live-name {
+  text-decoration: underline;
+}
+
+.live-file-name:disabled {
+  cursor: default;
+}
+
+.live-part-name:focus-visible,
+.live-file-name:focus-visible,
+.live-diff:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.live-part-name .live-name {
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.live-name {
+  overflow-wrap: anywhere;
+}
+
+.live-name.is-removed {
+  text-decoration: line-through;
+  color: var(--live-removed-fg);
+}
+
+.live-mark,
+.live-status-word {
+  flex: none;
+  padding: 0 7px;
+  border: 1px solid var(--live-changed);
+  border-radius: 999px;
+  background: var(--live-changed-soft);
+  color: var(--live-changed-fg);
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 17px;
+}
+
+.live-mark.is-new,
+.live-status-word.is-added {
+  border-color: var(--live-new);
+  background: var(--live-new-soft);
+  color: var(--live-new-fg);
+}
+
+.live-mark.is-removed,
+.live-status-word.is-deleted {
+  border-color: var(--live-removed);
+  border-style: dashed;
+  background: transparent;
+  color: var(--live-removed-fg);
+}
+
+.live-status-word {
+  min-width: 58px;
+  text-align: center;
+}
+
+.live-fresh {
+  color: var(--accent);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.live-fresh::before {
+  content: "● ";
+}
+
+.live-note {
+  margin: 6px 0 4px;
+  font-size: 13px;
+}
+
+.live-note h3 {
+  margin: 0 0 2px;
+  font-size: 13px;
+}
+
+.live-note p {
+  margin: 0;
+}
+
+.live-facts {
+  margin: 2px 0 4px;
+  font-size: 12.5px;
+}
+
+.live-files {
+  margin-top: 6px;
+}
+
+.live-file {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: 8px;
+  padding: 3px 4px;
+  margin: 0 -4px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.live-diff {
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--panel);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.live-diff:hover {
+  border-color: var(--border-strong);
+  background: var(--hover);
+}
+
+.live-symbols {
+  grid-column: 1 / -1;
+  margin: 1px 0 0 66px;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.live-symbols code {
+  font-size: 11.5px;
+}
+
+.live-elsewhere {
+  margin: 8px 0 0;
+}
+
+.live-elsewhere summary {
+  color: var(--muted);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.live-empty .live-totals {
+  font-size: 14px;
+}
+
+/* A narrow window: the panel, then the map, then the code, one under the other; the page scrolls. */
+@media (max-width: 900px) {
+  .live,
+  .live.has-code {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(360px, 62vh) auto;
+    overflow-y: auto;
+  }
+  .live-panel {
+    max-height: 42vh;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .live > .splitter {
+    display: none;
+  }
+  .live-code {
+    min-height: 420px;
+    padding: 0 8px 8px;
+  }
+}
+
+.live-part-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: 8px;
+}
+
+.live-lines {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.live-symbols.is-flush {
+  margin: 3px 0 0;
+}
+
+.live-command {
+  white-space: nowrap;
+  font-size: 11.5px;
+}
+
+.live-path {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}

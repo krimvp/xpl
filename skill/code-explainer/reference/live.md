@@ -13,7 +13,7 @@ xpl owns the structure. Do not add, remove or move boxes, views or arrows, and n
 | 3. A part's files | `view:map-<folder>` (`view:map` is the top folder)         | one box per file                                         |
 | 4. The code       | the editor                                                 |                                                          |
 
-The service box `opens` level 2, and a part that is a folder `opens` its level 3 map. The change itself is in `change`: `base` (a full SHA), `head` (the index commit id, `wt-…`, with `worktree: true`), and `files`, each `added`, `modified`, `deleted` or `renamed` with its hunks. A deleted file has no box any more: name it in the text of its part. The viewer shows it from the change record.
+The service box `opens` level 2, and a part that is a folder `opens` its level 3 map. The change itself is in `change`: `base` (a full SHA), `head` (the index commit id, `wt-…`, with `worktree: true`), and `files`, each `added`, `modified`, `deleted` or `renamed` with its hunks. A deleted file has no box any more: name it in the text of its part. The page draws it from the change record, as a "Removed" box on its folder's map.
 
 You write two things:
 
@@ -23,7 +23,7 @@ You write two things:
    - **Summary:** 2-5 sentences. First what the change does to the design: which parts are new, changed or removed, and what now uses what. Then why, in the words of whoever asked, when you know it. Then the risk.
    - **Step `big-picture`**, on `view:system` with the project in focus: what the change does at the top, in one or two sentences (a new outside system, a new way in, or "inside the project only").
    - **Step `parts`**, on level 2 with the changed parts in focus: which parts change, before and now.
-   - **One step per changed part**, id `part-<folder slug>` (`part-src-store`), so it keeps its id across runs. On that part's level 3 map with its changed files in focus, or on level 2 when the part is one file. Its note: `### <what changed in this part>`, then "Before: … Now: …" in at most 45 words. Name the deleted files there.
+   - **One step per changed part**, id `part-<path slug>` (`part-src-store`; a part that is one file: `part-src-queue-ts`), so it keeps its id across runs. The page shows its note next to that part in "What changed". On that part's level 3 map with its changed files in focus, or on level 2 when the part is one file. Its note: `### <what changed in this part>`, then "Before: … Now: …" in at most 45 words. Name the deleted files there.
    - **Step `next`**, last, on level 2, its note headed `### Where to go next`: what to check before the change is done (tests that do not cover it, callers that still behave the old way).
    - A focus id must be on the step's view. A step shows the code of its focus, at most 2 ranges: when its focus holds more, give `code` yourself, at most 2 whole-file anchors of changed files (`{"file": "src/store/memory.ts", "role": "definition"}`). Show a deleted file's old code the same way with `"at": "base"`.
 

@@ -34,6 +34,18 @@ New commands and drafts:
 
 Guides and the viewer:
 
+- The page of `xpl live` is its own screen, built for a glance from a second window. It always opens at the
+  system map. A change deep in a file marks every level above it: the service says "2 changed · 1 new", the
+  part that holds it the same, the file "Changed", each with its own fill or outline and the words. Deleted
+  files are dashed, struck-through "Removed" boxes on their folder's map that open their old code. "What
+  changed", next to the map, lists the totals since the base, the explanation of `tour:live` and each changed
+  part with its files and functions; what the last edit touched says "just changed" and its boxes pulse once.
+  Before | Changes | Now switches between the architecture before the change, with the change marked, and as
+  it is. The status line says whether it is watching, updating or failed, and when it last updated. A saved
+  copy is a still snapshot of the same page; `?mode=explore` opens the full Explore page.
+- `xpl live` no longer reports an explanation as current after a cycle that only drops a deleted file from
+  `tour:live`.
+
 - Sketch boxes show an idea or a plan before there is code. They are drawn dotted, labeled "sketch" and
   linked to no code. (#233)
 - Select a box and choose "What it leads to" or "What leads to it" to light up every box reached along its
