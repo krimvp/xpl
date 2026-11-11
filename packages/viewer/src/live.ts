@@ -6,10 +6,12 @@
  */
 import {
   boxChangeWords,
+  DESIGN_VIEW_ID,
+  designLevel,
   liftChange,
+  liveTrail,
   quietText,
   removedBoxes,
-  zoomTrail,
   type BoxChange,
   type ChangeRecord,
   type DerivedGraph,
@@ -43,7 +45,10 @@ export interface PillMark {
   text: string;
 }
 
-/** A map's boxes as a lens draws them: removed boxes added (`changes`, `before`), new ones taken out (`before`). */
+/**
+ * A map's boxes as a lens draws them: removed boxes added (`changes`, `before`), new ones taken out (`before`), and
+ * boxes the change emptied (a design box of only deleted code) taken out (`now`).
+ */
 export function lensGraph(
   graph: DerivedGraph,
   model: ExplainerModel,
@@ -51,17 +56,23 @@ export function lensGraph(
   view: View | undefined,
   lens: Lens,
 ): DerivedGraph {
-  if (!change || lens === "now" || view?.type !== "graph") return graph;
-  const removed: GraphNode[] = removedBoxes(model, change, view).map((box) => ({
-    id: box.id,
-    label: box.label,
-    kind: box.kind,
-    container: false,
-  }));
+  if (!change || view?.type !== "graph") return graph;
+  // what Before hides: what the change added; what Now hides: boxes of only deleted code (a design box)
+  const hide: BoxChange["status"] | undefined =
+    lens === "before" ? "new" : lens === "now" ? "removed" : undefined;
+  const removed: GraphNode[] =
+    lens === "now"
+      ? []
+      : removedBoxes(model, change, view).map((box) => ({
+          id: box.id,
+          label: box.label,
+          kind: box.kind,
+          container: false,
+        }));
   let nodes = graph.nodes;
   let edges = graph.edges;
   let stubs = graph.stubs;
-  if (lens === "before") {
+  if (hide) {
     const lifted = liftChange(
       model,
       change,
@@ -69,7 +80,7 @@ export function lensGraph(
     );
     const gone = new Set<string>();
     for (const node of graph.nodes) {
-      if (lifted.get(node.id)?.status === "new" || (node.parent && gone.has(node.parent)))
+      if (lifted.get(node.id)?.status === hide || (node.parent && gone.has(node.parent)))
         gone.add(node.id);
     }
     if (gone.size > 0) {
@@ -204,6 +215,15 @@ export function topViewId(model: ExplainerModel): string | undefined {
   return model.view("view:system")?.id ?? model.views[0]?.id;
 }
 
+/**
+ * Where a live page opens: the top map, or its design level when that is a lens of the top map itself (a project
+ * of several programs): the page is first seen from high up either way.
+ */
+export function liveStartView(model: ExplainerModel): string | undefined {
+  const top = topViewId(model);
+  return designLevel(model)?.of.id === top && top !== undefined ? DESIGN_VIEW_ID : top;
+}
+
 /** The file a removed box opens: its own path, or the first deleted file of a removed folder. */
 export function removedFile(change: ChangeRecord | undefined, id: string): FilePath | undefined {
   const path = id.slice("removed:".length);
@@ -220,7 +240,7 @@ export function removedFile(change: ChangeRecord | undefined, id: string): FileP
 export function liveViewTitle(model: ExplainerModel, viewId: string): string {
   const title = quietText(model.view(viewId)?.title ?? "");
   if (title) return title.charAt(0).toUpperCase() + title.slice(1);
-  const trail = zoomTrail(model, viewId);
+  const trail = liveTrail(model, viewId);
   const box = trail[trail.length - 1]?.box;
   if (!box) return "The system";
   return `Inside ${quietText(model.label(box)) || "this part"}`;

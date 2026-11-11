@@ -14,7 +14,7 @@ import { ExpandInPlaceAction } from "./ExpandInPlaceAction.js";
 import { FoldBackAction } from "./FoldBackAction.js";
 import { SequenceView } from "./SequenceView.js";
 import { ZoomTrail } from "./ZoomTrail.js";
-import { LensNote } from "./LiveMode.js";
+import { LensNote, LevelSwitch } from "./LiveMode.js";
 import { liveViewTitle } from "../live.js";
 import { codeFirstView, flowOwnerName, startOrder } from "../workspace.js";
 import { renderInline } from "../markdown.js";
@@ -57,6 +57,7 @@ export function DiagramPane() {
     <div className="diagram" data-view-id={view.id} data-view-type={view.type}>
       <div className="diagram-caption">
         <ZoomTrail viewId={view.id} />
+        {state.live && <LevelSwitch viewId={view.id} />}
         {/* (in Present the question gives way to the "Fit all" cue: the title says it on hover) */}
         {/* (a live page: a level's draft title shows quietly; one with none is named by the trail) */}
         {(!state.live || quietText(view.title) || zoomTrail(state.model, view.id).length === 0) && (

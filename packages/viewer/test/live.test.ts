@@ -221,3 +221,75 @@ describe("the status words", () => {
     expect(explanationWords(status({}, false), false)).toBeUndefined();
   });
 });
+
+/** The live guide with a design level: a new box, a changed one and one of only deleted code. */
+function designBundle() {
+  const bundle = liveBundle();
+  const box = (id: string, members: string[], over: object = {}) => ({
+    id,
+    kind: "group" as const,
+    parent: "repo",
+    label: id.slice("grp:design-".length),
+    members,
+    anchors: [],
+    provenance: { origin: "llm" as const },
+    ...over,
+  });
+  const explainer: Explainer = {
+    ...bundle.explainer,
+    nodes: [
+      ...bundle.explainer.nodes,
+      box("grp:design-new", ["file:src/b.ts"]),
+      box("grp:design-a", ["file:src/a.ts"]),
+      box("grp:design-old", [], {
+        anchors: [
+          {
+            file: "config/old.yaml",
+            at: "base",
+            role: "definition",
+            hash: "sha256-v2:x",
+            resolved: { commit: CHANGE.base, range: { startLine: 1, endLine: 3 }, status: "ok" },
+          },
+        ],
+      }),
+    ] as Explainer["nodes"],
+    views: [
+      ...bundle.explainer.views,
+      {
+        id: "view:design",
+        type: "graph",
+        title: "The design",
+        scope: { root: "repo", depth: 1 },
+        include: ["grp:design-new", "grp:design-a", "grp:design-old"],
+        provenance: { origin: "llm" },
+      } satisfies GraphView,
+    ],
+  };
+  return { ...bundle, explainer };
+}
+
+describe("a live page with a design level", () => {
+  it("zooms from the system into the level the reader chose last: Design first, then Folders", () => {
+    const store = new ViewerStore(designBundle());
+    expect(store.getState().viewId).toBe("view:system");
+    store.zoomInto("grp:core");
+    expect(store.getState().viewId).toBe("view:design");
+    store.setLiveLevel("folders");
+    expect(store.getState().viewId).toBe("view:overview");
+    store.goToLevel("view:system");
+    store.zoomInto("grp:core");
+    expect(store.getState().viewId).toBe("view:overview");
+    store.setLiveLevel("design");
+    expect(store.getState().viewId).toBe("view:design");
+  });
+
+  it("hides a new design box in Before and a removed one in Now", () => {
+    const store = new ViewerStore(designBundle());
+    store.setView("view:design");
+    expect(drawn(store)).toEqual(["grp:design-a", "grp:design-new", "grp:design-old"]);
+    store.setLens("before");
+    expect(drawn(store)).toEqual(["grp:design-a", "grp:design-old"]);
+    store.setLens("now");
+    expect(drawn(store)).toEqual(["grp:design-a", "grp:design-new"]);
+  });
+});

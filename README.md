@@ -53,6 +53,10 @@ edit the code. After every edit, within a few seconds and without a reload, the 
   box to go down a level: its parts, then a folder's files, then the code with the diff.
 - **Before | Changes | Now**, in the header: the architecture before the change (what it added hidden, what it
   removed back, the code before), with the change marked, or as it is now.
+- **Design | Folders**, one level under the top, once a change spans two or more parts and your assistant
+  explained it: the design concepts the change touches ("one shared toolkit", "the contracts"), whatever folders
+  their files are in, each marked like a part. "What changed" then lists these first, with a note each, and
+  folds the folder list.
 
 Ask your assistant to "explain live" after each task (`/code-explainer explain live`), or start
 `xpl live --backend claude` to have Claude Code write the explanation once the code has been quiet for a while.

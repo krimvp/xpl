@@ -41,6 +41,7 @@ import {
   EDGE_KINDS,
   canExpandInPlace,
   expandStub as expandStubView,
+  designLevel,
   opensView,
   ExplainerModel,
   parseId,
@@ -79,7 +80,7 @@ import {
   freshFiles,
   removedFile,
   isRemovedId,
-  topViewId,
+  liveStartView,
   type Lens,
 } from "./live.js";
 import { identityOf } from "./derive.js";
@@ -265,6 +266,11 @@ export interface ViewerState {
 /** What the live page keeps besides the usual state. */
 export interface LiveState {
   lens: Lens;
+  /**
+   * The level under the system map the reader chose last (`LevelSwitch`): its design (`view:design`) or its
+   * folders. Zooming into the service lands there. Only a guide with a design level has the choice.
+   */
+  level: "design" | "folders";
   /** The last answer of `GET {api}/live`; undefined offline (a saved page) or before the first answer. */
   status?: LiveStatus;
   /** Why the last status poll failed (the page keeps what it has). */
@@ -421,6 +427,7 @@ export class ViewerStore {
         ? {
             live: {
               lens: "changes" as const,
+              level: "design" as const,
               seen: fileSignatures(changeOf(explainer)),
               pulse: { files: new Set<FilePath>(), seq: 0 },
             },
@@ -497,7 +504,7 @@ export class ViewerStore {
       return {
         mode: "explore",
         perspective: "explore",
-        viewId: explicitView ?? topViewId(model),
+        viewId: explicitView ?? liveStartView(model),
         selection:
           params.focus !== undefined ? params.focus.filter((id) => model.hasElement(id)) : [],
         applied: undefined,
@@ -1158,7 +1165,9 @@ export class ViewerStore {
 
   /** Shows a level of the zoom trail (or any view), in the perspective that draws it. */
   goToLevel(viewId: string): void {
-    const target = this.state.model.view(viewId);
+    // a live page shows the level under the system map as the reader last chose it: its design or its folders
+    const design = this.state.live?.level === "design" ? designLevel(this.state.model) : undefined;
+    const target = design?.of.id === viewId ? design.view : this.state.model.view(viewId);
     if (!target || this.state.mode === "present") return;
     const perspective: Perspective =
       this.state.perspective === "explore" ? "explore" : target.type === "graph" ? "map" : "flow";
@@ -2243,6 +2252,15 @@ export class ViewerStore {
     const live = this.state.live;
     if (!live || live.lens === lens) return;
     this.set({ live: { ...live, lens }, showChanges: lens === "changes" });
+  }
+
+  /** Design or Folders (live page with a design level): the level under the system map, remembered for zooming. */
+  setLiveLevel(level: LiveState["level"]): void {
+    const live = this.state.live;
+    const design = designLevel(this.state.model);
+    if (!live || !design) return;
+    if (live.level !== level) this.set({ live: { ...live, level } });
+    this.goToLevel(level === "design" ? design.view.id : design.of.id);
   }
 
   /**

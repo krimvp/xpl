@@ -7,11 +7,12 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   boxChangeWords,
+  designLevel,
   LIVE_TOUR_ID,
   liveSummary,
   quietText,
+  type BoxChange,
   type LiveFile,
-  type LivePart,
 } from "@xpl/core";
 import { changeAt, changeOf, firstChangedLine } from "../diff.js";
 import { useDerived, useStore, useViewerState } from "../hooks.js";
@@ -117,6 +118,45 @@ export function LensSwitch() {
   );
 }
 
+/**
+ * Design | Folders, on the level under the system map of a guide with a design level: the change as the design
+ * concepts it touches, or as the folders that hold it. The choice is remembered for the next zoom into the service.
+ */
+export function LevelSwitch({ viewId }: { viewId: string }) {
+  const store = useStore();
+  const state = useViewerState();
+  const level = useMemo(() => designLevel(state.model), [state.model]);
+  if (!state.live || !level || (viewId !== level.view.id && viewId !== level.of.id)) return null;
+  const on = viewId === level.view.id ? "design" : "folders";
+  const options = [
+    { id: "design", label: "Design", hint: "The change as the design concepts it touches" },
+    { id: "folders", label: "Folders", hint: "The change as the folders and files that hold it" },
+  ] as const;
+  return (
+    <div
+      className="lens-switch level-switch"
+      role="radiogroup"
+      aria-label="Show this level as"
+      data-testid="level-switch"
+    >
+      {options.map((option) => (
+        <button
+          key={option.id}
+          type="button"
+          role="radio"
+          aria-checked={on === option.id}
+          className={on === option.id ? "is-on" : undefined}
+          title={option.hint}
+          data-level={option.id}
+          onClick={() => store.setLiveLevel(option.id)}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /** One line under the map's caption that says what a lens can and cannot show. */
 export function LensNote() {
   const state = useViewerState();
@@ -213,7 +253,7 @@ function LivePanel() {
     [state.model, change, tour, files],
   );
   const fresh = useMemo(() => freshFiles(live.seen, change), [live.seen, change]);
-  const partName = (part: LivePart) =>
+  const partName = (part: Row) =>
     quietText(part.label) || part.id.replace(/^(dir|file|removed):/, "");
   // names two boxes of a part's map share (`src` of two packages), changed or not
   const twins = useMemo(() => {
@@ -278,19 +318,38 @@ function LivePanel() {
               />
             </div>
           )}
-          <ol className="live-parts" data-testid="live-parts">
-            {summary.parts.map((part) => partRow(part, fresh))}
-          </ol>
-          {summary.elsewhere.length > 0 && (
-            <details className="live-elsewhere" open={summary.parts.length === 0}>
+          {summary.design && (
+            <section className="live-design" aria-label="Design" data-testid="live-design">
+              <h3 className="live-section">Design</h3>
+              <ol className="live-parts">
+                {summary.design.boxes.map((box) =>
+                  boxRow({ ...box, view: summary.design!.view }, fresh, true),
+                )}
+              </ol>
+              {summary.design.outside.length > 0 && (
+                <details className="live-elsewhere">
+                  <summary>
+                    {count(summary.design.outside.length, "changed file")}{" "}
+                    {summary.design.outside.length === 1 ? "is" : "are"} in no design box
+                  </summary>
+                  <ul className="live-files">
+                    {summary.design.outside.map((file) => fileRow(file, fresh))}
+                  </ul>
+                </details>
+              )}
+            </section>
+          )}
+          {summary.design ? (
+            <details className="live-by-folder" data-testid="live-by-folder">
               <summary>
-                Elsewhere: {count(summary.elsewhere.length, "file")} (tests, settings, files on no
-                map)
+                By folder: {count(summary.parts.length, "part")}
+                {summary.elsewhere.length > 0 &&
+                  `, ${count(summary.elsewhere.length, "file")} elsewhere`}
               </summary>
-              <ul className="live-files">
-                {summary.elsewhere.map((file) => fileRow(file, fresh))}
-              </ul>
+              {folders()}
             </details>
+          ) : (
+            folders()
           )}
         </>
       )}
@@ -302,13 +361,34 @@ function LivePanel() {
     </aside>
   );
 
-  function partRow(part: LivePart, fresh: ReadonlySet<string>) {
+  /** The changed parts, then the files no part holds: "What changed" by folder. */
+  function folders() {
+    return (
+      <>
+        <ol className="live-parts" data-testid="live-parts">
+          {summary!.parts.map((part) => boxRow(part, fresh))}
+        </ol>
+        {summary!.elsewhere.length > 0 && (
+          <details className="live-elsewhere" open={summary!.parts.length === 0}>
+            <summary>
+              Elsewhere: {count(summary!.elsewhere.length, "file")} (tests, settings, files on no
+              map)
+            </summary>
+            <ul className="live-files">{summary!.elsewhere.map((file) => fileRow(file, fresh))}</ul>
+          </details>
+        )}
+      </>
+    );
+  }
+
+  /** A changed part, or a design box (`design`: its files folded under its note). */
+  function boxRow(part: Row, fresh: ReadonlySet<string>, design = false) {
     const isNew = part.files.some((file) => fresh.has(file.path));
     const path = /^(dir|file|removed):/.test(part.id) ? part.id.replace(/^[a-z]+:/, "") : undefined;
     const name = partName(part);
     const note = part.note ? quietText(part.note) : "";
     // a part that is one file is that file's row: its diff and its symbols, without a list of one
-    const own = part.files.length === 1 && part.id === `file:${part.files[0]!.path}`;
+    const own = !design && part.files.length === 1 && part.id === `file:${part.files[0]!.path}`;
     const only = own ? part.files[0]! : undefined;
     return (
       <li
@@ -351,6 +431,11 @@ function LivePanel() {
         )}
         {only ? (
           symbolsLine(only, true)
+        ) : design ? (
+          <details className="live-box-files">
+            <summary>{count(part.files.length, "file")}</summary>
+            <ul className="live-files">{part.files.map((file) => fileRow(file, fresh))}</ul>
+          </details>
         ) : (
           <ul className="live-files">{part.files.map((file) => fileRow(file, fresh))}</ul>
         )}
@@ -428,6 +513,16 @@ function LivePanel() {
       </li>
     );
   }
+}
+
+/** A row of "What changed": a changed part, or a changed design box. */
+interface Row {
+  id: string;
+  view: string;
+  label: string;
+  change: BoxChange;
+  note?: string;
+  files: LiveFile[];
 }
 
 const STATUS: Record<LiveFile["status"], string> = {

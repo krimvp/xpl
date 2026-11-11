@@ -438,6 +438,57 @@
   cursor: pointer;
 }
 
+/* ── Design first, then by folder ── */
+
+.live-section {
+  margin: 4px 0 8px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.live-design {
+  margin: 0 0 12px;
+}
+
+.live-box-files {
+  margin: 4px 0 0;
+}
+
+.live-box-files > summary {
+  color: var(--muted);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.live-by-folder {
+  margin: 4px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.live-by-folder > summary {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+/* Design | Folders, in the map's caption, a step smaller than the lens switch of the header */
+.level-switch {
+  align-self: center;
+  font-size: 12.5px;
+}
+
+.level-switch button {
+  padding: 1px 10px;
+}
+
 .live-empty .live-totals {
   font-size: 14px;
 }

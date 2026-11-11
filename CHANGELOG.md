@@ -18,6 +18,11 @@ New commands and drafts:
   text is kept, new files get boxes, deleted files lose theirs. It serves the guide with its status at
   `/api/live`. Your own agent writes the explanation after each task (`reference/live.md`), or
   `--backend claude` runs Claude Code once the code is quiet. `--once` runs one cycle for hooks and scripts.
+- A change that spans two or more parts gets a design level on the live page: a Design | Folders switch under
+  the system map, with a map of the design concepts the change touches, marked like the parts, and listed
+  first in "What changed". The agent writes it (`grp:design-*` boxes, `view:design`, the steps `design` and
+  `design-<slug>`); `xpl live` keeps its members on moved, deleted and restored files, and `xpl lint` checks it
+  (`design-level`, `design-words`, `design-unassigned`).
 - `xpl change <guide> <base> --worktree` records the change from a commit to the working tree, untracked
   files the index holds included.
 - `xpl draft class <guide> <type>` maps what a class or interface extends and implements, and what extends or

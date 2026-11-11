@@ -6,7 +6,8 @@ import { chmodSync, existsSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { artifactIdentity } from "@xpl/core";
-import { claudeRunner, claudeAnswerRunner } from "../src/claude-runner.js";
+import { claudeRunner, claudeAnswerRunner, liveAgentPrompt } from "../src/claude-runner.js";
+import type { LiveRun } from "../src/live.js";
 import { createCtx } from "../src/context.js";
 import { openJobs } from "../src/jobs.js";
 import { loadExplainer, openWorkspace } from "../src/repo.js";
@@ -691,4 +692,34 @@ it("uses the installed Claude process adapter for frozen source-linked answers w
   } finally {
     await jobs.close();
   }
+});
+
+describe("the prompt of a background live run", () => {
+  const where = { output: "/t/patch.json", skillDir: "/s", root: "/r", before: "/t/before" };
+  const run = (over: Partial<LiveRun>): LiveRun => ({
+    root: "/r",
+    guidePath: "/r/.explainer/live.explainer.json",
+    base: "a".repeat(40),
+    change: { base: "a".repeat(40), head: "wt-1", worktree: true, files: [] },
+    before: {},
+    findings: [],
+    unassigned: [],
+    ...over,
+  });
+
+  it("asks for the design level of a change, and names the added files no design box holds", () => {
+    const prompt = liveAgentPrompt(
+      run({ unassigned: ["src/retry/policy.ts", "src/retry/clock.ts"] }),
+      where,
+    );
+    expect(prompt).toContain(
+      'When the change spans two or more parts, write or refresh the design level (reference/live.md, "The design level"): grp:design-<slug> boxes with members, view:design, and the steps design and design-<slug>.',
+    );
+    expect(prompt).toContain(
+      "These added files are in no design box: src/retry/policy.ts, src/retry/clock.ts.",
+    );
+    const none = liveAgentPrompt(run({ change: undefined }), where);
+    expect(none).toContain("It records no change: write the TODO texts only, and no tour.");
+    expect(none).not.toContain("design");
+  });
 });

@@ -23,6 +23,7 @@ import {
   CODE_LANGUAGES,
   DEFAULT_EDGE_KINDS,
   analyzeChange,
+  baseFileOf,
   baseName,
   type AnchorInput,
   type ExplainerPatch,
@@ -538,7 +539,12 @@ export function draftMap(input: DraftInput): Draft {
     const steps: PatchTourStep[] = [];
     for (const step of tour.steps) {
       const focus = step.focus.filter((id) => !goneId(id));
-      const kept = (step.code ?? []).filter((a) => a.at === "base" || model.hasFile(a.file));
+      // code before the change stays while the change has it (a deleted file that came back has none)
+      const kept = (step.code ?? []).filter((a) =>
+        a.at === "base"
+          ? baseFileOf(explainer.change, a.file) !== undefined
+          : model.hasFile(a.file),
+      );
       let code: (AnchorInput | undefined)[] = kept.map((a) => ({
         file: a.file,
         role: a.role,

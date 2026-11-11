@@ -8,7 +8,7 @@ import type { Ctx } from "./context.js";
 import { CliError, errorMessage } from "./errors.js";
 import { readJobProcess, terminateJobProcess, type JobProcess } from "./job-process.js";
 import type { JobRunner, AnswerRunner, AnswerJob, Job } from "./jobs.js";
-import type { LiveAgent } from "./live.js";
+import type { LiveAgent, LiveRun } from "./live.js";
 import { defaultSkillDir, verifySkill } from "./setup.js";
 
 // The launcher retains group identity and reports Claude's exit on fd 3.
@@ -345,6 +345,38 @@ export function claudeAnswerRunner(
   return runner(ctx, options);
 }
 
+/** What a background live run is asked to do: where things are, and what the last try or the guide left open. */
+export function liveAgentPrompt(
+  run: LiveRun,
+  where: { output: string; skillDir: string; root: string; before: string },
+): string {
+  return [
+    `Output: ${JSON.stringify(where.output)}`,
+    `Use the installed code-explainer skill at ${where.skillDir}/SKILL.md and follow reference/live.md, "A background run".`,
+    `The guide: ${JSON.stringify(run.guidePath)}. Repository: ${where.root}.`,
+    run.change
+      ? `Its \`change\` is the change from commit ${run.change.base} to the working tree. The code before the change of each changed file is in ${where.before}, by its path.`
+      : "It records no change: write the TODO texts only, and no tour.",
+    ...(run.change
+      ? [
+          'When the change spans two or more parts, write or refresh the design level (reference/live.md, "The design level"): grp:design-<slug> boxes with members, view:design, and the steps design and design-<slug>.',
+        ]
+      : []),
+    ...(run.unassigned.length > 0
+      ? [`These added files are in no design box: ${run.unassigned.join(", ")}.`]
+      : []),
+    "Write exactly one xpl patch (a JSON object) to Output. xpl lints it and applies it as actor llm after you exit.",
+    ...(run.findings.length > 0
+      ? [
+          "Your previous patch was not applied. Fix these findings in a new, complete patch:",
+          ...run.findings.map((finding) => `- ${finding}`),
+        ]
+      : []),
+    "Only the output file is writable. Do not run commands or change source, the guide or the index.",
+    "If tooling or authentication prevents completion, report that failure instead of inventing output. Keep this task small and do not delegate.",
+  ].join("\n");
+}
+
 /**
  * The background agent of `xpl live --backend claude`: one Claude run that reads the guide, the code and the code
  * before the change (written to `before/` in its own folder, since it cannot run git), and writes one patch, which
@@ -374,23 +406,12 @@ export function claudeLiveAgent(
         await mkdir(dirname(abs), { recursive: true });
         await writeFile(abs, text);
       }
-      const prompt = [
-        `Output: ${JSON.stringify(output)}`,
-        `Use the installed code-explainer skill at ${skillDir}/SKILL.md and follow reference/live.md, "A background run".`,
-        `The guide: ${JSON.stringify(run.guidePath)}. Repository: ${root}.`,
-        run.change
-          ? `Its \`change\` is the change from commit ${run.change.base} to the working tree. The code before the change of each changed file is in ${join(directory, "before")}, by its path.`
-          : "It records no change: write the TODO texts only, and no tour.",
-        "Write exactly one xpl patch (a JSON object) to Output. xpl lints it and applies it as actor llm after you exit.",
-        ...(run.findings.length > 0
-          ? [
-              "Your previous patch was not applied. Fix these findings in a new, complete patch:",
-              ...run.findings.map((finding) => `- ${finding}`),
-            ]
-          : []),
-        "Only the output file is writable. Do not run commands or change source, the guide or the index.",
-        "If tooling or authentication prevents completion, report that failure instead of inventing output. Keep this task small and do not delegate.",
-      ].join("\n");
+      const prompt = liveAgentPrompt(run, {
+        output,
+        skillDir,
+        root,
+        before: join(directory, "before"),
+      });
       const { data } = await runClaude(ctx, {
         root,
         skillDir,
