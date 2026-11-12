@@ -113,7 +113,7 @@ function section(text: string, heading: string, file: string): string {
 }
 
 /** The rules a run follows: the sections of `SKILL_SECTIONS`, read from the skill folder. */
-export function skillRules(skillDir: string): string {
+function skillRules(skillDir: string): string {
   return SKILL_SECTIONS.map(({ file, headings }) => {
     let text: string;
     try {
@@ -318,7 +318,7 @@ function tools(
  * The patch in a model's answer: the first JSON object of a fenced block, else the whole answer, else the text
  * from its first `{` to its last `}`. Reasoning in `<think>` is skipped. Throws `UnreadableAnswer` otherwise.
  */
-export function patchOf(answer: string): Record<string, unknown> {
+function patchOf(answer: string): Record<string, unknown> {
   const text = answer.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
   const candidates = [
     ...[...text.matchAll(/```[a-zA-Z]*\n([\s\S]*?)```/g)].map((m) => m[1]!),
