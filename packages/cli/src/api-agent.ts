@@ -343,7 +343,7 @@ export function patchOf(answer: string): Record<string, unknown> {
 function failure(error: unknown, config: ApiConfig, timeoutMs: number, timedOut: boolean): string {
   if (timedOut)
     return `the model API did not answer within ${timeoutMs / 1000} s; the next edit tries again`;
-  if (APICallError.isInstance(error)) {
+  if (APICallError.isInstance(error) && error.statusCode !== undefined) {
     let detail = error.responseBody ?? "";
     try {
       const body = JSON.parse(detail) as {
@@ -368,8 +368,12 @@ function failure(error: unknown, config: ApiConfig, timeoutMs: number, timedOut:
             : "the next edit tries again";
     return `the model API at ${config.baseUrl} answered HTTP ${status ?? "error"}${detail ? `: ${detail}` : ""} (${advice})`;
   }
-  const cause = (error as { cause?: { code?: unknown } })?.cause?.code;
-  return `the call to the model API at ${config.baseUrl} failed: ${typeof cause === "string" ? cause : errorMessage(error).slice(0, 300)}`;
+  // no answer at all: the network error underneath (ECONNREFUSED, ENOTFOUND), else the message
+  let cause: unknown = error;
+  while (cause instanceof Error && cause.cause !== undefined && !(cause as { code?: unknown }).code)
+    cause = cause.cause;
+  const code = (cause as { code?: unknown })?.code;
+  return `cannot reach the model API at ${config.baseUrl}: ${typeof code === "string" ? code : errorMessage(cause).slice(0, 300)}`;
 }
 
 /** `text` without the key, in case a provider or a library repeats it. */

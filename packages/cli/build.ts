@@ -5,6 +5,7 @@
  *   dist/wasm/        web-tree-sitter.wasm + every grammar .wasm, copied out of node_modules
  *   dist/viewer.html  required copy of packages/viewer/dist/index.html
  *   dist/skill/       bundled authoring skill, installed through `xpl skill install`
+ *   dist/THIRD_PARTY_LICENSES.txt the licence of every npm package bundled into xpl.mjs
  *   dist/package.json standalone npm metadata; no workspace dependencies or install scripts
  *   dist/integrity.json SHA-256 inventory, checked by `xpl doctor`
  */
@@ -38,7 +39,8 @@ if (!existsSync(viewerHtml)) {
 await rm(dist, { recursive: true, force: true });
 await mkdir(join(dist, "wasm"), { recursive: true });
 
-await build({
+const bundled = await build({
+  metafile: true,
   entryPoints: [join(here, "src/main.ts")],
   outfile: join(dist, "xpl.mjs"),
   bundle: true,
@@ -56,6 +58,39 @@ await build({
   logLevel: "info",
 });
 await chmod(join(dist, "xpl.mjs"), 0o755);
+
+// Their licences (MIT, Apache-2.0, BSD) ask that the licence text goes with the code.
+const packages = new Set<string>();
+for (const input of Object.keys(bundled.metafile.inputs)) {
+  const at = input.lastIndexOf("node_modules/");
+  if (at < 0) continue;
+  const rest = input.slice(at + "node_modules/".length).split("/");
+  packages.add(
+    input.slice(0, at) +
+      "node_modules/" +
+      rest.slice(0, rest[0]!.startsWith("@") ? 2 : 1).join("/"),
+  );
+}
+const notices: string[] = [];
+const byLicence = new Map<string, string>();
+for (const dir of [...packages].sort()) {
+  const meta = JSON.parse(await readFile(join(dir, "package.json"), "utf8"));
+  const file = (await readdir(dir)).find((name) => /^(licen[cs]e|copying)/i.test(name));
+  if (file) byLicence.set(meta.license, meta.name);
+  notices.push(
+    `${meta.name}@${meta.version} (${meta.license ?? "no licence named"})\n\n` +
+      (file
+        ? (await readFile(join(dir, file), "utf8")).trim()
+        : `The package has no licence file; the text of ${meta.license} is the one given for ${byLicence.get(meta.license) ?? "another package"} here.`),
+  );
+}
+await writeFile(
+  join(dist, "THIRD_PARTY_LICENSES.txt"),
+  `The npm packages bundled into xpl.mjs, and their licences.\n\n${notices.join(`\n\n${"-".repeat(78)}\n\n`)}\n`,
+);
+console.log(
+  `wrote the licences of ${packages.size} bundled packages to dist/THIRD_PARTY_LICENSES.txt`,
+);
 
 for (const source of allWasmSources()) {
   await copyFile(resolvePackageWasm(source), join(dist, "wasm", source.file));
@@ -90,7 +125,15 @@ await writeFile(
       type: "module",
       bin: { xpl: "xpl.mjs" },
       engines: { node: ">=22.12" },
-      files: ["xpl.mjs", "viewer.html", "wasm", "skill", "integrity.json", "LICENSE"],
+      files: [
+        "xpl.mjs",
+        "viewer.html",
+        "wasm",
+        "skill",
+        "integrity.json",
+        "LICENSE",
+        "THIRD_PARTY_LICENSES.txt",
+      ],
     },
     null,
     2,

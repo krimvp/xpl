@@ -97,7 +97,19 @@ describe("xpl live --backend api", () => {
     const api = await endpoint(() => fenced(explanation(SUMMARY)));
     const { dir, live } = await session({ baseUrl: api.url, apiKey: KEY });
     expect(live.status().explanation).toMatchObject({ backend: "api", stale: true });
-    await live.explain();
+    // nothing but the configured endpoint is called: no telemetry, no gateway
+    const fetched: string[] = [];
+    const fetch = globalThis.fetch;
+    globalThis.fetch = (input, init) => {
+      fetched.push(String(input instanceof Request ? input.url : input));
+      return fetch(input, init);
+    };
+    try {
+      await live.explain();
+    } finally {
+      globalThis.fetch = fetch;
+    }
+    expect(fetched).toEqual([`${api.url}/chat/completions`]);
     expect(live.status().explanation).toMatchObject({ state: "idle", stale: false, error: null });
     expect(tour(dir)?.summary).toBe(SUMMARY);
 
@@ -174,6 +186,16 @@ describe("xpl live --backend api", () => {
     await live.explain();
     expect(live.status().explanation).toMatchObject({ state: "failed" });
     expect(live.status().explanation.error).toContain("did not answer within 0.3 s");
+  });
+
+  it("says when nothing listens at the endpoint", async () => {
+    const api = await endpoint(() => null);
+    servers.splice(0).forEach((server) => server.close());
+    const { live } = await session({ baseUrl: api.url, apiKey: KEY });
+    await live.explain();
+    expect(live.status().explanation.error).toBe(
+      `cannot reach the model API at ${api.url}: ECONNREFUSED`,
+    );
   });
 
   it("sends no key to an endpoint that needs none", async () => {

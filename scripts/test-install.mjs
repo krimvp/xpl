@@ -43,7 +43,7 @@ const packed = JSON.parse(
 for (const file of packed[0].files) {
   assert.match(
     file.path,
-    /^(?:xpl\.mjs|viewer\.html|package\.json|integrity\.json|README\.md|LICENSE|wasm\/[^/]+\.(?:wasm|scm)|skill\/code-explainer\/(?:SKILL\.md|README\.md|bin\/(?:xpl|package\.json)|reference\/.*\.(?:md|json)))$/,
+    /^(?:xpl\.mjs|viewer\.html|package\.json|integrity\.json|README\.md|LICENSE|THIRD_PARTY_LICENSES\.txt|wasm\/[^/]+\.(?:wasm|scm)|skill\/code-explainer\/(?:SKILL\.md|README\.md|bin\/(?:xpl|package\.json)|reference\/.*\.(?:md|json)))$/,
   );
   assert(!/(?:^|\/)(?:tests?|\.env)(?:[/.]|$)|\.map$/.test(file.path), file.path);
 }
