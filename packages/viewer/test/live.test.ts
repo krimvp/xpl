@@ -216,7 +216,13 @@ describe("the status words", () => {
     expect(explanationWords(status({ state: "failed", error: "no key" }), false)?.text).toBe(
       "The explanation could not be written: no key",
     );
-    expect(explanationWords(status(), false)?.command).toBe("xpl live --backend claude");
+    expect(explanationWords(status(), false)).toMatchObject({
+      text: "Not explained yet. Ask your agent to “explain live” (the code-explainer skill), or start",
+      commands: ["xpl live --backend claude", "xpl live --backend api"],
+    });
+    expect(explanationWords(status({ backend: "api", state: "idle" }), false)?.text).toBe(
+      "Not explained yet: the model writes it once the code has been quiet for a while.",
+    );
     // nothing to explain without a change
     expect(explanationWords(status({}, false), false)).toBeUndefined();
   });

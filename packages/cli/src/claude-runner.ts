@@ -8,7 +8,7 @@ import type { Ctx } from "./context.js";
 import { CliError, errorMessage } from "./errors.js";
 import { readJobProcess, terminateJobProcess, type JobProcess } from "./job-process.js";
 import type { JobRunner, AnswerRunner, AnswerJob, Job } from "./jobs.js";
-import type { LiveAgent, LiveRun } from "./live.js";
+import { AGENT_TIMEOUT_MS, liveTask, type LiveAgent, type LiveRun } from "./live.js";
 import { defaultSkillDir, verifySkill } from "./setup.js";
 
 // The launcher retains group identity and reports Claude's exit on fd 3.
@@ -354,24 +354,8 @@ export function liveAgentPrompt(
     `Output: ${JSON.stringify(where.output)}`,
     `Use the installed code-explainer skill at ${where.skillDir}/SKILL.md and follow reference/live.md, "A background run".`,
     `The guide: ${JSON.stringify(run.guidePath)}. Repository: ${where.root}.`,
-    run.change
-      ? `Its \`change\` is the change from commit ${run.change.base} to the working tree. The code before the change of each changed file is in ${where.before}, by its path.`
-      : "It records no change: write the TODO texts only, and no tour.",
-    ...(run.change
-      ? [
-          'When the change spans two or more parts, write or refresh the design level (reference/live.md, "The design level"): grp:design-<slug> boxes with members, view:design, and the steps design and design-<slug>.',
-        ]
-      : []),
-    ...(run.unassigned.length > 0
-      ? [`These added files are in no design box: ${run.unassigned.join(", ")}.`]
-      : []),
+    ...liveTask(run, `in ${where.before}, by its path`),
     "Write exactly one xpl patch (a JSON object) to Output. xpl lints it and applies it as actor llm after you exit.",
-    ...(run.findings.length > 0
-      ? [
-          "Your previous patch was not applied. Fix these findings in a new, complete patch:",
-          ...run.findings.map((finding) => `- ${finding}`),
-        ]
-      : []),
     "Only the output file is writable. Do not run commands or change source, the guide or the index.",
     "If tooling or authentication prevents completion, report that failure instead of inventing output. Keep this task small and do not delegate.",
   ].join("\n");
@@ -419,7 +403,7 @@ export function claudeLiveAgent(
         output,
         prompt,
         signal,
-        timeoutMs: options.timeoutMs ?? 300_000,
+        timeoutMs: options.timeoutMs ?? AGENT_TIMEOUT_MS,
         started: async () => {},
         timeoutAdvice: "make the next edit, and `xpl live` tries again",
       });

@@ -13,8 +13,11 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@ai-sdk/openai-compatible": "3.0.90",
     "@xpl/core": "*",
-    "@xpl/indexer": "*"
+    "@xpl/indexer": "*",
+    "ai": "7.0.170",
+    "zod": "4.6.7"
   },
   "publishName": "@krimvp/xpl"
 }

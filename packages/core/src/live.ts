@@ -45,8 +45,11 @@ export interface LiveStatus {
   /** The recorded change (`explainer.change`) in numbers; null when the code is the code of the base. */
   change: { files: number; added: number; removed: number } | null;
   explanation: {
-    /** `none`: nothing is spawned (the user's own agent writes, `reference/live.md`); `claude`: the installed CLI. */
-    backend: "none" | "claude";
+    /**
+     * `none`: nothing runs (the user's own agent writes, `reference/live.md`); `claude`: the installed Claude Code
+     * CLI; `api`: a model behind an OpenAI-compatible endpoint the user configured.
+     */
+    backend: "none" | "claude" | "api";
     /** `off` with backend none; `idle` between runs; `running` while one runs; `failed` after a run that failed. */
     state: "off" | "idle" | "running" | "failed";
     /** When a run of this process last applied an explanation (ISO time); null otherwise. */

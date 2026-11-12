@@ -180,13 +180,13 @@ export function agoWords(iso: string | null | undefined, now: number): string {
 }
 
 /**
- * Where the explanation stands, in one plain line, and the command that gets one when there is none (undefined:
+ * Where the explanation stands, in one plain line, and the commands that get one when there is none (undefined:
  * it is current, nothing to say).
  */
 export function explanationWords(
   status: LiveStatus | undefined,
   hasTour: boolean,
-): { text: string; tone: "busy" | "warn" | "quiet"; command?: string } | undefined {
+): { text: string; tone: "busy" | "warn" | "quiet"; commands?: string[] } | undefined {
   if (!status || status.change === null) return undefined;
   const { explanation } = status;
   if (explanation.state === "running") return { text: "Writing the explanation…", tone: "busy" };
@@ -198,16 +198,16 @@ export function explanationWords(
   if (hasTour && explanation.stale)
     return { text: "The explanation is from before your latest edits.", tone: "warn" };
   if (hasTour) return undefined;
-  return explanation.backend === "none"
-    ? {
-        text: "Not explained yet. Ask your agent to “explain live” (the code-explainer skill), or start",
-        tone: "quiet",
-        command: "xpl live --backend claude",
-      }
-    : {
-        text: "Not explained yet: Claude writes it once the code has been quiet for a while.",
-        tone: "quiet",
-      };
+  if (explanation.backend === "none")
+    return {
+      text: "Not explained yet. Ask your agent to “explain live” (the code-explainer skill), or start",
+      tone: "quiet",
+      commands: ["xpl live --backend claude", "xpl live --backend api"],
+    };
+  return {
+    text: `Not explained yet: ${explanation.backend === "claude" ? "Claude" : "the model"} writes it once the code has been quiet for a while.`,
+    tone: "quiet",
+  };
 }
 
 /** The top map of a live guide: `view:system`, else the first view. */

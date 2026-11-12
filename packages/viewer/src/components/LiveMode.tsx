@@ -4,7 +4,7 @@
  * the top level and carries the change's marks; the code of what the reader picks comes in on the right.
  * The lens (Before, Changes, Now) is in the header (`LensSwitch`).
  */
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   boxChangeWords,
   designLevel,
@@ -299,12 +299,13 @@ function LivePanel() {
           {explanation && (
             <p className={`live-explanation is-${explanation.tone}`} data-testid="live-explanation">
               {explanation.text}
-              {explanation.command && (
-                <>
-                  {" "}
-                  <code className="live-command">{explanation.command}</code>.
-                </>
-              )}
+              {explanation.commands?.map((command, i) => (
+                <Fragment key={command}>
+                  {i === 0 ? " " : " or "}
+                  <code className="live-command">{command}</code>
+                  {i === explanation.commands!.length - 1 && "."}
+                </Fragment>
+              ))}
             </p>
           )}
           {tour?.summary && (

@@ -203,7 +203,9 @@ test.describe.serial("xpl live", () => {
       /^4 files · \+\d+ −\d+ · since you started$/,
     );
     await expect(page.getByTestId("live-explanation")).toContainText("Not explained yet");
-    await expect(page.getByTestId("live-explanation")).toContainText("xpl live --backend claude");
+    await expect(page.getByTestId("live-explanation")).toContainText(
+      "or start xpl live --backend claude or xpl live --backend api.",
+    );
     const store = panel.locator('[data-part-id="dir:src/store"]');
     await expect(store.locator(".live-mark")).toHaveText("1 changed · 1 new · 1 removed");
     await expect(store.locator(".live-file .live-name")).toHaveText([

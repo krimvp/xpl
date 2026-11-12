@@ -48,6 +48,9 @@ import { captureInputs, settleBuilds } from "./watch.js";
 /** Seconds of quiet before the agent runs (`--agent-quiet`). */
 export const AGENT_QUIET_SECONDS = 20;
 
+/** How long one agent run may take before it fails (ms). */
+export const AGENT_TIMEOUT_MS = 300_000;
+
 /** Branches whose merge base with HEAD is the base of the change, the first that exists. */
 const DEFAULT_BRANCHES = ["origin/HEAD", "origin/main", "origin/master", "main", "master"];
 
@@ -69,13 +72,42 @@ export interface LiveRun {
 /** The background agent: returns one patch (anything; xpl checks it). Tests pass a fake. */
 export type LiveAgent = (run: LiveRun, signal: AbortSignal) => Promise<unknown>;
 
+/** What an agent throws when its answer holds no patch: it counts as a rejected try, its message a finding. */
+export class UnreadableAnswer extends CliError {}
+
+/**
+ * The task of one background run, the same for every backend: the change, the design level, the added files no
+ * design box holds, and the findings of the last try. `before` says where the code before the change is.
+ */
+export function liveTask(run: LiveRun, before: string): string[] {
+  return [
+    run.change
+      ? `Its \`change\` is the change from commit ${run.change.base} to the working tree. The code before the change of each changed file is ${before}.`
+      : "It records no change: write the TODO texts only, and no tour.",
+    ...(run.change
+      ? [
+          'When the change spans two or more parts, write or refresh the design level (reference/live.md, "The design level"): grp:design-<slug> boxes with members, view:design, and the steps design and design-<slug>.',
+        ]
+      : []),
+    ...(run.unassigned.length > 0
+      ? [`These added files are in no design box: ${run.unassigned.join(", ")}.`]
+      : []),
+    ...(run.findings.length > 0
+      ? [
+          "Your previous patch was not applied. Fix these findings in a new, complete patch:",
+          ...run.findings.map((finding) => `- ${finding}`),
+        ]
+      : []),
+  ];
+}
+
 export interface LiveOptions {
   /** The guide's name (`live` by default). */
   name: string;
   since?: string;
   precise: "auto" | "off" | "require";
-  backend: "none" | "claude";
-  /** The agent of `backend: "claude"`. */
+  backend: LiveStatus["explanation"]["backend"];
+  /** The agent of `backend: "claude"` or `"api"`. */
   agent?: LiveAgent;
   /** Quiet time before an agent run (ms). */
   agentQuietMs: number;
@@ -434,19 +466,27 @@ export async function openLive(ctx: Ctx, options: LiveOptions): Promise<Live> {
       const unassigned = unassignedFiles(new ExplainerModel(current.explainer, current.model));
       let findings: string[] = [];
       for (let attempt = 1; ; attempt++) {
-        const patch = await agent(
-          {
-            root: ctx.root,
-            guidePath,
-            base: base?.sha ?? null,
-            change,
-            before,
-            findings,
-            unassigned,
-          },
-          signal,
-        );
+        let patch: unknown;
+        try {
+          patch = await agent(
+            {
+              root: ctx.root,
+              guidePath,
+              base: base?.sha ?? null,
+              change,
+              before,
+              findings,
+              unassigned,
+            },
+            signal,
+          );
+        } catch (error) {
+          if (!(error instanceof UnreadableAnswer)) throw error;
+          patch = error;
+        }
         const result = await withFileLock(guidePath, async () => {
+          if (patch instanceof UnreadableAnswer)
+            return { findings: [patch.message], rejected: true, warnings: undefined };
           const { model, texts } = current!;
           const guide = readExplainerFile(guidePath);
           const applied = applyPatch(guide, patch as ExplainerPatch, model, texts, {
