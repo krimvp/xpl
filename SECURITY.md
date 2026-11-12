@@ -24,3 +24,11 @@ changed bundled files. It does not prove who published the package or that its c
 Precise indexing may download and run language-specific SCIP tools through npm or the Go toolchain. These
 tools and the repository's build dependencies run with the permissions of the current user. Use
 `--precise off` to skip SCIP tools.
+
+`xpl live --backend api` sends the guide and the source code it explains to the model endpoint you set in
+`XPL_LLM_BASE_URL` (or `--base-url`), and nowhere else. It reads the key only from `XPL_LLM_API_KEY`, sends it
+only to that endpoint, and leaves it out of the status, the page, the logs and error messages. The model reads
+the files of the repository's index through read-only tools; it cannot run commands or write files, and only a
+patch that passes the checks of `xpl apply` is applied. Use a local endpoint (Ollama, LM Studio, vLLM) to keep
+the code on your machine. `xpl live --backend claude` runs Claude Code, which sends code to its provider under
+your Claude Code settings.

@@ -61,6 +61,27 @@ edit the code. After every edit, within a few seconds and without a reload, the 
 Ask your assistant to "explain live" after each task (`/code-explainer explain live`), or start
 `xpl live --backend claude` to have Claude Code write the explanation once the code has been quiet for a while.
 
+With `xpl live --backend api`, xpl writes it itself with a model you choose, behind any OpenAI-compatible
+endpoint (OpenAI, OpenRouter, Ollama, LM Studio, vLLM, LiteLLM, Anthropic's compatible endpoint), with no
+coding assistant installed. Set the endpoint and the model, and the key if the endpoint needs one:
+
+```sh
+export XPL_LLM_BASE_URL=https://api.openai.com/v1   # the URL before /chat/completions
+export XPL_LLM_MODEL=<model>
+export XPL_LLM_API_KEY=<your key>                    # read from the environment only; xpl never prints or stores it
+xpl live --backend api
+```
+
+```sh
+# a local model, no key: give it a context of at least 64k tokens
+OLLAMA_CONTEXT_LENGTH=65536 ollama serve &
+xpl live --backend api --base-url http://localhost:11434/v1 --model <model>
+```
+
+This backend sends the guide and the source code it explains to that endpoint, and says so when it starts. The
+model must be able to call tools. For an API that does not speak this protocol, put a proxy such as LiteLLM in
+front of it.
+
 ### Try it without Claude
 
 Open a finished guide in your browser: the [examples](https://krimvp.github.io/xpl/#more-examples) explain
@@ -105,7 +126,8 @@ xpl index && xpl view jobrunner
   code you did not write line by line. `xpl update` brings it up to date after the code changes.
 - **What you are changing, while you change it**: `xpl live` runs next to your editor or AI assistant. After
   every edit it redraws the maps from the system down to the files and marks what changed since the base. Ask
-  your assistant to explain the change after each task (`reference/live.md`), or let `--backend claude` do it.
+  your assistant to explain the change after each task (`reference/live.md`), or let `--backend claude` or
+  `--backend api` (your own model, key and endpoint) do it.
 - **An idea or a plan** before the code exists: sketch boxes, drawn dotted and linked to no code.
 - **A type**: `xpl draft class` maps what a class extends and implements; `xpl draft states` maps the states
   of a status type and the functions that change them.

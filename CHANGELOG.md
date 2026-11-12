@@ -18,6 +18,12 @@ New commands and drafts:
   text is kept, new files get boxes, deleted files lose theirs. It serves the guide with its status at
   `/api/live`. Your own agent writes the explanation after each task (`reference/live.md`), or
   `--backend claude` runs Claude Code once the code is quiet. `--once` runs one cycle for hooks and scripts.
+- `xpl live --backend api` writes the explanation with a model you choose, behind any OpenAI-compatible
+  endpoint (OpenAI, OpenRouter, Ollama, LM Studio, vLLM, LiteLLM, Anthropic's compatible endpoint), with no
+  coding assistant installed: `XPL_LLM_BASE_URL`, `XPL_LLM_MODEL`, and `XPL_LLM_API_KEY` when the endpoint
+  needs a key (`--base-url` and `--model` for the first two). It sends the guide and source code to that
+  endpoint and says so at start. The model reads the repository through read-only tools and needs to call
+  tools. The npm package now holds `THIRD_PARTY_LICENSES.txt`, the licences of the code bundled into it.
 - A change that spans two or more parts gets a design level on the live page: a Design | Folders switch under
   the system map, with a map of the design concepts the change touches, marked like the parts, and listed
   first in "What changed". The agent writes it (`grp:design-*` boxes, `view:design`, the steps `design` and

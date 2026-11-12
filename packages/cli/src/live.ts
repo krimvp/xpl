@@ -5,8 +5,8 @@
  * from the captured snapshot and publish it, move the guide to it (`resolve --write`), record the change from the
  * base to the working tree (`xpl change <base> --worktree`), and draft the structure again (`live-draft.ts`), all in
  * one write of the guide under its lock, and only when something changed. A failing cycle keeps the last good guide
- * and waits for the next edit. With an agent (`--backend claude`), once the tree has been quiet for a while, one run
- * writes the TODO texts and `tour:live` (`reference/live.md`); xpl lints and applies its patch as actor `llm`.
+ * and waits for the next edit. With an agent (`--backend claude` or `api`), once the tree has been quiet for a while,
+ * one run writes the TODO texts and `tour:live` (`reference/live.md`); xpl lints and applies its patch as `llm`.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { readFile, unlink, writeFile } from "node:fs/promises";

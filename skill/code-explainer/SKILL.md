@@ -159,7 +159,7 @@ The viewer shows each claim next to its code, so a wrong claim looks checked. Ch
 
 ## explain live: the architecture while the code changes
 
-`xpl live` keeps the guide `live` in step with the working tree: the maps from the system down to the files, and the change since the base. Follow `reference/live.md`: after each task, write the `TODO` box texts and the tour `tour:live`, which says part by part what the change does to the architecture. When the change spans two or more parts, write its design level first: `grp:design-<slug>` boxes on `view:design` for the design concepts it touches, read before any folder or file. With `--backend claude` a background run does it.
+`xpl live` keeps the guide `live` in step with the working tree: the maps from the system down to the files, and the change since the base. Follow `reference/live.md`: after each task, write the `TODO` box texts and the tour `tour:live`, which says part by part what the change does to the architecture. When the change spans two or more parts, write its design level first: `grp:design-<slug>` boxes on `view:design` for the design concepts it touches, read before any folder or file. With `--backend claude` or `--backend api` a background run does it.
 
 ## expand <node>
 

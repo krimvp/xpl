@@ -1720,7 +1720,7 @@ fatal errors (`error: …`) and warnings (`warning: …`) go to stderr.
 | `xpl search <pattern> [--regex] [-i] [--limit n] [--under <dir\|glob>] [--code]` | text hits over the working tree with enclosing symbol id and offset; code files first, then config, then docs (`--code`: code only); `--under` keeps the search in a dir, file, symbol or glob |
 | `xpl guides` | local guide metadata by title, recorded view questions, audience and source/index snapshot; no index or service required; unreadable/invalid/escaping guides are separate errors, exit 1; no guides is exit 0 |
 | `xpl update <explainer> [--since <rev>] [-o file] [--precise auto\|off\|require]` | after work on the code, for a map guide: runs `index`, `resolve --write`, `change <rev>..HEAD` (with `--since`) and `draft map` in-process (`commands/update.ts`); stops at the first failing step with its message; applies nothing and prints where the draft is |
-| `xpl live [explainer] [--since rev] [--port p] [--no-open] [--backend none\|claude] [--agent-quiet seconds] [--skill-dir folder] [--once] [--precise auto\|off\|require]` | keeps a guide (`live`) of the architecture and the change in progress in step with the working tree and serves it (below, "xpl live") |
+| `xpl live [explainer] [--since rev] [--port p] [--no-open] [--backend none\|claude\|api] [--model m] [--base-url url] [--agent-quiet seconds] [--skill-dir folder] [--once] [--precise auto\|off\|require]` | keeps a guide (`live`) of the architecture and the change in progress in step with the working tree and serves it (below, "xpl live") |
 | `xpl start <name> --question q --audience a [--entry symbol] [--precise auto\|off\|require]` | first-guide path: runs `index`, `new`, `draft repo` (or `draft path` with `--entry`) and `apply`; saves the checked patch and all draft notes outside the repository, prints up to three notes and apply warnings (full lists in `--json` and the notes file); without `--entry`, names where a path could start: the function whose name and code hold the most words of the question (common words such as `how`, `put`, `get`, `work` and the project's own name do not count), else the draft's declared `entry`, each labeled, else says none is guessed; then names `view` and `lint` as next steps; refuses an existing guide |
 | `xpl new <name> [--title t] [--repo r] [--url u]` | create `.explainer/<name>.explainer.json` bound to the index; never overwrites; repo name from `--repo`, else `package.json`, `go.mod`, `pyproject.toml`, git remote, directory name |
 | `xpl apply <explainer> <patch.json\|-> [--actor llm\|user] [--dry-run]` | §4.7; prints every issue of a rejected patch at once; atomic; `--help` says how a patch merges and points to `patch-format.md` |
@@ -2446,15 +2446,42 @@ session. It keeps one guide in step with the working tree and serves it through 
   applied as `llm` against the cycle's index; findings of `lintExplainer` on the elements it changed (except
   `tour-covers-map` and `change-not-shown`) or a rejection give one second run with the findings, which is
   applied (its findings printed as a warning) unless it is rejected or leaves a `todo-left`; then the state is
-  `failed`. Edits during a run make the result stale, and the next quiet period runs again.
+  `failed`. Edits during a run make the result stale, and the next quiet period runs again. An agent that
+  throws `UnreadableAnswer` (an answer with no patch) gets the same second try, its message the finding.
+  The task part of the prompt (`liveTask`) is shared by both backends.
+- **`--backend api`** (`api-agent.ts`, `apiLiveAgent`): the same agent seam with no harness. It drives the AI
+  SDK's tool loop (`ai` and `@ai-sdk/openai-compatible`, pinned exactly, bundled into `xpl.mjs`; their
+  Apache-2.0 licences go in `THIRD_PARTY_LICENSES.txt`) against any OpenAI-compatible Chat Completions
+  endpoint. `apiConfig`: base URL from `--base-url` or `XPL_LLM_BASE_URL`, model from `--model` or
+  `XPL_LLM_MODEL`, both required at start (usage error naming the variables); the key only from
+  `XPL_LLM_API_KEY`, optional, so a keyless local endpoint works. The system prompt is the code-explainer
+  skill's own text, cut by heading from the skill folder (`SKILL_SECTIONS`: hard rules, writing, accuracy,
+  `live.md`, `explain-map.md`, `writing.md`, the patch-format sections a live patch uses; the bundled skill,
+  or `--skill-dir`), about 88 KB; a renamed heading fails `skillRules`. The first user message is `liveTask`,
+  the guide without `index`, `change`, `resolved` and `hash`, the change's file list, and the changed files
+  now and before within 120 000 characters (24 000 per file), so a model that never calls a tool can still
+  answer. Four read-only tools read the rest: `read_file` and `search_text` over the files of the guide's
+  index only, through `workingTreeReader` (no absolute path, no `..`, no symlink out of the root),
+  `list_files`, and `read_base_file` over `LiveRun.before`. Bounds: 16 steps, 24 000 characters per result,
+  400 000 for all tool results of a run, `AGENT_TIMEOUT_MS` (5 min) for the whole run, abortable, no SDK
+  retries (the next edit tries again), no output-token cap (one parameter name does not work on every
+  provider). The last message's patch is parsed from a fenced block, the whole text, or the first `{` to the
+  last `}` (`<think>` skipped); none is `UnreadableAnswer`. Failures name the HTTP status and the provider's
+  own message, never the request or headers, and every message has the key cut out. The SDK prints no
+  warnings (`AI_SDK_LOG_WARNINGS = false`), its telemetry is off unless asked for, and the model is an object,
+  so its gateway is never called: the run calls `<base URL>/chat/completions` only. Start-up prints where the
+  code goes. It sends the guide and source code to that endpoint; nothing else leaves the machine. Not for
+  service jobs yet: `xpl service --backend` stays `claude` (a `JobRunner` and `AnswerRunner` on the same call
+  would need their own prompts from `revise.md`, and the job ledger records a process identity that a
+  fetch does not have).
 - **Status** (`LiveStatus`, core `live.ts`, type-only): `{schema: "xpl-live@1", guide, state:
   watching|building|failed, updatedAt, index, base: {rev, sha, how: since|merge-base|start} | null, change:
-  {files, added, removed} | null, explanation: {backend, state: off|idle|running|failed, explainedAt, stale,
-  error}, error}`. `stale`: there is a change, and neither this process's last applied run nor the
+  {files, added, removed} | null, explanation: {backend: none|claude|api, state: off|idle|running|failed,
+  explainedAt, stale, error}, error}`. `stale`: there is a change, and neither this process's last applied run nor the
   `provenance.commit` of `tour:live` is the current index commit. A cycle keeps that commit
   (`keepExplainedAt`): moving the guide and drafting the structure can touch the tour (a gone file leaves its
   focus) without explaining anything.
-- `--once` runs one cycle (and with `claude` one agent run) without serving; exit 1 on failure. `--json`
+- `--once` runs one cycle (and with a backend one agent run) without serving; exit 1 on failure. `--json`
   prints `{live}` per cycle of the loop. Exit codes: 0 stopped; 1 a failed first cycle; 2 usage.
 
 **Durable jobs, lifecycle contract (39A).** `cli/jobs.ts` owns one atomic ledger at
@@ -3052,8 +3079,8 @@ second window while the code changes, so it is built for a glance:
 - **"What changed"** (`LivePanel`), a column left of the map (on top of it at 900 px and narrower): the status
   line, the totals ("4 files · +13 −5 · since origin/main"; `baseWords`: `since <rev>`, "since you started"
   for a base chosen at the first start), where the explanation stands (`explanationWords`: writing, failed,
-  "from before your latest edits" when `stale`, or "Not explained yet" with the skill's "explain live" and
-  `xpl live --backend claude`), the title and summary of `tour:live`, then core's `liveSummary`: one entry per
+  "from before your latest edits" when `stale`, or "Not explained yet" with the skill's "explain live",
+  `xpl live --backend claude` and `xpl live --backend api`), the title and summary of `tour:live`, then core's `liveSummary`: one entry per
   changed part (name, its path when two boxes of its map share the name, the part's words, its +/−), its
   step note when there is one, and its files (status word, name, +/− that opens the diff, up to 3 touched
   symbols). A part that is one file is that file's row. Files no part holds fold under "Elsewhere". A name goes to the level of its box and picks it
@@ -4242,6 +4269,10 @@ identities to syntax ranges. This is a proposed contract revision, not a change 
 - The live page's Before is the head's map without what the change added: arrows come from the head index
   (an arrow the change removed is not drawn, one it added between old boxes is), and a box whose text the
   change rewrote shows its new text. A removed box has no arrows.
+- `xpl live --backend api` is tested against a local fake endpoint only, on Linux. It needs a model that
+  calls tools and a context of about 60k tokens (the rules alone are about 22k); Ollama's default context is
+  smaller and must be raised. It has no output-token cap of its own, and it does not serve `xpl service`
+  jobs.
 - The design level is live only. The planned next step is the same level on `draft change` / `explain
   change` guides: it would need its own tour (`tour:live` is the live tour) and a field that names the view a
   design map is a lens of, since a change guide has no `view:system` -> `view:overview` pair to derive it from.
